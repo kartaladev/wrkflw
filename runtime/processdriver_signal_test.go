@@ -58,7 +58,7 @@ func TestBroadcastSignalResumesParkedInstances(t *testing.T) {
 		_, err := driver.ApplyTrigger(bCtx, def, instanceID, trg)
 		return err
 	}, signal.WithClock(fc))
-	driver = runtimetest.MustRunner(t, action.NewCatalog(nil), store,
+	driver = runtimetest.MustProcessDriver(t, action.NewCatalog(nil), store,
 		runtime.WithClock(fc), runtime.WithSignalBus(bus))
 
 	for _, id := range []string{"inst-1", "inst-2"} {
@@ -82,7 +82,7 @@ func TestBroadcastSignalResumesParkedInstances(t *testing.T) {
 // descriptive error (mentioning the SignalBus) when no bus is configured, rather
 // than silently dropping the signal.
 func TestBroadcastSignalWithoutBusErrors(t *testing.T) {
-	driver := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
+	driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithClock(clockwork.NewFakeClock()))
 	// WithSignalBus intentionally omitted.
 
@@ -242,7 +242,7 @@ func TestBroadcastSignalFanOut(t *testing.T) {
 			if tc.moreOpts != nil {
 				opts = append(opts, tc.moreOpts(t)...)
 			}
-			driver := runtimetest.MustRunner(t, nil, store, opts...)
+			driver := runtimetest.MustProcessDriver(t, nil, store, opts...)
 
 			signalName := "order.completed"
 			if tc.broadcast != nil {

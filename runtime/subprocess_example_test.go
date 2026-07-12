@@ -100,7 +100,7 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 	child := childDef()
 	reg := kernel.NewMapDefinitionRegistry(child)
 
-	driver := runtimetest.MustRunner(t, cat, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
+	driver := runtimetest.MustProcessDriver(t, cat, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
 
 	parent := parentCallDef()
 	st, err := driver.Drive(ctx, parent, "parent-i1", map[string]any{"x": 42})
@@ -176,7 +176,7 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 
 	reg := kernel.NewMapDefinitionRegistry(failingChild)
 
-	driver := runtimetest.MustRunner(t, cat, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
+	driver := runtimetest.MustProcessDriver(t, cat, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
 
 	st, err := driver.Drive(ctx, failingParent, "parent-fail-i1", nil)
 	require.NoError(t, err)
@@ -251,7 +251,7 @@ func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 	// persist the task, and return nil/nil — leaving childSt.Status == StatusRunning.
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	driver := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithClock(clk),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -331,7 +331,7 @@ func TestCallActivityRecursionDepthLimited(t *testing.T) {
 	def := selfRefDef()
 	reg := kernel.NewMapDefinitionRegistry(def)
 
-	driver := runtimetest.MustRunner(t, nil, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
+	driver := runtimetest.MustProcessDriver(t, nil, store, runtime.WithClock(clk), runtime.WithDefinitions(reg))
 
 	// This must not panic / stack-overflow. The depth guard must kick in and
 	// fail the parent instance with a descriptive error.
@@ -369,7 +369,7 @@ func TestStartSubInstanceNoRegistry(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 
 	// No WithDefinitions option.
-	driver := runtimetest.MustRunner(t, nil, store, runtime.WithClock(clk))
+	driver := runtimetest.MustProcessDriver(t, nil, store, runtime.WithClock(clk))
 
 	parent := parentCallDef()
 	_, err := driver.Drive(ctx, parent, "no-reg-i1", nil)

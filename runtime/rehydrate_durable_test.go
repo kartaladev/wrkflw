@@ -82,7 +82,7 @@ func assertDurableTimerRehydration(t *testing.T, conn any, dlct dialect.Dialect)
 	// scheduler). The wrkflw_timers row persists in the SQL store.
 	{
 		sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
-		driver := runtimetest.MustRunner(t, cat, sqlStore,
+		driver := runtimetest.MustProcessDriver(t, cat, sqlStore,
 			runtime.WithClock(fc),
 			runtime.WithScheduler(sched), runtime.WithTimerStore(timerStore), runtime.WithDefinitions(reg))
 		_, err := driver.Drive(t.Context(), def, "rh-1", nil)
@@ -96,7 +96,7 @@ func assertDurableTimerRehydration(t *testing.T, conn any, dlct dialect.Dialect)
 
 	// Fresh process: new runner + new scheduler over the SAME store.
 	sched2 := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
-	r2 := runtimetest.MustRunner(t, cat, sqlStore,
+	r2 := runtimetest.MustProcessDriver(t, cat, sqlStore,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched2), runtime.WithTimerStore(timerStore), runtime.WithDefinitions(reg))
 

@@ -90,7 +90,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 	// Original process: arm the timer, then it "crashes" — discard runner + scheduler.
 	{
 		sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
-		driver := runtimetest.MustRunner(t, cat, store,
+		driver := runtimetest.MustProcessDriver(t, cat, store,
 			runtime.WithClock(fc),
 			runtime.WithScheduler(sched), runtime.WithTimerStore(mts), runtime.WithDefinitions(reg))
 		_, err := driver.Drive(t.Context(), def, "rh-1", nil)
@@ -99,7 +99,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 
 	// New process: fresh runner + fresh scheduler, same store + timer store.
 	sched2 := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
-	r2 := runtimetest.MustRunner(t, cat, store,
+	r2 := runtimetest.MustProcessDriver(t, cat, store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched2), runtime.WithTimerStore(mts), runtime.WithDefinitions(reg))
 
@@ -116,7 +116,7 @@ func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
 
 func TestRehydrateTimersRequiresWiring(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
-	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), store, runtime.WithClock(clockwork.NewFakeClock()))
+	driver := runtimetest.MustProcessDriver(t, action.NewCatalog(nil), store, runtime.WithClock(clockwork.NewFakeClock()))
 	err := driver.RehydrateTimers(t.Context())
 	require.Error(t, err, "RehydrateTimers without scheduler/timer-store/registry must error")
 }
@@ -138,7 +138,7 @@ func TestRehydrateStartTimersWarnsWhenRegistryNotEnumerable(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 
-	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), runtimetest.MustMemStore(t),
+	driver := runtimetest.MustProcessDriver(t, action.NewCatalog(nil), runtimetest.MustMemStore(t),
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithDefinitions(lookupOnlyReg{}),
@@ -167,7 +167,7 @@ func TestRehydrateStartTimersFiresCreatesInstance(t *testing.T) {
 	require.NoError(t, reg.Register(timerStartOnlyDef("cron", schedule.AfterDuration(time.Hour))))
 	store := runtimetest.MustMemStore(t)
 	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
-	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), store,
+	driver := runtimetest.MustProcessDriver(t, action.NewCatalog(nil), store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched), runtime.WithDefinitions(reg),
 		runtime.WithIDGenerator(fixedIDGenerator{id: "cron-instance-1"}))
@@ -200,7 +200,7 @@ func TestRehydrateStartTimersLatestVersionOnly(t *testing.T) {
 
 	store := runtimetest.MustMemStore(t)
 	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
-	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), store,
+	driver := runtimetest.MustProcessDriver(t, action.NewCatalog(nil), store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched), runtime.WithDefinitions(reg),
 		runtime.WithIDGenerator(&seqIDGenerator{prefix: "cron-inst"}))

@@ -31,7 +31,7 @@ func TestTaskServiceRejectsIneligibleActor(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 
-	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
+	r := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -68,7 +68,7 @@ func TestTaskServiceReassign(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 
-	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
+	r := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -126,7 +126,7 @@ func TestTaskServiceReassignRejectsUnauthorized(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 
-	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
+	r := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -169,7 +169,7 @@ func TestTaskServiceCompleteRejectsUnauthorized(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 
-	r := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
+	r := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 

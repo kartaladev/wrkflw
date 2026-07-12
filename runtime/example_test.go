@@ -32,7 +32,7 @@ func linearDef() *model.ProcessDefinition {
 	}
 }
 
-func TestRunnerExecutesParallelDiamond(t *testing.T) {
+func TestProcessDriverExecutesParallelDiamond(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "diamond", Version: 1,
 		Nodes: []model.Node{
@@ -60,7 +60,7 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 			return map[string]any{"b": true}, nil
 		}),
 	})
-	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t))
+	r := runtimetest.MustProcessDriver(t, cat, runtimetest.MustMemStore(t))
 
 	final, err := r.Drive(t.Context(), def, "i1", nil)
 	require.NoError(t, err)
@@ -76,7 +76,7 @@ func TestRunnerExecutesParallelDiamond(t *testing.T) {
 	}
 }
 
-func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
+func TestProcessDriverExecutesInclusiveTwoOfThree(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "ord", Version: 1,
 		Nodes: []model.Node{
@@ -105,7 +105,7 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 		})
 	}
 	cat := action.NewCatalog(map[string]action.Action{"a": mk("ra"), "b": mk("rb"), "c": mk("rc")})
-	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t))
+	r := runtimetest.MustProcessDriver(t, cat, runtimetest.MustMemStore(t))
 
 	final, err := r.Drive(t.Context(), def, "i1", map[string]any{"a": 1, "b": 1, "c": 0})
 	require.NoError(t, err)
@@ -123,14 +123,14 @@ func TestRunnerExecutesInclusiveTwoOfThree(t *testing.T) {
 	}
 }
 
-func TestRunnerExecutesLinearProcess(t *testing.T) {
+func TestProcessDriverExecutesLinearProcess(t *testing.T) {
 	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {
 			return map[string]any{"greeting": "hi " + in["name"].(string)}, nil
 		}),
 	})
 	store := runtimetest.MustMemStore(t)
-	r := runtimetest.MustRunner(t, cat, store)
+	r := runtimetest.MustProcessDriver(t, cat, store)
 
 	final, err := r.Drive(t.Context(), linearDef(), "i1", map[string]any{"name": "Ada"})
 	require.NoError(t, err)

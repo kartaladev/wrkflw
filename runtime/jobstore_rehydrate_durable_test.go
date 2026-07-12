@@ -54,7 +54,7 @@ func TestSelfRehydrateOnStart(t *testing.T) {
 	// The wrkflw_timers row persists in the SQL store.
 	{
 		sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
-		driver := runtimetest.MustRunner(t, cat, sqlStore,
+		driver := runtimetest.MustProcessDriver(t, cat, sqlStore,
 			runtime.WithClock(fc),
 			runtime.WithScheduler(sched),
 			runtime.WithTimerStore(timerStore),
@@ -73,7 +73,7 @@ func TestSelfRehydrateOnStart(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sched2.Close() })
 
-	driver2 = runtimetest.MustRunner(t, cat, sqlStore,
+	driver2 = runtimetest.MustProcessDriver(t, cat, sqlStore,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched2),
 		runtime.WithTimerStore(timerStore),

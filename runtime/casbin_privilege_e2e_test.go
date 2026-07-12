@@ -65,7 +65,7 @@ func TestCasbinPrivilegeViaBuilderE2E_Allow(t *testing.T) {
 	})
 
 	taskStore := humantask.NewMemTaskStore()
-	driver := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
+	driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 	)
 
@@ -104,7 +104,7 @@ func TestCasbinPrivilegeViaBuilderE2E_Deny(t *testing.T) {
 	})
 
 	taskStore := humantask.NewMemTaskStore()
-	driver := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
+	driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, casbinAz),
 	)
 

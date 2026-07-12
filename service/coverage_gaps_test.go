@@ -140,7 +140,7 @@ func TestGetInstanceNilDefinitionWhenUnresolved(t *testing.T) {
 
 // ---- Error-branch coverage for StartInstance ----
 
-// TestStartInstanceRunnerError covers the driver.Drive error branch (line 163 in
+// TestStartInstanceProcessDriverError covers the driver.Drive error branch (line 163 in
 // service.go) which remains at 0% because the existing happy-path and
 // unknown-defref tests never reach it.
 //
@@ -153,7 +153,7 @@ func TestGetInstanceNilDefinitionWhenUnresolved(t *testing.T) {
 //
 // Simpler path: we inject a broken definition that has no StartEvent — the
 // engine cannot start and returns an error immediately.
-func TestStartInstanceRunnerError(t *testing.T) {
+func TestStartInstanceProcessDriverError(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {

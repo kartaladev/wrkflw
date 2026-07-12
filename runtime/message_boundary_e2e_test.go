@@ -60,7 +60,7 @@ func TestDeliverMessageFiresBoundary(t *testing.T) {
 	def := messageBoundaryDef()
 	reg := kernel.NewMemDefinitionRegistry()
 	require.NoError(t, reg.Register(def))
-	r := runtimetest.MustRunner(t, nil, store,
+	r := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithClock(fc),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}))

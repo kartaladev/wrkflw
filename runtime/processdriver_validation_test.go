@@ -91,7 +91,7 @@ func TestValidateInputStart(t *testing.T) {
 
 			fc := clockwork.NewFakeClock()
 			store := runtimetest.MustMemStore(t)
-			r := runtimetest.MustRunner(t, noopCatalog(), store, runtime.WithClock(fc))
+			r := runtimetest.MustProcessDriver(t, noopCatalog(), store, runtime.WithClock(fc))
 			def := startValidationDef()
 
 			st, err := r.Drive(t.Context(), def, tc.instanceID, tc.vars)
@@ -174,7 +174,7 @@ func TestValidateInputNestedMessage(t *testing.T) {
 			def := nestedMessageValidationDef()
 			reg := kernel.NewMemDefinitionRegistry()
 			require.NoError(t, reg.Register(def))
-			r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc), runtime.WithDefinitions(reg))
+			r := runtimetest.MustProcessDriver(t, nil, store, runtime.WithClock(fc), runtime.WithDefinitions(reg))
 
 			const instanceID = "nested-msg-1"
 			parked, err := r.Drive(t.Context(), def, instanceID, nil)
@@ -248,7 +248,7 @@ func TestValidateInput_NoDescriptorCollisionAcrossScopes(t *testing.T) {
 	def := sameIDDifferentSchemaDef()
 	reg := kernel.NewMemDefinitionRegistry()
 	require.NoError(t, reg.Register(def))
-	r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc), runtime.WithDefinitions(reg))
+	r := runtimetest.MustProcessDriver(t, nil, store, runtime.WithClock(fc), runtime.WithDefinitions(reg))
 
 	const instanceID = "collide-1"
 	parked, err := r.Drive(t.Context(), def, instanceID, nil)
@@ -301,7 +301,7 @@ func TestValidateInput_DurableReloadUnregisteredKindFailsClosed(t *testing.T) {
 
 	fc := clockwork.NewFakeClock()
 	store := runtimetest.MustMemStore(t)
-	r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc))
+	r := runtimetest.MustProcessDriver(t, nil, store, runtime.WithClock(fc))
 
 	const instanceID = "durable-bogus-1"
 	_, driveErr := r.Drive(t.Context(), &reloaded, instanceID, map[string]any{"amount": 5})
@@ -378,7 +378,7 @@ func TestValidateInputIntermediateCatchMessage(t *testing.T) {
 			def := catchMessageValidationDef()
 			reg := kernel.NewMemDefinitionRegistry()
 			require.NoError(t, reg.Register(def))
-			r := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc), runtime.WithDefinitions(reg))
+			r := runtimetest.MustProcessDriver(t, nil, store, runtime.WithClock(fc), runtime.WithDefinitions(reg))
 
 			const instanceID = "catch-msg-1"
 			parked, err := r.Drive(t.Context(), def, instanceID, nil)

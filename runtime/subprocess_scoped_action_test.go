@@ -69,7 +69,7 @@ func TestScopedActionInsideSubProcessRunsE2E(t *testing.T) {
 	// way "inner-svc" resolves.
 	cat := action.NewCatalog(map[string]action.Action{})
 	store := runtimetest.MustMemStore(t)
-	r := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc))
+	r := runtimetest.MustProcessDriver(t, cat, store, runtime.WithClock(fc))
 
 	st, err := r.Drive(t.Context(), def, "scoped-sub-i1", nil)
 	require.NoError(t, err)

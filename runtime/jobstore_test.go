@@ -36,7 +36,7 @@ func TestJobStoreLoadScheduledRebuildsExecutableFire(t *testing.T) {
 	// Arm the timer by driving the instance so it parks at the intermediate timer catch.
 	{
 		sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
-		driver := runtimetest.MustRunner(t, cat, store,
+		driver := runtimetest.MustProcessDriver(t, cat, store,
 			runtime.WithClock(fc),
 			runtime.WithScheduler(sched),
 			runtime.WithTimerStore(mts),
@@ -54,7 +54,7 @@ func TestJobStoreLoadScheduledRebuildsExecutableFire(t *testing.T) {
 
 	// Build a new driver (simulating a restart) pointing at the same store.
 	sched2 := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
-	driver2 := runtimetest.MustRunner(t, cat, store,
+	driver2 := runtimetest.MustProcessDriver(t, cat, store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched2),
 		runtime.WithTimerStore(mts),
@@ -84,7 +84,7 @@ func TestJobStoreLoadScheduledRebuildsExecutableFire(t *testing.T) {
 func TestJobStoreLoadScheduledNilStoreReturnsNil(t *testing.T) {
 	// A driver with no TimerStore should return (nil, nil) — no durable timers configured.
 	store := runtimetest.MustMemStore(t)
-	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), store)
+	driver := runtimetest.MustProcessDriver(t, action.NewCatalog(nil), store)
 
 	js := runtime.NewJobStore(driver)
 	jobs, err := js.LoadScheduled(t.Context())

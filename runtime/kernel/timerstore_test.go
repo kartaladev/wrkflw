@@ -107,13 +107,13 @@ func TestMemStoreRecordsTimerOps(t *testing.T) {
 	assert.Empty(t, armed)
 }
 
-func TestRunnerPersistsAndClearsTimer(t *testing.T) {
+func TestProcessDriverPersistsAndClearsTimer(t *testing.T) {
 	startAt := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(startAt)
 	mts := kernel.NewMemTimerStore()
 	store := runtimetest.MustMemStore(t, kernel.WithTimers(mts))
 	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
-	r := runtimetest.MustRunner(t, action.NewCatalog(nil), store,
+	r := runtimetest.MustProcessDriver(t, action.NewCatalog(nil), store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched), runtime.WithTimerStore(mts))
 

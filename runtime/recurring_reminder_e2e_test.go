@@ -53,7 +53,7 @@ func TestRecurringReminderSurvivesFireAndCancelsOnComplete(t *testing.T) {
 	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	store := runtimetest.MustMemStore(t)
 
-	r := runtimetest.MustRunner(t, cat, store,
+	r := runtimetest.MustProcessDriver(t, cat, store,
 		runtime.WithClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithScheduler(sched),

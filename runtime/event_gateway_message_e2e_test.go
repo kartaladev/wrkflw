@@ -76,7 +76,7 @@ func TestDeliverMessageFiresEventGatewayArm(t *testing.T) {
 	def := eventGatewayCorrelatedMsgDef()
 	reg := kernel.NewMemDefinitionRegistry()
 	require.NoError(t, reg.Register(def))
-	r := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithDefinitions(reg))
+	r := runtimetest.MustProcessDriver(t, cat, store, runtime.WithClock(fc), runtime.WithDefinitions(reg))
 
 	st, err := r.Drive(ctx, def, "order-fast", map[string]any{"order": "order-fast"})
 	require.NoError(t, err)

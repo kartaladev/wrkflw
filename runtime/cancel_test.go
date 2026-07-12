@@ -44,14 +44,14 @@ func cancelRunner(t *testing.T, cat action.Catalog, fc clockwork.Clock) *runtime
 	store := runtimetest.MustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	return runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	return runtimetest.MustProcessDriver(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 }
 
-// TestRunnerCancelInstanceRunsCancelActions verifies that:
+// TestProcessDriverCancelInstanceRunsCancelActions verifies that:
 //  1. Both cancel actions run in definition order.
 //  2. A failing cancel action (returns an error) does NOT fail CancelInstance.
 //  3. The returned state is StatusTerminated with no live tokens.
-func TestRunnerCancelInstanceRunsCancelActions(t *testing.T) {
+func TestProcessDriverCancelInstanceRunsCancelActions(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	var ran []string
 	cat := action.NewCatalog(map[string]action.Action{
@@ -78,16 +78,16 @@ func TestRunnerCancelInstanceRunsCancelActions(t *testing.T) {
 	assert.Equal(t, []string{"notify", "boom"}, ran, "both cancel actions ran in order")
 }
 
-// TestRunnerCancelInstanceCancelsParkedTask verifies the end-to-end reconciliation
+// TestProcessDriverCancelInstanceCancelsParkedTask verifies the end-to-end reconciliation
 // (ADR-0088): after CancelInstance, a task parked at a UserTask is Cancelled in the
 // TaskStore and no longer surfaces in an inbox (ClaimableBy) query.
-func TestRunnerCancelInstanceCancelsParkedTask(t *testing.T) {
+func TestProcessDriverCancelInstanceCancelsParkedTask(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	actor := authz.Actor{ID: "sam", Roles: []string{"r"}}
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"r": {actor}})
 	tasks := humantask.NewMemTaskStore()
 	store := runtimetest.MustMemStore(t)
-	r := runtimetest.MustRunner(t, action.NewCatalog(nil), store,
+	r := runtimetest.MustProcessDriver(t, action.NewCatalog(nil), store,
 		runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, authz.RoleAuthorizer{}))
 	def := cancelDef(nil)
 
@@ -114,10 +114,10 @@ func TestRunnerCancelInstanceCancelsParkedTask(t *testing.T) {
 	assert.Empty(t, after, "a cancelled instance must not leave tasks in the inbox")
 }
 
-// TestRunnerCancelInstanceMissingActionIsBestEffort verifies that an unresolved
+// TestProcessDriverCancelInstanceMissingActionIsBestEffort verifies that an unresolved
 // cancel action name is silently logged and skipped — CancelInstance still returns
 // StatusTerminated with nil error.
-func TestRunnerCancelInstanceMissingActionIsBestEffort(t *testing.T) {
+func TestProcessDriverCancelInstanceMissingActionIsBestEffort(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	// No catalog entry for "ghost".
 	r := cancelRunner(t, action.NewCatalog(nil), fc)

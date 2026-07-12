@@ -92,7 +92,7 @@ func cancelPropRunner(t *testing.T, store *kernel.MemInstanceStore, cl *kernel.M
 	reg := kernel.NewMapDefinitionRegistry(defs...)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	return runtimetest.MustRunner(t, nil, store,
+	return runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -211,7 +211,7 @@ func TestCancelPropagationChildDefMissing(t *testing.T) {
 	fullReg := cancelPropRegistry(childDef, parentDef)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	fullDriver := runtimetest.MustRunner(t, nil, store,
+	fullDriver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(fullReg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -225,7 +225,7 @@ func TestCancelPropagationChildDefMissing(t *testing.T) {
 	// Now build a driver whose registry OMITS the child def (simulates missing def).
 	// Note: the parent's plain + versioned keys are registered, but child is absent.
 	partialReg := cancelPropRegistry(parentDef) // "prop-missing-child" intentionally absent
-	partialDriver := runtimetest.MustRunner(t, nil, store,
+	partialDriver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(partialReg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -273,7 +273,7 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 
 	reg := cancelPropRegistry(childA, childB, childC, parentAB, parentC)
-	driver := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -359,7 +359,7 @@ func TestCancelPropagationNoCallLinks(t *testing.T) {
 	// ProcessDriver WITHOUT WithCallLinkStore — propagation gate disabled.
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	driver := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithHumanTasks(resolver, tasks, nil),
 	)
 
@@ -427,7 +427,7 @@ func TestCancelPropagationNoDefsReg(t *testing.T) {
 	// be skipped entirely (r.defsReg == nil).
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	noRegDriver := runtimetest.MustRunner(t, nil, store,
+	noRegDriver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithHumanTasks(resolver, tasks, nil),
 		// intentionally NO WithDefinitions
@@ -491,7 +491,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 
 	// The driver used for initial Run must use cl (not countingCL) so that call links
 	// are recorded in cl's internal store. The cancel driver uses countingCL.
-	setupDriver := runtimetest.MustRunner(t, nil, store,
+	setupDriver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -542,7 +542,7 @@ func TestCancelPropagationDiamond(t *testing.T) {
 	})
 
 	// Build the cancel driver with the counting wrapper so we observe the guard.
-	cancelDriver := runtimetest.MustRunner(t, nil, store,
+	cancelDriver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithCallLinkStore(countingCL),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),

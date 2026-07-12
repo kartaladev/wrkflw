@@ -88,7 +88,7 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 		return err
 	}, signal.WithClock(fc))
 
-	driver = runtimetest.MustRunner(t, action.NewCatalog(nil), store, runtime.WithClock(fc), runtime.WithSignalBus(bus))
+	driver = runtimetest.MustProcessDriver(t, action.NewCatalog(nil), store, runtime.WithClock(fc), runtime.WithSignalBus(bus))
 
 	// Start two instances; both park at the signal-catch node.
 	parked1, err := driver.Drive(ctx, def, "inst-1", nil)
@@ -118,9 +118,9 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 	assert.Equal(t, engine.StatusCompleted, final2.Status, "inst-2 must complete")
 }
 
-// TestRunnerThrowSignalWithoutBusErrors verifies that a ProcessDriver without a SignalBus
+// TestProcessDriverThrowSignalWithoutBusErrors verifies that a ProcessDriver without a SignalBus
 // returns a descriptive error when it encounters a ThrowSignal command.
-func TestRunnerThrowSignalWithoutBusErrors(t *testing.T) {
+func TestProcessDriverThrowSignalWithoutBusErrors(t *testing.T) {
 	// Process: start → throw("approved") → end.
 	// A throw event emits ThrowSignal; without a bus the runner must fail.
 	def := &model.ProcessDefinition{
@@ -137,7 +137,7 @@ func TestRunnerThrowSignalWithoutBusErrors(t *testing.T) {
 		},
 	}
 
-	driver := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t), runtime.WithClock(clockwork.NewFakeClock()))
+	driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t), runtime.WithClock(clockwork.NewFakeClock()))
 	// WithSignalBus intentionally omitted.
 
 	_, err := driver.Drive(t.Context(), def, "i1", nil)
@@ -165,7 +165,7 @@ func TestEventGatewayTimerWinsUnderFakeClock(t *testing.T) {
 		return err
 	}, signal.WithClock(fc))
 
-	driver = runtimetest.MustRunner(t, nil, store,
+	driver = runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithSignalBus(bus),
@@ -209,7 +209,7 @@ func TestEventGatewaySignalWinsUnderFakeClock(t *testing.T) {
 		return err
 	}, signal.WithClock(fc))
 
-	driver = runtimetest.MustRunner(t, nil, store,
+	driver = runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithSignalBus(bus),
@@ -253,7 +253,7 @@ func TestDeliverMessageCorrelatesInstance(t *testing.T) {
 	reg := kernel.NewMemDefinitionRegistry()
 	require.NoError(t, reg.Register(def))
 
-	driver := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc), runtime.WithDefinitions(reg))
+	driver := runtimetest.MustProcessDriver(t, nil, store, runtime.WithClock(fc), runtime.WithDefinitions(reg))
 
 	// Start two instances with different orderId values.
 	_, err := driver.Drive(ctx, def, "order-100", map[string]any{"orderId": "100"})

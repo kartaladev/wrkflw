@@ -44,7 +44,7 @@ func noRetryServiceTaskDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRunnerDefaultPolicyEnablesRetry verifies that WithDefaultRetryPolicy
+// TestProcessDriverDefaultPolicyEnablesRetry verifies that WithDefaultRetryPolicy
 // causes a service-task node that declares no RetryPolicy of its own to
 // schedule a retry timer when its action fails, instead of failing the instance.
 //
@@ -52,7 +52,7 @@ func noRetryServiceTaskDef() *model.ProcessDefinition {
 // has no policy → no retry is scheduled → the instance fails (StatusFailed) and
 // the recording scheduler captures nothing. WithDefaultRetryPolicy schedules the
 // retry timer instead.
-func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
+func TestProcessDriverDefaultPolicyEnablesRetry(t *testing.T) {
 	cases := []struct {
 		name             string
 		withDefaultRetry bool
@@ -112,7 +112,7 @@ func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 				}))
 			}
 
-			driver := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), append([]runtime.Option{runtime.WithClock(clk)}, opts...)...)
+			driver := runtimetest.MustProcessDriver(t, cat, runtimetest.MustMemStore(t), append([]runtime.Option{runtime.WithClock(clk)}, opts...)...)
 			def := noRetryServiceTaskDef()
 
 			st, err := driver.Drive(t.Context(), def, "p", nil)
@@ -147,14 +147,14 @@ func incidentTaskDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRunnerResolveIncident drives an instance to an incident (via a default
+// TestProcessDriverResolveIncident drives an instance to an incident (via a default
 // MaxAttempts=1 policy that exhausts on the first failure), then calls
 // ProcessDriver.ResolveIncident and asserts the incident is cleared and the action
 // re-invoked successfully.
 //
 // The test also verifies that MemInstanceStore.List reports IncidentCount==1 while the
 // incident is open and IncidentCount==0 after it is resolved.
-func TestRunnerResolveIncident(t *testing.T) {
+func TestProcessDriverResolveIncident(t *testing.T) {
 	T := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	clk := clockwork.NewFakeClockAt(T)
 
@@ -170,7 +170,7 @@ func TestRunnerResolveIncident(t *testing.T) {
 	})
 
 	store := runtimetest.MustMemStore(t)
-	driver := runtimetest.MustRunner(t, cat, store,
+	driver := runtimetest.MustProcessDriver(t, cat, store,
 		runtime.WithClock(clk),
 		// MaxAttempts=1: first failure parks as incident, no retry timer scheduled.
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{

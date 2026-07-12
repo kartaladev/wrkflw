@@ -316,6 +316,9 @@ func (driver *ProcessDriver) Drive(ctx context.Context, def *model.ProcessDefini
 			return engine.InstanceState{}, fmt.Errorf("workflow-runtime: run: generate id: %w", gerr)
 		}
 		instanceID = id
+		// The span was opened before the id existed; record the minted id so the
+		// trace carries it instead of the empty argument.
+		span.SetAttributes(attribute.String("wrkflw.instance_id", instanceID))
 	}
 	st := engine.InstanceState{InstanceID: instanceID}
 	out, err := driver.deliverLoop(ctx, def, st, 0, true, nil, engine.NewStartInstance(driver.clk.Now(), vars))

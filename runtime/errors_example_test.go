@@ -137,7 +137,7 @@ func TestSagaCompensationRollback(t *testing.T) {
 
 	store := runtimetest.MustMemStore(t)
 
-	driver := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fakeClock))
+	driver := runtimetest.MustProcessDriver(t, cat, store, runtime.WithClock(fakeClock))
 
 	def := sagaDef()
 
@@ -222,7 +222,7 @@ func TestBoundaryErrorRecoveryE2E(t *testing.T) {
 
 	store := runtimetest.MustMemStore(t)
 
-	driver := runtimetest.MustRunner(t, cat, store)
+	driver := runtimetest.MustProcessDriver(t, cat, store)
 
 	def := boundaryErrorDef()
 

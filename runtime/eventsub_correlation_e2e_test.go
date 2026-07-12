@@ -106,7 +106,7 @@ func TestDeliverMessageFiresMessageEventSubprocess(t *testing.T) {
 			// event-started here.
 			reg := kernel.NewMemDefinitionRegistry()
 			require.NoError(t, reg.Register(def))
-			driver := runtimetest.MustRunner(t, noopCatalog(), store,
+			driver := runtimetest.MustProcessDriver(t, noopCatalog(), store,
 				runtime.WithClock(fc), runtime.WithDefinitions(reg))
 
 			parked, err := driver.Drive(ctx, def, "order-1", map[string]any{"orderId": "order-1"})
@@ -167,7 +167,7 @@ func TestBroadcastSignalFiresSignalEventSubprocess(t *testing.T) {
 				_, derr := driver.ApplyTrigger(bCtx, def, instanceID, trg)
 				return derr
 			}, signal.WithClock(fc))
-			driver = runtimetest.MustRunner(t, noopCatalog(), store,
+			driver = runtimetest.MustProcessDriver(t, noopCatalog(), store,
 				runtime.WithClock(fc), runtime.WithSignalBus(bus))
 
 			parked, err := driver.Drive(ctx, def, "order-1", map[string]any{"orderId": "order-1"})

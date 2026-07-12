@@ -35,18 +35,18 @@ func panicTaskDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRunnerRecoversActionPanic asserts that a action.Action that panics does NOT
+// TestProcessDriverRecoversActionPanic asserts that a action.Action that panics does NOT
 // crash the runner; the panic is recovered and converted to an action failure, so
 // the instance reaches a normal terminal state (StatusFailed) instead of taking
 // down the whole replica with every in-flight instance.
-func TestRunnerRecoversActionPanic(t *testing.T) {
+func TestProcessDriverRecoversActionPanic(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	cat := action.NewCatalog(map[string]action.Action{
 		"p": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			panic("action blew up")
 		}),
 	})
-	driver := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), runtime.WithClock(fc))
+	driver := runtimetest.MustProcessDriver(t, cat, runtimetest.MustMemStore(t), runtime.WithClock(fc))
 
 	// Must not panic.
 	st, err := driver.Drive(t.Context(), panicTaskDef(), "p1", nil)
@@ -55,10 +55,10 @@ func TestRunnerRecoversActionPanic(t *testing.T) {
 		"a panicking action (no retry policy) must drive the instance to StatusFailed, not crash")
 }
 
-// TestRunnerRecoversCancelActionPanic asserts that a panicking cancel action is
+// TestProcessDriverRecoversCancelActionPanic asserts that a panicking cancel action is
 // recovered and logged best-effort — CancelInstance must still succeed and reach
 // StatusTerminated (ADR-0028: cancellation reports success regardless).
-func TestRunnerRecoversCancelActionPanic(t *testing.T) {
+func TestProcessDriverRecoversCancelActionPanic(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	cat := action.NewCatalog(map[string]action.Action{
 		"boom": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
