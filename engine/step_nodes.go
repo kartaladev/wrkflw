@@ -219,6 +219,20 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 		return forceTerminate(c, ev)
 	}
 
+	if ev, ok := node.(event.EndEvent); ok && ev.Behavior == event.EndError {
+		// Error end event (ADR-0127): throw ev.ErrorCode from the token's scope.
+		// propagateError walks the scope chain to a matching boundary error
+		// handler (may catch + recover) or fails the instance. Body preserved
+		// verbatim from the former errorEndEventStrategy.
+		currentScopeID := tok.ScopeID
+		c.s.consumeToken(tok, c.at)
+		errCmds, propErr := propagateError(c.def, c.s, currentScopeID, "", "", ev.ErrorCode, nil, c.at, c.mode, c.eval, false)
+		if propErr != nil {
+			return nil, false, propErr
+		}
+		return errCmds, true, nil
+	}
+
 	var cmds []Command
 	// An EndEvent behaves differently depending on whether the token is at the
 	// root scope or inside a sub-process scope:
