@@ -129,14 +129,7 @@ func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundary
 	// Emit the fire-once boundary action before routing (mirrors the
 	// deadline-breach action path in handleDeadlineFired). FireAndForget
 	// means a catalog action failure does not block routing.
-	if ba.Action != "" {
-		cmds = append(cmds, InvokeAction{
-			CommandID:     s.nextCommandID(),
-			Name:          ba.Action,
-			Input:         copyVars(s.Variables),
-			FireAndForget: true,
-		})
-	}
+	cmds = append(cmds, emitFireOnceAction(s, ba.Action)...)
 
 	if !ba.NonInterrupting {
 		// Interrupting: consume the host, cancel its task timers and boundary siblings.

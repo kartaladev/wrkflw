@@ -71,15 +71,7 @@ func handleDeadlineFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	var cmds []Command
 
 	// (a) Emit the deadline alternative action, if configured.
-	if deadlineAction != "" {
-		cmdID := s.nextCommandID()
-		cmds = append(cmds, InvokeAction{
-			CommandID:     cmdID,
-			Name:          deadlineAction,
-			Input:         copyVars(s.Variables),
-			FireAndForget: true,
-		})
-	}
+	cmds = append(cmds, emitFireOnceAction(s, deadlineAction)...)
 
 	// (b) Move the token to the alternative path target. The token was parked
 	//     (TokenWaitingCommand / AwaitCommand == TaskToken); reactivate it and
@@ -170,15 +162,7 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	var cmds []Command
 
 	// (1) Fire-and-forget reminder action, if configured.
-	if waitActionName != "" {
-		cmdID := s.nextCommandID()
-		cmds = append(cmds, InvokeAction{
-			CommandID:     cmdID,
-			Name:          waitActionName,
-			Input:         copyVars(s.Variables),
-			FireAndForget: true,
-		})
-	}
+	cmds = append(cmds, emitFireOnceAction(s, waitActionName)...)
 
 	// (2) No engine reschedule: the reminder timer was armed once at task entry
 	// with the recurring trigger (Every/EveryExpr), and native scheduler

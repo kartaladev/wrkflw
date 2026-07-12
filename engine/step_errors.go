@@ -163,14 +163,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			// Emit the fire-once boundary action before routing, mirroring
 			// fireBoundaryArm and handleDeadlineFired. FireAndForget means a catalog
 			// action failure does not block routing.
-			if directHandler.Action != "" {
-				cmds = append(cmds, InvokeAction{
-					CommandID:     s.nextCommandID(),
-					Name:          directHandler.Action,
-					Input:         copyVars(s.Variables),
-					FireAndForget: true,
-				})
-			}
+			cmds = append(cmds, emitFireOnceAction(s, directHandler.Action)...)
 
 			// Consume the failing activity's token by its specific ID (failingTokenID).
 			// Using the ID rather than NodeID+ScopeID ensures correctness when two
@@ -289,14 +282,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			// Emit the fire-once boundary action before routing, mirroring
 			// fireBoundaryArm and handleDeadlineFired. FireAndForget means a catalog
 			// action failure does not block routing.
-			if handler.Action != "" {
-				cmds = append(cmds, InvokeAction{
-					CommandID:     s.nextCommandID(),
-					Name:          handler.Action,
-					Input:         copyVars(s.Variables),
-					FireAndForget: true,
-				})
-			}
+			cmds = append(cmds, emitFireOnceAction(s, handler.Action)...)
 
 			tokensToCancel := make([]Token, 0, len(s.Tokens))
 			for _, tok := range s.Tokens {

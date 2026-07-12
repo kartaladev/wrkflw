@@ -36,3 +36,17 @@ func cancelTokenWaits(s *InstanceState, tok *Token, at time.Time) []Command {
 	}
 	return cmds
 }
+
+// emitFireOnceAction returns the fire-and-forget InvokeAction for a boundary/handler action
+// named actionName, with a defensive copy of the instance variables as input. Empty name -> nil.
+func emitFireOnceAction(s *InstanceState, actionName string) []Command {
+	if actionName == "" {
+		return nil
+	}
+	return []Command{InvokeAction{
+		CommandID:     s.nextCommandID(),
+		Name:          actionName,
+		Input:         copyVars(s.Variables),
+		FireAndForget: true,
+	}}
+}
