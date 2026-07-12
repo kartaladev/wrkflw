@@ -67,6 +67,7 @@ var deniedEngineImports = []string{
 	"watermill",
 	"gocron",
 	"clockwork",
+	"casbin",
 	"go.opentelemetry.io",
 }
 
@@ -89,7 +90,8 @@ func TestCorePurityImportDenylist(t *testing.T) {
 }
 
 // TestCorePurityNoWallClock asserts no non-test file of the engine package reads
-// the wall clock (time.Now/time.Since/time.Tick). The core takes time from an
+// the wall clock (time.Now/time.Since/time.Tick/time.After/time.Sleep/time.Until/
+// time.NewTimer/time.NewTicker/time.AfterFunc). The core takes time from an
 // injected clock.Clock so a fake clock drives it deterministically in tests.
 func TestCorePurityNoWallClock(t *testing.T) {
 	for _, path := range nonTestGoFiles(t, ".") {
@@ -122,9 +124,10 @@ func nonTestGoFiles(t *testing.T, dir string) []string {
 }
 
 // wallClockCalls reports every wall-clock read in f as the selected identifier
-// name ("Now", "Since", or "Tick"). A read is a call whose function is a
-// selector time.<Name> where time is a bare package identifier. Empty result
-// means f never reads the wall clock.
+// name ("Now", "Since", "Tick", "After", "Sleep", "Until", "NewTimer",
+// "NewTicker", or "AfterFunc"). A read is a call whose function is a selector
+// time.<Name> where time is a bare package identifier. Empty result means f
+// never reads the wall clock.
 func wallClockCalls(f *ast.File) []string {
 	var found []string
 	ast.Inspect(f, func(n ast.Node) bool {
@@ -141,7 +144,7 @@ func wallClockCalls(f *ast.File) []string {
 			return true
 		}
 		switch sel.Sel.Name {
-		case "Now", "Since", "Tick":
+		case "Now", "Since", "Tick", "After", "Sleep", "Until", "NewTimer", "NewTicker", "AfterFunc":
 			found = append(found, sel.Sel.Name)
 		}
 		return true
