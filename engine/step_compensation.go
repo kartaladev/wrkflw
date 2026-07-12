@@ -415,6 +415,27 @@ type finishPlan struct {
 	finalErr    string
 }
 
+// validate asserts finishPlan's documented construction invariants (see the
+// field comments above) hold, and panics with a workflow-engine:-prefixed
+// message naming the violated invariant otherwise. A violated invariant here
+// is a programming bug in this package — finishPlan is a transient, non-
+// serialized value built entirely from in-package logic, never from
+// persisted or external input — so it is deliberately NOT an error routed
+// through the incident path. stepCompensationFinish calls this once the
+// plan for the walk's outcome is fully built, before handing it to
+// applyFinish.
+func (p finishPlan) validate() {
+	if p.resetVars && p.restoreVars != nil {
+		panic("workflow-engine: finishPlan invariant violated: resetVars and restoreVars are mutually exclusive")
+	}
+	if p.scopeWideThrow && !p.doClearRecords {
+		panic("workflow-engine: finishPlan invariant violated: scopeWideThrow must be set alongside doClearRecords")
+	}
+	if !p.resume && p.scopeWideThrow {
+		panic("workflow-engine: finishPlan invariant violated: a terminate plan (resume=false) must never set scopeWideThrow")
+	}
+}
+
 // clearRecords drops the compensation records for the given scope ("" = root).
 // Shared by the full-reverse and terminate finish outcomes so a re-delivered
 // terminal trigger cannot re-enter a walk and double-compensate.
@@ -619,6 +640,7 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 			finalErr:       finalErr,
 		}
 	}
+	plan.validate()
 	return applyFinish(def, s, plan, at, mode, eval)
 }
 
