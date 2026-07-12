@@ -31,6 +31,32 @@ func cursorRecords(s *InstanceState, cur compensationCursor) []CompensationRecor
 	return compensationRecordsForScope(s, cur.ScopeID)
 }
 
+// eligibleRange computes the reverse-order compensation walk's index range over
+// records for a given toNode boundary. start is the most-recently-completed
+// record's index — the first to emit when walking backward — always
+// len(records)-1 (start-1, start-2, ... 0 in a full rollback). stopExclusive is
+// the index of toNode's LAST occurrence in records (matching the most-recent
+// visit, mirroring beginCompensation's rollback-target rule), or -1 when
+// toNode == "" or not found in records. An index is eligible for compensation
+// iff it is > stopExclusive (i.e. AFTER toNode in completion order) — the
+// walk proceeds start, start-1, ..., down to but excluding stopExclusive.
+//
+// Both beginCompensation (computing the walk's starting index) and
+// stepCompensationAdvance (deciding whether the next index is still eligible)
+// encode this same rule; this is the single shared derivation.
+func eligibleRange(records []CompensationRecord, toNode string) (start, stopExclusive int) {
+	start = len(records) - 1
+	stopExclusive = -1
+	if toNode != "" {
+		for i, r := range records {
+			if r.NodeID == toNode {
+				stopExclusive = i
+			}
+		}
+	}
+	return start, stopExclusive
+}
+
 // stepCompensateRequested handles a CompensateRequested trigger. It sets the
 // instance to StatusCompensating, then delegates to beginCompensation to cancel
 // in-flight tokens, look up compensation records, and emit the first
@@ -168,31 +194,21 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 	const scopeID = ""
 	records := compensationRecordsForScope(s, scopeID)
 
-	// Determine the starting index: the last record whose NodeID != toNode.
-	// We walk from the end of records backward; the first record (from the right)
-	// that is NOT the ToNode is the starting point.
-	//
+	// Determine the starting index and the toNode boundary via eligibleRange
+	// (shared with stepCompensationAdvance's re-derivation of the same rule).
 	// Because records are stored in completion order (oldest first), the reverse
 	// walk is: len(records)-1 down to 0.
 	//
-	// Find how many records are eligible (those AFTER ToNode in completion order).
-	// If ToNode == "", all records are eligible.
-	// If ToNode != "", we exclude the record whose NodeID == ToNode (it is the
-	// rollback TARGET — we do not compensate it). All records recorded AFTER ToNode
-	// (i.e. later in the slice) are eligible.
-	startIndex := len(records) - 1
+	// If ToNode == "", all records are eligible. If ToNode != "", we exclude the
+	// record whose NodeID == ToNode (it is the rollback TARGET — we do not
+	// compensate it): only records recorded AFTER ToNode (i.e. later in the
+	// slice, index > toNodeIdx) are eligible.
+	startIndex, toNodeIdx := eligibleRange(records, toNode)
 	if toNode != "" {
-		// Find the index of toNode in the records (it's recorded in completion order).
-		toNodeIdx := -1
-		for i, r := range records {
-			if r.NodeID == toNode {
-				toNodeIdx = i
-			}
-		}
 		if toNodeIdx >= 0 {
 			// Only records AFTER toNodeIdx (i.e. indices > toNodeIdx) are eligible.
 			// The first to emit is the last eligible record.
-			if toNodeIdx >= len(records)-1 {
+			if toNodeIdx >= startIndex {
 				// ToNode was the last completed node — nothing to compensate above it.
 				// Stamp the cursor so stepCompensationFinish applies the outcome; since
 				// toNode != "", stepCompensationFinish takes the partial-rollback branch
@@ -230,20 +246,23 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 		return finishRes, nil
 	}
 
-	// Emit the first compensation InvokeAction (record at startIndex).
+	// Emit the first compensation InvokeAction (record at startIndex). s.Compensating
+	// is the zero cursor here (stepCompensationFinish always resets it to
+	// compensationCursor{} before any caller re-enters beginCompensation), so
+	// copy-and-mutate is equivalent to a from-scratch literal.
 	rec := records[startIndex]
 	cmdID := s.nextCommandID()
-	s.Compensating = compensationCursor{
-		ScopeID:           scopeID,
-		ToNode:            toNode,
-		NextIndex:         startIndex,
-		ActiveCmdID:       cmdID,
-		FinalStatus:       finalStatus,
-		FinalErr:          finalErr,
-		ReverseNode:       reverseNode,
-		ReverseResetVars:  reverseResetVars,
-		RestoreTargetVars: restoreTargetVars,
-	}
+	cur := s.Compensating
+	cur.ScopeID = scopeID
+	cur.ToNode = toNode
+	cur.NextIndex = startIndex
+	cur.ActiveCmdID = cmdID
+	cur.FinalStatus = finalStatus
+	cur.FinalErr = finalErr
+	cur.ReverseNode = reverseNode
+	cur.ReverseResetVars = reverseResetVars
+	cur.RestoreTargetVars = restoreTargetVars
+	s.Compensating = cur
 	cmd := InvokeAction{
 		CommandID: cmdID,
 		Name:      rec.Action,
@@ -266,16 +285,10 @@ func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at 
 	// previous record (next in reverse order). nextIdx = cur.NextIndex - 1.
 	nextIdx := cur.NextIndex - 1
 
-	// Determine the stop boundary: the index of ToNode (exclusive, i.e. we stop
-	// BEFORE emitting that index's compensation).
-	toNodeIdx := -1
-	if cur.ToNode != "" {
-		for i, r := range records {
-			if r.NodeID == cur.ToNode {
-				toNodeIdx = i
-			}
-		}
-	}
+	// Determine the stop boundary via the SAME eligibleRange rule beginCompensation
+	// uses to pick its starting index (start is unused here — nextIdx is already
+	// computed above from the cursor).
+	_, toNodeIdx := eligibleRange(records, cur.ToNode)
 
 	// Check if next record is within the eligible range.
 	// Eligible: nextIdx >= 0 AND nextIdx > toNodeIdx (i.e. the record is AFTER ToNode).
@@ -284,26 +297,15 @@ func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at 
 		return stepCompensationFinish(def, s, cur.ToNode, at, mode, eval)
 	}
 
-	// Emit the next compensation action. Preserve all cursor fields — including
-	// ArchiveKey, ResumeNode, and ResumeScope — so that stepCompensationFinish
-	// can use them when the walk eventually ends.
+	// Emit the next compensation action. cur already carries every field
+	// unchanged from s.Compensating (ArchiveKey, ResumeNode, ResumeScope, etc.) —
+	// only NextIndex and ActiveCmdID actually change on advance, so mutate just
+	// those two and write cur back.
 	rec := records[nextIdx]
 	cmdID := s.nextCommandID()
-	s.Compensating = compensationCursor{
-		ScopeID:           cur.ScopeID,
-		ArchiveKey:        cur.ArchiveKey,
-		ResumeNode:        cur.ResumeNode,
-		ResumeScope:       cur.ResumeScope,
-		ToNode:            cur.ToNode,
-		NextIndex:         nextIdx,
-		StartRecordCount:  cur.StartRecordCount,
-		ActiveCmdID:       cmdID,
-		FinalStatus:       cur.FinalStatus,
-		FinalErr:          cur.FinalErr,
-		ReverseNode:       cur.ReverseNode,
-		ReverseResetVars:  cur.ReverseResetVars,
-		RestoreTargetVars: cur.RestoreTargetVars,
-	}
+	cur.NextIndex = nextIdx
+	cur.ActiveCmdID = cmdID
+	s.Compensating = cur
 	cmd := InvokeAction{
 		CommandID: cmdID,
 		Name:      rec.Action,
