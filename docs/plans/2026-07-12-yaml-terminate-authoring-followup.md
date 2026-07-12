@@ -1,7 +1,7 @@
 # Follow-up ticket: YAML authoring of force-termination end events
 
 - Filed: 2026-07-12 (during ADR-0127 delivery)
-- Status: OPEN — low priority
+- Status: ✅ RESOLVED 2026-07-12 (main `9d1070c`) — `nodeYAML` now carries `terminationReason`/`terminationOutcome`; table round-trip test in `yaml_test.go`. /code-review + /security-review clean.
 - Area: `definition/model` (YAML authoring form)
 - Related: ADR-0119 (force-termination), ADR-0127 (unified end/error event)
 
