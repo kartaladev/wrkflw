@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -75,7 +76,7 @@ func isErrorBoundary(n event.BoundaryEvent) bool {
 // hostNodeID/hostDef are deliberately generic (not "the failing token's node"): a
 // call-activity host and its own containing definition satisfy the same shape,
 // which is what lets findDirectBoundary be reused outside a token-failure context.
-func findDirectBoundary(hostDef *model.ProcessDefinition, hostNodeID, errorCode string, vars map[string]any, cause error, eval ConditionEvaluator) (event.BoundaryEvent, bool) {
+func findDirectBoundary(ctx context.Context, hostDef *model.ProcessDefinition, hostNodeID, errorCode string, vars map[string]any, cause error, eval ConditionEvaluator) (event.BoundaryEvent, bool) {
 	for _, raw := range hostDef.Nodes {
 		n, isBnd := raw.(event.BoundaryEvent)
 		if !isBnd || n.AttachedTo != hostNodeID || !isErrorBoundary(n) {
@@ -84,7 +85,7 @@ func findDirectBoundary(hostDef *model.ProcessDefinition, hostNodeID, errorCode 
 		matched, matchErr := boundaryErrorMatches(n, vars, cause, errorCode, eval)
 		if matchErr != nil {
 			// Treat as non-match; continue scanning remaining boundaries.
-			slog.Default().Debug("boundary ErrorExpr eval error",
+			slog.DebugContext(ctx, "boundary ErrorExpr eval error",
 				"host_node_id", hostNodeID,
 				"boundary_node_id", n.ID(),
 				"error_code", errorCode,
@@ -111,7 +112,7 @@ func findDirectBoundary(hostDef *model.ProcessDefinition, hostNodeID, errorCode 
 // ancestor scope has a matching boundary (walk exhausted to root). err is non-nil
 // only for a definition-resolution failure, mirroring the original inline walk's
 // error contract (no partial commands — the caller has not started building any).
-func findEnclosingBoundary(top *model.ProcessDefinition, s *InstanceState, scopeID, errorCode string, cause error, eval ConditionEvaluator) (boundary event.BoundaryEvent, errScopeID, targetScopeID string, lookupDef *model.ProcessDefinition, found bool, err error) {
+func findEnclosingBoundary(ctx context.Context, top *model.ProcessDefinition, s *InstanceState, scopeID, errorCode string, cause error, eval ConditionEvaluator) (boundary event.BoundaryEvent, errScopeID, targetScopeID string, lookupDef *model.ProcessDefinition, found bool, err error) {
 	for currentScopeID := scopeID; currentScopeID != ""; {
 		scope := s.scopeByID(currentScopeID)
 		if scope == nil {
@@ -127,7 +128,7 @@ func findEnclosingBoundary(top *model.ProcessDefinition, s *InstanceState, scope
 			return event.BoundaryEvent{}, "", "", nil, false, fmt.Errorf("workflow-engine: propagateError: resolving parent def for scope %q: %w", currentScopeID, defErr)
 		}
 
-		if handler, ok := findDirectBoundary(parentDef, activityNodeID, errorCode, s.Variables, cause, eval); ok {
+		if handler, ok := findDirectBoundary(ctx, parentDef, activityNodeID, errorCode, s.Variables, cause, eval); ok {
 			return handler, currentScopeID, parentScopeID, parentDef, true, nil
 		}
 
@@ -153,7 +154,7 @@ func findEnclosingBoundary(top *model.ProcessDefinition, s *InstanceState, scope
 // hard-wired to "the failing token's" scope): a call-activity host routes into its
 // OWN parent scope via the same shape, which is what lets routeToBoundary be
 // reused outside a token-failure context.
-func routeToBoundary(top *model.ProcessDefinition, s *InstanceState, lookupDef *model.ProcessDefinition, boundary event.BoundaryEvent, kind, targetScopeID string, at time.Time, mode StepMode, eval ConditionEvaluator, consume func([]Command) []Command) ([]Command, error) {
+func routeToBoundary(ctx context.Context, top *model.ProcessDefinition, s *InstanceState, lookupDef *model.ProcessDefinition, boundary event.BoundaryEvent, kind, targetScopeID string, at time.Time, mode StepMode, eval ConditionEvaluator, consume func([]Command) []Command) ([]Command, error) {
 	cmds := emitFireOnceAction(s, boundary.Action)
 	cmds = consume(cmds)
 
@@ -165,7 +166,7 @@ func routeToBoundary(top *model.ProcessDefinition, s *InstanceState, lookupDef *
 
 	s.placeTokenInScope(flowTarget, targetScopeID, at)
 
-	driveCmds, err := drive(top, s, at, mode, eval)
+	driveCmds, err := drive(ctx, top, s, at, mode, eval)
 	if err != nil {
 		return cmds, err
 	}
@@ -203,7 +204,7 @@ const (
 //     ADR-0039): run the compensation walk before terminating (ADR-0034).
 //  3. Otherwise: immediate s.Status = StatusFailed, cancel open tasks/timers/arms,
 //     and emit FailInstance{Err: errorCode}.
-func handleUnhandledError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode, eval ConditionEvaluator, policy unhandledErrorPolicy) ([]Command, error) {
+func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode, eval ConditionEvaluator, policy unhandledErrorPolicy) ([]Command, error) {
 	if policy == raiseIncident {
 		// Do NOT fail the instance. Raise an incident on the failing token and
 		// keep the instance running (admin-resumable).
@@ -234,7 +235,7 @@ func handleUnhandledError(top *model.ProcessDefinition, s *InstanceState, scopeI
 	// happens inside beginCompensation.
 	if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
 		s.Status = StatusCompensating
-		res, err := beginCompensation(top, s, at, mode, eval, compensationOutcome{FinalStatus: StatusFailed, FinalErr: errorCode})
+		res, err := beginCompensation(ctx, top, s, at, mode, eval, compensationOutcome{FinalStatus: StatusFailed, FinalErr: errorCode})
 		if err != nil {
 			return nil, err
 		}
@@ -318,7 +319,7 @@ func handleUnhandledError(top *model.ProcessDefinition, s *InstanceState, scopeI
 // bare-code sources (an error-behavior end event, sub-instance failures). When
 // nil, a synthesized errors.New(errorCode) is created so ErrorCheck closures
 // always receive a non-nil error.
-func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, cause error, at time.Time, mode StepMode, eval ConditionEvaluator, policy unhandledErrorPolicy) ([]Command, error) {
+func propagateError(ctx context.Context, top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, cause error, at time.Time, mode StepMode, eval ConditionEvaluator, policy unhandledErrorPolicy) ([]Command, error) {
 	// Guarantee that ErrorCheck closures always receive a non-nil error.
 	// For bare-code sources (an error-behavior end event, sub-instance) the
 	// caller passes nil; synthesize errors.New(errorCode) so the closure can
@@ -335,7 +336,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			return nil, fmt.Errorf("workflow-engine: propagateError: resolving own scope def for direct-attachment check: %w", err)
 		}
 
-		if handler, ok := findDirectBoundary(ownDef, originatingNodeID, errorCode, s.Variables, cause, eval); ok {
+		if handler, ok := findDirectBoundary(ctx, ownDef, originatingNodeID, errorCode, s.Variables, cause, eval); ok {
 			// Direct boundary found. The failing activity's token was already cleaned
 			// up by the ActionFailed handler (preCmds cancelled its arms; the token
 			// itself is still present but parked — we need to consume it now).
@@ -367,12 +368,12 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			}
 			// Route in the SAME scope: only the failing activity's token is
 			// consumed; the scope itself stays open.
-			return routeToBoundary(top, s, ownDef, handler, "direct boundary", scopeID, at, mode, eval, consume)
+			return routeToBoundary(ctx, top, s, ownDef, handler, "direct boundary", scopeID, at, mode, eval, consume)
 		}
 	}
 
 	// ── Step 2: Enclosing-scope walk ─────────────────────────────────────────
-	handler, errScopeID, targetScopeID, lookupDef, found, err := findEnclosingBoundary(top, s, scopeID, errorCode, cause, eval)
+	handler, errScopeID, targetScopeID, lookupDef, found, err := findEnclosingBoundary(ctx, top, s, scopeID, errorCode, cause, eval)
 	if err != nil {
 		return nil, err
 	}
@@ -399,9 +400,9 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			return cmds
 		}
 		// Route in the PARENT scope: the erroring scope is fully torn down.
-		return routeToBoundary(top, s, lookupDef, handler, "boundary error", targetScopeID, at, mode, eval, consume)
+		return routeToBoundary(ctx, top, s, lookupDef, handler, "boundary error", targetScopeID, at, mode, eval, consume)
 	}
 
 	// No handler found anywhere in the scope chain → unhandled error.
-	return handleUnhandledError(top, s, scopeID, originatingNodeID, failingTokenID, errorCode, at, mode, eval, policy)
+	return handleUnhandledError(ctx, top, s, scopeID, originatingNodeID, failingTokenID, errorCode, at, mode, eval, policy)
 }

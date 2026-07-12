@@ -170,7 +170,7 @@ func TestErrorEndCaughtByBoundary(t *testing.T) {
 	at := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
 
 	// Step 1: StartInstance → enters sub-process → inner-svc parks with InvokeAction.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -193,7 +193,7 @@ func TestErrorEndCaughtByBoundary(t *testing.T) {
 	// Step 2: ActionCompleted for inner-svc → token moves to inner-err-end →
 	//         error "E1" is thrown → caught by boundary bnd-err on sp →
 	//         scope cancelled, token placed on recover.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(time.Second), innerIA.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -235,7 +235,7 @@ func TestUnhandledErrorFailsInstance(t *testing.T) {
 			buildDef:  unhandledErrorDef,
 			stepsToErr: func(def *model.ProcessDefinition, at time.Time) (engine.InstanceState, string, error) {
 				// Start → svc parks
-				r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+				r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 					engine.NewStartInstance(at, nil), engine.StepOptions{})
 				if err != nil {
 					return engine.InstanceState{}, "", err
@@ -248,7 +248,7 @@ func TestUnhandledErrorFailsInstance(t *testing.T) {
 					}
 				}
 				// svc completes → errorEnd fires → propagate → fail
-				r2, err := engine.Step(def, r1.State,
+				r2, err := engine.Step(t.Context(), def, r1.State,
 					engine.NewActionCompleted(at.Add(time.Second), ia.CommandID, nil), engine.StepOptions{})
 				return r2.State, "", err
 			},
@@ -259,7 +259,7 @@ func TestUnhandledErrorFailsInstance(t *testing.T) {
 			buildDef:  unhandledErrorInSubprocessDef,
 			stepsToErr: func(def *model.ProcessDefinition, at time.Time) (engine.InstanceState, string, error) {
 				// Start → inner-start → inner-err-end all in one drive (no service task)
-				r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+				r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 					engine.NewStartInstance(at, nil), engine.StepOptions{})
 				return r1.State, "", err
 			},
@@ -391,7 +391,7 @@ func TestActionFailedCaughtByDirectBoundary(t *testing.T) {
 		def := directBoundaryOnRootSvcDef()
 
 		// Step 1: Start → svc parks with InvokeAction.
-		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 			engine.NewStartInstance(at, nil), engine.StepOptions{})
 		require.NoError(t, err)
 		require.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -409,7 +409,7 @@ func TestActionFailedCaughtByDirectBoundary(t *testing.T) {
 
 		// Step 2: ActionFailed with errorCode matching boundary's ErrorCode "E1" →
 		// boundary on svc should catch it → recover-action invoked → NOT FailInstance.
-		r2, err := engine.Step(def, r1.State,
+		r2, err := engine.Step(t.Context(), def, r1.State,
 			engine.NewActionFailed(at.Add(time.Second), ia.CommandID, "E1", false), engine.StepOptions{})
 		require.NoError(t, err)
 
@@ -445,7 +445,7 @@ func TestActionFailedCaughtByDirectBoundary(t *testing.T) {
 	t.Run("root-level-svc-catch-all-boundary", func(t *testing.T) {
 		def := directBoundaryCatchAllOnRootSvcDef()
 
-		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 			engine.NewStartInstance(at, nil), engine.StepOptions{})
 		require.NoError(t, err)
 
@@ -460,7 +460,7 @@ func TestActionFailedCaughtByDirectBoundary(t *testing.T) {
 		require.NotNil(t, ia)
 
 		// ActionFailed with any error code — catch-all boundary should catch it.
-		r2, err := engine.Step(def, r1.State,
+		r2, err := engine.Step(t.Context(), def, r1.State,
 			engine.NewActionFailed(at.Add(time.Second), ia.CommandID, "any-error", false), engine.StepOptions{})
 		require.NoError(t, err)
 
@@ -487,7 +487,7 @@ func TestActionFailedCaughtByDirectBoundary(t *testing.T) {
 		// Boundary has ErrorCode "E1" but ActionFailed throws "OTHER" → no match → FailInstance.
 		def := directBoundaryOnRootSvcDef()
 
-		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 			engine.NewStartInstance(at, nil), engine.StepOptions{})
 		require.NoError(t, err)
 
@@ -502,7 +502,7 @@ func TestActionFailedCaughtByDirectBoundary(t *testing.T) {
 		require.NotNil(t, ia)
 
 		// ActionFailed with error code that does NOT match the boundary's "E1".
-		r2, err := engine.Step(def, r1.State,
+		r2, err := engine.Step(t.Context(), def, r1.State,
 			engine.NewActionFailed(at.Add(time.Second), ia.CommandID, "OTHER", false), engine.StepOptions{})
 		require.NoError(t, err)
 
@@ -526,7 +526,7 @@ func TestActionFailedCaughtByDirectBoundary(t *testing.T) {
 		// the direct boundary fires (only inner-svc's token is cancelled).
 		def := directBoundaryOnInnerSvcInSubprocessDef()
 
-		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 			engine.NewStartInstance(at, nil), engine.StepOptions{})
 		require.NoError(t, err)
 		require.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -545,7 +545,7 @@ func TestActionFailedCaughtByDirectBoundary(t *testing.T) {
 		assert.Equal(t, "inner-action", ia.Name)
 
 		// ActionFailed with matching error code → direct boundary on inner-svc catches it.
-		r2, err := engine.Step(def, r1.State,
+		r2, err := engine.Step(t.Context(), def, r1.State,
 			engine.NewActionFailed(at.Add(time.Second), ia.CommandID, "INNER_ERR", false), engine.StepOptions{})
 		require.NoError(t, err)
 
@@ -586,7 +586,7 @@ func TestActionFailedPropagatesToBoundaryError(t *testing.T) {
 		def := actionFailedBoundaryDef()
 
 		// Step 1: Start → enters sub-process → inner-svc parks.
-		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 			engine.NewStartInstance(at, nil), engine.StepOptions{})
 		require.NoError(t, err)
 		require.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -603,7 +603,7 @@ func TestActionFailedPropagatesToBoundaryError(t *testing.T) {
 
 		// Step 2: ActionFailed for inner-svc → propagateError → catch-all boundary catches →
 		//         recovery path (recover-action invoked).
-		r2, err := engine.Step(def, r1.State,
+		r2, err := engine.Step(t.Context(), def, r1.State,
 			engine.NewActionFailed(at.Add(time.Second), innerIA.CommandID, "svc-err", false), engine.StepOptions{})
 		require.NoError(t, err)
 
@@ -636,12 +636,12 @@ func TestActionFailedPropagatesToBoundaryError(t *testing.T) {
 		// Reuse the standard linear definition (no boundary error handler on svc).
 		def := linearDef()
 
-		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 			engine.NewStartInstance(at, nil), engine.StepOptions{})
 		require.NoError(t, err)
 		cmdID := r1.Commands[0].(engine.InvokeAction).CommandID
 
-		r2, err := engine.Step(def, r1.State,
+		r2, err := engine.Step(t.Context(), def, r1.State,
 			engine.NewActionFailed(at.Add(time.Second), cmdID, "boom", false), engine.StepOptions{})
 		require.NoError(t, err)
 
@@ -726,7 +726,7 @@ func TestCancelRequestedTerminates(t *testing.T) {
 		def := cancelWithTimerDef()
 
 		// Start the instance: start → svc parks, boundary timer armed.
-		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-cancel-1"},
+		r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-cancel-1"},
 			engine.NewStartInstance(at, nil), engine.StepOptions{})
 		require.NoError(t, err)
 		require.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -758,7 +758,7 @@ func TestCancelRequestedTerminates(t *testing.T) {
 		assert.Equal(t, "svc", r1.State.Tokens[0].NodeID)
 
 		// CancelRequested: should terminate the instance.
-		r2, err := engine.Step(def, r1.State,
+		r2, err := engine.Step(t.Context(), def, r1.State,
 			engine.NewCancelRequested(cancelAt), engine.StepOptions{})
 		require.NoError(t, err)
 
@@ -799,7 +799,7 @@ func TestCancelRequestedTerminates(t *testing.T) {
 
 		// Late trigger after cancellation: ActionCompleted for the already-cancelled
 		// token → ErrTokenNotFound (deterministic, no panic).
-		_, lateErr := engine.Step(def, r2.State,
+		_, lateErr := engine.Step(t.Context(), def, r2.State,
 			engine.NewActionCompleted(cancelAt.Add(time.Second), invokeCmd.CommandID, nil), engine.StepOptions{})
 		require.Error(t, lateErr, "a late ActionCompleted after cancel must return an error")
 		assert.ErrorIs(t, lateErr, engine.ErrTokenNotFound, "late trigger must return ErrTokenNotFound")
@@ -811,7 +811,7 @@ func TestCancelRequestedTerminates(t *testing.T) {
 		def := cancelUserTaskDef()
 
 		// Start the instance: start → userTask parks.
-		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-cancel-2"},
+		r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-cancel-2"},
 			engine.NewStartInstance(at, nil), engine.StepOptions{})
 		require.NoError(t, err)
 		require.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -825,7 +825,7 @@ func TestCancelRequestedTerminates(t *testing.T) {
 		require.NotEmpty(t, taskToken, "userTask token must have AwaitCommand set")
 
 		// CancelRequested.
-		r2, err := engine.Step(def, r1.State,
+		r2, err := engine.Step(t.Context(), def, r1.State,
 			engine.NewCancelRequested(cancelAt), engine.StepOptions{})
 		require.NoError(t, err)
 
@@ -847,7 +847,7 @@ func TestCancelRequestedTerminates(t *testing.T) {
 		assert.Equal(t, "cancelled", fi.Err)
 
 		// Late trigger: HumanCompleted after cancel → ErrTokenNotFound.
-		_, lateErr := engine.Step(def, r2.State,
+		_, lateErr := engine.Step(t.Context(), def, r2.State,
 			engine.NewHumanCompleted(cancelAt.Add(time.Second), taskToken, nil,
 				authz.Actor{ID: "u1"}), engine.StepOptions{})
 		require.Error(t, lateErr)
@@ -869,7 +869,7 @@ func TestCancelRequestedTerminates(t *testing.T) {
 			Status:     engine.StatusCompleted,
 		}
 		// Should not panic; the result is deterministic.
-		r, err := engine.Step(def, completedState,
+		r, err := engine.Step(t.Context(), def, completedState,
 			engine.NewCancelRequested(cancelAt), engine.StepOptions{})
 		require.NoError(t, err, "CancelRequested on a completed instance must not error (idempotent)")
 		// Post-cancel: status is terminal (Terminated), tokens still empty.
@@ -901,20 +901,20 @@ func TestCompensateRequestedUnknownToNodeErrors(t *testing.T) {
 	at := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
 
 	// Start → svc parks with InvokeAction.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-comp-unk"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-comp-unk"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	ia := r1.Commands[0].(engine.InvokeAction)
 
 	// Complete svc → userTask parks. Compensation record for "svc" is recorded.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(time.Second), ia.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, r2.State.Status)
 	require.Len(t, r2.State.RootCompensations, 1, "one compensation record for svc")
 
 	// CompensateRequested with a ToNode that is NOT in the compensation records.
-	_, err = engine.Step(def, r2.State,
+	_, err = engine.Step(t.Context(), def, r2.State,
 		engine.NewCompensateRequested(at.Add(2*time.Second), "nonexistent-node"),
 		engine.StepOptions{})
 	require.Error(t, err, "CompensateRequested with unknown ToNode must return an error")
@@ -946,7 +946,7 @@ func TestCancelRequestedEmitsCancelActions(t *testing.T) {
 		Variables: map[string]any{"amount": 10},
 		Tokens:    []engine.Token{{ID: "i1-t1", NodeID: "svc", State: engine.TokenActive}},
 	}
-	res, err := engine.Step(def, st, engine.NewCancelRequested(time.Unix(100, 0).UTC()), engine.StepOptions{})
+	res, err := engine.Step(t.Context(), def, st, engine.NewCancelRequested(time.Unix(100, 0).UTC()), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusTerminated, res.State.Status)
 	assert.Empty(t, res.State.Tokens)
@@ -978,7 +978,7 @@ func TestCancelRequestedNoCancelActionsUnchanged(t *testing.T) {
 		InstanceID: "i1", DefID: "d", DefVersion: 1, Status: engine.StatusRunning,
 		Tokens: []engine.Token{{ID: "i1-t1", NodeID: "start", State: engine.TokenActive}},
 	}
-	res, err := engine.Step(def, st, engine.NewCancelRequested(time.Unix(100, 0).UTC()), engine.StepOptions{})
+	res, err := engine.Step(t.Context(), def, st, engine.NewCancelRequested(time.Unix(100, 0).UTC()), engine.StepOptions{})
 	require.NoError(t, err)
 	for _, c := range res.Commands {
 		_, isCancel := c.(engine.InvokeCancelAction)

@@ -167,7 +167,7 @@ func TestBoundaryActionFireOnce(t *testing.T) {
 			def := boundaryActionDef(tc.boundaryOpts...)
 
 			// Step 1: park at UserTask — boundary should be armed.
-			r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+			r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 				engine.NewStartInstance(t0, nil), engine.StepOptions{})
 			require.NoError(t, err)
 			require.Len(t, r1.State.Boundaries, 1, "boundary must be armed after start")
@@ -177,7 +177,7 @@ func TestBoundaryActionFireOnce(t *testing.T) {
 			require.NotNil(t, trg, "fire trigger must be derivable")
 
 			// Step 2: fire the boundary.
-			r2, err := engine.Step(def, r1.State, trg, engine.StepOptions{})
+			r2, err := engine.Step(t.Context(), def, r1.State, trg, engine.StepOptions{})
 			require.NoError(t, err)
 
 			// Collect commands by position.
@@ -251,7 +251,7 @@ func TestBoundaryActionFireOnErrorBoundary(t *testing.T) {
 			},
 		}
 
-		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 			engine.NewStartInstance(t0, nil), engine.StepOptions{})
 		require.NoError(t, err)
 
@@ -265,7 +265,7 @@ func TestBoundaryActionFireOnErrorBoundary(t *testing.T) {
 		}
 		require.NotNil(t, ia)
 
-		r2, err := engine.Step(def, r1.State,
+		r2, err := engine.Step(t.Context(), def, r1.State,
 			engine.NewActionFailed(t0.Add(time.Second), ia.CommandID, "E1", false),
 			engine.StepOptions{})
 		require.NoError(t, err)
@@ -329,7 +329,7 @@ func TestBoundaryActionFireOnErrorBoundary(t *testing.T) {
 			},
 		}
 
-		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+		r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 			engine.NewStartInstance(t0, nil), engine.StepOptions{})
 		require.NoError(t, err)
 
@@ -344,7 +344,7 @@ func TestBoundaryActionFireOnErrorBoundary(t *testing.T) {
 		require.NotNil(t, ia)
 
 		// complete inner-svc → inner-err-end fires → error E1 propagates → bnd-err catches
-		r2, err := engine.Step(def, r1.State,
+		r2, err := engine.Step(t.Context(), def, r1.State,
 			engine.NewActionCompleted(t0.Add(time.Second), ia.CommandID, nil), engine.StepOptions{})
 		require.NoError(t, err)
 

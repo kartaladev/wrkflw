@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -141,7 +142,7 @@ func armEventTriggeredSubprocesses(def *model.ProcessDefinition, s *InstanceStat
 //  3. Remove ONLY this arm (one-shot).
 //  4. Open a child scope and place a start token — runs alongside.
 //  5. Drive forward.
-func fireEventTriggeredSubprocessArm(def *model.ProcessDefinition, s *InstanceState, ea eventTriggeredSubprocessArm, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
+func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, ea eventTriggeredSubprocessArm, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
 	// Verify the enclosing scope is still active. For root scope (empty enclosingScopeID),
 	// the scope is always "active" as long as the instance is running.
 	if ea.EnclosingScopeID != "" {
@@ -234,7 +235,7 @@ func fireEventTriggeredSubprocessArm(def *model.ProcessDefinition, s *InstanceSt
 	}
 
 	// Drive forward.
-	driveCmds, err := drive(def, s, at, mode, eval)
+	driveCmds, err := drive(ctx, def, s, at, mode, eval)
 	if err != nil {
 		return nil, err
 	}

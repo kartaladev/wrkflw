@@ -39,7 +39,7 @@ func userTaskDef() *model.ProcessDefinition {
 // user-task state and returns that StepResult.
 func startUserTask(t *testing.T, def *model.ProcessDefinition, at time.Time) engine.StepResult {
 	t.Helper()
-	r, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"region": "APAC"}), engine.StepOptions{})
 	require.NoError(t, err)
 	return r
@@ -110,7 +110,7 @@ func TestUserTaskPrivilegesFlowToAwaitHuman(t *testing.T) {
 		},
 	}
 
-	res, err := engine.Step(def, engine.InstanceState{InstanceID: "i-priv"},
+	res, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-priv"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -149,7 +149,7 @@ func TestUserTaskTaskSeqIncrements(t *testing.T) {
 	}
 
 	// Start → parked at task1.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.Commands, 1)
@@ -158,7 +158,7 @@ func TestUserTaskTaskSeqIncrements(t *testing.T) {
 
 	// Complete task1 → drives to task2.
 	actor := authz.Actor{ID: "alice", Roles: []string{"a"}}
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewHumanCompleted(at.Add(time.Minute), "i1-h1", map[string]any{"ok": true}, actor),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -185,7 +185,7 @@ func TestHumanClaimedUpdatesTask(t *testing.T) {
 	taskToken := "i1-h1"
 	tokenBefore := r1.State.Tokens[0]
 
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewHumanClaimed(at.Add(time.Minute), taskToken, actor),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -224,7 +224,7 @@ func TestHumanClaimedUnknownTaskTokenErrors(t *testing.T) {
 
 	r1 := startUserTask(t, def, at)
 
-	_, err := engine.Step(def, r1.State,
+	_, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewHumanClaimed(at.Add(time.Minute), "no-such-token", actor),
 		engine.StepOptions{})
 	require.ErrorIs(t, err, engine.ErrTokenNotFound)
@@ -241,14 +241,14 @@ func TestHumanReassignedUpdatesTask(t *testing.T) {
 
 	// First claim it.
 	alice := authz.Actor{ID: "alice", Roles: []string{"manager"}}
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewHumanClaimed(at.Add(time.Minute), taskToken, alice),
 		engine.StepOptions{})
 	require.NoError(t, err)
 
 	// Now reassign from alice → bob.
 	by := authz.Actor{ID: "admin"}
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewHumanReassigned(at.Add(2*time.Minute), taskToken, "alice", "bob", by),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -279,7 +279,7 @@ func TestHumanReassignedUnknownTaskTokenErrors(t *testing.T) {
 
 	r1 := startUserTask(t, def, at)
 
-	_, err := engine.Step(def, r1.State,
+	_, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewHumanReassigned(at.Add(time.Minute), "no-such-token", "alice", "bob", by),
 		engine.StepOptions{})
 	require.ErrorIs(t, err, engine.ErrTokenNotFound)
@@ -301,7 +301,7 @@ func TestHumanCompletedAdvancesAndAudits(t *testing.T) {
 	taskToken := "i1-h1"
 	doneAt := at.Add(5 * time.Minute)
 
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewHumanCompleted(doneAt, taskToken, map[string]any{"approved": true}, actor),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -371,7 +371,7 @@ func TestHumanCompletedUnknownTaskTokenErrors(t *testing.T) {
 
 	r1 := startUserTask(t, def, at)
 
-	_, err := engine.Step(def, r1.State,
+	_, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewHumanCompleted(at.Add(time.Minute), "no-such-token",
 			map[string]any{"approved": true}, actor),
 		engine.StepOptions{})
@@ -410,7 +410,7 @@ func TestHumanCompletedMissingTaskRecordErrors(t *testing.T) {
 		},
 	}
 
-	_, err := engine.Step(def, corruptedState,
+	_, err := engine.Step(t.Context(), def, corruptedState,
 		engine.NewHumanCompleted(at.Add(time.Minute), "i1-h1",
 			map[string]any{"approved": true}, actor),
 		engine.StepOptions{})

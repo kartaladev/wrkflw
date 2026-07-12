@@ -52,7 +52,7 @@ func TestHandleTimerFired_TerminalInstanceNoOps(t *testing.T) {
 		},
 	}
 
-	res, err := Step(def, s, NewTimerFired(time.Unix(1, 0), "bt1"), StepOptions{})
+	res, err := Step(t.Context(), def, s, NewTimerFired(time.Unix(1, 0), "bt1"), StepOptions{})
 	require.NoError(t, err)
 	assert.Empty(t, res.Commands, "a terminal instance must not fire the boundary")
 	assert.Equal(t, StatusFailed, res.State.Status, "status unchanged")

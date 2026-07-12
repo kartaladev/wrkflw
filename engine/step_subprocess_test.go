@@ -67,7 +67,7 @@ func TestEmbeddedSubProcessRunsAndContinues(t *testing.T) {
 	def := subProcessDef()
 
 	// ---- Step 1: StartInstance ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -93,7 +93,7 @@ func TestEmbeddedSubProcessRunsAndContinues(t *testing.T) {
 	assert.Equal(t, innerTok.ScopeID, scope.ID)
 
 	// ---- Step 2: ActionCompleted for inner-svc ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(time.Second), ia.CommandID, map[string]any{"result": "done"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -120,7 +120,7 @@ func TestEmbeddedSubProcessTokenTagging(t *testing.T) {
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 	def := subProcessDef()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i2"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i2"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -140,7 +140,7 @@ func TestEmbeddedSubProcessScopeIDFormat(t *testing.T) {
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 	def := subProcessDef()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "proc-42"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "proc-42"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -206,7 +206,7 @@ func TestParallelGatewayInsideSubProcess(t *testing.T) {
 	def := parallelSubProcessDef()
 
 	// ---- Step 1: StartInstance — drives outer-start → sub → inner-start → pfork → forks to (inner-a, inner-b) ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "pi1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "pi1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -241,7 +241,7 @@ func TestParallelGatewayInsideSubProcess(t *testing.T) {
 	assert.Contains(t, cmdsByName, "action-b")
 
 	// ---- Step 2: Complete action-a ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(time.Second), cmdsByName["action-a"], nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -251,7 +251,7 @@ func TestParallelGatewayInsideSubProcess(t *testing.T) {
 	assert.Empty(t, r2.Commands, "no commands expected while waiting for inner-b")
 
 	// ---- Step 3: Complete action-b — join fires, scope drains, outer resumes, instance completes ----
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), cmdsByName["action-b"], nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -298,7 +298,7 @@ func TestCallActivityEmitsStartSubInstanceAndParks(t *testing.T) {
 	def := callActivityDef()
 
 	// ---- Step 1: StartInstance ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "ca-i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "ca-i1"},
 		engine.NewStartInstance(at, map[string]any{"x": 1}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -324,7 +324,7 @@ func TestCallActivityEmitsStartSubInstanceAndParks(t *testing.T) {
 	assert.Empty(t, r1.State.Scopes, "call-activity must not open a scope")
 
 	// ---- Step 2: SubInstanceCompleted ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSubInstanceCompleted(at.Add(time.Second), ssi.CommandID, map[string]any{"result": "done"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -352,7 +352,7 @@ func TestCallActivitySubInstanceFailedFailsParent(t *testing.T) {
 	def := callActivityDef()
 
 	// ---- Step 1: StartInstance → parks at call ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "ca-i2"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "ca-i2"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.Commands, 1)
@@ -360,7 +360,7 @@ func TestCallActivitySubInstanceFailedFailsParent(t *testing.T) {
 	require.True(t, ok)
 
 	// ---- Step 2: SubInstanceFailed ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSubInstanceFailed(at.Add(time.Second), ssi.CommandID, "child blew up"),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -382,11 +382,11 @@ func TestSubInstanceCompletedUnknownCommandID(t *testing.T) {
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 	def := callActivityDef()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "ca-i3"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "ca-i3"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
-	_, err = engine.Step(def, r1.State,
+	_, err = engine.Step(t.Context(), def, r1.State,
 		engine.NewSubInstanceCompleted(at.Add(time.Second), "nonexistent-cmd", nil),
 		engine.StepOptions{})
 	require.Error(t, err)
@@ -441,7 +441,7 @@ func TestCallActivitySubInstanceFailedCancelsOutstandingTimers(t *testing.T) {
 	def := callActivityWithParallelUserTaskDef()
 
 	// ---- Step 1: StartInstance → parallel fork → deadline timer + call-activity starts ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "ca-sla-i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "ca-sla-i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -466,7 +466,7 @@ func TestCallActivitySubInstanceFailedCancelsOutstandingTimers(t *testing.T) {
 	require.NotEmpty(t, r1.State.Timers, "deadline timerRecord must be recorded in Timers")
 
 	// ---- Step 2: SubInstanceFailed → parent must fail AND cancel the deadline timer ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSubInstanceFailed(at.Add(time.Second), ssiCmdID, "child blew up"),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -503,11 +503,11 @@ func TestSubInstanceFailedUnknownCommandID(t *testing.T) {
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 	def := callActivityDef()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "ca-i4"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "ca-i4"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
-	_, err = engine.Step(def, r1.State,
+	_, err = engine.Step(t.Context(), def, r1.State,
 		engine.NewSubInstanceFailed(at.Add(time.Second), "nonexistent-cmd", "err"),
 		engine.StepOptions{})
 	require.Error(t, err)
@@ -629,14 +629,14 @@ func TestSubInstanceFailedRoutesToParentBoundary(t *testing.T) {
 
 			def := callActivityWithBoundaryDef(tc.boundaryErrorCode)
 
-			r1, err := engine.Step(def, engine.InstanceState{InstanceID: "ca-bnd-" + tc.name},
+			r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "ca-bnd-" + tc.name},
 				engine.NewStartInstance(at, nil), engine.StepOptions{})
 			require.NoError(t, err)
 			require.Len(t, r1.Commands, 1)
 			ssi, ok := r1.Commands[0].(engine.StartSubInstance)
 			require.True(t, ok)
 
-			r2, err := engine.Step(def, r1.State,
+			r2, err := engine.Step(t.Context(), def, r1.State,
 				engine.NewSubInstanceFailed(at.Add(time.Second), ssi.CommandID, tc.childErr),
 				engine.StepOptions{})
 			require.NoError(t, err)
@@ -703,7 +703,7 @@ func TestBoundaryTimerInsideSubProcess(t *testing.T) {
 	def := boundaryTimerInsideSubProcessDef()
 
 	// ---- Step 1: StartInstance → sub enters → inner-svc parks + boundary timer armed ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "bnd-sub-i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "bnd-sub-i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -738,7 +738,7 @@ func TestBoundaryTimerInsideSubProcess(t *testing.T) {
 	require.Len(t, r1.State.Boundaries, 1, "boundary arm must be recorded in state")
 
 	// ---- Step 2: Boundary timer fires → host cancelled, escalation path runs ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewTimerFired(at.Add(2*time.Hour), bndTimerID), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r2.State.Status)
@@ -768,7 +768,7 @@ func TestBoundaryTimerInsideSubProcess(t *testing.T) {
 	require.Len(t, r2.State.Scopes, 1, "scope must still be open after boundary fires")
 
 	// ---- Step 3: Complete escalation → inner scope drains → outer-end → StatusCompleted ----
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Hour+time.Second), escalateCmdID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -848,7 +848,7 @@ func TestEventBasedGatewayInsideSubProcess(t *testing.T) {
 	def := eventBasedGatewayInsideSubProcessDef()
 
 	// ---- Step 1: StartInstance → sub enters → event gateway parks with arms ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "evtgw-sub-i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "evtgw-sub-i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -876,7 +876,7 @@ func TestEventBasedGatewayInsideSubProcess(t *testing.T) {
 	require.NotEmpty(t, timerID, "expected ScheduleTimer for timer-catch arm")
 
 	// ---- Step 2: SignalReceived("approved") → signal wins; timer arm cancelled ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSignalReceived(at.Add(30*time.Minute), "approved", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r2.State.Status)
@@ -909,7 +909,7 @@ func TestEventBasedGatewayInsideSubProcess(t *testing.T) {
 		"svc-signal token must remain in the sub-process scope")
 
 	// ---- Step 3: Complete signal-action → inner scope drains → outer-end → StatusCompleted ----
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(time.Hour), signalCmdID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r3.State.Status,
@@ -986,7 +986,7 @@ func TestInclusiveGatewayInsideSubProcess(t *testing.T) {
 	def := inclusiveGatewayInsideSubProcessDef()
 
 	// ---- Step 1: StartInstance → sub enters → orsplit forks to ta AND tb ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "or-sub-i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "or-sub-i1"},
 		engine.NewStartInstance(at, map[string]any{"a": 1, "b": 1}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -1016,7 +1016,7 @@ func TestInclusiveGatewayInsideSubProcess(t *testing.T) {
 	assert.Contains(t, cmdsByName, "action-b")
 
 	// ---- Step 2: Complete action-a → OR-join must wait (tb still reachable) ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(time.Second), cmdsByName["action-a"], nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -1027,7 +1027,7 @@ func TestInclusiveGatewayInsideSubProcess(t *testing.T) {
 	require.Len(t, r2.State.Scopes, 1, "scope must still be open after first branch completes")
 
 	// ---- Step 3: Complete action-b → OR-join fires → post-action invoked ----
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), cmdsByName["action-b"], nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -1040,7 +1040,7 @@ func TestInclusiveGatewayInsideSubProcess(t *testing.T) {
 	assert.Equal(t, "post-action", postCmd.Name)
 
 	// ---- Step 4: Complete post-action → inner-end drains scope → outer-end → StatusCompleted ----
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewActionCompleted(at.Add(3*time.Second), postCmd.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -1113,7 +1113,7 @@ func TestDeadlineUserTaskInsideSubProcess(t *testing.T) {
 	def := deadlineUserTaskInsideSubProcessDef()
 
 	// ---- Step 1: StartInstance → sub enters → user-task parks + deadline armed ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "sla-sub-i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "sla-sub-i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -1146,7 +1146,7 @@ func TestDeadlineUserTaskInsideSubProcess(t *testing.T) {
 
 	// ---- Step 2: deadline fires (task NOT completed) → escalation path inside scope ----
 	fireAt := at.Add(30 * time.Minute)
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewTimerFired(fireAt, deadlineTimerID), engine.StepOptions{})
 	require.NoError(t, err)
 

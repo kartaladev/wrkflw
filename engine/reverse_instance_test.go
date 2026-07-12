@@ -70,7 +70,7 @@ func TestReverseToStart_ResumesAtStartWithResetVars(t *testing.T) {
 	def := reverseSvcDef()
 	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
 	// Start with amount=100; drive the service action to completion (records compensation).
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, map[string]any{"amount": 100}), engine.StepOptions{})
 	require.NoError(t, err)
 	// Find the svc InvokeAction command id, complete it (mutating a var along the way).
@@ -81,7 +81,7 @@ func TestReverseToStart_ResumesAtStartWithResetVars(t *testing.T) {
 		}
 	}
 	require.NotEmpty(t, cmdID)
-	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdID, map[string]any{"amount": 500}), engine.StepOptions{})
+	r2, err := engine.Step(t.Context(), def, r1.State, engine.NewActionCompleted(t0, cmdID, map[string]any{"amount": 500}), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r2.State.RootCompensations, 1, "svc must have recorded a compensation")
 	// Precondition for the reverse below: the flow auto-drives svc -> park within
@@ -94,7 +94,7 @@ func TestReverseToStart_ResumesAtStartWithResetVars(t *testing.T) {
 	require.Nil(t, r2.State.EndedAt, "running instance must not have EndedAt stamped")
 
 	// Reverse to start: expect the "undo" compensation to fire, then resume at start with reset vars.
-	r3, err := engine.Step(def, r2.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
+	r3, err := engine.Step(t.Context(), def, r2.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
 	require.NoError(t, err)
 	var undoID string
 	for _, c := range r3.Commands {
@@ -103,7 +103,7 @@ func TestReverseToStart_ResumesAtStartWithResetVars(t *testing.T) {
 		}
 	}
 	require.NotEmpty(t, undoID, "reverse must invoke the compensate action")
-	r4, err := engine.Step(def, r3.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
+	r4, err := engine.Step(t.Context(), def, r3.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r4.State.Status, "reverse resumes Running, NOT terminated")
 	assert.Nil(t, r4.State.EndedAt, "Running instance must have EndedAt nil")
@@ -128,15 +128,15 @@ func TestReverseToStart_ResumesAtStartWithResetVars(t *testing.T) {
 func TestFullCompensation_WithoutReverse_StillTerminates(t *testing.T) {
 	def := reverseSvcDef()
 	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
-	r1, _ := engine.Step(def, engine.InstanceState{InstanceID: "i1"}, engine.NewStartInstance(t0, map[string]any{"amount": 100}), engine.StepOptions{})
+	r1, _ := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"}, engine.NewStartInstance(t0, map[string]any{"amount": 100}), engine.StepOptions{})
 	var cmdID string
 	for _, c := range r1.Commands {
 		if ia, ok := c.(engine.InvokeAction); ok && ia.Name == "do" {
 			cmdID = ia.CommandID
 		}
 	}
-	r2, _ := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdID, nil), engine.StepOptions{})
-	r3, err := engine.Step(def, r2.State, engine.NewCompensateRequested(t0, ""), engine.StepOptions{}) // full, no reverse
+	r2, _ := engine.Step(t.Context(), def, r1.State, engine.NewActionCompleted(t0, cmdID, nil), engine.StepOptions{})
+	r3, err := engine.Step(t.Context(), def, r2.State, engine.NewCompensateRequested(t0, ""), engine.StepOptions{}) // full, no reverse
 	require.NoError(t, err)
 	var undoID string
 	for _, c := range r3.Commands {
@@ -144,7 +144,7 @@ func TestFullCompensation_WithoutReverse_StillTerminates(t *testing.T) {
 			undoID = ia.CommandID
 		}
 	}
-	r4, _ := engine.Step(def, r3.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
+	r4, _ := engine.Step(t.Context(), def, r3.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
 	assert.Equal(t, engine.StatusTerminated, r4.State.Status, "full compensation without ReverseNode still terminates")
 }
 
@@ -155,12 +155,12 @@ func TestReverseToStart_ZeroRecords_StillResumesAtStart(t *testing.T) {
 	def := reverseSvcDef()
 	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
 	// Start but do NOT complete svc — no compensation records recorded yet.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, map[string]any{"amount": 100}), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Empty(t, r1.State.RootCompensations, "no compensation records yet")
 
-	r2, err := engine.Step(def, r1.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
+	r2, err := engine.Step(t.Context(), def, r1.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r2.State.Status, "zero-record reverse resumes Running, NOT terminated")
 	assert.Equal(t, 100, r2.State.Variables["amount"], "vars reset to StartVariables")
@@ -214,23 +214,23 @@ func reverseLoopDef() *model.ProcessDefinition {
 func driveReverseLoopToCompletion(t *testing.T, def *model.ProcessDefinition, t0 time.Time) engine.StepResult {
 	t.Helper()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"}, engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"}, engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	cmdPrep := findInvokeActionID(t, r1.Commands, "prep")
 
-	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdPrep, nil), engine.StepOptions{})
+	r2, err := engine.Step(t.Context(), def, r1.State, engine.NewActionCompleted(t0, cmdPrep, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	cmdSvc1 := findInvokeActionID(t, r2.Commands, "work")
 
-	r3, err := engine.Step(def, r2.State, engine.NewActionCompleted(t0, cmdSvc1, map[string]any{"attempts": 1}), engine.StepOptions{})
+	r3, err := engine.Step(t.Context(), def, r2.State, engine.NewActionCompleted(t0, cmdSvc1, map[string]any{"attempts": 1}), engine.StepOptions{})
 	require.NoError(t, err)
 	cmdSvc2 := findInvokeActionID(t, r3.Commands, "work")
 
-	r4, err := engine.Step(def, r3.State, engine.NewActionCompleted(t0, cmdSvc2, map[string]any{"attempts": 2}), engine.StepOptions{})
+	r4, err := engine.Step(t.Context(), def, r3.State, engine.NewActionCompleted(t0, cmdSvc2, map[string]any{"attempts": 2}), engine.StepOptions{})
 	require.NoError(t, err)
 	cmdSvc3 := findInvokeActionID(t, r4.Commands, "work")
 
-	r5, err := engine.Step(def, r4.State, engine.NewActionCompleted(t0, cmdSvc3, map[string]any{"attempts": 3}), engine.StepOptions{})
+	r5, err := engine.Step(t.Context(), def, r4.State, engine.NewActionCompleted(t0, cmdSvc3, map[string]any{"attempts": 3}), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, r5.State.Status, "loop exits (attempts==3) and the instance parks at the trailing node")
 	require.Len(t, r5.State.RootCompensations, 4, "prep + 3x svc compensation records")
@@ -267,32 +267,32 @@ func TestReverseCycleLIFO(t *testing.T) {
 		// the action name) proves the LIFO order among the indistinguishable-by-
 		// name records; a same-node reordering regression now fails here instead
 		// of silently passing.
-		r6, err := engine.Step(def, base.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
+		r6, err := engine.Step(t.Context(), def, base.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
 		require.NoError(t, err)
 		undo1, ok := findInvokeAction(r6.Commands, "undo") // svc (3rd/newest completion)
 		require.True(t, ok, "reverse must invoke the compensate action")
 		assert.Equal(t, 2, undo1.Input["attempts"], "hop 1 compensates the 3rd/newest svc completion (pre-merge attempts=2)")
 
-		r7, err := engine.Step(def, r6.State, engine.NewActionCompleted(t0, undo1.CommandID, nil), engine.StepOptions{})
+		r7, err := engine.Step(t.Context(), def, r6.State, engine.NewActionCompleted(t0, undo1.CommandID, nil), engine.StepOptions{})
 		require.NoError(t, err)
 		undo2, ok := findInvokeAction(r7.Commands, "undo") // svc (2nd completion)
 		require.True(t, ok, "reverse must invoke the compensate action")
 		assert.Equal(t, 1, undo2.Input["attempts"], "hop 2 compensates the 2nd svc completion (pre-merge attempts=1)")
 
-		r8, err := engine.Step(def, r7.State, engine.NewActionCompleted(t0, undo2.CommandID, nil), engine.StepOptions{})
+		r8, err := engine.Step(t.Context(), def, r7.State, engine.NewActionCompleted(t0, undo2.CommandID, nil), engine.StepOptions{})
 		require.NoError(t, err)
 		undo3, ok := findInvokeAction(r8.Commands, "undo") // svc (1st completion)
 		require.True(t, ok, "reverse must invoke the compensate action")
 		assert.NotContains(t, undo3.Input, "attempts", "hop 3 compensates the 1st svc completion (pre-merge, attempts not yet set)")
 
-		r9, err := engine.Step(def, r8.State, engine.NewActionCompleted(t0, undo3.CommandID, nil), engine.StepOptions{})
+		r9, err := engine.Step(t.Context(), def, r8.State, engine.NewActionCompleted(t0, undo3.CommandID, nil), engine.StepOptions{})
 		require.NoError(t, err)
 		// Exactly 3 undo hops: the record immediately after undo3 is prep's own
 		// (oldest, distinct action name "unprep") — findInvokeActionID fails the
 		// test outright if an "undo" showed up instead, proving no 4th undo fires.
 		unprepID := findInvokeActionID(t, r9.Commands, "unprep")
 
-		r10, err := engine.Step(def, r9.State, engine.NewActionCompleted(t0, unprepID, nil), engine.StepOptions{})
+		r10, err := engine.Step(t.Context(), def, r9.State, engine.NewActionCompleted(t0, unprepID, nil), engine.StepOptions{})
 		require.NoError(t, err)
 		assert.Equal(t, engine.StatusRunning, r10.State.Status, "full reverse resumes Running, NOT terminated")
 		assert.Empty(t, r10.State.RootCompensations, "records cleared after full reverse")
@@ -301,22 +301,22 @@ func TestReverseCycleLIFO(t *testing.T) {
 	})
 
 	t.Run("partial reverse to prep: same 3 undo fire newest-first, resumes running at prep", func(t *testing.T) {
-		p1, err := engine.Step(def, base.State, engine.NewCompensateRequested(t0, "prep"), engine.StepOptions{})
+		p1, err := engine.Step(t.Context(), def, base.State, engine.NewCompensateRequested(t0, "prep"), engine.StepOptions{})
 		require.NoError(t, err)
 		undo1 := findInvokeActionID(t, p1.Commands, "undo") // svc (3rd/newest completion)
 
-		p2, err := engine.Step(def, p1.State, engine.NewActionCompleted(t0, undo1, nil), engine.StepOptions{})
+		p2, err := engine.Step(t.Context(), def, p1.State, engine.NewActionCompleted(t0, undo1, nil), engine.StepOptions{})
 		require.NoError(t, err)
 		undo2 := findInvokeActionID(t, p2.Commands, "undo") // svc (2nd completion)
 
-		p3, err := engine.Step(def, p2.State, engine.NewActionCompleted(t0, undo2, nil), engine.StepOptions{})
+		p3, err := engine.Step(t.Context(), def, p2.State, engine.NewActionCompleted(t0, undo2, nil), engine.StepOptions{})
 		require.NoError(t, err)
 		undo3 := findInvokeActionID(t, p3.Commands, "undo") // svc (1st completion)
 
 		// The walk must stop at the "prep" boundary WITHOUT compensating prep's own
 		// record (it is the rollback target, excluded — not re-run), and resume
 		// Running with a token placed back at "prep" (re-invoking its own action).
-		p4, err := engine.Step(def, p3.State, engine.NewActionCompleted(t0, undo3, nil), engine.StepOptions{})
+		p4, err := engine.Step(t.Context(), def, p3.State, engine.NewActionCompleted(t0, undo3, nil), engine.StepOptions{})
 		require.NoError(t, err)
 		assert.Equal(t, engine.StatusRunning, p4.State.Status, "partial reverse resumes Running at the target node")
 		require.Len(t, p4.State.Tokens, 1)
@@ -372,14 +372,14 @@ func TestReverseCompletionActionReversibility(t *testing.T) {
 	def := userTaskCompletionReversibleDef()
 	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"}, engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"}, engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.Tasks, 1)
 	taskToken := r1.State.Tasks[0].TaskToken
 
 	// Complete the human task: the completion action ("record") fires as an
 	// InvokeAction and the token parks on it — the instance must not complete yet.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewHumanCompleted(t0, taskToken, map[string]any{"approved": true}, authz.Actor{ID: "alice"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -389,7 +389,7 @@ func TestReverseCompletionActionReversibility(t *testing.T) {
 	// The completion action returns: this ActionCompleted is the round-trip that
 	// records the compensation entry (Fix under test), then the token auto-advances
 	// onto "park" and stops there (instance stays Running).
-	r3, err := engine.Step(def, r2.State, engine.NewActionCompleted(t0, recordCmdID, map[string]any{"recorded": true}), engine.StepOptions{})
+	r3, err := engine.Step(t.Context(), def, r2.State, engine.NewActionCompleted(t0, recordCmdID, map[string]any{"recorded": true}), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, r3.State.Status, "instance auto-advances onto park and stops there, not completed")
 	require.Len(t, r3.State.RootCompensations, 1, "the completion-action round-trip must record a compensation entry")
@@ -397,11 +397,11 @@ func TestReverseCompletionActionReversibility(t *testing.T) {
 	assert.Equal(t, "unrecord", r3.State.RootCompensations[0].Action)
 
 	// Reverse to start: the paired compensate action ("unrecord") must fire.
-	r4, err := engine.Step(def, r3.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
+	r4, err := engine.Step(t.Context(), def, r3.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
 	require.NoError(t, err)
 	unrecordCmdID := findInvokeActionID(t, r4.Commands, "unrecord")
 
-	r5, err := engine.Step(def, r4.State, engine.NewActionCompleted(t0, unrecordCmdID, nil), engine.StepOptions{})
+	r5, err := engine.Step(t.Context(), def, r4.State, engine.NewActionCompleted(t0, unrecordCmdID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r5.State.Status, "reverse resumes Running, NOT terminated")
 	assert.Empty(t, r5.State.RootCompensations, "records cleared after full reverse")
@@ -465,11 +465,11 @@ func TestReverseToStart_RejectsTerminalInstance(t *testing.T) {
 			state: func(t *testing.T) (*model.ProcessDefinition, engine.InstanceState) {
 				t.Helper()
 				def := reverseCompletableDef()
-				r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+				r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 					engine.NewStartInstance(t0, nil), engine.StepOptions{})
 				require.NoError(t, err)
 				cmdID := findInvokeActionID(t, r1.Commands, "do")
-				r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdID, nil), engine.StepOptions{})
+				r2, err := engine.Step(t.Context(), def, r1.State, engine.NewActionCompleted(t0, cmdID, nil), engine.StepOptions{})
 				require.NoError(t, err)
 				require.Equal(t, engine.StatusCompleted, r2.State.Status, "precondition: instance must have completed")
 				return def, r2.State
@@ -507,7 +507,7 @@ func TestReverseToStart_RejectsTerminalInstance(t *testing.T) {
 			def, before := tc.state(t)
 			beforeStatus := before.Status
 
-			_, err := engine.Step(def, before, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
+			_, err := engine.Step(t.Context(), def, before, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
 
 			tc.assert(t, err)
 			// Step is pure (clones state internally); the caller's original state
@@ -537,15 +537,15 @@ func TestCompensateRequested_DuringActiveWalk(t *testing.T) {
 	// svc's compensation, parks on "park") -> NewReverseToStart begins the
 	// walk and emits the "undo" InvokeAction WITHOUT completing it, so the
 	// cursor's ActiveCmdID is non-empty (mid-walk) at this state.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, map[string]any{"amount": 100}), engine.StepOptions{})
 	require.NoError(t, err)
 	cmdDo := findInvokeActionID(t, r1.Commands, "do")
-	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
+	r2, err := engine.Step(t.Context(), def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r2.State.RootCompensations, 1, "precondition: svc's compensation must be recorded")
 
-	r3, err := engine.Step(def, r2.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
+	r3, err := engine.Step(t.Context(), def, r2.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompensating, r3.State.Status, "precondition: walk in flight")
 	require.NotEmpty(t, r3.State.Compensating.ActiveCmdID, "precondition: walk is mid-flight (undo not yet completed)")
@@ -612,7 +612,7 @@ func TestCompensateRequested_DuringActiveWalk(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r, err := engine.Step(def, midWalk, tc.trigger, engine.StepOptions{})
+			r, err := engine.Step(t.Context(), def, midWalk, tc.trigger, engine.StepOptions{})
 			tc.assert(t, midWalk, r.State, err)
 		})
 	}
@@ -643,16 +643,16 @@ func TestReverseToStart_CancelMidWalk_TerminatesNotResumes(t *testing.T) {
 	// compensation, parks on "park") -> NewReverseToStart emits the "undo"
 	// InvokeAction WITHOUT completing it, so the cursor's ReverseNode is set and
 	// ActiveCmdID != "" (mid-reverse-walk).
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, map[string]any{"amount": 100}), engine.StepOptions{})
 	require.NoError(t, err)
 	cmdDo := findInvokeActionID(t, r1.Commands, "do")
 
-	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
+	r2, err := engine.Step(t.Context(), def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r2.State.RootCompensations, 1, "precondition: svc's compensation recorded")
 
-	r3, err := engine.Step(def, r2.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
+	r3, err := engine.Step(t.Context(), def, r2.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
 	require.NoError(t, err)
 	undoID := findInvokeActionID(t, r3.Commands, "undo")
 	require.Equal(t, engine.StatusCompensating, r3.State.Status, "precondition: reverse walk in flight")
@@ -663,7 +663,7 @@ func TestReverseToStart_CancelMidWalk_TerminatesNotResumes(t *testing.T) {
 	// Deliver CancelRequested mid-reverse-walk: it must be DEFERRED (PendingCancel
 	// set), not silently swallowed. The walk stays in flight (cancel does not
 	// re-enter beginCompensation while the undo is outstanding).
-	r4, err := engine.Step(def, r3.State, engine.NewCancelRequested(t0), engine.StepOptions{})
+	r4, err := engine.Step(t.Context(), def, r3.State, engine.NewCancelRequested(t0), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.True(t, r4.State.PendingCancel, "cancel mid-reverse-walk must be DEFERRED (PendingCancel), not silently dropped")
 	assert.Equal(t, engine.StatusCompensating, r4.State.Status, "the reverse walk is still in flight; cancel does not pre-empt it yet")
@@ -671,7 +671,7 @@ func TestReverseToStart_CancelMidWalk_TerminatesNotResumes(t *testing.T) {
 	// Complete the in-flight undo: the deferred cancel now PREEMPTS the reverse.
 	// The instance must TERMINATE (StatusTerminated + FailInstance{"cancelled"})
 	// instead of resuming Running at start.
-	r5, err := engine.Step(def, r4.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
+	r5, err := engine.Step(t.Context(), def, r4.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusTerminated, r5.State.Status, "cancel preempts reverse: instance TERMINATES, NOT resumes Running")
 	assert.NotNil(t, r5.State.EndedAt, "terminated instance must stamp EndedAt")
@@ -746,7 +746,7 @@ func TestReverseToStart_RearmsRootEventSubprocess(t *testing.T) {
 	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
 
 	// ---- Step 1: StartInstance → root ESP arms (EnclosingScopeID == "") ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.EventTriggeredSubprocesses, 1, "root ESP must arm on StartInstance")
@@ -756,18 +756,18 @@ func TestReverseToStart_RearmsRootEventSubprocess(t *testing.T) {
 
 	// ---- Step 2: complete "do" → svc's compensation recorded, token parks on "park" ----
 	cmdDo := findInvokeActionID(t, r1.Commands, "do")
-	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
+	r2, err := engine.Step(t.Context(), def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, r2.State.Status, "instance must be running (parked) before reverse")
 	require.Len(t, r2.State.RootCompensations, 1, "svc must have recorded a compensation")
 
 	// ---- Step 3: NewReverseToStart → "undo" fires ----
-	r3, err := engine.Step(def, r2.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
+	r3, err := engine.Step(t.Context(), def, r2.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
 	require.NoError(t, err)
 	undoID := findInvokeActionID(t, r3.Commands, "undo")
 
 	// ---- Step 4: complete "undo" → resume at start (re-arm must happen HERE) ----
-	r4, err := engine.Step(def, r3.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
+	r4, err := engine.Step(t.Context(), def, r3.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r4.State.Status, "reverse resumes Running, NOT terminated")
 
@@ -823,11 +823,11 @@ func TestCompensateRequested_ResetVarsWithoutReverseNode(t *testing.T) {
 	// record — the same precondition shape as the other reverse regressions
 	// in this file, so the guard is proven against a realistic state rather
 	// than a bare zero-value InstanceState.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, map[string]any{"amount": 100}), engine.StepOptions{})
 	require.NoError(t, err)
 	cmdDo := findInvokeActionID(t, r1.Commands, "do")
-	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
+	r2, err := engine.Step(t.Context(), def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, r2.State.Status, "precondition: instance running (parked) before the malformed trigger")
 	require.Len(t, r2.State.RootCompensations, 1, "precondition: svc's compensation recorded")
@@ -849,7 +849,7 @@ func TestCompensateRequested_ResetVarsWithoutReverseNode(t *testing.T) {
 	wantStatus := before.Status
 	wantRecords := append([]engine.CompensationRecord(nil), before.RootCompensations...)
 
-	_, err = engine.Step(def, before, malformed, engine.StepOptions{})
+	_, err = engine.Step(t.Context(), def, before, malformed, engine.StepOptions{})
 	require.Error(t, err, "ResetVars without ReverseNode must be rejected, not silently terminate the instance")
 	assert.True(t, strings.HasPrefix(err.Error(), "workflow-engine:"), "error must carry the workflow-engine: sentinel prefix, got %q", err.Error())
 	assert.Contains(t, err.Error(), "ResetVars", "error must name the offending field")
@@ -885,11 +885,11 @@ func TestCompensateRequested_RestoreTargetVarsWithoutToNode(t *testing.T) {
 	// Drive to a stable Running (parked) state carrying one compensation
 	// record — same precondition shape as the ResetVars-without-ReverseNode
 	// regression above.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, map[string]any{"amount": 100}), engine.StepOptions{})
 	require.NoError(t, err)
 	cmdDo := findInvokeActionID(t, r1.Commands, "do")
-	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
+	r2, err := engine.Step(t.Context(), def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, r2.State.Status, "precondition: instance running (parked) before the malformed trigger")
 	require.Len(t, r2.State.RootCompensations, 1, "precondition: svc's compensation recorded")
@@ -909,7 +909,7 @@ func TestCompensateRequested_RestoreTargetVarsWithoutToNode(t *testing.T) {
 	wantStatus := before.Status
 	wantRecords := append([]engine.CompensationRecord(nil), before.RootCompensations...)
 
-	_, err = engine.Step(def, before, malformed, engine.StepOptions{})
+	_, err = engine.Step(t.Context(), def, before, malformed, engine.StepOptions{})
 	require.Error(t, err, "RestoreTargetVars without ToNode must be rejected, not silently terminate the instance")
 	assert.True(t, strings.HasPrefix(err.Error(), "workflow-engine:"), "error must carry the workflow-engine: sentinel prefix, got %q", err.Error())
 	assert.Contains(t, err.Error(), "RestoreTargetVars", "error must name the offending field")
@@ -936,7 +936,7 @@ func TestCancelRequestedTerminate_CancelsRootEventSubprocessTimer(t *testing.T) 
 	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
 
 	// ---- Step 1: StartInstance → root ESP arms (EnclosingScopeID == "") ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.EventTriggeredSubprocesses, 1, "root ESP must arm on StartInstance")
@@ -945,19 +945,19 @@ func TestCancelRequestedTerminate_CancelsRootEventSubprocessTimer(t *testing.T) 
 
 	// ---- Step 2: complete "do" → svc's compensation recorded, token parks on "park" ----
 	cmdDo := findInvokeActionID(t, r1.Commands, "do")
-	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
+	r2, err := engine.Step(t.Context(), def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, r2.State.Status, "precondition: instance running (parked) before cancel")
 	require.Len(t, r2.State.RootCompensations, 1, "precondition: svc's compensation recorded")
 
 	// ---- Step 3: CancelRequested → records exist → compensation walk begins ("undo" fires) ----
-	r3, err := engine.Step(def, r2.State, engine.NewCancelRequested(t0), engine.StepOptions{})
+	r3, err := engine.Step(t.Context(), def, r2.State, engine.NewCancelRequested(t0), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompensating, r3.State.Status, "precondition: cancel with records enters the compensation walk")
 	undoID := findInvokeActionID(t, r3.Commands, "undo")
 
 	// ---- Step 4: complete "undo" → walk finishes → applyTerminate ----
-	r4, err := engine.Step(def, r3.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
+	r4, err := engine.Step(t.Context(), def, r3.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusTerminated, r4.State.Status, "cancel-with-compensation walk still terminates")
 	assert.Nil(t, r4.State.EventTriggeredSubprocesses, "applyTerminate must drain ALL event-subprocess arms, not just the walk's own scope")
@@ -986,7 +986,7 @@ func TestImmediateTerminatePaths_CancelRootEventSubprocessTimer(t *testing.T) {
 			name: "immediate cancel with no compensation records",
 			drive: func(t *testing.T, def *model.ProcessDefinition, r1 engine.StepResult) (engine.StepResult, error) {
 				t.Helper()
-				return engine.Step(def, r1.State, engine.NewCancelRequested(t0), engine.StepOptions{})
+				return engine.Step(t.Context(), def, r1.State, engine.NewCancelRequested(t0), engine.StepOptions{})
 			},
 			assert: func(t *testing.T, r engine.StepResult, espTimerID string) {
 				assert.Equal(t, engine.StatusTerminated, r.State.Status, "immediate cancel (no records) still terminates")
@@ -1000,7 +1000,7 @@ func TestImmediateTerminatePaths_CancelRootEventSubprocessTimer(t *testing.T) {
 			drive: func(t *testing.T, def *model.ProcessDefinition, r1 engine.StepResult) (engine.StepResult, error) {
 				t.Helper()
 				cmdDo := findInvokeActionID(t, r1.Commands, "do")
-				return engine.Step(def, r1.State, engine.NewActionFailed(t0, cmdDo, "boom", false), engine.StepOptions{})
+				return engine.Step(t.Context(), def, r1.State, engine.NewActionFailed(t0, cmdDo, "boom", false), engine.StepOptions{})
 			},
 			assert: func(t *testing.T, r engine.StepResult, espTimerID string) {
 				assert.Equal(t, engine.StatusFailed, r.State.Status, "unhandled root-level failure (no records) still fails the instance")
@@ -1018,7 +1018,7 @@ func TestImmediateTerminatePaths_CancelRootEventSubprocessTimer(t *testing.T) {
 			// ---- StartInstance → root ESP arms; "do" left uncompleted so NO
 			// compensation record exists yet — the precondition for both
 			// "immediate" (no-records) branches under test. ----
-			r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+			r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 				engine.NewStartInstance(t0, nil), engine.StepOptions{})
 			require.NoError(t, err)
 			require.Len(t, r1.State.EventTriggeredSubprocesses, 1, "root ESP must arm on StartInstance")
@@ -1077,7 +1077,7 @@ func TestSubInstanceFailedTerminate_CancelsRootEventSubprocessTimer(t *testing.T
 	def := rootESPWithCallActivityDef()
 
 	// ---- StartInstance → root ESP arms; call-activity parks awaiting the child. ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.EventTriggeredSubprocesses, 1, "root ESP must arm on StartInstance")
@@ -1093,7 +1093,7 @@ func TestSubInstanceFailedTerminate_CancelsRootEventSubprocessTimer(t *testing.T
 	require.NotEmpty(t, ssiCmdID, "expected StartSubInstance for the call-activity")
 
 	// ---- SubInstanceFailed → parent fails; the root ESP timer must be cancelled too. ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSubInstanceFailed(t0.Add(time.Second), ssiCmdID, "child blew up"), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -1127,19 +1127,19 @@ func TestReverseToNode_RestoresTargetStartOfVisitVariables(t *testing.T) {
 	parked := func(t *testing.T) (*model.ProcessDefinition, engine.InstanceState) {
 		t.Helper()
 		def := threeCompensableDef()
-		r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i"},
+		r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i"},
 			engine.NewStartInstance(t0, map[string]any{"a": 1}), engine.StepOptions{})
 		require.NoError(t, err)
 		id1 := findInvokeActionID(t, r1.Commands, "a1")
-		r2, err := engine.Step(def, r1.State,
+		r2, err := engine.Step(t.Context(), def, r1.State,
 			engine.NewActionCompleted(t0, id1, map[string]any{"a": 9, "b": 2}), engine.StepOptions{})
 		require.NoError(t, err)
 		id2 := findInvokeActionID(t, r2.Commands, "a2")
-		r3, err := engine.Step(def, r2.State,
+		r3, err := engine.Step(t.Context(), def, r2.State,
 			engine.NewActionCompleted(t0, id2, map[string]any{"c": 3}), engine.StepOptions{})
 		require.NoError(t, err)
 		id3 := findInvokeActionID(t, r3.Commands, "a3")
-		r4, err := engine.Step(def, r3.State,
+		r4, err := engine.Step(t.Context(), def, r3.State,
 			engine.NewActionCompleted(t0, id3, map[string]any{"d": 4}), engine.StepOptions{})
 		require.NoError(t, err)
 		require.Equal(t, engine.StatusRunning, r4.State.Status)
@@ -1153,7 +1153,7 @@ func TestReverseToNode_RestoresTargetStartOfVisitVariables(t *testing.T) {
 	// undo action until the walk finishes (Status leaves StatusCompensating).
 	driveToFinish := func(t *testing.T, def *model.ProcessDefinition, state engine.InstanceState, trig engine.CompensateRequested) engine.InstanceState {
 		t.Helper()
-		r, err := engine.Step(def, state, trig, engine.StepOptions{})
+		r, err := engine.Step(t.Context(), def, state, trig, engine.StepOptions{})
 		require.NoError(t, err)
 		for r.State.Status == engine.StatusCompensating {
 			var undoID string
@@ -1163,7 +1163,7 @@ func TestReverseToNode_RestoresTargetStartOfVisitVariables(t *testing.T) {
 				}
 			}
 			require.NotEmpty(t, undoID, "a compensation InvokeAction must be in flight while compensating")
-			r, err = engine.Step(def, r.State,
+			r, err = engine.Step(t.Context(), def, r.State,
 				engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
 			require.NoError(t, err)
 		}

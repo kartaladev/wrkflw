@@ -91,7 +91,7 @@ func TestEventStartSubprocess_RootInterrupting_Message(t *testing.T) {
 	def := rootMessageEventStartDef()
 
 	// ---- Step 1: StartInstance (with orderId var) → root-svc parks ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-root-msg-esp"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-root-msg-esp"},
 		engine.NewStartInstance(at, map[string]any{"orderId": "ORD-1"}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -107,7 +107,7 @@ func TestEventStartSubprocess_RootInterrupting_Message(t *testing.T) {
 	assert.Equal(t, "ORD-1", arm.MessageKey, "correlation key must be resolved from vars")
 
 	// ---- Step 2: MessageReceived{"cancel","ORD-1"} → interrupting event-sub fires ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewMessageReceived(at.Add(time.Second), "cancel", "ORD-1", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r2.State.Status)
@@ -131,7 +131,7 @@ func TestEventStartSubprocess_RootInterrupting_Message(t *testing.T) {
 	espCmdID := findInvokeActionID(t, r2.Commands, "esp-action")
 
 	// ---- Step 3: complete esp-action → event-sub scope drains → instance completes ----
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), espCmdID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r3.State.Status)
@@ -198,7 +198,7 @@ func TestEventStartSubprocess_RootNonInterrupting_Signal(t *testing.T) {
 	def := rootNonInterruptingSignalEventStartDef()
 
 	// ---- Step 1: StartInstance → root-svc parks; event-sub arm recorded ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-root-nonintr"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-root-nonintr"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	normalCmdID := findInvokeActionID(t, r1.Commands, "normal-action")
@@ -208,7 +208,7 @@ func TestEventStartSubprocess_RootNonInterrupting_Signal(t *testing.T) {
 	assert.Equal(t, "", r1.State.EventTriggeredSubprocesses[0].EnclosingScopeID)
 
 	// ---- Step 2: SignalReceived{"notify"} → non-interrupting: spawn alongside ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSignalReceived(at.Add(time.Second), "notify", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r2.State.Status)
@@ -229,7 +229,7 @@ func TestEventStartSubprocess_RootNonInterrupting_Signal(t *testing.T) {
 	notifyCmdID1 := findInvokeActionID(t, r2.Commands, "notify-action")
 
 	// ---- Step 2b: a SECOND "notify" signal fires the still-armed event-sub AGAIN ----
-	r2b, err := engine.Step(def, r2.State,
+	r2b, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewSignalReceived(at.Add(time.Second), "notify", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r2b.State.EventTriggeredSubprocesses, 1, "event-sub stays armed across repeated fires")
@@ -237,21 +237,21 @@ func TestEventStartSubprocess_RootNonInterrupting_Signal(t *testing.T) {
 	notifyCmdID2 := findInvokeActionID(t, r2b.Commands, "notify-action")
 
 	// ---- Step 3: complete the first notify-action → its child scope drains ----
-	r3, err := engine.Step(def, r2b.State,
+	r3, err := engine.Step(t.Context(), def, r2b.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), notifyCmdID1, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r3.State.Status, "instance still running: root-svc + second event-sub pending")
 	require.Len(t, r3.State.Scopes, 1, "one event-sub child scope remains")
 
 	// ---- Step 3b: complete the second notify-action → its child scope drains ----
-	r3b, err := engine.Step(def, r3.State,
+	r3b, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewActionCompleted(at.Add(3*time.Second), notifyCmdID2, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r3b.State.Status, "instance still running: root-svc still pending")
 	assert.Empty(t, r3b.State.Scopes, "both event-sub child scopes closed after draining")
 
 	// ---- Step 4: complete normal-action → root drains → instance completes ----
-	r4, err := engine.Step(def, r3b.State,
+	r4, err := engine.Step(t.Context(), def, r3b.State,
 		engine.NewActionCompleted(at.Add(4*time.Second), normalCmdID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r4.State.Status)
@@ -342,7 +342,7 @@ func TestEventStartSubprocess_Nested_Interrupting(t *testing.T) {
 	def := nestedEventStartDef(false) // interrupting
 
 	// ---- Step 1: StartInstance — outer-start → sub → inner-start → inner-user (parks) ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-nested-esp"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-nested-esp"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -356,7 +356,7 @@ func TestEventStartSubprocess_Nested_Interrupting(t *testing.T) {
 	innerScopeID := r1.State.Scopes[0].ID
 
 	// ---- Step 2: SignalReceived{"cancel"} — interrupting event-sub fires ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSignalReceived(at.Add(time.Second), "cancel", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r2.State.Status)
@@ -379,7 +379,7 @@ func TestEventStartSubprocess_Nested_Interrupting(t *testing.T) {
 	cancelCmdID := findInvokeActionID(t, r2.Commands, "cancel-action")
 
 	// ---- Step 3: complete cancel-action — event-sub scope drains → outer completes ----
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), cancelCmdID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r3.State.Status)
@@ -396,7 +396,7 @@ func TestEventStartSubprocess_Nested_Interrupting(t *testing.T) {
 	assert.True(t, found)
 
 	// ---- Step 4: late HumanCompleted must error with ErrTokenNotFound ----
-	_, err = engine.Step(def, r3.State,
+	_, err = engine.Step(t.Context(), def, r3.State,
 		engine.NewHumanCompleted(at.Add(3*time.Second), taskToken, nil, authz.Actor{ID: "alice"}), engine.StepOptions{})
 	require.Error(t, err)
 	require.ErrorIs(t, err, engine.ErrTokenNotFound)
@@ -411,14 +411,14 @@ func TestEventStartSubprocess_Nested_NonInterrupting(t *testing.T) {
 	def := nestedEventStartDef(true) // non-interrupting
 
 	// ---- Step 1: StartInstance ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-nested-nonintr"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-nested-nonintr"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.Tokens, 1)
 	assert.Equal(t, "inner-user", r1.State.Tokens[0].NodeID)
 
 	// ---- Step 2: SignalReceived{"cancel"} — non-interrupting: spawn alongside ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSignalReceived(at.Add(time.Second), "cancel", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r2.State.Status)
@@ -434,7 +434,7 @@ func TestEventStartSubprocess_Nested_NonInterrupting(t *testing.T) {
 	cancelCmdID := findInvokeActionID(t, r2.Commands, "cancel-action")
 
 	// ---- Step 3: complete cancel-action — event-sub scope drains, instance still running ----
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), cancelCmdID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r3.State.Status)
@@ -449,7 +449,7 @@ func TestEventStartSubprocess_Nested_NonInterrupting(t *testing.T) {
 
 	// ---- Step 4: complete inner-user → inner scope drains → outer completes ----
 	task := r3.State.Tasks[0]
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewHumanCompleted(at.Add(3*time.Second), task.TaskToken, nil, authz.Actor{ID: "alice"}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r4.State.Status)
@@ -529,7 +529,7 @@ func TestEventStartSubprocess_Timer_ArmsOnScopeOpen(t *testing.T) {
 	def := timerNestedEventStartDef()
 
 	// ---- Step 1: StartInstance → sub enters → InvokeAction + ScheduleTimer (arm) ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-timer-esp"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-timer-esp"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -546,7 +546,7 @@ func TestEventStartSubprocess_Timer_ArmsOnScopeOpen(t *testing.T) {
 	assert.Len(t, r1.State.EventTriggeredSubprocesses, 1, "expected one event-sub arm recorded")
 
 	// ---- Step 2: timer fires (interrupting) → inner-svc cancelled, evtsub-svc fires ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewTimerFired(at.Add(time.Hour), schedTimer.TimerID), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r2.State.Status)
@@ -557,7 +557,7 @@ func TestEventStartSubprocess_Timer_ArmsOnScopeOpen(t *testing.T) {
 	timeoutCmdID := findInvokeActionID(t, r2.Commands, "timeout-action")
 
 	// ---- Step 3: complete timeout-action → event-sub scope drains → outer completes ----
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Hour), timeoutCmdID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r3.State.Status)
@@ -582,7 +582,7 @@ func TestEventStartSubprocess_NormalCloseCancelsArm(t *testing.T) {
 	at := time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)
 	def := timerNestedEventStartDef()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-esp-cancel-scope"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-esp-cancel-scope"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -597,7 +597,7 @@ func TestEventStartSubprocess_NormalCloseCancelsArm(t *testing.T) {
 	require.Len(t, r1.State.EventTriggeredSubprocesses, 1)
 
 	// Complete inner-svc normally (the event-sub timer never fires) → scope drains.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(time.Minute), innerCmdID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r2.State.Status)
@@ -669,7 +669,7 @@ func TestEventStartSubprocess_Message_CorrelatesByKey(t *testing.T) {
 	def := messageNestedEventStartDef()
 
 	// ---- Step 1: StartInstance with orderId var → arm carries resolved key ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-msg-esp"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-msg-esp"},
 		engine.NewStartInstance(at, map[string]any{"orderId": "ORD-42"}), engine.StepOptions{})
 	require.NoError(t, err)
 	innerCmdID := findInvokeActionID(t, r1.Commands, "inner-action")
@@ -680,7 +680,7 @@ func TestEventStartSubprocess_Message_CorrelatesByKey(t *testing.T) {
 	assert.Equal(t, "ORD-42", arm.MessageKey)
 
 	// ---- Step 2: non-matching correlation key is a clean no-op ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewMessageReceived(at.Add(time.Second), "cancel", "WRONG-KEY", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Empty(t, r2.Commands, "non-matching correlation key must be a clean no-op")
@@ -688,7 +688,7 @@ func TestEventStartSubprocess_Message_CorrelatesByKey(t *testing.T) {
 	assert.Equal(t, "inner-svc", r2.State.Tokens[0].NodeID, "inner-svc token must be undisturbed")
 
 	// ---- Step 3: matching name+key fires the interrupting event-sub ----
-	r3, err := engine.Step(def, r1.State,
+	r3, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewMessageReceived(at.Add(2*time.Second), "cancel", "ORD-42", map[string]any{"x": 1}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r3.State.Status)
@@ -699,7 +699,7 @@ func TestEventStartSubprocess_Message_CorrelatesByKey(t *testing.T) {
 	cancelCmdID := findInvokeActionID(t, r3.Commands, "cancel-action")
 
 	// ---- Step 4: complete cancel-action → event-sub drains → outer completes ----
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewActionCompleted(at.Add(3*time.Second), cancelCmdID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r4.State.Status)
@@ -777,7 +777,7 @@ func TestEventStartSubprocess_InterruptingCancelsSiblingArm(t *testing.T) {
 	at := time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)
 	def := siblingEventStartDef()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-sibling-esp"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-sibling-esp"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -791,7 +791,7 @@ func TestEventStartSubprocess_InterruptingCancelsSiblingArm(t *testing.T) {
 	require.NotEmpty(t, siblingTimerID, "expected ScheduleTimer for the non-interrupting sibling's timer arm")
 
 	// Fire the interrupting signal-triggered sibling.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSignalReceived(at.Add(time.Second), "cancel", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r2.State.Status)
@@ -885,7 +885,7 @@ func TestEventStartSubprocess_InterruptingCancelsGatewayArms(t *testing.T) {
 	def := espWithEventGatewayEventStartDef()
 
 	// ---- Step 1: StartInstance → inner starts → event gateway parks with timer arm ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-esp-gw-es"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-esp-gw-es"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -903,7 +903,7 @@ func TestEventStartSubprocess_InterruptingCancelsGatewayArms(t *testing.T) {
 	require.NotEmpty(t, r1.State.EventTriggeredSubprocesses, "event-sub arm must be recorded")
 
 	// ---- Step 2: SignalReceived{"cancel"} — interrupting event-sub fires ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSignalReceived(at.Add(time.Second), "cancel", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r2.State.Status)
@@ -920,7 +920,7 @@ func TestEventStartSubprocess_InterruptingCancelsGatewayArms(t *testing.T) {
 	assert.True(t, cancelTimerFound, "expected CancelTimer for the gateway timer arm")
 
 	// A late TimerFired for the cancelled gateway timer must be a clean no-op.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewTimerFired(at.Add(2*time.Hour), gwTimerID), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Empty(t, r3.Commands)
@@ -973,7 +973,7 @@ func TestEventStartSubprocess_ReverseToStart_RearmsRootEventSubprocess(t *testin
 	t0 := time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)
 
 	// ---- Step 1: StartInstance → root event-sub arms (EnclosingScopeID == "") ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-rev-esp-es"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-rev-esp-es"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.EventTriggeredSubprocesses, 1, "root event-sub must arm on StartInstance")
@@ -983,18 +983,18 @@ func TestEventStartSubprocess_ReverseToStart_RearmsRootEventSubprocess(t *testin
 
 	// ---- Step 2: complete "do" → compensation recorded, token parks on "park" ----
 	cmdDo := findInvokeActionID(t, r1.Commands, "do")
-	r2, err := engine.Step(def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
+	r2, err := engine.Step(t.Context(), def, r1.State, engine.NewActionCompleted(t0, cmdDo, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, r2.State.Status)
 	require.Len(t, r2.State.RootCompensations, 1)
 
 	// ---- Step 3: NewReverseToStart → "undo" fires ----
-	r3, err := engine.Step(def, r2.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
+	r3, err := engine.Step(t.Context(), def, r2.State, engine.NewReverseToStart(t0, "start"), engine.StepOptions{})
 	require.NoError(t, err)
 	undoID := findInvokeActionID(t, r3.Commands, "undo")
 
 	// ---- Step 4: complete "undo" → resume at start (re-arm must happen HERE) ----
-	r4, err := engine.Step(def, r3.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
+	r4, err := engine.Step(t.Context(), def, r3.State, engine.NewActionCompleted(t0, undoID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r4.State.Status)
 

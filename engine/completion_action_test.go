@@ -48,7 +48,7 @@ func TestUserTaskCompletionAction_ParksThenAdvancesOnActionCompleted(t *testing.
 	def := userTaskCompletionDef()
 	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	tok := r1.State.Tokens[0]
@@ -57,7 +57,7 @@ func TestUserTaskCompletionAction_ParksThenAdvancesOnActionCompleted(t *testing.
 
 	// Complete the human task: expect an InvokeAction for the completion action,
 	// and the instance NOT yet complete (token parked on the action).
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewHumanCompleted(t0, taskToken, map[string]any{"approved": true}, authz.Actor{ID: "alice"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -71,7 +71,7 @@ func TestUserTaskCompletionAction_ParksThenAdvancesOnActionCompleted(t *testing.
 	assert.NotEqual(t, engine.StatusCompleted, r2.State.Status, "must not complete before the action returns")
 
 	// Action returns → token advances to end → instance completes, action output merged.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(t0, cmdID, map[string]any{"recorded": true}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r3.State.Status)
@@ -119,10 +119,10 @@ func receiveCompletionDef() *model.ProcessDefinition {
 func TestReceiveTaskCompletionAction_ParksThenAdvances(t *testing.T) {
 	def := receiveCompletionDef()
 	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
-	r2, err := engine.Step(def, r1.State, engine.NewMessageReceived(t0, "m", "", map[string]any{"orderID": "o1"}), engine.StepOptions{})
+	r2, err := engine.Step(t.Context(), def, r1.State, engine.NewMessageReceived(t0, "m", "", map[string]any{"orderID": "o1"}), engine.StepOptions{})
 	require.NoError(t, err)
 	var cmdID string
 	for _, c := range r2.Commands {
@@ -132,7 +132,7 @@ func TestReceiveTaskCompletionAction_ParksThenAdvances(t *testing.T) {
 	}
 	require.NotEmpty(t, cmdID, "completion should emit InvokeAction for ackOrder")
 	assert.NotEqual(t, engine.StatusCompleted, r2.State.Status, "must not complete before the action returns")
-	r3, err := engine.Step(def, r2.State, engine.NewActionCompleted(t0, cmdID, map[string]any{"acked": true}), engine.StepOptions{})
+	r3, err := engine.Step(t.Context(), def, r2.State, engine.NewActionCompleted(t0, cmdID, map[string]any{"acked": true}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r3.State.Status)
 	assert.Equal(t, true, r3.State.Variables["acked"])
@@ -146,9 +146,9 @@ func TestReceiveTaskCompletionAction_ParksThenAdvances(t *testing.T) {
 func TestCompletionAction_FailureRaisesIncidentWhenNoRetryOrBoundary(t *testing.T) {
 	def := receiveCompletionDef()
 	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"}, engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"}, engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
-	r2, err := engine.Step(def, r1.State, engine.NewMessageReceived(t0, "m", "", nil), engine.StepOptions{})
+	r2, err := engine.Step(t.Context(), def, r1.State, engine.NewMessageReceived(t0, "m", "", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	var cmdID string
 	for _, c := range r2.Commands {
@@ -157,7 +157,7 @@ func TestCompletionAction_FailureRaisesIncidentWhenNoRetryOrBoundary(t *testing.
 		}
 	}
 	require.NotEmpty(t, cmdID)
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionFailed(t0, cmdID, "boom", false), engine.StepOptions{}) // non-retryable
 	require.NoError(t, err)
 	assert.Len(t, r3.State.Incidents, 1, "terminal completion-action failure raises an incident")
@@ -211,7 +211,7 @@ func TestUserTaskCompletionAction_ScopedCatalog_ResolvesLocally(t *testing.T) {
 	def := subprocessScopedCompletionActionDef(t, &ran)
 	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.Tokens, 1)
@@ -225,7 +225,7 @@ func TestUserTaskCompletionAction_ScopedCatalog_ResolvesLocally(t *testing.T) {
 	}
 	require.NotEmpty(t, taskToken, "expected AwaitHuman for inner-u1")
 
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewHumanCompleted(t0, taskToken, nil, authz.Actor{ID: "alice"}), engine.StepOptions{})
 	require.NoError(t, err)
 

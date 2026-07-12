@@ -56,7 +56,7 @@ func TestRecordCompensationDoubleRecordIsRejected(t *testing.T) {
 	at := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
 	def := dedupProbeDef()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "dedup-inst"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "dedup-inst"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.Commands, 1)
@@ -65,7 +65,7 @@ func TestRecordCompensationDoubleRecordIsRejected(t *testing.T) {
 	require.Equal(t, "book", ia.Name)
 
 	// First ActionCompleted: records compensation once, parks at userTask.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(time.Second), ia.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -74,7 +74,7 @@ func TestRecordCompensationDoubleRecordIsRejected(t *testing.T) {
 
 	// Duplicate ActionCompleted for the SAME CommandID: the token already advanced
 	// (AwaitCommand cleared), so tokenAwaiting finds nothing → ErrTokenNotFound.
-	_, err = engine.Step(def, r2.State,
+	_, err = engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), ia.CommandID, nil),
 		engine.StepOptions{})
 	require.Error(t, err)

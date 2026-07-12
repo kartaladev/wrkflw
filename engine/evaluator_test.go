@@ -45,7 +45,7 @@ func TestStepUsesInjectedEvaluatorForGatewayCondition(t *testing.T) {
 
 	// amount is 5 (< 100): the real evaluator would take the default branch
 	// ("small"). The fake forces true, so reaching "big" proves the fake ran.
-	res, err := engine.Step(exclusiveDef(), engine.InstanceState{InstanceID: "i1"},
+	res, err := engine.Step(t.Context(), exclusiveDef(), engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"amount": 5}),
 		engine.StepOptions{Evaluator: rec})
 	require.NoError(t, err)
@@ -63,7 +63,7 @@ func TestStepUsesInjectedEvaluatorForGatewayCondition(t *testing.T) {
 func TestStepNilEvaluatorFallsBackToGlobal(t *testing.T) {
 	at := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
 
-	res, err := engine.Step(exclusiveDef(), engine.InstanceState{InstanceID: "i1"},
+	res, err := engine.Step(t.Context(), exclusiveDef(), engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"amount": 5}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -79,7 +79,7 @@ func TestStepInjectedEvaluatorErrorPropagates(t *testing.T) {
 	sentinel := errors.New("boom")
 	rec := &recordingEvaluator{boolErr: sentinel}
 
-	_, err := engine.Step(exclusiveDef(), engine.InstanceState{InstanceID: "i1"},
+	_, err := engine.Step(t.Context(), exclusiveDef(), engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"amount": 5}),
 		engine.StepOptions{Evaluator: rec})
 	require.Error(t, err)

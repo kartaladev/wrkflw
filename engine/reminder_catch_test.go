@@ -71,7 +71,7 @@ func TestIntermediateCatchReminderFiresAndCancelsOnResolve(t *testing.T) {
 			def := catchReminderDef(tc.catchOpt)
 
 			// ---- Step 1: Start → parked at catch, reminder armed ----
-			r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+			r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 				engine.NewStartInstance(startAt, nil), engine.StepOptions{})
 			require.NoError(t, err)
 
@@ -97,7 +97,7 @@ func TestIntermediateCatchReminderFiresAndCancelsOnResolve(t *testing.T) {
 			reminderID := reminderST.TimerID
 
 			// ---- Step 2: reminder fires while parked → nudge only, token stays ----
-			r2, err := engine.Step(def, r1.State,
+			r2, err := engine.Step(t.Context(), def, r1.State,
 				engine.NewTimerFired(startAt.Add(30*time.Minute), reminderID), engine.StepOptions{})
 			require.NoError(t, err)
 
@@ -118,7 +118,7 @@ func TestIntermediateCatchReminderFiresAndCancelsOnResolve(t *testing.T) {
 			require.Len(t, r2.State.Tokens, 1, "token must still be parked after nudge")
 
 			// ---- Step 3: wait resolves → token advances + reminder cancelled ----
-			r3, err := engine.Step(def, r2.State,
+			r3, err := engine.Step(t.Context(), def, r2.State,
 				tc.resolve(t, r2.State, intermediateID), engine.StepOptions{})
 			require.NoError(t, err)
 

@@ -85,7 +85,7 @@ func TestStepSchedulesRetryWithJitteredBackoff(t *testing.T) {
 
 	// Drive start → InvokeAction for "task".
 	at0 := time.Unix(0, 0)
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "p"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "p"},
 		engine.NewStartInstance(at0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	cmdID := findInvokeActionCmdID(t, r1.Commands)
@@ -93,7 +93,7 @@ func TestStepSchedulesRetryWithJitteredBackoff(t *testing.T) {
 	// ApplyTrigger ActionFailed: retryable, jitter=0.5, at t=10s.
 	failAt := time.Unix(10, 0)
 	fail := engine.NewActionFailed(failAt, cmdID, "boom", true, engine.WithJitter(0.5))
-	r2, err := engine.Step(def, r1.State, fail, engine.StepOptions{})
+	r2, err := engine.Step(t.Context(), def, r1.State, fail, engine.StepOptions{})
 	require.NoError(t, err)
 
 	// Must find a ScheduleTimer of kind TimerRetry.
@@ -130,13 +130,13 @@ func TestStepRetryTimerReinvokesAction(t *testing.T) {
 	})
 
 	// Drive start → InvokeAction for "task".
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "p"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "p"},
 		engine.NewStartInstance(time.Unix(0, 0), nil), engine.StepOptions{})
 	require.NoError(t, err)
 	cmdID := findInvokeActionCmdID(t, r1.Commands)
 
 	// ApplyTrigger ActionFailed: retryable, jitter=0.5, at t=10s.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionFailed(time.Unix(10, 0), cmdID, "boom", true, engine.WithJitter(0.5)),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -152,7 +152,7 @@ func TestStepRetryTimerReinvokesAction(t *testing.T) {
 	require.NotEmpty(t, timerID, "expected a ScheduleTimer{Kind:TimerRetry} in r2 commands")
 
 	// Fire the retry timer.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewTimerFired(time.Unix(11, 0), timerID),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -174,14 +174,14 @@ func TestStepRetryTimerReinvokesAction(t *testing.T) {
 func TestStepNoPolicyKeepsLegacyBehaviour(t *testing.T) {
 	def := retryDef(nil) // no node policy
 	at0 := time.Unix(0, 0)
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "p"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "p"},
 		engine.NewStartInstance(at0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	cmdID := findInvokeActionCmdID(t, r1.Commands)
 
 	failAt := time.Unix(1, 0)
 	fail := engine.NewActionFailed(failAt, cmdID, "boom", true)
-	r2, err := engine.Step(def, r1.State, fail, engine.StepOptions{}) // nil DefaultRetryPolicy
+	r2, err := engine.Step(t.Context(), def, r1.State, fail, engine.StepOptions{}) // nil DefaultRetryPolicy
 	require.NoError(t, err)
 
 	_, found := findScheduleTimerByKind(r2.Commands, engine.TimerRetry)
@@ -278,20 +278,20 @@ func TestStepResolveIncidentReinvokes(t *testing.T) {
 	def := retryDef(&model.RetryPolicy{MaxAttempts: 1})
 
 	// Drive start → InvokeAction for "task".
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "p"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "p"},
 		engine.NewStartInstance(time.Unix(0, 0), nil), engine.StepOptions{})
 	require.NoError(t, err)
 	cmdID := findInvokeActionCmdID(t, r1.Commands)
 
 	// ApplyTrigger terminal ActionFailed (MaxAttempts:1 → first failure is terminal) → incident.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionFailed(time.Unix(1, 0), cmdID, "boom", true), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r2.State.Incidents, 1, "expected one incident after terminal failure")
 	incID := r2.State.Incidents[0].ID
 
 	// Resolve the incident, granting 2 extra attempts.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewResolveIncident(time.Unix(2, 0), incID, 2), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -306,7 +306,7 @@ func TestStepResolveUnknownIncidentNoop(t *testing.T) {
 	def := retryDef(&model.RetryPolicy{MaxAttempts: 1})
 	base := engine.InstanceState{InstanceID: "p"}
 
-	r, err := engine.Step(def, base,
+	r, err := engine.Step(t.Context(), def, base,
 		engine.NewResolveIncident(time.Unix(0, 0), "nope", 1), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Empty(t, r.Commands, "unknown incident must be a no-op")
@@ -357,7 +357,7 @@ func TestInvokeActionCarriesStableIdempotencyKey(t *testing.T) {
 	def := retryDef(&model.RetryPolicy{MaxAttempts: 3, InitialInterval: time.Second, BackoffCoef: 2})
 
 	// Drive start → service task.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "p"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "p"},
 		engine.NewStartInstance(time.Unix(0, 0), nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -366,7 +366,7 @@ func TestInvokeActionCarriesStableIdempotencyKey(t *testing.T) {
 		"first invocation must carry stable idempotency key")
 
 	// ApplyTrigger retryable failure → retry timer scheduled.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionFailed(time.Unix(10, 0), inv1.CommandID, "boom", true, engine.WithJitter(0.5)),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -374,7 +374,7 @@ func TestInvokeActionCarriesStableIdempotencyKey(t *testing.T) {
 	timerID := firstScheduleTimer(t, r2.Commands).TimerID
 
 	// Fire the retry timer → re-invocation.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewTimerFired(time.Unix(11, 0), timerID),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -447,12 +447,12 @@ func TestStepExhaustion(t *testing.T) {
 			t.Parallel()
 
 			at0 := time.Unix(0, 0)
-			r1, err := engine.Step(tc.def, engine.InstanceState{InstanceID: "p"},
+			r1, err := engine.Step(t.Context(), tc.def, engine.InstanceState{InstanceID: "p"},
 				engine.NewStartInstance(at0, nil), engine.StepOptions{})
 			require.NoError(t, err)
 			cmdID := findInvokeActionCmdID(t, r1.Commands)
 
-			r2, err := engine.Step(tc.def, r1.State,
+			r2, err := engine.Step(t.Context(), tc.def, r1.State,
 				engine.NewActionFailed(time.Unix(1, 0), cmdID, "boom", true),
 				engine.StepOptions{})
 			require.NoError(t, err)

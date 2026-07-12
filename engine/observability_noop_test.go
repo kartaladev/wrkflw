@@ -109,7 +109,7 @@ func TestHandleTimerFired_TerminalInstanceNoOp_LogsWarn(t *testing.T) {
 		},
 	}
 
-	res, err := Step(def, s, NewTimerFired(time.Unix(1, 0), "bt1"), StepOptions{})
+	res, err := Step(t.Context(), def, s, NewTimerFired(time.Unix(1, 0), "bt1"), StepOptions{})
 	require.NoError(t, err)
 	assert.Empty(t, res.Commands, "a terminal instance must not fire the boundary")
 	assert.Equal(t, StatusFailed, res.State.Status, "status unchanged")
@@ -148,7 +148,7 @@ func TestDrive_MissingNodePark_LogsWarn(t *testing.T) {
 		},
 	}
 
-	cmds, err := drive(def, &s, time.Unix(1, 0), Macro, resolveEvaluator(StepOptions{}))
+	cmds, err := drive(t.Context(), def, &s, time.Unix(1, 0), Macro, resolveEvaluator(StepOptions{}))
 	require.NoError(t, err)
 	assert.Empty(t, cmds)
 	require.Len(t, s.Tokens, 1)
@@ -191,7 +191,7 @@ func TestFindDirectBoundary_MalformedErrorExpr_LogsDebug(t *testing.T) {
 		},
 	}
 
-	_, matched := findDirectBoundary(hostDef, "svc", "REAL_CODE", nil, nil, resolveEvaluator(StepOptions{}))
+	_, matched := findDirectBoundary(t.Context(), hostDef, "svc", "REAL_CODE", nil, nil, resolveEvaluator(StepOptions{}))
 	assert.False(t, matched, "a malformed ErrorExpr must be treated as non-match")
 
 	rec, ok := h.find("boundary ErrorExpr eval error")
@@ -233,7 +233,7 @@ func TestHandleCancelRequested_DefForScopeError_LogsDebug(t *testing.T) {
 		},
 	}
 
-	res, err := handleCancelRequested(def, &s, NewCancelRequested(time.Unix(1, 0)), StepOptions{})
+	res, err := handleCancelRequested(t.Context(), def, &s, NewCancelRequested(time.Unix(1, 0)), StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, StatusTerminated, res.State.Status)
 

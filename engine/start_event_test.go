@@ -114,7 +114,7 @@ func TestHandleStartInstanceResolvesNode(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			out, err := engine.Step(tc.def, engine.InstanceState{InstanceID: "i1"},
+			out, err := engine.Step(t.Context(), tc.def, engine.InstanceState{InstanceID: "i1"},
 				engine.NewStartInstanceAtNode(time.Unix(0, 0), tc.nodeID, nil), engine.StepOptions{})
 			tc.assert(t, out, err)
 		})

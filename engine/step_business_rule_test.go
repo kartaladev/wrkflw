@@ -103,7 +103,7 @@ func TestServiceTaskAndBusinessRuleTaskEmitInvokeAction(t *testing.T) {
 			t.Parallel()
 
 			at := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
-			res, err := engine.Step(tc.def, engine.InstanceState{InstanceID: "i1"},
+			res, err := engine.Step(t.Context(), tc.def, engine.InstanceState{InstanceID: "i1"},
 				engine.NewStartInstance(at, nil), engine.StepOptions{})
 			require.NoError(t, err)
 

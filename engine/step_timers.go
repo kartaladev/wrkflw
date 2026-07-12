@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -20,7 +21,7 @@ import (
 //     (c) marks the task Cancelled and emits UpdateTask,
 //     (d) cancels any other timers (e.g. reminders) for the same task,
 //     (e) removes the deadline timer record and drives forward.
-func handleDeadlineFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// Find the parked token. If the token is gone (task completed, instance
 	// advanced), the deadline fired late → clean no-op.
 	tok := s.tokenAwaiting(rec.TaskToken)
@@ -98,7 +99,7 @@ func handleDeadlineFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	s.removeTimer(rec.TimerID)
 
 	// (e) Drive forward from the alternative path.
-	driveCmds, err := drive(def, s, at, mode, eval)
+	driveCmds, err := drive(ctx, def, s, at, mode, eval)
 	if err != nil {
 		return StepResult{}, err
 	}
@@ -181,7 +182,7 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 //
 // The caller is responsible for any pre-work specific to each path (e.g.
 // removing the consumed timer record before calling this for the retry path).
-func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *Token, at time.Time, eval ConditionEvaluator) ([]Command, error) {
+func reinvokeServiceAction(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, tok *Token, at time.Time, eval ConditionEvaluator) ([]Command, error) {
 	tdef, err := defForScope(def, s, tok.ScopeID)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-engine: reinvoke: %w", err)
@@ -195,7 +196,7 @@ func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *
 	// (emitActionInvoke), including the stable idempotency key (see
 	// serviceActionInput) and re-arming boundary events (deadline timers,
 	// reminder timers) so they are active for this invocation attempt.
-	return emitActionInvoke(&stepCtx{def: def, tdef: tdef, s: s, at: at, eval: eval}, tok, node)
+	return emitActionInvoke(&stepCtx{ctx: ctx, def: def, tdef: tdef, s: s, at: at, eval: eval}, tok, node)
 }
 
 // handleRetryFired processes a TimerFired event for a TimerRetry timer. It is
@@ -208,7 +209,7 @@ func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *
 //     the node (mirroring the service-task drive path), re-parks the token on
 //     the new command ID, and re-arms any boundary events (which Task 5 cancelled
 //     on failure) so deadline and reminder timers are active for the retry attempt.
-func handleRetryFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+func handleRetryFired(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// Find the parked token. The token was parked with AwaitCommand == rec.TimerID
 	// by Task 5 (ActionFailed retry path). If absent, the timer fired after the
 	// instance advanced via another path (race / duplicate): clean no-op.
@@ -221,7 +222,7 @@ func handleRetryFired(def *model.ProcessDefinition, s *InstanceState, rec timerR
 	s.removeTimer(rec.TimerID)
 
 	// Re-invoke the service action via the shared helper.
-	cmds, err := reinvokeServiceAction(def, s, tok, at, eval)
+	cmds, err := reinvokeServiceAction(ctx, def, s, tok, at, eval)
 	if err != nil {
 		return StepResult{}, fmt.Errorf("workflow-engine: retry fired: %w", err)
 	}

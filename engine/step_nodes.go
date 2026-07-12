@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -15,6 +16,13 @@ import (
 // tdef is the scope-resolved process definition for the current token;
 // def is the top-level definition. Both are provided by drive().
 type stepCtx struct {
+	// ctx is the Step caller's context, threaded through for trace-correlated
+	// logging ONLY (ADR-0129) — never inspected for control flow. Storing it on
+	// this struct is an accepted exception to "never store a context in a
+	// struct": stepCtx is a short-lived, request-scoped bundle constructed fresh
+	// by drive() for the duration of a single Step call and never persisted or
+	// reused across calls, unlike a long-lived struct field.
+	ctx  context.Context
 	def  *model.ProcessDefinition
 	tdef *model.ProcessDefinition
 	s    *InstanceState
@@ -158,7 +166,7 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			// handler (may catch + recover) or fails the instance.
 			currentScopeID := tok.ScopeID
 			c.s.consumeToken(tok, c.at)
-			errCmds, propErr := propagateError(c.def, c.s, currentScopeID, "", "", ev.ErrorCode, nil, c.at, c.mode, c.eval, failFast)
+			errCmds, propErr := propagateError(c.ctx, c.def, c.s, currentScopeID, "", "", ev.ErrorCode, nil, c.at, c.mode, c.eval, failFast)
 			if propErr != nil {
 				return nil, false, propErr
 			}

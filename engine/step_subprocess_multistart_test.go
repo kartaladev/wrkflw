@@ -67,7 +67,7 @@ func TestEmbeddedSubProcessEntersManualStartNotEventStart(t *testing.T) {
 	at := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
 	def := subProcessManualAfterEventStartDef()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-manual-after-event"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-manual-after-event"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)

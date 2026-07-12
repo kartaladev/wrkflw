@@ -57,7 +57,7 @@ func TestCancelReconcilesOpenTasks(t *testing.T) {
 	// startParked runs NewStartInstance and returns the resulting state.
 	startParked := func(t *testing.T, def *model.ProcessDefinition, id string) engine.InstanceState {
 		t.Helper()
-		r0, err := engine.Step(def, engine.InstanceState{InstanceID: id},
+		r0, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: id},
 			engine.NewStartInstance(at, nil), engine.StepOptions{})
 		require.NoError(t, err)
 		return r0.State
@@ -162,7 +162,7 @@ func TestCancelReconcilesOpenTasks(t *testing.T) {
 			t.Parallel()
 
 			def, st := tc.setup(t)
-			res, err := engine.Step(def, st, engine.NewCancelRequested(at.Add(time.Second)), engine.StepOptions{})
+			res, err := engine.Step(t.Context(), def, st, engine.NewCancelRequested(at.Add(time.Second)), engine.StepOptions{})
 			require.NoError(t, err)
 			tc.assert(t, res)
 		})
@@ -197,14 +197,14 @@ func TestCancelWithCompensationReconcilesOpenTasks(t *testing.T) {
 	}
 
 	// Drive: start → svc parked.
-	r0, err := engine.Step(def, engine.InstanceState{InstanceID: "cc-comp-1"},
+	r0, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "cc-comp-1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	ia0, ok := r0.Commands[0].(engine.InvokeAction)
 	require.True(t, ok)
 
 	// svc completes → user task parked; a compensation record now exists.
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewActionCompleted(at.Add(time.Second), ia0.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.RootCompensations, 1, "setup: compensation record must exist")
@@ -212,7 +212,7 @@ func TestCancelWithCompensationReconcilesOpenTasks(t *testing.T) {
 
 	// Cancel: enters the compensation-first branch (StatusCompensating), but the
 	// open user task must still be reconciled to Cancelled.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewCancelRequested(at.Add(2*time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 

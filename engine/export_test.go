@@ -8,6 +8,7 @@
 package engine
 
 import (
+	"context"
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/model"
@@ -36,6 +37,6 @@ func ScopeByID(s *InstanceState, id string) *Scope {
 // BeginCompensation exposes beginCompensation for engine_test. Used to test
 // the non-zero FinalStatus/FinalErr outcome branch of stepCompensationFinish
 // without going through a full trigger-dispatch path.
-func BeginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode string, finalStatus Status, finalErr string, at time.Time, mode StepMode) (StepResult, error) {
-	return beginCompensation(def, s, at, mode, conditions, compensationOutcome{ToNode: toNode, FinalStatus: finalStatus, FinalErr: finalErr})
+func BeginCompensation(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, toNode string, finalStatus Status, finalErr string, at time.Time, mode StepMode) (StepResult, error) {
+	return beginCompensation(ctx, def, s, at, mode, conditions, compensationOutcome{ToNode: toNode, FinalStatus: finalStatus, FinalErr: finalErr})
 }

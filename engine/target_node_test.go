@@ -124,7 +124,7 @@ func TestTargetNode(t *testing.T) {
 
 	// ---- Drive fixture 1 to a parked nested UserTask ("approve"). ----
 	userTaskDef := nestedUserTaskDef()
-	userTaskResult, err := Step(userTaskDef, InstanceState{InstanceID: "i-approve"},
+	userTaskResult, err := Step(t.Context(), userTaskDef, InstanceState{InstanceID: "i-approve"},
 		NewStartInstance(at, nil), StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, userTaskResult.State.Tokens, 1, "expected one parked token at the nested approve task")
@@ -133,7 +133,7 @@ func TestTargetNode(t *testing.T) {
 
 	// ---- Drive fixture 2 to a parked nested ReceiveTask ("recv"). ----
 	receiveTaskDef := nestedReceiveTaskDef()
-	receiveTaskResult, err := Step(receiveTaskDef, InstanceState{InstanceID: "i-recv"},
+	receiveTaskResult, err := Step(t.Context(), receiveTaskDef, InstanceState{InstanceID: "i-recv"},
 		NewStartInstance(at, nil), StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, receiveTaskResult.State.Tokens, 1, "expected one parked token at the nested recv task")

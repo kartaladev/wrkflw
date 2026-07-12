@@ -95,7 +95,7 @@ func TestErrorEndHaltsDriveOnImmediateFailure(t *testing.T) {
 	def := parallelErrorEndFirstNoHandlerDef()
 
 	// Single Step in Macro mode (default). The full fork drives in one call.
-	res, err := engine.Step(def, engine.InstanceState{InstanceID: "i-errend-halt"},
+	res, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-errend-halt"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -181,7 +181,7 @@ func TestNewAPIErrorEndCaughtByBoundary(t *testing.T) {
 	at := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
 
 	// Step 1: StartInstance → enters sub-process → inner-svc parks with InvokeAction.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-newapi"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-newapi"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -200,7 +200,7 @@ func TestNewAPIErrorEndCaughtByBoundary(t *testing.T) {
 
 	// Step 2: ActionCompleted → token reaches inner-err-end → error "BOOM" thrown
 	//         → caught by boundary bnd-err on sp → recovery flow runs.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(time.Second), innerIA.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 

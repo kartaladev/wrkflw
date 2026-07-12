@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -66,7 +67,7 @@ func eligibleRange(records []CompensationRecord, toNode string) (start, stopExcl
 // The admin path always calls beginCompensation with zero finalStatus and empty
 // finalErr, producing StatusTerminated with no FailInstance on a full rollback —
 // identical to the prior behaviour.
-func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t CompensateRequested, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+func stepCompensateRequested(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t CompensateRequested, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// Reject a malformed trigger that expresses reverse intent (ResetVars)
 	// without naming a resume target (ReverseNode). CompensateRequested is a
 	// public, directly-constructible struct — a caller who builds one by hand
@@ -130,7 +131,7 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 		return StepResult{}, fmt.Errorf("workflow-engine: cannot reverse a terminal instance (status %v)", s.Status)
 	}
 	s.Status = StatusCompensating
-	return beginCompensation(def, s, t.OccurredAt(), mode, eval, compensationOutcome{
+	return beginCompensation(ctx, def, s, t.OccurredAt(), mode, eval, compensationOutcome{
 		ToNode:            t.ToNode,
 		FinalStatus:       0,
 		FinalErr:          "",
@@ -194,7 +195,7 @@ type compensationOutcome struct {
 //     InvokeAction for the most-recently completed record (reverse walk).
 //
 // See compensationOutcome for the meaning of each field.
-func beginCompensation(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator, outcome compensationOutcome) (StepResult, error) {
+func beginCompensation(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator, outcome compensationOutcome) (StepResult, error) {
 	// Cancel all in-flight tokens (interrupting normal execution).
 	// Also emit CancelTimer for any outstanding timers, armed events, and boundaries.
 	var preCmds []Command
@@ -251,7 +252,7 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, at time.T
 				// (resume at toNode) regardless of FinalStatus/FinalErr — which is correct
 				// for the admin path (outcome fields are zero).
 				s.Compensating = compensationCursor{FinalStatus: finalStatus, FinalErr: finalErr, ReverseNode: reverseNode, ReverseResetVars: reverseResetVars, RestoreTargetVars: restoreTargetVars}
-				finishRes, finishErr := stepCompensationFinish(def, s, toNode, at, mode, eval)
+				finishRes, finishErr := stepCompensationFinish(ctx, def, s, toNode, at, mode, eval)
 				if finishErr != nil {
 					return StepResult{}, finishErr
 				}
@@ -274,7 +275,7 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, at time.T
 		// stepCompensationFinish reads the outcome AND reverse fields — a
 		// reverse-to-start with ZERO eligible records must still resume at start.
 		s.Compensating = compensationCursor{FinalStatus: finalStatus, FinalErr: finalErr, ReverseNode: reverseNode, ReverseResetVars: reverseResetVars, RestoreTargetVars: restoreTargetVars}
-		finishRes, finishErr := stepCompensationFinish(def, s, toNode, at, mode, eval)
+		finishRes, finishErr := stepCompensationFinish(ctx, def, s, toNode, at, mode, eval)
 		if finishErr != nil {
 			return StepResult{}, finishErr
 		}
@@ -311,7 +312,7 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, at time.T
 // stepCompensationAdvance advances the compensation cursor after a compensation
 // InvokeAction completes (ActionCompleted with cursor.ActiveCmdID). It emits the
 // next InvokeAction in reverse order, or finalises compensation if the walk is done.
-func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+func stepCompensationAdvance(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	cur := s.Compensating
 	// Use cursorRecords so that throw walks (ArchiveKey != "") read from the
 	// archive and admin/cancel/error walks read from the live scope.
@@ -330,7 +331,7 @@ func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at 
 	// Eligible: nextIdx >= 0 AND nextIdx > toNodeIdx (i.e. the record is AFTER ToNode).
 	if nextIdx < 0 || nextIdx <= toNodeIdx {
 		// Walk complete: either exhausted all records, or reached ToNode boundary.
-		return stepCompensationFinish(def, s, cur.ToNode, at, mode, eval)
+		return stepCompensationFinish(ctx, def, s, cur.ToNode, at, mode, eval)
 	}
 
 	// Emit the next compensation action. cur already carries every field
@@ -523,7 +524,7 @@ func popOneDeferredThrow(s *InstanceState) {
 //     drive.
 //   - otherwise (full rollback): apply the cursor's terminal FinalStatus
 //     (StatusTerminated / StatusFailed), stamp EndedAt, clear records.
-func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNode string, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, toNode string, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// Snapshot the cursor BEFORE clearing it, with ToNode filled in from the
 	// toNode parameter: the immediate-finish call sites in beginCompensation
 	// (nothing to compensate / no records at all) stamp s.Compensating without
@@ -641,7 +642,7 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 		}
 	}
 	plan.validate()
-	return applyFinish(def, s, plan, at, mode, eval)
+	return applyFinish(ctx, def, s, plan, at, mode, eval)
 }
 
 // applyPlanRecordClearing performs a finishPlan's record clearing: a scope-wide
@@ -664,7 +665,7 @@ func applyPlanRecordClearing(s *InstanceState, plan finishPlan) {
 // terminates (FinalStatus applied, EndedAt stamped, records cleared). Collapsing
 // the four former branches here means the resume/terminate invariants can no
 // longer drift apart.
-func applyFinish(def *model.ProcessDefinition, s *InstanceState, plan finishPlan, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, plan finishPlan, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// Throw-walk archive consume (single ownership). No-op for other plans
 	// (deleteArchive == "").
 	if plan.deleteArchive != "" && s.ArchivedCompensations != nil {
@@ -691,7 +692,7 @@ func applyFinish(def *model.ProcessDefinition, s *InstanceState, plan finishPlan
 		// compensated ALL of RootCompensations and clears the whole list the same way.
 		applyPlanRecordClearing(s, plan)
 		s.Status = StatusCompensating
-		return beginCompensation(def, s, at, mode, eval, compensationOutcome{FinalStatus: StatusTerminated, FinalErr: "cancelled"})
+		return beginCompensation(ctx, def, s, at, mode, eval, compensationOutcome{FinalStatus: StatusTerminated, FinalErr: "cancelled"})
 	}
 
 	if !plan.resume {
@@ -736,7 +737,7 @@ func applyFinish(def *model.ProcessDefinition, s *InstanceState, plan finishPlan
 		}
 		preDriveCmds = append(preDriveCmds, espCmds...)
 	}
-	driveCmds, err := drive(def, s, at, mode, eval)
+	driveCmds, err := drive(ctx, def, s, at, mode, eval)
 	if err != nil {
 		return StepResult{}, err
 	}

@@ -91,7 +91,7 @@ func startParallelThrows(t *testing.T, def *model.ProcessDefinition, n int, seed
 		}
 	}
 	st := engine.InstanceState{InstanceID: "par-throw-inst", ArchivedCompensations: archive}
-	r, err := engine.Step(def, st, engine.NewStartInstance(at, nil), engine.StepOptions{})
+	r, err := engine.Step(t.Context(), def, st, engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	return r
 }
@@ -149,7 +149,7 @@ func TestParallelCompensationThrowsSerialize(t *testing.T) {
 	// second throw is re-activated, starting its walk (cancel2). This is the step
 	// that, before the fix, fails with ErrTokenNotFound because the cursor was
 	// overwritten by the second throw in the fork pass.
-	r2, err := engine.Step(def, r.State,
+	r2, err := engine.Step(t.Context(), def, r.State,
 		engine.NewActionCompleted(at.Add(time.Second), firstActions["cancel1"].CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err, "completing the first throw's compensation must not orphan the walk")
@@ -164,7 +164,7 @@ func TestParallelCompensationThrowsSerialize(t *testing.T) {
 
 	// Complete cancel2 → second walk finishes → second branch resumes → both
 	// tokens reach joinGW → end → StatusCompleted.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), secondActions["cancel2"].CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -185,7 +185,7 @@ func TestParallelCompensationThrowsCursorOverwriteIsFixed(t *testing.T) {
 	first := invokeActionsByName(r.Commands)
 	require.Contains(t, first, "cancel1")
 
-	_, err := engine.Step(def, r.State,
+	_, err := engine.Step(t.Context(), def, r.State,
 		engine.NewActionCompleted(at.Add(time.Second), first["cancel1"].CommandID, nil),
 		engine.StepOptions{})
 	require.False(t, errors.Is(err, engine.ErrTokenNotFound),
@@ -257,7 +257,7 @@ func TestParallelCompensationThrowsDrainOrdering(t *testing.T) {
 				require.Len(t, actions, 1,
 					"exactly ONE compensation walk may be in flight per finish (serialize)")
 
-				next, err := engine.Step(def, state,
+				next, err := engine.Step(t.Context(), def, state,
 					engine.NewActionCompleted(at.Add(time.Duration(step+1)*time.Second), actions[wantAction].CommandID, nil),
 					engine.StepOptions{})
 				require.NoError(t, err, "completing %q must not orphan the walk", wantAction)
@@ -298,7 +298,7 @@ func TestParallelThrowWithCancelMidFirstThrow(t *testing.T) {
 
 	// CancelRequested mid-first-throw: deferred (PendingCancel), instance stays
 	// compensating, the deferred second throw remains queued.
-	r2, err := engine.Step(def, r.State, engine.NewCancelRequested(at.Add(time.Second)), engine.StepOptions{})
+	r2, err := engine.Step(t.Context(), def, r.State, engine.NewCancelRequested(at.Add(time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.True(t, r2.State.PendingCancel, "cancel mid-throw-walk must be deferred (PendingCancel)")
 	assert.Equal(t, engine.StatusCompensating, r2.State.Status,
@@ -307,7 +307,7 @@ func TestParallelThrowWithCancelMidFirstThrow(t *testing.T) {
 	// Complete the first throw's compensation → deferred cancel fires → full cancel
 	// over remaining records → terminate. No deferred throw is left orphaned: the
 	// instance terminates rather than resuming.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), first["cancel1"].CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -324,7 +324,7 @@ func TestParallelThrowWithCancelMidFirstThrow(t *testing.T) {
 		for _, ia := range acts {
 			cmdID = ia.CommandID
 		}
-		r4, err := engine.Step(def, r3.State,
+		r4, err := engine.Step(t.Context(), def, r3.State,
 			engine.NewActionCompleted(at.Add(3*time.Second), cmdID, nil),
 			engine.StepOptions{})
 		require.NoError(t, err)

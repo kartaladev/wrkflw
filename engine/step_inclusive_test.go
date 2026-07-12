@@ -53,7 +53,7 @@ func actionNames(cmds []engine.Command) []string {
 
 func TestInclusiveForkTakesAllTrueBranches(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
-	res, err := engine.Step(inclusiveForkDef(), engine.InstanceState{InstanceID: "i1"},
+	res, err := engine.Step(t.Context(), inclusiveForkDef(), engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"a": 1, "b": 1}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"a", "b"}, actionNames(res.Commands))
@@ -62,7 +62,7 @@ func TestInclusiveForkTakesAllTrueBranches(t *testing.T) {
 
 func TestInclusiveForkSingleTrueBranch(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
-	res, err := engine.Step(inclusiveForkDef(), engine.InstanceState{InstanceID: "i1"},
+	res, err := engine.Step(t.Context(), inclusiveForkDef(), engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"a": 1, "b": 0}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"a"}, actionNames(res.Commands))
@@ -71,7 +71,7 @@ func TestInclusiveForkSingleTrueBranch(t *testing.T) {
 
 func TestInclusiveForkFallsBackToDefault(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
-	res, err := engine.Step(inclusiveForkDef(), engine.InstanceState{InstanceID: "i1"},
+	res, err := engine.Step(t.Context(), inclusiveForkDef(), engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"a": 0, "b": 0}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"c"}, actionNames(res.Commands))
@@ -101,7 +101,7 @@ func TestInclusiveForkUnconditionalFlowSuppressesDefault(t *testing.T) {
 			{ID: "f5", Source: "tb", Target: "eb"},
 		},
 	}
-	res, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	res, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	// Unconditional flow is taken; default must NOT be selected.
@@ -148,7 +148,7 @@ func TestInclusiveJoinDoesNotWaitForUntakenBranch(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	def := orDiamondDef()
 
-	r0, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r0, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"a": 1, "b": 1, "c": 0}), engine.StepOptions{})
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"a", "b"}, actionNames(r0.Commands))
@@ -161,7 +161,7 @@ func TestInclusiveJoinDoesNotWaitForUntakenBranch(t *testing.T) {
 	// Complete a: token parks at the join; b can still reach the join, so no firing.
 	// With forkInclusive (wrong behavior), the token would immediately proceed to "post"
 	// and issue an InvokeAction{Name:"post"} — but the OR-join must NOT fire yet.
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewActionCompleted(at.Add(time.Second), cmds["a"], nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Empty(t, r1.Commands, "OR-join must not fire while b can still reach it")
@@ -169,7 +169,7 @@ func TestInclusiveJoinDoesNotWaitForUntakenBranch(t *testing.T) {
 
 	// Complete b: now no token (other than those parked at the join) can reach the join.
 	// It fires: consumes both parked tokens, places ONE token at "post" (not two).
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), cmds["b"], nil), engine.StepOptions{})
 	require.NoError(t, err)
 	// Exactly ONE InvokeAction for "post" (join fired once, not once-per-branch).
@@ -188,7 +188,7 @@ func TestNodesThatCanReachIsAccurate(t *testing.T) {
 	// immediately once its only active branch arrives.
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	def := orDiamondDef()
-	r0, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r0, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"a": 1, "b": 0, "c": 0}), engine.StepOptions{})
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"a"}, actionNames(r0.Commands))
@@ -196,7 +196,7 @@ func TestNodesThatCanReachIsAccurate(t *testing.T) {
 
 	// Only branch a is active; completing it must fire the join immediately,
 	// advancing to the "post" task (one InvokeAction for "post").
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewActionCompleted(at.Add(time.Second), idA, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.Commands, 1)
@@ -222,7 +222,7 @@ func TestInclusiveForkNoMatchNoDefaultErrors(t *testing.T) {
 			{ID: "f3", Source: "ta", Target: "ea"},
 		},
 	}
-	_, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	_, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"a": 0}), engine.StepOptions{})
 	require.ErrorIs(t, err, engine.ErrNoMatchingFlow)
 }
