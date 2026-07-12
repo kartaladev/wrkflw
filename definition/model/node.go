@@ -96,6 +96,11 @@ func (a ActivityFields) completionAction() string { return a.CompletionAction }
 // CompensateActionOf is therefore kind-agnostic by design.
 func (a ActivityFields) compensateAction() string { return a.CompensateAction }
 
+// cancelAction returns the raw CancelAction field. Present on every activity
+// kind (CancelAction lives on the shared ActivityFields embed); CancelActionOf
+// is therefore kind-agnostic by design.
+func (a ActivityFields) cancelAction() string { return a.CancelAction }
+
 // TaskAction holds the action reference shared by ServiceTask and BusinessRuleTask:
 // the catalog action name. Embedded so the ActionOf accessor dispatches on its
 // carrier method across the activity leaf.

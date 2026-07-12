@@ -1,40 +1,29 @@
 package engine
 
 import (
-	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // compensateActionOf returns the CompensateAction of an activity node, or "".
+// All 7 activity kinds (ServiceTask, UserTask, ReceiveTask, SendTask,
+// BusinessRuleTask, SubProcess, CallActivity) carry it via the shared
+// model.ActivityFields embed, so this delegates to the kind-agnostic
+// model.CompensateActionOf rather than enumerating each concrete type.
 func compensateActionOf(n model.Node) string {
-	switch v := n.(type) {
-	case activity.ServiceTask:
-		return v.CompensateAction
-	case activity.UserTask:
-		return v.CompensateAction
-	case activity.ReceiveTask:
-		return v.CompensateAction
-	case activity.SendTask:
-		return v.CompensateAction
-	case activity.BusinessRuleTask:
-		return v.CompensateAction
-	case activity.SubProcess:
-		return v.CompensateAction
-	case activity.CallActivity:
-		return v.CompensateAction
-	default:
-		return ""
-	}
+	return model.CompensateActionOf(n)
 }
 
 // completionActionOf returns the CompletionAction of a completion-triggered
-// activity node (UserTask, ReceiveTask), or "".
+// activity node (UserTask, ReceiveTask), or "". Unlike the other three
+// accessors, CompletionAction is honored only by these two kinds at execution
+// time (see model.CompletionActionOf's godoc and the
+// ErrCompletionActionUnsupportedKind validation rule), so the kind check is
+// preserved here even though the field itself lives on the shared
+// model.ActivityFields embed carried by all 7 activity kinds.
 func completionActionOf(n model.Node) string {
-	switch v := n.(type) {
-	case activity.UserTask:
-		return v.CompletionAction
-	case activity.ReceiveTask:
-		return v.CompletionAction
+	switch n.Kind() {
+	case model.KindUserTask, model.KindReceiveTask:
+		return model.CompletionActionOf(n)
 	default:
 		return ""
 	}
@@ -42,44 +31,10 @@ func completionActionOf(n model.Node) string {
 
 // cancelActionOf returns the CancelAction of an activity node, or "".
 func cancelActionOf(n model.Node) string {
-	switch v := n.(type) {
-	case activity.ServiceTask:
-		return v.CancelAction
-	case activity.UserTask:
-		return v.CancelAction
-	case activity.ReceiveTask:
-		return v.CancelAction
-	case activity.SendTask:
-		return v.CancelAction
-	case activity.BusinessRuleTask:
-		return v.CancelAction
-	case activity.SubProcess:
-		return v.CancelAction
-	case activity.CallActivity:
-		return v.CancelAction
-	default:
-		return ""
-	}
+	return model.CancelActionOf(n)
 }
 
 // recoveryFlowOf returns the RecoveryFlow of an activity node, or "".
 func recoveryFlowOf(n model.Node) string {
-	switch v := n.(type) {
-	case activity.ServiceTask:
-		return v.RecoveryFlow
-	case activity.UserTask:
-		return v.RecoveryFlow
-	case activity.ReceiveTask:
-		return v.RecoveryFlow
-	case activity.SendTask:
-		return v.RecoveryFlow
-	case activity.BusinessRuleTask:
-		return v.RecoveryFlow
-	case activity.SubProcess:
-		return v.RecoveryFlow
-	case activity.CallActivity:
-		return v.RecoveryFlow
-	default:
-		return ""
-	}
+	return model.RecoveryFlowOf(n)
 }
