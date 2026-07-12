@@ -88,7 +88,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 	case SubInstanceCompleted:
 		return handleSubInstanceCompleted(def, sp, t, opt)
 	case SubInstanceFailed:
-		return handleSubInstanceFailed(sp, t)
+		return handleSubInstanceFailed(def, sp, t, opt)
 	case MessageReceived:
 		return handleMessageReceived(def, sp, t, opt)
 	case ResolveIncident:

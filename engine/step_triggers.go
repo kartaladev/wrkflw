@@ -706,21 +706,42 @@ func handleSubInstanceCompleted(def *model.ProcessDefinition, s *InstanceState, 
 	return StepResult{State: *s, Commands: cmds}, nil
 }
 
-// handleSubInstanceFailed processes a SubInstanceFailed trigger: fails the
-// parent instance when a child process terminates with an error.
-func handleSubInstanceFailed(s *InstanceState, t SubInstanceFailed) (StepResult, error) {
-	// A child process instance has terminated with an error. For this plan (Plan 7),
-	// a failed child fails the parent instance (boundary error events are Plan 8).
-	// Mirror of ActionFailed: find the parked token, set StatusFailed, emit
-	// FailInstance, and cancel all timers/arms to clean up.
-	//
-	// Plan 8 note: when a boundary error event is present on the call-activity
-	// node, SubInstanceFailed should route to it instead of failing the parent.
-	// This fallback (FailInstance) is correct until Plan 8 arrives.
+// handleSubInstanceFailed processes a SubInstanceFailed trigger: routes to a
+// parent error boundary attached to the call-activity node when the child's
+// error code matches (ADR-0128), else fails the parent instance.
+func handleSubInstanceFailed(def *model.ProcessDefinition, s *InstanceState, t SubInstanceFailed, opt StepOptions) (StepResult, error) {
+	// A child process instance has terminated with an error. A SubInstanceFailed
+	// is semantically an error thrown AT the call-activity node that spawned the
+	// child (ADR-0128): when that node carries a boundary error event whose
+	// ErrorCode matches the child's error, route to it exactly as propagateError's
+	// direct-boundary path does for an ActionFailed on an ordinary activity —
+	// cancel the call-activity token, fire the boundary's outgoing flow, and
+	// drive. When no boundary matches, fall back to the original behavior:
+	// FailInstance and cancel all timers/arms to clean up.
 	tok := s.tokenAwaiting(t.CommandID)
 	if tok == nil {
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 	}
+
+	hostDef, err := defForScope(def, s, tok.ScopeID)
+	if err != nil {
+		return StepResult{}, err
+	}
+	cause := error(errors.New(t.Err))
+	if boundary, ok := findDirectBoundary(hostDef, tok.NodeID, t.Err, s.Variables, cause, resolveEvaluator(opt)); ok {
+		callActivityTok := tok
+		consume := func(cmds []Command) []Command {
+			s.consumeToken(callActivityTok, t.OccurredAt())
+			return cmds
+		}
+		cmds, routeErr := routeToBoundary(def, s, hostDef, boundary, "call-activity boundary", tok.ScopeID,
+			t.OccurredAt(), opt.Mode, resolveEvaluator(opt), consume)
+		if routeErr != nil {
+			return StepResult{}, routeErr
+		}
+		return StepResult{State: *s, Commands: cmds}, nil
+	}
+
 	s.Status = StatusFailed
 	ended := t.OccurredAt()
 	s.EndedAt = &ended

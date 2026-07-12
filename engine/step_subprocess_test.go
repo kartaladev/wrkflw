@@ -514,6 +514,138 @@ func TestSubInstanceFailedUnknownCommandID(t *testing.T) {
 	require.ErrorIs(t, err, engine.ErrTokenNotFound)
 }
 
+// callActivityWithBoundaryDef builds:
+//
+//	Root: start → call (CallActivity, DefRef "child") → end
+//	      call has a boundary error event → recover → end-recover
+//
+// boundaryErrorCode is the boundary's ErrorCode ("" == catch-all). Used to verify
+// that SubInstanceFailed routes to a parent error boundary attached to the
+// call-activity node when the child's error code matches (ADR-0128), instead of
+// unconditionally failing the parent.
+func callActivityWithBoundaryDef(boundaryErrorCode string) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-call-bnd", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewCallActivity("call", model.Latest("child")),
+			event.NewBoundary("bnd-call-err", "call", event.WithBoundaryErrorCode(boundaryErrorCode)),
+			activity.NewServiceTask("recover", activity.WithTaskAction("recover-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end-recover"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f-start-call", Source: "start", Target: "call"},
+			{ID: "f-call-end", Source: "call", Target: "end"},
+			{ID: "f-bnd-recover", Source: "bnd-call-err", Target: "recover"},
+			{ID: "f-recover-end", Source: "recover", Target: "end-recover"},
+		},
+	}
+}
+
+// TestSubInstanceFailedRoutesToParentBoundary is the ADR-0128 regression test: a
+// SubInstanceFailed is semantically an error thrown at the call-activity node that
+// spawned the child. When the call-activity node carries a boundary error event
+// whose ErrorCode matches the child's error, the engine must route to it (like
+// propagateError's direct-boundary path) instead of unconditionally failing the
+// parent. When no boundary matches, the parent still FailInstances (unchanged
+// fallback behavior).
+func TestSubInstanceFailedRoutesToParentBoundary(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, 7, 13, 10, 0, 0, 0, time.UTC)
+
+	type testCase struct {
+		name              string
+		boundaryErrorCode string
+		childErr          string
+		assert            func(t *testing.T, r2 engine.StepResult)
+	}
+
+	cases := []testCase{
+		{
+			name:              "specific error code match routes to boundary",
+			boundaryErrorCode: "E1",
+			childErr:          "E1",
+			assert: func(t *testing.T, r2 engine.StepResult) {
+				assert.Equal(t, engine.StatusRunning, r2.State.Status,
+					"parent must stay running — the boundary caught the child failure")
+				assert.Nil(t, r2.State.EndedAt, "EndedAt must NOT be set when the boundary catches the error")
+
+				for _, c := range r2.Commands {
+					if _, ok := c.(engine.FailInstance); ok {
+						t.Fatal("FailInstance must NOT be emitted when the boundary catches the child error")
+					}
+				}
+
+				var recoverIA *engine.InvokeAction
+				for _, c := range r2.Commands {
+					if v, ok := c.(engine.InvokeAction); ok {
+						vv := v
+						recoverIA = &vv
+					}
+				}
+				require.NotNil(t, recoverIA, "expected InvokeAction for recover-action")
+				assert.Equal(t, "recover-action", recoverIA.Name)
+
+				require.Len(t, r2.State.Tokens, 1, "exactly one token must remain (at recover)")
+				assert.Equal(t, "recover", r2.State.Tokens[0].NodeID)
+			},
+		},
+		{
+			name:              "catch-all boundary routes any child error",
+			boundaryErrorCode: "",
+			childErr:          "anything",
+			assert: func(t *testing.T, r2 engine.StepResult) {
+				assert.Equal(t, engine.StatusRunning, r2.State.Status,
+					"catch-all boundary must catch any child error code")
+				for _, c := range r2.Commands {
+					if _, ok := c.(engine.FailInstance); ok {
+						t.Fatal("FailInstance must NOT be emitted when the catch-all boundary catches the error")
+					}
+				}
+			},
+		},
+		{
+			name:              "error code mismatch falls back to FailInstance",
+			boundaryErrorCode: "E1",
+			childErr:          "OTHER",
+			assert: func(t *testing.T, r2 engine.StepResult) {
+				assert.Equal(t, engine.StatusFailed, r2.State.Status,
+					"parent must fail when no boundary matches the child's error code")
+				require.NotNil(t, r2.State.EndedAt)
+
+				require.NotEmpty(t, r2.Commands)
+				fi, ok := r2.Commands[0].(engine.FailInstance)
+				require.True(t, ok, "expected FailInstance, got %T", r2.Commands[0])
+				assert.Contains(t, fi.Err, "OTHER")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			def := callActivityWithBoundaryDef(tc.boundaryErrorCode)
+
+			r1, err := engine.Step(def, engine.InstanceState{InstanceID: "ca-bnd-" + tc.name},
+				engine.NewStartInstance(at, nil), engine.StepOptions{})
+			require.NoError(t, err)
+			require.Len(t, r1.Commands, 1)
+			ssi, ok := r1.Commands[0].(engine.StartSubInstance)
+			require.True(t, ok)
+
+			r2, err := engine.Step(def, r1.State,
+				engine.NewSubInstanceFailed(at.Add(time.Second), ssi.CommandID, tc.childErr),
+				engine.StepOptions{})
+			require.NoError(t, err)
+
+			tc.assert(t, r2)
+		})
+	}
+}
+
 // ---- Inner-scope topology tests (Task 6) ----
 
 // boundaryTimerInsideSubProcessDef builds:

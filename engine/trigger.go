@@ -210,16 +210,20 @@ func NewSubInstanceCompleted(at time.Time, commandID string, output map[string]a
 // SubInstanceFailed reports that a child process instance (started by a
 // StartSubInstance command) has terminated with an error. CommandID correlates
 // this result back to the StartSubInstance command. Err is a human-readable
-// description of the failure reason.
+// description of the failure reason, also used as the boundary-matching error
+// code (mirrors ActionFailed.Err).
 //
-// The engine marks the instance failed (StatusFailed) with a FailInstance
-// command. Routing a child failure to a parent error boundary is not yet
-// implemented.
+// The engine treats this as an error thrown at the call-activity node: when
+// that node carries a boundary error event whose ErrorCode matches Err, the
+// engine routes to it instead of failing the parent (ADR-0128). When no
+// boundary matches, the engine marks the instance failed (StatusFailed) with a
+// FailInstance command.
 type SubInstanceFailed struct {
 	baseTrigger
 	// CommandID matches the StartSubInstance.CommandID that started the child.
 	CommandID string
-	// Err is the error message from the failed child instance.
+	// Err is the error message from the failed child instance; also used as
+	// the error code for parent boundary-event matching (ADR-0128).
 	Err string
 }
 
