@@ -84,7 +84,7 @@ func TestFluentAllAdders(t *testing.T) {
 		AddIntermediateThrowEvent("throw").
 		AddBoundaryEvent("bnd", "recv").
 		AddEndEvent("term", event.WithForceTermination("terminated", event.OutcomeAbort)).
-		AddErrorEndEvent("err", "E").
+		AddEndEvent("err", event.WithErrorCode("E")).
 		RegisterAction("a", action.ActionFunc(noop)).
 		RegisterActionFunc("b", noop).
 		CancelActions("cleanup")

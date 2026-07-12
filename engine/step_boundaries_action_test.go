@@ -303,7 +303,7 @@ func TestBoundaryActionFireOnErrorBoundary(t *testing.T) {
 			Nodes: []model.Node{
 				event.NewStart("inner-start"),
 				activity.NewServiceTask("inner-svc", activity.WithTaskAction("inner-action")),
-				event.NewErrorEnd("inner-err-end", "E1"),
+				event.NewEnd("inner-err-end", event.WithErrorCode("E1")),
 			},
 			Flows: []flow.SequenceFlow{
 				{ID: "fi1", Source: "inner-start", Target: "inner-svc"},

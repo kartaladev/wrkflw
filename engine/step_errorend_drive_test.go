@@ -62,7 +62,7 @@ func parallelErrorEndFirstNoHandlerDef() *model.ProcessDefinition {
 			event.NewStart("start"),
 			gateway.NewParallel("fork"),
 			// err-end FIRST so forkParallel places its token before svc-a.
-			event.NewErrorEnd("err-end", "FATAL"),
+			event.NewEnd("err-end", event.WithErrorCode("FATAL")),
 			activity.NewServiceTask("svc-a", activity.WithTaskAction("svc-a")),
 			// NO boundary error handler anywhere.
 		},

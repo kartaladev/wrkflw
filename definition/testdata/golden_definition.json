@@ -223,9 +223,10 @@
     },
     {
       "id": "boom",
-      "kind": "errorEndEvent",
+      "kind": "endEvent",
       "name": "Boom",
-      "errorCode": "E_BOOM"
+      "errorCode": "E_BOOM",
+      "endBehavior": "error"
     },
     {
       "id": "end",

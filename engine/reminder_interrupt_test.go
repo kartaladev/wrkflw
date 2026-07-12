@@ -36,7 +36,7 @@ func catchReminderInterruptDef() *model.ProcessDefinition {
 				event.WithSignalName("resume"),
 				event.WithWaitAction(schedule.Every(30*time.Minute), "nudge")),
 			event.NewEnd("await-end"),
-			event.NewErrorEnd("boom", "E1"),
+			event.NewEnd("boom", event.WithErrorCode("E1")),
 		},
 		Flows: []flow.SequenceFlow{
 			{ID: "fi1", Source: "inner-start", Target: "pgw"},

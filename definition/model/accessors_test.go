@@ -42,7 +42,7 @@ func TestRetryPolicyOf(t *testing.T) {
 		event.NewStart("s"),
 		event.NewEnd("e"),
 		event.NewEnd("te", event.WithForceTermination("terminated", event.OutcomeAbort)),
-		event.NewErrorEnd("ee", "ERR"),
+		event.NewEnd("ee", event.WithErrorCode("ERR")),
 		gateway.NewExclusive("xor"),
 		gateway.NewParallel("par"),
 		gateway.NewInclusive("inc"),
@@ -171,7 +171,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 			),
 			gateway.NewExclusive("xor", "Decision"),
 			event.NewEnd("end", event.WithName("End")),
-			event.NewErrorEnd("err-end", "ERR_FATAL"),
+			event.NewEnd("err-end", event.WithErrorCode("ERR_FATAL")),
 			event.NewEnd("term-end", event.WithForceTermination("terminated", event.OutcomeAbort)),
 		},
 		Flows: []flow.SequenceFlow{
@@ -255,7 +255,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 			{"id": "inc", "kind": "inclusiveGateway"},
 			{"id": "ebg", "kind": "eventBasedGateway"},
 			{"id": "end", "kind": "endEvent"},
-			{"id": "errend", "kind": "errorEndEvent", "errorCode": "FATAL"},
+			{"id": "errend", "kind": "endEvent", "endBehavior": "error", "errorCode": "FATAL"},
 			{"id": "send", "kind": "sendTask", "messageName": "msg.send"},
 			{"id": "recv", "kind": "receiveTask", "messageName": "msg.recv", "correlationKey": "order.id"},
 			{"id": "brt", "kind": "businessRuleTask", "action": "apply-discount"},
@@ -326,8 +326,9 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 	_, ok = def.Nodes[12].(event.EndEvent)
 	require.True(t, ok, "nodes[12] should be EndEvent")
 
-	ee, ok := def.Nodes[13].(event.ErrorEndEvent)
-	require.True(t, ok, "nodes[13] should be ErrorEndEvent")
+	ee, ok := def.Nodes[13].(event.EndEvent)
+	require.True(t, ok, "nodes[13] should be EndEvent")
+	assert.Equal(t, event.EndError, ee.Behavior)
 	assert.Equal(t, "FATAL", ee.ErrorCode)
 
 	send, ok := def.Nodes[14].(activity.SendTask)

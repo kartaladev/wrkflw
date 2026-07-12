@@ -62,13 +62,16 @@ func TestEndEventConstructor(t *testing.T) {
 }
 
 func TestErrorEndEventConstructor(t *testing.T) {
-	n := event.NewErrorEnd("err-end", "ERR_PAYMENT")
-	if n.Kind() != model.KindErrorEndEvent {
-		t.Fatalf("Kind() = %v, want KindErrorEndEvent", n.Kind())
+	n := event.NewEnd("err-end", event.WithErrorCode("ERR_PAYMENT"))
+	if n.Kind() != model.KindEndEvent {
+		t.Fatalf("Kind() = %v, want KindEndEvent", n.Kind())
 	}
-	ee, ok := n.(event.ErrorEndEvent)
+	ee, ok := n.(event.EndEvent)
 	if !ok {
-		t.Fatalf("node is %T, want event.ErrorEndEvent", n)
+		t.Fatalf("node is %T, want event.EndEvent", n)
+	}
+	if ee.Behavior != event.EndError {
+		t.Fatalf("Behavior = %v, want EndError", ee.Behavior)
 	}
 	if ee.ErrorCode != "ERR_PAYMENT" {
 		t.Fatalf("ErrorCode = %q, want ERR_PAYMENT", ee.ErrorCode)

@@ -35,7 +35,7 @@ func errorEndCaughtByBoundaryDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
 			activity.NewServiceTask("inner-svc", activity.WithTaskAction("inner-action")),
-			event.NewErrorEnd("inner-err-end", "E1"),
+			event.NewEnd("inner-err-end", event.WithErrorCode("E1")),
 		},
 		Flows: []flow.SequenceFlow{
 			{ID: "fi1", Source: "inner-start", Target: "inner-svc"},
@@ -74,7 +74,7 @@ func unhandledErrorDef() *model.ProcessDefinition {
 		Nodes: []model.Node{
 			event.NewStart("start"),
 			activity.NewServiceTask("svc", activity.WithTaskAction("svc-action")),
-			event.NewErrorEnd("err-end", "E2"),
+			event.NewEnd("err-end", event.WithErrorCode("E2")),
 		},
 		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "svc"},
@@ -93,7 +93,7 @@ func unhandledErrorInSubprocessDef() *model.ProcessDefinition {
 		ID: "sp-nested-nohandler", Version: 1,
 		Nodes: []model.Node{
 			event.NewStart("inner-start"),
-			event.NewErrorEnd("inner-err-end", "E3"),
+			event.NewEnd("inner-err-end", event.WithErrorCode("E3")),
 		},
 		Flows: []flow.SequenceFlow{
 			{ID: "fi1", Source: "inner-start", Target: "inner-err-end"},

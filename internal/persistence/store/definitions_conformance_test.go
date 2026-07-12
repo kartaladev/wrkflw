@@ -73,7 +73,7 @@ func richConformanceDefinition() *model.ProcessDefinition {
 				activity.WithName("Call Sub-process"),
 			),
 			event.NewEnd("end", event.WithName("Done")),
-			event.NewErrorEnd("err-end", "ORDER_ERROR"),
+			event.NewEnd("err-end", event.WithErrorCode("ORDER_ERROR")),
 		},
 		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "review"},

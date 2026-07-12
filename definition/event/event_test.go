@@ -108,15 +108,15 @@ func TestEndEventConstructors(t *testing.T) {
 	}{
 		{event.NewEnd("e", event.WithName("End")), model.KindEndEvent},
 		{event.NewEnd("t", event.WithForceTermination("terminated", event.OutcomeAbort)), model.KindEndEvent},
-		{event.NewErrorEnd("er", "E_BOOM", "Boom"), model.KindErrorEndEvent},
+		{event.NewEnd("er", event.WithErrorCode("E_BOOM"), event.WithName("Boom")), model.KindEndEvent},
 	}
 	for _, c := range cases {
 		if c.n.Kind() != c.k {
 			t.Errorf("Kind() = %v, want %v", c.n.Kind(), c.k)
 		}
 	}
-	if ee := event.NewErrorEnd("er", "E_X").(event.ErrorEndEvent); ee.ErrorCode != "E_X" {
-		t.Errorf("ErrorCode = %q", ee.ErrorCode)
+	if ee := event.NewEnd("er", event.WithErrorCode("E_X")).(event.EndEvent); ee.Behavior != event.EndError || ee.ErrorCode != "E_X" {
+		t.Errorf("Behavior = %v, ErrorCode = %q", ee.Behavior, ee.ErrorCode)
 	}
 }
 
