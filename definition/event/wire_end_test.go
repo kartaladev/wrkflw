@@ -20,17 +20,17 @@ func TestEndEventWireRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
-		name        string
-		node        model.Node
-		wantWireKey bool // whether the raw wire must carry "endBehavior"
-		assert      func(t *testing.T, got event.EndEvent)
+		name     string
+		node     model.Node
+		wantWire string // expected endBehavior discriminator on the raw wire ("" = absent)
+		assert   func(t *testing.T, got event.EndEvent)
 	}
 
 	cases := []testCase{
 		{
-			name:        "plain",
-			node:        event.NewEnd("done"),
-			wantWireKey: false,
+			name:     "plain",
+			node:     event.NewEnd("done"),
+			wantWire: "",
 			assert: func(t *testing.T, got event.EndEvent) {
 				require.Equal(t, event.EndNormal, got.Behavior)
 				require.Empty(t, got.TerminationReason)
@@ -38,9 +38,9 @@ func TestEndEventWireRoundTrip(t *testing.T) {
 			},
 		},
 		{
-			name:        "abort",
-			node:        event.NewEnd("halt", event.WithForceTermination("fraud", event.OutcomeAbort)),
-			wantWireKey: true,
+			name:     "abort",
+			node:     event.NewEnd("halt", event.WithForceTermination("fraud", event.OutcomeAbort)),
+			wantWire: "terminate",
 			assert: func(t *testing.T, got event.EndEvent) {
 				require.Equal(t, event.EndTerminate, got.Behavior)
 				require.Equal(t, "fraud", got.TerminationReason)
@@ -48,13 +48,31 @@ func TestEndEventWireRoundTrip(t *testing.T) {
 			},
 		},
 		{
-			name:        "complete",
-			node:        event.NewEnd("stop", event.WithForceTermination("enough", event.OutcomeComplete)),
-			wantWireKey: true,
+			name:     "complete",
+			node:     event.NewEnd("stop", event.WithForceTermination("enough", event.OutcomeComplete)),
+			wantWire: "terminate",
 			assert: func(t *testing.T, got event.EndEvent) {
 				require.Equal(t, event.EndTerminate, got.Behavior)
 				require.Equal(t, "enough", got.TerminationReason)
 				require.Equal(t, event.OutcomeComplete, got.Outcome)
+			},
+		},
+		{
+			name:     "error",
+			node:     event.NewEnd("boom", event.WithErrorCode("ORDER_REJECTED")),
+			wantWire: "error",
+			assert: func(t *testing.T, got event.EndEvent) {
+				require.Equal(t, event.EndError, got.Behavior)
+				require.Equal(t, "ORDER_REJECTED", got.ErrorCode)
+			},
+		},
+		{
+			name:     "error catch-all (empty code)",
+			node:     event.NewEnd("boom", event.WithErrorCode("")),
+			wantWire: "error",
+			assert: func(t *testing.T, got event.EndEvent) {
+				require.Equal(t, event.EndError, got.Behavior)
+				require.Empty(t, got.ErrorCode)
 			},
 		},
 	}
@@ -71,8 +89,8 @@ func TestEndEventWireRoundTrip(t *testing.T) {
 			data, err := json.Marshal(def)
 			require.NoError(t, err)
 
-			if c.wantWireKey {
-				require.Contains(t, string(data), `"endBehavior":"terminate"`)
+			if c.wantWire != "" {
+				require.Contains(t, string(data), `"endBehavior":"`+c.wantWire+`"`)
 			} else {
 				require.NotContains(t, string(data), "endBehavior")
 				require.NotContains(t, string(data), "forceTermination")
