@@ -402,31 +402,17 @@ func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFir
 		return StepResult{State: *s, Commands: nil}, nil
 	}
 
-	// 1) Gateway arm check.
-	if ae := s.armedEventByTimer(t.TimerID); ae != nil {
-		gwCmds, err := resolveGatewayWin(def, s, *ae, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+	// 1)-3) Gateway arm / boundary arm / event sub-process arm cascade,
+	// first-match-wins (dispatchArmCascade — no payload to merge for timer).
+	if cmds, matched, err := dispatchArmCascade(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), nil,
+		func() *armedEvent { return s.armedEventByTimer(t.TimerID) },
+		func() *boundaryArm { return s.boundaryArmByTimer(t.TimerID) },
+		func() *eventTriggeredSubprocessArm { return s.eventTriggeredSubprocessArmByTimer(t.TimerID) },
+	); matched {
 		if err != nil {
 			return StepResult{}, err
 		}
-		return StepResult{State: *s, Commands: gwCmds}, nil
-	}
-
-	// 2) Boundary arm check.
-	if ba := s.boundaryArmByTimer(t.TimerID); ba != nil {
-		baCmds, err := fireBoundaryArm(def, s, *ba, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
-		if err != nil {
-			return StepResult{}, err
-		}
-		return StepResult{State: *s, Commands: baCmds}, nil
-	}
-
-	// 3) Event sub-process arm check.
-	if ea := s.eventTriggeredSubprocessArmByTimer(t.TimerID); ea != nil {
-		eaCmds, err := fireEventTriggeredSubprocessArm(def, s, *ea, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
-		if err != nil {
-			return StepResult{}, err
-		}
-		return StepResult{State: *s, Commands: eaCmds}, nil
+		return StepResult{State: *s, Commands: cmds}, nil
 	}
 
 	// 4) deadline/in-wait/retry timer record.
@@ -756,36 +742,23 @@ func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t Mes
 	// NOTE: mergeVars is deferred until after match-checking so that a no-match
 	// delivery does not mutate instance variables (Task-2 review fix).
 
-	// 1) Check whether the message matches an event-gateway arm (first-event-wins).
-	if ae := s.armedEventByMessage(t.Name, t.CorrelationKey); ae != nil {
-		mergeVars(s, t.Payload)
-		gwCmds, err := resolveGatewayWin(def, s, *ae, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+	// 1)-3) Gateway arm / boundary arm (reuses the same fireBoundaryArm
+	// machinery as timer/signal boundaries) / event sub-process arm cascade,
+	// first-match-wins (dispatchArmCascade). onMatch merges the trigger
+	// payload into instance variables exactly once, before firing, only when
+	// a match is found — mirroring the pre-extraction per-branch mergeVars.
+	if cmds, matched, err := dispatchArmCascade(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt),
+		func() { mergeVars(s, t.Payload) },
+		func() *armedEvent { return s.armedEventByMessage(t.Name, t.CorrelationKey) },
+		func() *boundaryArm { return s.boundaryArmByMessage(t.Name, t.CorrelationKey) },
+		func() *eventTriggeredSubprocessArm {
+			return s.eventTriggeredSubprocessArmByMessage(t.Name, t.CorrelationKey)
+		},
+	); matched {
 		if err != nil {
 			return StepResult{}, err
 		}
-		return StepResult{State: *s, Commands: gwCmds}, nil
-	}
-
-	// 2) Check whether the message matches a boundary arm. Reuses the same
-	// fireBoundaryArm machinery as timer/signal boundaries (interrupting cancels
-	// the host and routes the boundary flow; non-interrupting spawns alongside).
-	if ba := s.boundaryArmByMessage(t.Name, t.CorrelationKey); ba != nil {
-		mergeVars(s, t.Payload)
-		baCmds, err := fireBoundaryArm(def, s, *ba, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
-		if err != nil {
-			return StepResult{}, err
-		}
-		return StepResult{State: *s, Commands: baCmds}, nil
-	}
-
-	// 3) Check whether the message matches an event sub-process arm.
-	if ea := s.eventTriggeredSubprocessArmByMessage(t.Name, t.CorrelationKey); ea != nil {
-		mergeVars(s, t.Payload)
-		eaCmds, err := fireEventTriggeredSubprocessArm(def, s, *ea, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
-		if err != nil {
-			return StepResult{}, err
-		}
-		return StepResult{State: *s, Commands: eaCmds}, nil
+		return StepResult{State: *s, Commands: cmds}, nil
 	}
 
 	// 4) Resume the standalone parked-message token.
