@@ -2,11 +2,16 @@ package model_test
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/zakyalvan/krtlwrkflw/definition/event"
 	"github.com/zakyalvan/krtlwrkflw/definition/model"
 )
 
@@ -275,5 +280,86 @@ flows:
 	ut := n.(activity.UserTask)
 	if !ut.Manual || !ut.ManualImmediate {
 		t.Fatalf("Manual=%v ManualImmediate=%v, want both true", ut.Manual, ut.ManualImmediate)
+	}
+}
+
+// TestParseYAMLEndBehavior verifies that an EndEvent's behavior discriminator
+// and its full payload round-trip through the YAML authoring form: the
+// terminate payload (terminationReason + terminationOutcome) and the error
+// payload (errorCode). Regression for the YAML force-termination authoring gap
+// (nodeYAML previously carried endBehavior but not the terminate payload).
+func TestParseYAMLEndBehavior(t *testing.T) {
+	t.Parallel()
+
+	// tmpl is a minimal start→end definition; %s injects the end node's
+	// behavior fields (4-space indented to align under "- id: e").
+	const tmpl = `id: p
+version: 1
+nodes:
+  - id: s
+    kind: startEvent
+  - id: e
+    kind: endEvent
+%s
+flows:
+  - { id: f1, source: s, target: e }
+`
+
+	type testCase struct {
+		name   string
+		fields string
+		assert func(t *testing.T, end event.EndEvent)
+	}
+
+	cases := []testCase{
+		{
+			name:   "terminate abort carries reason and outcome",
+			fields: "    endBehavior: terminate\n    terminationReason: fraud detected\n    terminationOutcome: abort",
+			assert: func(t *testing.T, end event.EndEvent) {
+				assert.Equal(t, event.EndTerminate, end.Behavior)
+				assert.Equal(t, "fraud detected", end.TerminationReason)
+				assert.Equal(t, event.OutcomeAbort, end.Outcome)
+			},
+		},
+		{
+			name:   "terminate complete outcome",
+			fields: "    endBehavior: terminate\n    terminationReason: done early\n    terminationOutcome: complete",
+			assert: func(t *testing.T, end event.EndEvent) {
+				assert.Equal(t, event.EndTerminate, end.Behavior)
+				assert.Equal(t, "done early", end.TerminationReason)
+				assert.Equal(t, event.OutcomeComplete, end.Outcome)
+			},
+		},
+		{
+			name:   "error end carries code",
+			fields: "    endBehavior: error\n    errorCode: E_BOOM",
+			assert: func(t *testing.T, end event.EndEvent) {
+				assert.Equal(t, event.EndError, end.Behavior)
+				assert.Equal(t, "E_BOOM", end.ErrorCode)
+			},
+		},
+		{
+			name:   "plain end is normal",
+			fields: "",
+			assert: func(t *testing.T, end event.EndEvent) {
+				assert.Equal(t, event.EndNormal, end.Behavior)
+				assert.Empty(t, end.TerminationReason)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ld, err := model.ParseYAML(strings.NewReader(fmt.Sprintf(tmpl, tc.fields)))
+			require.NoError(t, err)
+			def, err := ld.Build()
+			require.NoError(t, err)
+
+			end, ok := def.Nodes[1].(event.EndEvent)
+			require.True(t, ok, "node[1] should be an EndEvent, got %T", def.Nodes[1])
+			tc.assert(t, end)
+		})
 	}
 }
