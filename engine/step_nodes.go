@@ -166,7 +166,6 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 		}
 	}
 
-	var cmds []Command
 	// An EndEvent behaves differently depending on whether the token is at the
 	// root scope or inside a sub-process scope:
 	//   - Root scope (tok.ScopeID == ""): consume the token; when no tokens
@@ -177,229 +176,286 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	currentScopeID := tok.ScopeID
 	c.s.consumeToken(tok, c.at)
 
+	var (
+		cmds []Command
+		stop bool
+		err  error
+	)
 	if currentScopeID == "" {
-		// Root scope: instance completion when all tokens are gone.
-		if len(c.s.Tokens) == 0 {
-			c.s.Status = StatusCompleted
-			ended := c.at
-			c.s.EndedAt = &ended
-			cmds = append(cmds, CompleteInstance{Result: copyVars(c.s.Variables)})
-		}
+		cmds, stop = exitRootScope(c), true
 	} else {
-		// Sub-process scope: check whether the scope is now empty.
-		// We use tokensInScope for the immediate scope; child scope tokens have
-		// a different ScopeID (the child scope's ID), so they do NOT count here.
-		if c.s.tokensInScope(currentScopeID) == 0 {
-			scope := c.s.scopeByID(currentScopeID)
-			if scope == nil {
-				return cmds, false, fmt.Errorf("workflow-engine: sub-process end: scope %q not found", currentScopeID)
-			}
-			subNodeID := scope.NodeID
-			parentScopeID := scope.ParentID
-
-			// Determine whether this scope belongs to an event sub-process node
-			// (a SubProcess with an event-triggered inner start) in the parent
-			// definition. Event sub-process scope exit is handled
-			// differently from regular sub-process scope exit:
-			//   - Non-interrupting: just close this child scope; the enclosing scope
-			//     keeps running (its tokens are still there).
-			//   - Interrupting: the event sub-process replaces the enclosing scope;
-			//     on completion, it closes the enclosing scope and resumes from the
-			//     enclosing scope's parent (grandparent level). The enclosing scope
-			//     was intentionally kept open (its tokens cancelled) so that we can
-			//     check for remaining non-interrupting children before exiting.
-			//
-			// Detect an ESP child scope by checking the NodeID in the parent
-			// definition regardless of whether parentScopeID is "" (root scope), so
-			// root-level ESPs are recognized rather than falling into the regular
-			// sub-process branch (which would error with "no outgoing flows").
-			isEventSubprocess := false
-			parentDef, pErr := defForScope(c.def, c.s, parentScopeID)
-			if pErr == nil {
-				if espNode, ok2 := parentDef.Node(subNodeID); ok2 {
-					_, _, _, isEventSubprocess = eventSubprocessNested(espNode)
-				}
-			}
-
-			if isEventSubprocess {
-				// Event sub-process scope drained.
-				// Close this child scope.
-				c.s.closeScope(currentScopeID)
-
-				// Handle root-level ESP (parentScopeID == "") distinctly from
-				// nested ESP (parentScopeID != ""). The root scope is implicit (no Scope
-				// object exists for it), so scopeByID("") always returns nil. We must
-				// NOT treat that nil as "enclosing scope already closed".
-				if parentScopeID == "" {
-					// Root-level event sub-process.
-					// Non-interrupting: the root scope still has tokens → just close child.
-					if c.s.tokensInScope("") > 0 {
-						// stopped=false: tok.State left as TokenActive (consumed token,
-						// but continuation tokens exist; keep driving).
-						return cmds, false, nil
-					}
-					// Check if any other child scopes of the root still have tokens.
-					hasOtherRootChildren := false
-					for _, sc := range c.s.Scopes {
-						if sc.ParentID == "" && sc.ID != currentScopeID {
-							if c.s.tokensInScope(sc.ID) > 0 {
-								hasOtherRootChildren = true
-								break
-							}
-						}
-					}
-					if hasOtherRootChildren {
-						// stopped=false: other children still running.
-						return cmds, false, nil
-					}
-					// Interrupting root-level ESP completed: all root tokens were cancelled
-					// and no sibling child scopes remain. The instance is now complete.
-					// Cancel any remaining ESP arms for the root scope.
-					for _, timerID := range c.s.removeEventTriggeredSubprocessArmsForScope("") {
-						cmds = append(cmds, CancelTimer{TimerID: timerID})
-					}
-					// Instance completes: all tokens gone, no active root children.
-					if len(c.s.Tokens) == 0 {
-						c.s.Status = StatusCompleted
-						ended := c.at
-						c.s.EndedAt = &ended
-						cmds = append(cmds, CompleteInstance{Result: copyVars(c.s.Variables)})
-					}
-					// stopped=true (original break path that falls through to stopped=true).
-					tok.State = TokenWaitingCommand
-					return cmds, false, nil
-				}
-
-				// Nested event sub-process (parentScopeID != "").
-				// Check what kind of event sub-process this is:
-				// If the parent scope (enclosingScopeID) still has tokens or is still
-				// a normal running scope, this was NON-interrupting → just close child.
-				// If the parent scope has 0 tokens (they were all cancelled by interrupting
-				// fire) AND no other child scopes of the parent have tokens, the
-				// interrupting event sub-process is done → close enclosing scope and
-				// resume the grandparent.
-				enclosingScope := c.s.scopeByID(parentScopeID)
-				if enclosingScope == nil {
-					// Enclosing scope was already closed (defensive).
-					// stopped=false: leave tok.State as TokenActive.
-					return cmds, false, nil
-				}
-				if c.s.tokensInScope(parentScopeID) > 0 {
-					// Enclosing scope still has tokens → non-interrupting case.
-					// Child is done; enclosing scope keeps running. No further action.
-					// stopped=false: leave tok.State as TokenActive.
-					return cmds, false, nil
-				}
-				// No tokens in enclosing scope. Check if any other children still running.
-				hasOtherChildren := false
-				for _, sc := range c.s.Scopes {
-					if sc.ParentID == parentScopeID && sc.ID != currentScopeID {
-						if c.s.tokensInScope(sc.ID) > 0 {
-							hasOtherChildren = true
-							break
-						}
-					}
-				}
-				if hasOtherChildren {
-					// stopped=false: leave tok.State as TokenActive.
-					return cmds, false, nil
-				}
-				// Interrupting event sub-process completed: close enclosing scope and
-				// resume in the grandparent.
-				grandparentScopeID := enclosingScope.ParentID
-				enclosingNodeID := enclosingScope.NodeID
-				// Cancel remaining event sub-process arms for the enclosing scope.
-				for _, timerID := range c.s.removeEventTriggeredSubprocessArmsForScope(parentScopeID) {
-					cmds = append(cmds, CancelTimer{TimerID: timerID})
-				}
-				c.s.closeScope(parentScopeID)
-
-				// Resume execution: place a token on the enclosing sub-process
-				// activity's outgoing flow in the grandparent scope.
-				grandparentDef, gpErr := defForScope(c.def, c.s, grandparentScopeID)
-				if gpErr != nil {
-					return cmds, false, fmt.Errorf("workflow-engine: event sub-process exit: %w", gpErr)
-				}
-				if grandparentScopeID == "" {
-					// Grandparent is the root scope.
-					outs := grandparentDef.Outgoing(enclosingNodeID)
-					if len(outs) == 0 {
-						// Root scope: no outgoing flows from the sub-process → instance completes.
-						if len(c.s.Tokens) == 0 {
-							c.s.Status = StatusCompleted
-							ended := c.at
-							c.s.EndedAt = &ended
-							cmds = append(cmds, CompleteInstance{Result: copyVars(c.s.Variables)})
-						}
-					} else {
-						// Root scope: place token on sub-process outgoing flow target.
-						c.s.placeToken(outs[0].Target, c.at)
-					}
-				} else {
-					outs := grandparentDef.Outgoing(enclosingNodeID)
-					if len(outs) == 0 {
-						return cmds, false, fmt.Errorf("workflow-engine: event sub-process exit: enclosing node %q has no outgoing flows in grandparent definition", enclosingNodeID)
-					}
-					c.s.placeTokenInScope(outs[0].Target, grandparentScopeID, c.at)
-				}
-			} else {
-				// Regular sub-process scope. Check if there are any active child scopes
-				// (non-interrupting event sub-processes running alongside).
-				hasActiveChildren := false
-				for _, sc := range c.s.Scopes {
-					if sc.ParentID == currentScopeID {
-						if c.s.tokensInScope(sc.ID) > 0 {
-							hasActiveChildren = true
-							break
-						}
-					}
-				}
-				if hasActiveChildren {
-					// Still waiting for child scopes to drain. Do not exit this scope yet.
-					// stopped=false: leave tok.State as TokenActive.
-					return cmds, false, nil
-				}
-
-				// Scope drained (and no active children): close it and resume in parent.
-				// Cancel any still-armed event sub-process arms for this scope.
-				for _, timerID := range c.s.removeEventTriggeredSubprocessArmsForScope(currentScopeID) {
-					cmds = append(cmds, CancelTimer{TimerID: timerID})
-				}
-				c.s.archiveCompensations(currentScopeID)
-				c.s.closeScope(currentScopeID)
-
-				// Resolve the parent definition and find the sub-process activity's
-				// outgoing flow in the parent scope.
-				parentDef, err := defForScope(c.def, c.s, parentScopeID)
-				if err != nil {
-					return cmds, false, fmt.Errorf("workflow-engine: sub-process exit: %w", err)
-				}
-
-				// If the sub-process node itself carries a CompensateAction, record
-				// it in the parent scope. The snapshot is taken after the scope is
-				// closed (consistent: the sub-process completed at this point).
-				if spNode, spOK := parentDef.Node(subNodeID); spOK {
-					if sp, spIsSubProc := spNode.(activity.SubProcess); spIsSubProc && sp.CompensateAction != "" {
-						c.s.recordCompensation(parentScopeID, subNodeID, sp.CompensateAction, c.at, copyVars(c.s.Variables))
-					}
-				}
-
-				outs := parentDef.Outgoing(subNodeID)
-				if len(outs) == 0 {
-					return cmds, false, fmt.Errorf("workflow-engine: sub-process exit: node %q has no outgoing flows in parent definition", subNodeID)
-				}
-				// Place a token on the first outgoing flow's target in the parent scope.
-				c.s.placeTokenInScope(outs[0].Target, parentScopeID, c.at)
-			}
-		}
+		cmds, stop, err = exitSubprocessScope(c, currentScopeID)
+	}
+	if err != nil {
+		return cmds, false, err
 	}
 	// Token consumed (end event). In Micro mode, stop after this node-advance
 	// so the newly placed continuation token (if any) is processed in the next
-	// Step call. Paths that returned early above leave tok.State==TokenActive
-	// (stopped=false); this path sets tok.State=TokenWaitingCommand so drive() sees
-	// stopped=true.
-	tok.State = TokenWaitingCommand
+	// Step call. stop=false leaves tok.State==TokenActive so drive() sees
+	// stopped=false and keeps advancing; stop=true parks the token
+	// (tok.State=TokenWaitingCommand) so drive() sees stopped=true.
+	if stop {
+		tok.State = TokenWaitingCommand
+	}
 	return cmds, false, nil
+}
+
+// exitRootScope handles KindEndEvent token consumption when the token is at
+// the root scope (tok.ScopeID == ""): instance completion when all tokens are
+// gone. The token is always parked after this (drive() sees stopped=true).
+func exitRootScope(c *stepCtx) []Command {
+	var cmds []Command
+	if len(c.s.Tokens) == 0 {
+		c.s.Status = StatusCompleted
+		ended := c.at
+		c.s.EndedAt = &ended
+		cmds = append(cmds, CompleteInstance{Result: copyVars(c.s.Variables)})
+	}
+	return cmds
+}
+
+// exitSubprocessScope handles KindEndEvent token consumption when the token
+// is inside a sub-process scope. We use tokensInScope for the immediate
+// scope; child scope tokens have a different ScopeID (the child scope's ID),
+// so they do NOT count here. When the scope hasn't drained yet it reports
+// stop=true with no commands (the original fall-through-to-park path);
+// once drained it dispatches to the event-sub-process or regular-sub-process
+// scope-close-and-resume logic depending on what currentScopeID's owning node
+// is.
+func exitSubprocessScope(c *stepCtx, currentScopeID string) ([]Command, bool, error) {
+	var cmds []Command
+	if c.s.tokensInScope(currentScopeID) != 0 {
+		return cmds, true, nil
+	}
+	scope := c.s.scopeByID(currentScopeID)
+	if scope == nil {
+		return cmds, false, fmt.Errorf("workflow-engine: sub-process end: scope %q not found", currentScopeID)
+	}
+	subNodeID := scope.NodeID
+	parentScopeID := scope.ParentID
+
+	// Determine whether this scope belongs to an event sub-process node
+	// (a SubProcess with an event-triggered inner start) in the parent
+	// definition. Event sub-process scope exit is handled
+	// differently from regular sub-process scope exit:
+	//   - Non-interrupting: just close this child scope; the enclosing scope
+	//     keeps running (its tokens are still there).
+	//   - Interrupting: the event sub-process replaces the enclosing scope;
+	//     on completion, it closes the enclosing scope and resumes from the
+	//     enclosing scope's parent (grandparent level). The enclosing scope
+	//     was intentionally kept open (its tokens cancelled) so that we can
+	//     check for remaining non-interrupting children before exiting.
+	//
+	// Detect an ESP child scope by checking the NodeID in the parent
+	// definition regardless of whether parentScopeID is "" (root scope), so
+	// root-level ESPs are recognized rather than falling into the regular
+	// sub-process branch (which would error with "no outgoing flows").
+	isEventSubprocess := false
+	parentDef, pErr := defForScope(c.def, c.s, parentScopeID)
+	if pErr == nil {
+		if espNode, ok2 := parentDef.Node(subNodeID); ok2 {
+			_, _, _, isEventSubprocess = eventSubprocessNested(espNode)
+		}
+	}
+
+	if isEventSubprocess {
+		return exitEventSubprocessScope(c, currentScopeID, parentScopeID)
+	}
+	return exitRegularSubprocessScope(c, currentScopeID, subNodeID, parentScopeID)
+}
+
+// exitEventSubprocessScope handles scope-close + resume when the drained
+// scope belongs to an event sub-process (a SubProcess with an event-triggered
+// inner start). It closes the child scope, then branches on root-level
+// (parentScopeID == "") vs nested event sub-process exit. The root scope is
+// implicit (no Scope object exists for it), so scopeByID("") always returns
+// nil — the root-level branch must not treat that nil as "enclosing scope
+// already closed".
+func exitEventSubprocessScope(c *stepCtx, currentScopeID, parentScopeID string) ([]Command, bool, error) {
+	c.s.closeScope(currentScopeID)
+
+	if parentScopeID == "" {
+		return exitRootEventSubprocessScope(c, currentScopeID)
+	}
+	return exitNestedEventSubprocessScope(c, currentScopeID, parentScopeID)
+}
+
+// exitRootEventSubprocessScope handles root-level event sub-process scope
+// exit (parentScopeID == ""): non-interrupting when the root scope or a
+// sibling child scope still has tokens (just close the child, keep running);
+// otherwise the interrupting root-level event sub-process has completed and
+// the instance may now be complete.
+func exitRootEventSubprocessScope(c *stepCtx, currentScopeID string) ([]Command, bool, error) {
+	var cmds []Command
+	// Non-interrupting: the root scope still has tokens → just close child.
+	if c.s.tokensInScope("") > 0 {
+		return cmds, false, nil
+	}
+	// Check if any other child scopes of the root still have tokens.
+	hasOtherRootChildren := false
+	for _, sc := range c.s.Scopes {
+		if sc.ParentID == "" && sc.ID != currentScopeID {
+			if c.s.tokensInScope(sc.ID) > 0 {
+				hasOtherRootChildren = true
+				break
+			}
+		}
+	}
+	if hasOtherRootChildren {
+		return cmds, false, nil
+	}
+	// Interrupting root-level ESP completed: all root tokens were cancelled
+	// and no sibling child scopes remain. The instance is now complete.
+	// Cancel any remaining ESP arms for the root scope.
+	for _, timerID := range c.s.removeEventTriggeredSubprocessArmsForScope("") {
+		cmds = append(cmds, CancelTimer{TimerID: timerID})
+	}
+	// Instance completes: all tokens gone, no active root children.
+	if len(c.s.Tokens) == 0 {
+		c.s.Status = StatusCompleted
+		ended := c.at
+		c.s.EndedAt = &ended
+		cmds = append(cmds, CompleteInstance{Result: copyVars(c.s.Variables)})
+	}
+	return cmds, true, nil
+}
+
+// exitNestedEventSubprocessScope handles nested event sub-process scope exit
+// (parentScopeID != ""): non-interrupting when the enclosing scope (or a
+// sibling child scope) still has tokens, or was already closed defensively;
+// otherwise the interrupting event sub-process has completed, so it closes
+// the enclosing scope and resumes in the grandparent scope.
+func exitNestedEventSubprocessScope(c *stepCtx, currentScopeID, parentScopeID string) ([]Command, bool, error) {
+	var cmds []Command
+	// Check what kind of event sub-process this is:
+	// If the parent scope (enclosingScopeID) still has tokens or is still
+	// a normal running scope, this was NON-interrupting → just close child.
+	// If the parent scope has 0 tokens (they were all cancelled by interrupting
+	// fire) AND no other child scopes of the parent have tokens, the
+	// interrupting event sub-process is done → close enclosing scope and
+	// resume the grandparent.
+	enclosingScope := c.s.scopeByID(parentScopeID)
+	if enclosingScope == nil {
+		// Enclosing scope was already closed (defensive).
+		return cmds, false, nil
+	}
+	if c.s.tokensInScope(parentScopeID) > 0 {
+		// Enclosing scope still has tokens → non-interrupting case.
+		// Child is done; enclosing scope keeps running. No further action.
+		return cmds, false, nil
+	}
+	// No tokens in enclosing scope. Check if any other children still running.
+	hasOtherChildren := false
+	for _, sc := range c.s.Scopes {
+		if sc.ParentID == parentScopeID && sc.ID != currentScopeID {
+			if c.s.tokensInScope(sc.ID) > 0 {
+				hasOtherChildren = true
+				break
+			}
+		}
+	}
+	if hasOtherChildren {
+		return cmds, false, nil
+	}
+	// Interrupting event sub-process completed: close enclosing scope and
+	// resume in the grandparent.
+	grandparentScopeID := enclosingScope.ParentID
+	enclosingNodeID := enclosingScope.NodeID
+	// Cancel remaining event sub-process arms for the enclosing scope.
+	for _, timerID := range c.s.removeEventTriggeredSubprocessArmsForScope(parentScopeID) {
+		cmds = append(cmds, CancelTimer{TimerID: timerID})
+	}
+	c.s.closeScope(parentScopeID)
+
+	// Resume execution: place a token on the enclosing sub-process
+	// activity's outgoing flow in the grandparent scope.
+	grandparentDef, gpErr := defForScope(c.def, c.s, grandparentScopeID)
+	if gpErr != nil {
+		return cmds, false, fmt.Errorf("workflow-engine: event sub-process exit: %w", gpErr)
+	}
+	if found := resumeInParentScope(c, grandparentDef, enclosingNodeID, grandparentScopeID); !found {
+		if grandparentScopeID == "" {
+			// Root scope: no outgoing flows from the sub-process → instance completes.
+			if len(c.s.Tokens) == 0 {
+				c.s.Status = StatusCompleted
+				ended := c.at
+				c.s.EndedAt = &ended
+				cmds = append(cmds, CompleteInstance{Result: copyVars(c.s.Variables)})
+			}
+		} else {
+			return cmds, false, fmt.Errorf("workflow-engine: event sub-process exit: enclosing node %q has no outgoing flows in grandparent definition", enclosingNodeID)
+		}
+	}
+	return cmds, true, nil
+}
+
+// exitRegularSubprocessScope handles scope-close + resume for a regular
+// (non-event) sub-process scope: if a non-interrupting event sub-process is
+// still running alongside it (an active child scope), the exit waits;
+// otherwise it closes the scope, records the sub-process's compensation
+// snapshot (if any), and resumes in the parent scope.
+func exitRegularSubprocessScope(c *stepCtx, currentScopeID, subNodeID, parentScopeID string) ([]Command, bool, error) {
+	var cmds []Command
+	// Check if there are any active child scopes (non-interrupting event
+	// sub-processes running alongside).
+	hasActiveChildren := false
+	for _, sc := range c.s.Scopes {
+		if sc.ParentID == currentScopeID {
+			if c.s.tokensInScope(sc.ID) > 0 {
+				hasActiveChildren = true
+				break
+			}
+		}
+	}
+	if hasActiveChildren {
+		// Still waiting for child scopes to drain. Do not exit this scope yet.
+		return cmds, false, nil
+	}
+
+	// Scope drained (and no active children): close it and resume in parent.
+	// Cancel any still-armed event sub-process arms for this scope.
+	for _, timerID := range c.s.removeEventTriggeredSubprocessArmsForScope(currentScopeID) {
+		cmds = append(cmds, CancelTimer{TimerID: timerID})
+	}
+	c.s.archiveCompensations(currentScopeID)
+	c.s.closeScope(currentScopeID)
+
+	// Resolve the parent definition and find the sub-process activity's
+	// outgoing flow in the parent scope.
+	parentDef, err := defForScope(c.def, c.s, parentScopeID)
+	if err != nil {
+		return cmds, false, fmt.Errorf("workflow-engine: sub-process exit: %w", err)
+	}
+
+	// If the sub-process node itself carries a CompensateAction, record
+	// it in the parent scope. The snapshot is taken after the scope is
+	// closed (consistent: the sub-process completed at this point).
+	if spNode, spOK := parentDef.Node(subNodeID); spOK {
+		if sp, spIsSubProc := spNode.(activity.SubProcess); spIsSubProc && sp.CompensateAction != "" {
+			c.s.recordCompensation(parentScopeID, subNodeID, sp.CompensateAction, c.at, copyVars(c.s.Variables))
+		}
+	}
+
+	if found := resumeInParentScope(c, parentDef, subNodeID, parentScopeID); !found {
+		return cmds, false, fmt.Errorf("workflow-engine: sub-process exit: node %q has no outgoing flows in parent definition", subNodeID)
+	}
+	return cmds, true, nil
+}
+
+// resumeInParentScope looks up enclosingNodeID's outgoing flows in parentDef
+// and, if one exists, places a token on its target within parentScopeID (root
+// scope when parentScopeID == ""; placeTokenInScope with an empty scope ID is
+// equivalent to placeToken). It reports whether an outgoing flow was found —
+// callers decide what an absent flow means for their scope kind: a regular
+// sub-process treats it as an error, while a root-level event sub-process
+// treats it as a legitimate instance-completion signal.
+func resumeInParentScope(c *stepCtx, parentDef *model.ProcessDefinition, enclosingNodeID, parentScopeID string) bool {
+	outs := parentDef.Outgoing(enclosingNodeID)
+	if len(outs) == 0 {
+		return false
+	}
+	c.s.placeTokenInScope(outs[0].Target, parentScopeID, c.at)
+	return true
 }
 
 // forceTerminate implements a force-termination end event (ADR-0119): it cancels
