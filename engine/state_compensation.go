@@ -132,6 +132,58 @@ type compensationCursor struct {
 	FinalErr string
 }
 
+// walkMode is the finish outcome a compensationCursor describes, derived from
+// which of its fields are non-zero. It replaces the "which-field-is-zero"
+// inference that was previously repeated at each call site that needed to
+// know what kind of walk was in flight. walkMode is a value computed on
+// demand — compensationCursor gains no stored field, so the persisted
+// (JSON-projected) shape is unchanged.
+type walkMode int
+
+const (
+	// walkAdmin is the full-rollback / terminate outcome: none of ResumeNode,
+	// ToNode, or ReverseNode is set. Covers the admin CompensateRequested full
+	// rollback and the cancel/error terminal walks.
+	walkAdmin walkMode = iota
+	// walkThrowTargeted is a scope-targeted compensation-throw resume
+	// (ResumeNode set, ArchiveKey non-empty): finish consumes exactly that
+	// archive entry and RETAINS RootCompensations.
+	walkThrowTargeted
+	// walkThrowScopeWide is a scope-wide compensation-throw resume (ResumeNode
+	// set, ArchiveKey empty, ADR-0120): finish clears the StartRecordCount
+	// prefix of the throwing scope's own live records.
+	walkThrowScopeWide
+	// walkPartial is a partial-rollback resume to ToNode (ResumeNode and
+	// ReverseNode both empty): finish resumes at ToNode with records RETAINED.
+	walkPartial
+	// walkReverse is a ReverseInstance full-reverse resume (ReverseNode set,
+	// ResumeNode and ToNode both empty, ADR-0109): finish clears records and
+	// optionally resets Variables before resuming at ReverseNode.
+	walkReverse
+)
+
+// walkMode derives which finish outcome c describes, from the SAME
+// field-emptiness precedence stepCompensationFinish's switch used to encode
+// inline: a throw resume (ResumeNode) takes precedence over a partial
+// rollback (ToNode), which takes precedence over a full reverse (ReverseNode);
+// none of the three set means the admin/terminal full rollback. Pure function
+// of c's fields — no external state, nothing stored.
+func (c compensationCursor) walkMode() walkMode {
+	switch {
+	case c.ResumeNode != "":
+		if c.ArchiveKey == "" {
+			return walkThrowScopeWide
+		}
+		return walkThrowTargeted
+	case c.ToNode != "":
+		return walkPartial
+	case c.ReverseNode != "":
+		return walkReverse
+	default:
+		return walkAdmin
+	}
+}
+
 // recordCompensation appends a CompensationRecord to the scope identified by
 // scopeID. If scopeID is "" (root-level token), the record is appended to
 // s.RootCompensations — the root-scope compensation list that is stored directly

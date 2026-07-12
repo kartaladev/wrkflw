@@ -467,17 +467,29 @@ func popOneDeferredThrow(s *InstanceState) {
 //   - otherwise (full rollback): apply the cursor's terminal FinalStatus
 //     (StatusTerminated / StatusFailed), stamp EndedAt, clear records.
 func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNode string, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+	// Snapshot the cursor BEFORE clearing it, with ToNode filled in from the
+	// toNode parameter: the immediate-finish call sites in beginCompensation
+	// (nothing to compensate / no records at all) stamp s.Compensating without
+	// ToNode — there is no active walk to resume, so nothing needs it later —
+	// and pass the real target via this parameter instead. The active-walk call
+	// sites (beginCompensation's walking branch, stepCompensationAdvance) already
+	// carry it on the cursor (cur.ToNode), so this assignment is a no-op there.
+	// cur.walkMode() below is therefore always driven by the SAME field values
+	// the pre-refactor inline switch inspected.
+	cur := s.Compensating
+	cur.ToNode = toNode
+
 	// Save outcome fields AND cursor metadata BEFORE clearing the cursor.
-	finalStatus := s.Compensating.FinalStatus
-	finalErr := s.Compensating.FinalErr
-	scopeID := s.Compensating.ScopeID
-	archiveKey := s.Compensating.ArchiveKey
-	resumeNode := s.Compensating.ResumeNode
-	resumeScope := s.Compensating.ResumeScope
-	startRecordCount := s.Compensating.StartRecordCount
-	reverseNode := s.Compensating.ReverseNode
-	reverseResetVars := s.Compensating.ReverseResetVars
-	restoreTargetVars := s.Compensating.RestoreTargetVars
+	finalStatus := cur.FinalStatus
+	finalErr := cur.FinalErr
+	scopeID := cur.ScopeID
+	archiveKey := cur.ArchiveKey
+	resumeNode := cur.ResumeNode
+	resumeScope := cur.ResumeScope
+	startRecordCount := cur.StartRecordCount
+	reverseNode := cur.ReverseNode
+	reverseResetVars := cur.ReverseResetVars
+	restoreTargetVars := cur.RestoreTargetVars
 	// Clear the cursor — compensation walk is done.
 	s.Compensating = compensationCursor{}
 
@@ -486,8 +498,8 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 	// terminate. History is intentionally RETAINED across every resume outcome:
 	// re-execution appends fresh visits on top, keeping the full run history intact.
 	var plan finishPlan
-	switch {
-	case resumeNode != "":
+	switch cur.walkMode() {
+	case walkThrowTargeted, walkThrowScopeWide:
 		// Compensation throw resume: consume the archive entry (single ownership:
 		// a second throw to the same ref finds len == 0 and no-ops; a later cancel
 		// walk also won't re-run them), resume at the throw's successor in its own
@@ -501,12 +513,12 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 			popDeferred:          true,
 			consumePendingCancel: true,
 		}
-		if archiveKey == "" {
+		if cur.walkMode() == walkThrowScopeWide {
 			// Scope-wide compensate throw (ADR-0120): the drained records came from
 			// the throwing scope's LIVE list (RootCompensations or a sub-scope's
 			// Compensations), not an archive entry. Clear them here (compensate-once)
 			// so a second throw or a later cancel/rollback cannot re-run the
-			// already-run compensations. A targeted throw (archiveKey != "") instead
+			// already-run compensations. A targeted throw (walkThrowTargeted) instead
 			// deletes only its archive entry above and RETAINS RootCompensations,
 			// which hold unrelated outer records a later walk must still compensate.
 			//
@@ -521,7 +533,7 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 			plan.scopeWideThrow = true
 			plan.drainedCount = startRecordCount
 		}
-	case toNode != "":
+	case walkPartial:
 		// Partial rollback: resume at toNode. Records are RETAINED (not cleared):
 		// the instance keeps running and a later full walk must still see them.
 		// No double-compensation risk — consolidateArchiveIntoRoot already drained
@@ -542,7 +554,7 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 				plan.restoreVars = rec.Input
 			}
 		}
-	case reverseNode != "":
+	case walkReverse:
 		// Full reverse (ADR-0109): clear the scope's records (as full rollback
 		// does), optionally reset Variables, resume at ReverseNode. Re-arm root
 		// event sub-processes when the walk was rooted at scope "" (today the
@@ -558,7 +570,7 @@ func stepCompensationFinish(def *model.ProcessDefinition, s *InstanceState, toNo
 			rearmRootESP:         scopeID == "",
 			consumePendingCancel: true,
 		}
-	default:
+	default: // walkAdmin
 		// Full rollback / terminate. Zero FinalStatus (== StatusRunning, the iota-0
 		// constant) means UNSET; applyTerminate maps it to StatusTerminated. Safe:
 		// full-rollback finish is always terminal. The admin path (CompensateRequested)
