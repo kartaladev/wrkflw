@@ -396,6 +396,14 @@ func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFir
 	// 4) deadline/in-wait timer record (task-guarded timers).
 	// 5) standalone intermediate catch event (token parks on TimerID).
 
+	// A TimerFired against an already-terminal instance is a clean no-op. An
+	// unhandled error can fail an instance without sweeping its sibling boundary,
+	// deadline, or event-sub arms, so a late timer must not fire any of them on a
+	// terminal instance.
+	if s.Status.IsTerminal() {
+		return StepResult{State: *s, Commands: nil}, nil
+	}
+
 	// 1) Gateway arm check.
 	if ae := s.armedEventByTimer(t.TimerID); ae != nil {
 		gwCmds, err := resolveGatewayWin(def, s, *ae, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
