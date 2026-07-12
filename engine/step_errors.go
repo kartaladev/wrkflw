@@ -3,7 +3,6 @@ package engine
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/event"
@@ -164,14 +163,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			// Emit the fire-once boundary action before routing, mirroring
 			// fireBoundaryArm and handleDeadlineFired. FireAndForget means a catalog
 			// action failure does not block routing.
-			if directHandler.Action != "" {
-				cmds = append(cmds, InvokeAction{
-					CommandID:     s.nextCommandID(),
-					Name:          directHandler.Action,
-					Input:         copyVars(s.Variables),
-					FireAndForget: true,
-				})
-			}
+			cmds = append(cmds, emitFireOnceAction(s, directHandler.Action)...)
 
 			// Consume the failing activity's token by its specific ID (failingTokenID).
 			// Using the ID rather than NodeID+ScopeID ensures correctness when two
@@ -290,14 +282,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			// Emit the fire-once boundary action before routing, mirroring
 			// fireBoundaryArm and handleDeadlineFired. FireAndForget means a catalog
 			// action failure does not block routing.
-			if handler.Action != "" {
-				cmds = append(cmds, InvokeAction{
-					CommandID:     s.nextCommandID(),
-					Name:          handler.Action,
-					Input:         copyVars(s.Variables),
-					FireAndForget: true,
-				})
-			}
+			cmds = append(cmds, emitFireOnceAction(s, handler.Action)...)
 
 			tokensToCancel := make([]Token, 0, len(s.Tokens))
 			for _, tok := range s.Tokens {
@@ -306,29 +291,10 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 				}
 			}
 			for _, tok := range tokensToCancel {
-				// Cancel deadline/reminder timers (UserTask case).
-				for _, timerID := range s.cancelTimersByTaskToken(tok.AwaitCommand, "") {
-					cmds = append(cmds, CancelTimer{TimerID: timerID})
-				}
-				// Cancel any token-keyed in-wait reminder (ReceiveTask / catch): its
-				// parked token is being consumed, so the recurring reminder must go.
-				for _, timerID := range s.cancelTimersForToken(tok.ID, "") {
-					cmds = append(cmds, CancelTimer{TimerID: timerID})
-				}
-				// Cancel boundary arms for this host token.
-				for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
-					cmds = append(cmds, CancelTimer{TimerID: timerID})
-				}
-				// Cancel any event-gateway arms.
-				if strings.HasPrefix(tok.AwaitCommand, "evtgw:") {
-					for _, timerID := range s.removeArmedEventsForGateway(tok.ID) {
-						cmds = append(cmds, CancelTimer{TimerID: timerID})
-					}
-				}
-				tokPtr := s.tokenByID(tok.ID)
-				if tokPtr != nil {
-					s.consumeToken(tokPtr, at)
-				}
+				// Cancel deadline/reminder timers, in-wait reminder, boundary arms,
+				// and (for an event-based-gateway token) armed events, then consume
+				// the token.
+				cmds = append(cmds, cancelTokenWaits(s, &tok, at)...)
 			}
 			// Cancel ESP arms for the scope.
 			for _, timerID := range s.removeEventTriggeredSubprocessArmsForScope(currentScopeID) {

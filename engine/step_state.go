@@ -168,6 +168,25 @@ func (s *InstanceState) moveAlongSingleFlow(def *model.ProcessDefinition, tok *T
 	s.openVisit(tok.ID, tok.NodeID, at)
 }
 
+// resumeAndDrive resumes a parked token whose scope-effective definition tdef
+// and cancel/cleanup commands (preCmds) have already been resolved by the
+// caller — the five trigger handlers that resume a parked token each clear a
+// different await field and collect a different set of CancelTimer commands
+// before reaching this common tail, so those steps stay at the call site.
+// resumeAndDrive marks the token Active, moves it along its single outgoing
+// flow within tdef, and drives the instance forward, returning preCmds
+// followed by the driven commands (preserving each call site's existing
+// command order) and any drive error.
+func resumeAndDrive(def *model.ProcessDefinition, tdef *model.ProcessDefinition, s *InstanceState, tok *Token, at time.Time, opt StepOptions, preCmds []Command) ([]Command, error) {
+	tok.State = TokenActive
+	s.moveAlongSingleFlow(tdef, tok, at)
+	driveCmds, err := drive(def, s, at, opt.Mode, resolveEvaluator(opt))
+	if err != nil {
+		return nil, err
+	}
+	return append(preCmds, driveCmds...), nil
+}
+
 func (s *InstanceState) consumeToken(tok *Token, at time.Time) {
 	s.closeVisit(tok.ID, tok.NodeID, at)
 	id := tok.ID

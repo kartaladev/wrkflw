@@ -71,15 +71,7 @@ func handleDeadlineFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	var cmds []Command
 
 	// (a) Emit the deadline alternative action, if configured.
-	if deadlineAction != "" {
-		cmdID := s.nextCommandID()
-		cmds = append(cmds, InvokeAction{
-			CommandID:     cmdID,
-			Name:          deadlineAction,
-			Input:         copyVars(s.Variables),
-			FireAndForget: true,
-		})
-	}
+	cmds = append(cmds, emitFireOnceAction(s, deadlineAction)...)
 
 	// (b) Move the token to the alternative path target. The token was parked
 	//     (TokenWaitingCommand / AwaitCommand == TaskToken); reactivate it and
@@ -170,15 +162,7 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	var cmds []Command
 
 	// (1) Fire-and-forget reminder action, if configured.
-	if waitActionName != "" {
-		cmdID := s.nextCommandID()
-		cmds = append(cmds, InvokeAction{
-			CommandID:     cmdID,
-			Name:          waitActionName,
-			Input:         copyVars(s.Variables),
-			FireAndForget: true,
-		})
-	}
+	cmds = append(cmds, emitFireOnceAction(s, waitActionName)...)
 
 	// (2) No engine reschedule: the reminder timer was armed once at task entry
 	// with the recurring trigger (Every/EveryExpr), and native scheduler
@@ -207,25 +191,11 @@ func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *
 		return nil, fmt.Errorf("workflow-engine: reinvoke: node %q not found", tok.NodeID)
 	}
 
-	// Re-emit InvokeAction — mirrors the KindServiceTask drive path exactly,
-	// including the stable idempotency key (see serviceActionInput).
-	cmdID := s.nextCommandID()
-	cmds := []Command{InvokeAction{
-		CommandID: cmdID,
-		Name:      mainActionName(node),
-		Scoped:    tdef.ScopedCatalog(),
-		Input:     serviceActionInput(s, node),
-	}}
-	tok.State = TokenWaitingCommand
-	tok.AwaitCommand = cmdID
-
-	// Re-arm boundary events (deadline timers, reminder timers) so they are active
-	// for this invocation attempt.
-	bndCmds, err := armBoundaries(tdef, s, tok.ID, node.ID(), at, eval)
-	if err != nil {
-		return cmds, err
-	}
-	return append(cmds, bndCmds...), nil
+	// Re-emit InvokeAction — mirrors the KindServiceTask drive path exactly
+	// (emitActionInvoke), including the stable idempotency key (see
+	// serviceActionInput) and re-arming boundary events (deadline timers,
+	// reminder timers) so they are active for this invocation attempt.
+	return emitActionInvoke(&stepCtx{def: def, tdef: tdef, s: s, at: at, eval: eval}, tok, node)
 }
 
 // handleRetryFired processes a TimerFired event for a TimerRetry timer. It is

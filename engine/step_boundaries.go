@@ -76,12 +76,14 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 //
 // For interrupting boundaries (!ba.NonInterrupting):
 //  1. Verify the host token is still parked. If not, it's a late/stale fire → no-op.
-//  2. Cancel any deadline/reminder timers on the host (UserTask) via cancelTimersByTaskToken
-//     using the host's taskToken (AwaitCommand == taskToken for UserTask hosts).
-//  3. Consume the host token (close its visit, remove from slice).
-//  4. Remove ALL boundary arms for this host (emit CancelTimer for timer siblings).
-//  5. Place a new Active token at the boundary's outgoing flow target.
-//  6. Drive forward.
+//  2. cancelTokenWaits sweeps the host: cancel deadline/reminder timers (UserTask,
+//     via cancelTimersByTaskToken using the host's taskToken), cancel its in-wait
+//     reminder, remove ALL boundary arms for this host (emit CancelTimer for timer
+//     siblings), and consume the host token (close its visit, remove from slice).
+//     A boundary host is never an event-based-gateway token, so the sweep's
+//     "evtgw:"-prefixed armed-event removal is always a no-op here.
+//  3. Place a new Active token at the boundary's outgoing flow target.
+//  4. Drive forward.
 //
 // For non-interrupting boundaries (ba.NonInterrupting):
 //  1. Verify the host token is still parked. If not, no-op.
@@ -127,40 +129,20 @@ func fireBoundaryArm(def *model.ProcessDefinition, s *InstanceState, ba boundary
 	// Emit the fire-once boundary action before routing (mirrors the
 	// deadline-breach action path in handleDeadlineFired). FireAndForget
 	// means a catalog action failure does not block routing.
-	if ba.Action != "" {
-		cmds = append(cmds, InvokeAction{
-			CommandID:     s.nextCommandID(),
-			Name:          ba.Action,
-			Input:         copyVars(s.Variables),
-			FireAndForget: true,
-		})
-	}
+	cmds = append(cmds, emitFireOnceAction(s, ba.Action)...)
 
 	if !ba.NonInterrupting {
 		// Interrupting: consume the host, cancel its task timers and boundary siblings.
-
-		// Cancel deadline/reminder timers for the host (UserTask case: AwaitCommand == taskToken).
-		// For a ServiceTask host, AwaitCommand is a cmdID (not a taskToken), so
-		// cancelTimersByTaskToken will find no records — which is correct.
-		hostTaskToken := hostTok.AwaitCommand
-		for _, timerID := range s.cancelTimersByTaskToken(hostTaskToken, "") {
-			cmds = append(cmds, CancelTimer{TimerID: timerID})
-		}
-		// Cancel any token-keyed in-wait reminder on the host (ReceiveTask / catch):
-		// the host is being consumed, so the recurring reminder must go.
-		for _, timerID := range s.cancelTimersForToken(hostTok.ID, "") {
-			cmds = append(cmds, CancelTimer{TimerID: timerID})
-		}
-
-		// Consume the host token (close its visit, remove from slice).
-		s.consumeToken(hostTok, at)
-
-		// Remove ALL boundary arms for this host and emit CancelTimer for timer siblings.
-		// The fired arm's timerID (if any) is included; it already fired so the
-		// runtime's cancel is idempotent — no special handling needed.
-		for _, timerID := range s.removeBoundaryArmsForHost(ba.HostToken) {
-			cmds = append(cmds, CancelTimer{TimerID: timerID})
-		}
+		//
+		// cancelTokenWaits cancels deadline/reminder timers for the host (UserTask
+		// case: AwaitCommand == taskToken; for a ServiceTask host, AwaitCommand is a
+		// cmdID, not a taskToken, so cancelTimersByTaskToken finds no records — which
+		// is correct), the host's in-wait reminder, and ALL boundary arms for this
+		// host (emit CancelTimer for timer siblings — the fired arm's timerID, if
+		// any, is included; it already fired so the runtime's cancel is idempotent —
+		// no special handling needed), then consumes the host token (close its
+		// visit, remove from slice).
+		cmds = append(cmds, cancelTokenWaits(s, hostTok, at)...)
 
 		// Place a new Active token at the boundary's outgoing flow target, keeping
 		// the host token's scope so boundary-routed tokens stay in the same scope.

@@ -74,6 +74,26 @@ func CompensateActionOf(n Node) string {
 	return ""
 }
 
+// CancelActionOf returns the CancelAction field of a node that carries
+// ActivityFields (any activity kind), or "" for nodes that do not carry it at
+// all (events, gateways). Kind-agnostic, same contract as CompensateActionOf.
+func CancelActionOf(n Node) string {
+	if a, ok := n.(interface{ cancelAction() string }); ok {
+		return a.cancelAction()
+	}
+	return ""
+}
+
+// RecoveryFlowOf returns the RecoveryFlow field of a node that carries
+// ActivityFields (any activity kind), or "" for nodes that do not carry it at
+// all (events, gateways). Kind-agnostic, same contract as CompensateActionOf.
+func RecoveryFlowOf(n Node) string {
+	if a, ok := n.(interface{ recoveryFlow() string }); ok {
+		return a.recoveryFlow()
+	}
+	return ""
+}
+
 // ActionOf returns the Action field of a node that has one (ServiceTask or
 // BusinessRuleTask), or "" for all other kinds.
 func ActionOf(n Node) string {

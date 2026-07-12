@@ -2,7 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/activity"
@@ -194,36 +193,11 @@ func fireEventTriggeredSubprocessArm(def *model.ProcessDefinition, s *InstanceSt
 			}
 		}
 		// Cancel deadline/reminder timers and boundary arms for each token in scope, then consume.
+		// (Fix 1: cancelTokenWaits also cancels armed events for an event-based-gateway-parked
+		// token — its AwaitCommand starts with the "evtgw:" sentinel — so their timers do not
+		// fire as stale orphans later.)
 		for _, tok := range tokensToCancel {
-			// Cancel deadline/reminder timers (UserTask case).
-			taskTok := tok.AwaitCommand
-			for _, timerID := range s.cancelTimersByTaskToken(taskTok, "") {
-				cmds = append(cmds, CancelTimer{TimerID: timerID})
-			}
-			// Cancel any token-keyed in-wait reminder (ReceiveTask / catch): its
-			// parked token is being consumed, so the recurring reminder must go.
-			for _, timerID := range s.cancelTimersForToken(tok.ID, "") {
-				cmds = append(cmds, CancelTimer{TimerID: timerID})
-			}
-			// Cancel boundary arms for this host token.
-			for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
-				cmds = append(cmds, CancelTimer{TimerID: timerID})
-			}
-			// Fix 1: if the token is an event-based-gateway-parked token (its
-			// AwaitCommand starts with the "evtgw:" sentinel), cancel all of its
-			// armed events so their timers do not fire as stale orphans later.
-			// Deterministic: removeArmedEventsForGateway returns timer IDs in
-			// ArmedEvents slice order; we emit CancelTimer for each.
-			if strings.HasPrefix(tok.AwaitCommand, "evtgw:") {
-				for _, timerID := range s.removeArmedEventsForGateway(tok.ID) {
-					cmds = append(cmds, CancelTimer{TimerID: timerID})
-				}
-			}
-			// Consume the token (close visit).
-			tokPtr := s.tokenByID(tok.ID)
-			if tokPtr != nil {
-				s.consumeToken(tokPtr, at)
-			}
+			cmds = append(cmds, cancelTokenWaits(s, &tok, at)...)
 		}
 
 		// Cancel sibling event-subprocess arms for the same enclosing scope (all arms,

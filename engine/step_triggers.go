@@ -104,17 +104,15 @@ func handleActionCompleted(def *model.ProcessDefinition, s *InstanceState, t Act
 		}
 	}
 	mergeVars(s, t.Output)
-	tok.State = TokenActive
 	tok.AwaitCommand = ""
 	// Advance the token past the completed ServiceTask so drive sees it at
 	// the next node, not re-firing the action. Use the token's scope definition
 	// so inner-scope tokens resolve flows against the nested definition.
-	s.moveAlongSingleFlow(tdef, tok, t.OccurredAt())
-	driveCmds, err := drive(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+	cmds, err := resumeAndDrive(def, tdef, s, tok, t.OccurredAt(), opt, preCmds)
 	if err != nil {
 		return StepResult{}, err
 	}
-	return StepResult{State: *s, Commands: append(preCmds, driveCmds...)}, nil
+	return StepResult{State: *s, Commands: cmds}, nil
 }
 
 // handleCancelRequested processes a CancelRequested trigger: terminates the
@@ -404,31 +402,17 @@ func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFir
 		return StepResult{State: *s, Commands: nil}, nil
 	}
 
-	// 1) Gateway arm check.
-	if ae := s.armedEventByTimer(t.TimerID); ae != nil {
-		gwCmds, err := resolveGatewayWin(def, s, *ae, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+	// 1)-3) Gateway arm / boundary arm / event sub-process arm cascade,
+	// first-match-wins (dispatchArmCascade — no payload to merge for timer).
+	if cmds, matched, err := dispatchArmCascade(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), nil,
+		func() *armedEvent { return s.armedEventByTimer(t.TimerID) },
+		func() *boundaryArm { return s.boundaryArmByTimer(t.TimerID) },
+		func() *eventTriggeredSubprocessArm { return s.eventTriggeredSubprocessArmByTimer(t.TimerID) },
+	); matched {
 		if err != nil {
 			return StepResult{}, err
 		}
-		return StepResult{State: *s, Commands: gwCmds}, nil
-	}
-
-	// 2) Boundary arm check.
-	if ba := s.boundaryArmByTimer(t.TimerID); ba != nil {
-		baCmds, err := fireBoundaryArm(def, s, *ba, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
-		if err != nil {
-			return StepResult{}, err
-		}
-		return StepResult{State: *s, Commands: baCmds}, nil
-	}
-
-	// 3) Event sub-process arm check.
-	if ea := s.eventTriggeredSubprocessArmByTimer(t.TimerID); ea != nil {
-		eaCmds, err := fireEventTriggeredSubprocessArm(def, s, *ea, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
-		if err != nil {
-			return StepResult{}, err
-		}
-		return StepResult{State: *s, Commands: eaCmds}, nil
+		return StepResult{State: *s, Commands: cmds}, nil
 	}
 
 	// 4) deadline/in-wait/retry timer record.
@@ -458,7 +442,6 @@ func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFir
 	}
 	// Intermediate timer: remove its record (if any) so a later dup is a no-op.
 	s.removeTimer(t.TimerID)
-	tok.State = TokenActive
 	tok.AwaitCommand = ""
 	// Cancel any in-wait reminder armed on this parked token (timer catch): the
 	// reminder is a DIFFERENT TimerInWait than the intermediate that just fired;
@@ -471,12 +454,11 @@ func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFir
 	if timerTdefErr != nil {
 		return StepResult{}, timerTdefErr
 	}
-	s.moveAlongSingleFlow(timerTdef, tok, t.OccurredAt())
-	driveCmds, err := drive(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+	cmds, err := resumeAndDrive(def, timerTdef, s, tok, t.OccurredAt(), opt, timerPreCmds)
 	if err != nil {
 		return StepResult{}, err
 	}
-	return StepResult{State: *s, Commands: append(timerPreCmds, driveCmds...)}, nil
+	return StepResult{State: *s, Commands: cmds}, nil
 }
 
 // parkOnCompletionAction checks whether tok's node (resolved against tdef, the
@@ -662,22 +644,21 @@ func handleSignalReceived(def *model.ProcessDefinition, s *InstanceState, t Sign
 			matched = true
 		}
 		tok.AwaitSignal = ""
-		tok.State = TokenActive
 		// Cancel any in-wait reminder armed on this parked token (signal catch):
 		// the wait has resolved, so the recurring reminder job must be removed.
+		var timerPreCmds []Command
 		for _, timerID := range s.cancelTimersForToken(tok.ID, "") {
-			signalCmds = append(signalCmds, CancelTimer{TimerID: timerID})
+			timerPreCmds = append(timerPreCmds, CancelTimer{TimerID: timerID})
 		}
 		signalTdef, signalTdefErr := defForScope(def, s, tok.ScopeID)
 		if signalTdefErr != nil {
 			return StepResult{}, signalTdefErr
 		}
-		s.moveAlongSingleFlow(signalTdef, tok, t.OccurredAt())
-		driveCmds, err := drive(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+		cmds, err := resumeAndDrive(def, signalTdef, s, tok, t.OccurredAt(), opt, timerPreCmds)
 		if err != nil {
 			return StepResult{}, err
 		}
-		signalCmds = append(signalCmds, driveCmds...)
+		signalCmds = append(signalCmds, cmds...)
 	}
 	return StepResult{State: *s, Commands: signalCmds}, nil
 }
@@ -696,7 +677,6 @@ func handleSubInstanceCompleted(def *model.ProcessDefinition, s *InstanceState, 
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 	}
 	mergeVars(s, t.Output)
-	tok.State = TokenActive
 	tok.AwaitCommand = ""
 	// Advance the token past the call-activity node using the token's scope
 	// definition (call-activity nodes can live inside a sub-process scope).
@@ -704,12 +684,11 @@ func handleSubInstanceCompleted(def *model.ProcessDefinition, s *InstanceState, 
 	if err != nil {
 		return StepResult{}, err
 	}
-	s.moveAlongSingleFlow(tdef, tok, t.OccurredAt())
-	driveCmds, err := drive(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+	cmds, err := resumeAndDrive(def, tdef, s, tok, t.OccurredAt(), opt, nil)
 	if err != nil {
 		return StepResult{}, err
 	}
-	return StepResult{State: *s, Commands: driveCmds}, nil
+	return StepResult{State: *s, Commands: cmds}, nil
 }
 
 // handleSubInstanceFailed processes a SubInstanceFailed trigger: fails the
@@ -763,36 +742,23 @@ func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t Mes
 	// NOTE: mergeVars is deferred until after match-checking so that a no-match
 	// delivery does not mutate instance variables (Task-2 review fix).
 
-	// 1) Check whether the message matches an event-gateway arm (first-event-wins).
-	if ae := s.armedEventByMessage(t.Name, t.CorrelationKey); ae != nil {
-		mergeVars(s, t.Payload)
-		gwCmds, err := resolveGatewayWin(def, s, *ae, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+	// 1)-3) Gateway arm / boundary arm (reuses the same fireBoundaryArm
+	// machinery as timer/signal boundaries) / event sub-process arm cascade,
+	// first-match-wins (dispatchArmCascade). onMatch merges the trigger
+	// payload into instance variables exactly once, before firing, only when
+	// a match is found — mirroring the pre-extraction per-branch mergeVars.
+	if cmds, matched, err := dispatchArmCascade(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt),
+		func() { mergeVars(s, t.Payload) },
+		func() *armedEvent { return s.armedEventByMessage(t.Name, t.CorrelationKey) },
+		func() *boundaryArm { return s.boundaryArmByMessage(t.Name, t.CorrelationKey) },
+		func() *eventTriggeredSubprocessArm {
+			return s.eventTriggeredSubprocessArmByMessage(t.Name, t.CorrelationKey)
+		},
+	); matched {
 		if err != nil {
 			return StepResult{}, err
 		}
-		return StepResult{State: *s, Commands: gwCmds}, nil
-	}
-
-	// 2) Check whether the message matches a boundary arm. Reuses the same
-	// fireBoundaryArm machinery as timer/signal boundaries (interrupting cancels
-	// the host and routes the boundary flow; non-interrupting spawns alongside).
-	if ba := s.boundaryArmByMessage(t.Name, t.CorrelationKey); ba != nil {
-		mergeVars(s, t.Payload)
-		baCmds, err := fireBoundaryArm(def, s, *ba, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
-		if err != nil {
-			return StepResult{}, err
-		}
-		return StepResult{State: *s, Commands: baCmds}, nil
-	}
-
-	// 3) Check whether the message matches an event sub-process arm.
-	if ea := s.eventTriggeredSubprocessArmByMessage(t.Name, t.CorrelationKey); ea != nil {
-		mergeVars(s, t.Payload)
-		eaCmds, err := fireEventTriggeredSubprocessArm(def, s, *ea, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
-		if err != nil {
-			return StepResult{}, err
-		}
-		return StepResult{State: *s, Commands: eaCmds}, nil
+		return StepResult{State: *s, Commands: cmds}, nil
 	}
 
 	// 4) Resume the standalone parked-message token.
@@ -805,7 +771,6 @@ func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t Mes
 	mergeVars(s, t.Payload)
 	tok.AwaitMessage = ""
 	tok.AwaitMessageKey = ""
-	tok.State = TokenActive
 	// Cancel any in-wait reminder armed on this parked token (ReceiveTask or
 	// message intermediate catch): the wait has resolved, so the recurring
 	// reminder job must be removed to stop it firing forever.
@@ -830,12 +795,11 @@ func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t Mes
 		return res, nil
 	}
 	// No completion action: advance + drive as before.
-	s.moveAlongSingleFlow(msgTdef, tok, t.OccurredAt())
-	driveCmds, err := drive(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+	cmds, err := resumeAndDrive(def, msgTdef, s, tok, t.OccurredAt(), opt, preCmds)
 	if err != nil {
 		return StepResult{}, err
 	}
-	return StepResult{State: *s, Commands: append(preCmds, driveCmds...)}, nil
+	return StepResult{State: *s, Commands: cmds}, nil
 }
 
 // handleResolveIncident processes a ResolveIncident trigger: clears a parked

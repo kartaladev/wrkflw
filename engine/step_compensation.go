@@ -2,7 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/model"
@@ -149,31 +148,12 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 	tokensToCancel := make([]Token, len(s.Tokens))
 	copy(tokensToCancel, s.Tokens)
 	for _, tok := range tokensToCancel {
-		// Cancel deadline/reminder timers for this token.
-		for _, timerID := range s.cancelTimersByTaskToken(tok.AwaitCommand, "") {
-			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
-		}
-		// Cancel any token-keyed in-wait reminder (ReceiveTask / catch): its parked
-		// token is being consumed, so the recurring reminder must go. (cancelAllTimers
-		// below also sweeps it, but emitting the CancelTimer here keeps the per-token
-		// cleanup explicit and order-consistent with the other interrupt sites.)
-		for _, timerID := range s.cancelTimersForToken(tok.ID, "") {
-			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
-		}
-		// Cancel boundary arms.
-		for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
-			preCmds = append(preCmds, CancelTimer{TimerID: timerID})
-		}
-		// Cancel event-gateway arms.
-		if strings.HasPrefix(tok.AwaitCommand, "evtgw:") {
-			for _, timerID := range s.removeArmedEventsForGateway(tok.ID) {
-				preCmds = append(preCmds, CancelTimer{TimerID: timerID})
-			}
-		}
-		tokPtr := s.tokenByID(tok.ID)
-		if tokPtr != nil {
-			s.consumeToken(tokPtr, at)
-		}
+		// Cancel deadline/reminder timers, in-wait reminder, boundary arms, and (for
+		// an event-based-gateway token) armed events, then consume the token.
+		// (cancelAllTimers below also sweeps any remaining timers, but emitting the
+		// CancelTimer here keeps the per-token cleanup explicit and order-consistent
+		// with the other interrupt sites.)
+		preCmds = append(preCmds, cancelTokenWaits(s, &tok, at)...)
 	}
 	// Cancel any remaining timers and event-subprocess arms.
 	preCmds = append(preCmds, s.cancelAllTimers()...)
