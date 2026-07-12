@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/kartaladev/wrkflw/clock"
 )
 
 func TestSystemClockNow(t *testing.T) {

@@ -3,9 +3,9 @@ package transaction_test
 import (
 	"testing"
 
+	"github.com/kartaladev/wrkflw/internal/database/transaction"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
 	"github.com/stretchr/testify/assert"
-	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 func TestMarkRollbackNoAmbientIsNoop(t *testing.T) {

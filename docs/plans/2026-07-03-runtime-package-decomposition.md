@@ -95,7 +95,7 @@ for f in $FILES; do
 done
 ```
 
-- [ ] **Step 4: Rename internal helper names for consistency (optional, cosmetic).** `runnerObs` → `driverObs`, `newRunnerObs` → `newDriverObs`, `runnerInstrumentationName` string value unchanged (keep the OTel instrumentation name stable: `github.com/zakyalvan/krtlwrkflw/runtime`).
+- [ ] **Step 4: Rename internal helper names for consistency (optional, cosmetic).** `runnerObs` → `driverObs`, `newRunnerObs` → `newDriverObs`, `runnerInstrumentationName` string value unchanged (keep the OTel instrumentation name stable: `github.com/kartaladev/wrkflw/runtime`).
 
 - [ ] **Step 5: Build and test.**
 
@@ -154,7 +154,7 @@ ErrNoCallLink ErrChainLinkExists ErrDefinitionNotFound MemStoreOption CachingSto
 CachingDefinitionRegistryOption MemCallLinkOption MemSchedulerOption WithCacheTTL WithCacheMaxEntries \
 WithCacheLogger WithCachingStoreClock WithCallLinks WithTimers WithMemCallLinkLease WithMemCallLinkClock \
 WithMemSchedulerClock WithCachingDefinitionRegistryClock"
-EXT=$(grep -rl '"github.com/zakyalvan/krtlwrkflw/runtime"' --include='*.go' . | grep -v '^./runtime/')
+EXT=$(grep -rl '"github.com/kartaladev/wrkflw/runtime"' --include='*.go' . | grep -v '^./runtime/')
 for f in $EXT; do for s in $SYMS; do gofmt -w -r "runtime.$s -> kernel.$s" "$f"; done; goimports -w "$f"; done
 ```
 
@@ -163,7 +163,7 @@ for f in $EXT; do for s in $SYMS; do gofmt -w -r "runtime.$s -> kernel.$s" "$f";
 ```bash
 go build ./runtime/... 2>&1 | grep 'undefined:' | sort -u
 ```
-For each `undefined: Sym`, add `kernel.` at the reported sites and `import "github.com/zakyalvan/krtlwrkflw/runtime/kernel"`. Run `goimports -w runtime/*.go` after. Repeat until the root package compiles.
+For each `undefined: Sym`, add `kernel.` at the reported sites and `import "github.com/kartaladev/wrkflw/runtime/kernel"`. Run `goimports -w runtime/*.go` after. Repeat until the root package compiles.
 
 - [ ] **Step 5: Move + fix kernel unit tests.** `git mv` each paired unit test (`ports_test.go`, `lister_test.go`, `jitter_test.go`, `ownership_test.go`, `publisher_test.go`, `memstore_test.go`, `memstore_lister_test.go`, `memstore_helper_test.go`, `caching_store_test.go`, `caching_store_example_test.go`, `caching_store_alwaysown_test.go`, `definition_registry_test.go`, `caching_definition_registry_test.go`, `timerstore_test.go`, `scheduler_test.go`, `mem_calllink_test.go`, `mem_calllink_export_test.go`, `mem_calllink_lease_test.go`, `chainlink_test.go`) into `kernel/`. For black-box ones change `package runtime_test` → `package kernel_test` and drop the now-unneeded `kernel.` prefix on in-package symbols; `mem_calllink_export_test.go` (white-box `package runtime` → `package kernel`) moves as-is. Root cross-cutting tests that used bare kernel symbols gain the `kernel.` qualifier + import (compiler-driven, same as Step 4).
 

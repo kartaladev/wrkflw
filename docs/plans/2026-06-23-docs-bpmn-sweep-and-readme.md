@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Go 1.25.7; module `github.com/zakyalvan/krtlwrkflw`; PostgreSQL 17; flat root layout (ADR-0004).
+- Go 1.25.7; module `github.com/kartaladev/wrkflw`; PostgreSQL 17; flat root layout (ADR-0004).
 - ⑤ scope is **Go code doc comments only**. `CLAUDE.md` deliberately documents the BPMN inspiration as design intent and is **out of scope** — do not edit it.
 - Keep domain vocabulary: "gateway", "sequence flow", "compensation", "boundary event", "error code", "node". Remove only phrasing that asserts conformance/compatibility ("BPMN-flavored", "the BPMN default", "implements BPMN error propagation", "per the BPMN spec").
 - Conventional Commits `docs(model)` / `docs(readme)`. Ask before committing.
@@ -96,9 +96,9 @@ Read these Example tests for accurate, compiling usage to adapt into the README 
 - [ ] **Step 2: Write the README with these sections (each must be concrete, no TODOs):**
 
 1. **Title + one-line tagline** — "wrkflw — an embeddable Go workflow engine (library, not a daemon)."
-2. **What it is** — library-first: a single importable module (`github.com/zakyalvan/krtlwrkflw`) a consumer embeds in their own app; transports (REST/gRPC) are *mountable*, not shipped binaries; no owned `main`. Token-based execution over process definitions; concepts inspired by BPMN but not BPMN-compatible. (Pull the elevator pitch from CLAUDE.md's Project section.)
+2. **What it is** — library-first: a single importable module (`github.com/kartaladev/wrkflw`) a consumer embeds in their own app; transports (REST/gRPC) are *mountable*, not shipped binaries; no owned `main`. Token-based execution over process definitions; concepts inspired by BPMN but not BPMN-compatible. (Pull the elevator pitch from CLAUDE.md's Project section.)
 3. **Requirements** — Go 1.25, PostgreSQL 17, Docker (only for running the testcontainers-based tests).
-4. **Install** — `go get github.com/zakyalvan/krtlwrkflw`.
+4. **Install** — `go get github.com/kartaladev/wrkflw`.
 5. **Quickstart** — two sub-sections:
    - *Define a process* — a compiling snippet using the sub-project-2 API: `model.NewDefinition("order",1).Add(model.NewStartEvent("s")).Add(model.NewServiceTask("charge","charge-card", model.WithCompensation("refund-card"))).Add(model.NewEndEvent("e")).Connect("s","charge").Connect("charge","e").Build()`.
    - *Or author in YAML* — show the `testdata/order.yaml` shape and `model.ParseYAML(data)`.

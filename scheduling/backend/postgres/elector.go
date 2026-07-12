@@ -12,8 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jonboulle/clockwork"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron/pgelector"
-	"github.com/zakyalvan/krtlwrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/internal/scheduling/gocron/pgelector"
+	"github.com/kartaladev/wrkflw/scheduling"
 )
 
 // Option configures the Postgres leader elector built by [NewElector].

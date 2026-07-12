@@ -26,8 +26,8 @@ import (
 	stringadapter "github.com/casbin/casbin/v2/persist/string-adapter"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	internalcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
+	"github.com/kartaladev/wrkflw/authz"
+	internalcasbin "github.com/kartaladev/wrkflw/internal/authz/casbin"
 )
 
 // Sentinel errors returned by [NewCasbinAuthorizer] when the caller supplies an

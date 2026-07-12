@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Go 1.25; single module `github.com/zakyalvan/krtlwrkflw`; public packages at repo root (no `pkg/`).
+- Go 1.25; single module `github.com/kartaladev/wrkflw`; public packages at repo root (no `pkg/`).
 - **TDD strict** (CLAUDE.md): no production code before a failing test; visible RED via `go test ./<pkg>/...` before GREEN. One test file per `.go` (`_test.go`), black-box (`<pkg>_test`).
 - Custom skills override generic: `table-test` (assert-closure form, `t.Context()` over `context.Background()`), `use-mockgen` (`--typed`), `use-testcontainers` (`database.RunTestDatabase`). Always-on Go skills per CLAUDE.md; start each task from `cc-skills-golang:golang-how-to`.
 - Never import watermill/casbin/gocron/clockwork directly from engine/workflow code — go through the in-repo abstraction.
@@ -380,7 +380,7 @@ package kernel
 
 import (
 	"context"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // DefinitionLister is an OPTIONAL capability a DefinitionRegistry may implement

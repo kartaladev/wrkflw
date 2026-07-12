@@ -36,7 +36,7 @@ definition without hand-rolling delivery — plus the fakes the audit named
 
 ## Package & naming
 
-- New package `github.com/zakyalvan/krtlwrkflw/processtest` (repo root, no `pkg/`).
+- New package `github.com/kartaladev/wrkflw/processtest` (repo root, no `pkg/`).
 - Error-returning API; **no import of `testing`** and **no import of `clockwork`**
   (a public package must not leak a vendor clock — see FakeClock below).
 - The driver type is `runtime.ProcessDriver` (not "Runner"; that name only

@@ -253,7 +253,7 @@ import (
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 // jobDefinition maps a neutral TriggerSpec to a gocron JobDefinition and reports
@@ -396,7 +396,7 @@ git commit -m "feat(runtime): arm timers via TriggerSpec port; recurring survive
 ```go
 // scheduling/neutrality_test.go
 func TestSchedulingHasNoDBDeps(t *testing.T) {
-	pkg, err := packages.Load(&packages.Config{Mode: packages.NeedImports}, "github.com/zakyalvan/krtlwrkflw/scheduling")
+	pkg, err := packages.Load(&packages.Config{Mode: packages.NeedImports}, "github.com/kartaladev/wrkflw/scheduling")
 	require.NoError(t, err)
 	for _, p := range pkg {
 		for imp := range p.Imports {

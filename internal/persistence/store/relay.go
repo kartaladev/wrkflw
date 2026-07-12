@@ -14,13 +14,13 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
-	"github.com/zakyalvan/krtlwrkflw/internal/observability"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database/transaction"
+	"github.com/kartaladev/wrkflw/internal/observability"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/monitor"
 )
 
 // Relay drains wrkflw_outbox and hands each event to a [kernel.OutboxPublisher]
@@ -203,7 +203,7 @@ func NewRelay(conn any, d dialect.Dialect, pub kernel.OutboxPublisher, opts ...R
 		o(r)
 	}
 	r.tel = observability.New(
-		"github.com/zakyalvan/krtlwrkflw/persistence",
+		"github.com/kartaladev/wrkflw/persistence",
 		filterNilOpts(r.logOpt, r.tpOpt, r.mpOpt)...,
 	)
 	r.eventsPublished = r.tel.Int64Counter(

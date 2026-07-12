@@ -10,7 +10,7 @@ package engine
 import (
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // OpenScope exposes (*InstanceState).openScope for engine_test.

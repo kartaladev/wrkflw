@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition/flow"
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
 
 // ErrDuplicateScopedAction is returned by Build when RegisterAction registered

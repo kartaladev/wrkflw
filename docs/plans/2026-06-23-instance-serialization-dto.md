@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Go 1.25; single `go.mod`; module path `github.com/zakyalvan/krtlwrkflw`; flat root layout (ADR-0004).
+- Go 1.25; single `go.mod`; module path `github.com/kartaladev/wrkflw`; flat root layout (ADR-0004).
 - **TDD strict:** every new exported symbol gets a failing test first.
 - The `engine` package MUST stay zero-diff (no `String()`/`MarshalJSON` added to `engine.Status`/`TokenState`). All enum→string mapping lives in the new `runtime` DTO code.
 - Never expose engine bookkeeping in the wire contract: the snapshot includes only consumer-relevant fields (InstanceID, DefID, DefVersion, Status, Variables, Tokens, StartedAt, EndedAt, History, Tasks, Incidents). It MUST NOT include `Timers`, `ArmedEvents`, `Boundaries`, `Scopes`, `RootCompensations`, `ArchivedCompensations`, `EventSubprocesses`, `Compensating`, `PendingCancel`, or any `*Seq` counter.
@@ -57,8 +57,8 @@ package runtime_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 func TestStatusString(t *testing.T) {

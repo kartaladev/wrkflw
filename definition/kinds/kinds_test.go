@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	_ "github.com/zakyalvan/krtlwrkflw/definition/kinds"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	_ "github.com/kartaladev/wrkflw/definition/kinds"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // TestAllKindsRegistered asserts every node kind resolves once the kinds bundle

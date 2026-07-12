@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database/transaction"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
 )
 
 // insertOne uses only database.Querier — no driver, no idea if q is a tx.

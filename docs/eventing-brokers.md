@@ -20,8 +20,8 @@ A runnable, dependency-free reference lives in
 
 ```go
 import (
-    "github.com/zakyalvan/krtlwrkflw/eventing"
-    "github.com/zakyalvan/krtlwrkflw/persistence"
+    "github.com/kartaladev/wrkflw/eventing"
+    "github.com/kartaladev/wrkflw/persistence"
 )
 
 // brokerPub is your broker's watermill message.Publisher (see below).

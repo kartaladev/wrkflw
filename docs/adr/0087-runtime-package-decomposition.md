@@ -68,7 +68,7 @@ root for types while the root imports it for the driver forms a transient cycle.
 
 Additionally, rename the reference driver type **`Runner` → `ProcessDriver`**
 (and `NewRunner` → `NewProcessDriver`). The OTel span names and instrumentation
-scope string (`github.com/zakyalvan/krtlwrkflw/runtime`) are kept verbatim so
+scope string (`github.com/kartaladev/wrkflw/runtime`) are kept verbatim so
 the observability contract does not change; `task` uses a package-local const
 holding that same string.
 

@@ -6,11 +6,11 @@
 
 **Architecture:** Convert each positional `clk clock.Clock` parameter to a per-component option following the repo's existing `With<Component>Clock` naming (avoids same-package `WithClock` collisions). Constructors initialise the clock field to `clock.System()` before applying options; the option setter ignores a nil clock. The engine core (`engine/`, `model/`) is untouched — it never constructs a clock.
 
-**Tech Stack:** Go 1.25, `github.com/zakyalvan/krtlwrkflw/clock` (in-repo `clock.Clock` + `clock.System()`), functional-options pattern.
+**Tech Stack:** Go 1.25, `github.com/kartaladev/wrkflw/clock` (in-repo `clock.Clock` + `clock.System()`), functional-options pattern.
 
 ## Global Constraints
 
-- Go 1.25; module path `github.com/zakyalvan/krtlwrkflw`.
+- Go 1.25; module path `github.com/kartaladev/wrkflw`.
 - TDD strict (CLAUDE.md): every new symbol/behaviour change gets a failing test (visible red) before implementation.
 - Black-box tests preferred (`<package>_test`). Table tests use the project `table-test` skill's `assert` closure form when 2+ cases share one SUT call.
 - Never import `clockwork` from `runtime`/`engine`/workflow code — depend on `clock.Clock` (ADR-0003).
@@ -117,7 +117,7 @@ func TestNewMemSchedulerWithClockOption(t *testing.T) {
 }
 ```
 
-Ensure imports include `time`, `github.com/jonboulle/clockwork`, testify `assert`/`require`, and `github.com/zakyalvan/krtlwrkflw/runtime`.
+Ensure imports include `time`, `github.com/jonboulle/clockwork`, testify `assert`/`require`, and `github.com/kartaladev/wrkflw/runtime`.
 
 - [ ] **Step 2: Run tests to verify they fail**
 

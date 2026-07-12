@@ -7,9 +7,9 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // DeliverFunc is the function the SignalBus uses to deliver a trigger to a

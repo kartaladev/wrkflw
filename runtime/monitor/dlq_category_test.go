@@ -3,8 +3,8 @@ package monitor_test
 import (
 	"testing"
 
+	"github.com/kartaladev/wrkflw/runtime/monitor"
 	"github.com/stretchr/testify/assert"
-	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
 )
 
 func TestClassifyDeadLetter(t *testing.T) {

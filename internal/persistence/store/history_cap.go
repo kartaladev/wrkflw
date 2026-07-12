@@ -1,6 +1,6 @@
 package store
 
-import "github.com/zakyalvan/krtlwrkflw/engine"
+import "github.com/kartaladev/wrkflw/engine"
 
 // capHistory returns a copy of st whose History retains every OPEN visit
 // (LeftAt == nil) plus at most the most recent n CLOSED visits, preserving the

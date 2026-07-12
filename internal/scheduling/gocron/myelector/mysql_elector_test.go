@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron/myelector"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
+	sched "github.com/kartaladev/wrkflw/internal/scheduling/gocron/myelector"
 )
 
 // TestMySQLElectorLeadership exercises leader election as a stateful protocol

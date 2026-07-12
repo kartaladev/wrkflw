@@ -3,8 +3,8 @@ package fiber
 import (
 	fiberlib "github.com/gofiber/fiber/v3"
 
-	"github.com/zakyalvan/krtlwrkflw/service"
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/service"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 // Mount is the convenience entrypoint for the common case: instance, task, and

@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/action/httpcall"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/action/httpcall"
 )
 
 // TestHTTPCallMissingBaseURL verifies that NewHTTPCall with no base URL configured

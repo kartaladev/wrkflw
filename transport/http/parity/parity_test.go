@@ -33,12 +33,12 @@ import (
 	ginlib "github.com/gin-gonic/gin"
 	fiberlib "github.com/gofiber/fiber/v3"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
-	"github.com/zakyalvan/krtlwrkflw/service"
-	fiberadapter "github.com/zakyalvan/krtlwrkflw/transport/http/fiber"
-	ginadapter "github.com/zakyalvan/krtlwrkflw/transport/http/gin"
-	"github.com/zakyalvan/krtlwrkflw/transport/http/stdlib"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/internal/transporttest"
+	"github.com/kartaladev/wrkflw/service"
+	fiberadapter "github.com/kartaladev/wrkflw/transport/http/fiber"
+	ginadapter "github.com/kartaladev/wrkflw/transport/http/gin"
+	"github.com/kartaladev/wrkflw/transport/http/stdlib"
 )
 
 func init() {

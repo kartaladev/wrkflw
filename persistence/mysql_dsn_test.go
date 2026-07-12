@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/kartaladev/wrkflw/persistence"
 )
 
 // TestMySQLDSNForcesUTC verifies that MySQLDSN always produces a DSN with:

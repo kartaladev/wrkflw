@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 func TestDefaultCatalog_RegisterAndResolve(t *testing.T) {

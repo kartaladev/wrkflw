@@ -6,11 +6,11 @@
 
 **Architecture:** `WithManual` gains a bool `immediate`; `UserTask` gains `ManualImmediate bool`. Wait mode is unchanged parking plus a new engine enforcement (`ErrManualTaskPayload`) in `handleHumanCompleted`. Immediate mode is a new branch in `userTaskStrategy.enter` that records a completed task and advances without parking. Both flags round-trip on JSON/YAML.
 
-**Tech Stack:** Go 1.25; `definition/activity`, `definition/model`; engine (`engine`); runtime driver (`runtime`). Module `github.com/zakyalvan/krtlwrkflw`.
+**Tech Stack:** Go 1.25; `definition/activity`, `definition/model`; engine (`engine`); runtime driver (`runtime`). Module `github.com/kartaladev/wrkflw`.
 
 ## Global Constraints
 
-- Go 1.25; single module `github.com/zakyalvan/krtlwrkflw`; public packages at repo root (no `pkg/` prefix).
+- Go 1.25; single module `github.com/kartaladev/wrkflw`; public packages at repo root (no `pkg/` prefix).
 - **TDD strict:** every new symbol/behaviour gets a failing test FIRST, with a visible RED (`go test ./<pkg>/...`) before implementation. Pure refactors need no new test but existing tests pass before AND after.
 - **Black-box tests:** `package <pkg>_test`.
 - **Table tests:** when ≥2 cases exercise the same call, use the project `table-test` skill (an `assert func(...)` closure form, `t.Context()` over `context.Background()`).

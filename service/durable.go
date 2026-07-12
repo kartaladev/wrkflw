@@ -1,8 +1,8 @@
 package service
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // DurableProvider supplies a coherent set of durable graph leaves. The

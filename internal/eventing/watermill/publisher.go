@@ -8,7 +8,7 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const instrumentationName = "github.com/zakyalvan/krtlwrkflw/eventing"
+const instrumentationName = "github.com/kartaladev/wrkflw/eventing"
 
 // Publisher adapts a watermill message.Publisher to kernel.OutboxPublisher. It maps
 // one OutboxEvent to one watermill message: the message UUID is the event's

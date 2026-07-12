@@ -26,9 +26,9 @@ package definition
 import (
 	"io"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/build"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/build"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
 
 // Qualifier references a process definition by id and version (0 == latest).

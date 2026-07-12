@@ -12,11 +12,11 @@ package store_test
 import (
 	"testing"
 
+	"github.com/kartaladev/wrkflw/internal/dbtest"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/persistence/store"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // TestCallLinkStoreErrors covers the error branches of CallLinkStore read

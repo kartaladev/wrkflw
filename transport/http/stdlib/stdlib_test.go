@@ -15,11 +15,11 @@ import (
 
 	"go.uber.org/mock/gomock"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
-	"github.com/zakyalvan/krtlwrkflw/service"
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
-	"github.com/zakyalvan/krtlwrkflw/transport/http/stdlib"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/internal/transporttest"
+	"github.com/kartaladev/wrkflw/service"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/transport/http/stdlib"
 )
 
 // helpers -----------------------------------------------------------------------

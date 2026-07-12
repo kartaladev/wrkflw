@@ -3,8 +3,8 @@ package httpcore_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 func TestResolveConfigDefaults(t *testing.T) {

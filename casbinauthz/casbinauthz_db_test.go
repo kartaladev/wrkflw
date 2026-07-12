@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/casbinauthz"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/casbinauthz"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
 )
 
 // authorizeOK is a helper that calls authB.Authorize with a privilege-based AuthzSpec

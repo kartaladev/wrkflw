@@ -17,7 +17,7 @@ func TestServiceDependencyGraphIsVendorFree(t *testing.T) {
 	t.Parallel()
 
 	out, err := exec.Command("go", "list", "-deps",
-		"github.com/zakyalvan/krtlwrkflw/service").CombinedOutput()
+		"github.com/kartaladev/wrkflw/service").CombinedOutput()
 	if err != nil {
 		t.Fatalf("go list -deps: %v\n%s", err, out)
 	}
@@ -29,11 +29,11 @@ func TestServiceDependencyGraphIsVendorFree(t *testing.T) {
 		"github.com/go-sql-driver/mysql",
 		"modernc.org/sqlite",
 		"database/sql",
-		"github.com/zakyalvan/krtlwrkflw/persistence",
-		"github.com/zakyalvan/krtlwrkflw/internal/persistence",
-		"github.com/zakyalvan/krtlwrkflw/internal/persistence/store",
-		"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect",
-		"github.com/zakyalvan/krtlwrkflw/internal/database",
+		"github.com/kartaladev/wrkflw/persistence",
+		"github.com/kartaladev/wrkflw/internal/persistence",
+		"github.com/kartaladev/wrkflw/internal/persistence/store",
+		"github.com/kartaladev/wrkflw/internal/persistence/dialect",
+		"github.com/kartaladev/wrkflw/internal/database",
 	}
 	bannedSet := make(map[string]struct{}, len(banned))
 	for _, b := range banned {

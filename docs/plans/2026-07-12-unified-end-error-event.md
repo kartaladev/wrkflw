@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Go 1.25; module path `github.com/zakyalvan/krtlwrkflw`.
+- Go 1.25; module path `github.com/kartaladev/wrkflw`.
 - TDD strict: every new symbol gets a failing (RED) test run via `go test` BEFORE implementation. Pure deletions/refactors add no new test but must stay green before AND after.
 - Prefer black-box tests (`package <pkg>_test`). Use `t.Context()` not `context.Background()`. Table tests use the `assert` closure form (project `table-test` skill), not `want`/`wantErr` fields.
 - Error sentinels use the `"workflow-<pkg>: ..."` prefix (existing convention; none new expected here).

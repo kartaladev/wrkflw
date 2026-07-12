@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
 
 // funcValidator adapts a func to the Validator port for tests.

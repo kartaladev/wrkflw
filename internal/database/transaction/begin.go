@@ -3,7 +3,7 @@ package transaction
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database"
 )
 
 // Begin starts a transaction on conn, stashes it into the returned context (so

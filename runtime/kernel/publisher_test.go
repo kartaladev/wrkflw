@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 type fakePub struct{ got []kernel.OutboxEvent }

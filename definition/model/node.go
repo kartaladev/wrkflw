@@ -1,7 +1,7 @@
 package model
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 // Node is a single point in a process: an event, activity, or gateway. The

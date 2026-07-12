@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
 
 // ErrUnserializableValidation is returned by ProcessDefinition.MarshalJSON when a

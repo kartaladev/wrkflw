@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
-	"github.com/zakyalvan/krtlwrkflw/service"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/monitor"
+	"github.com/kartaladev/wrkflw/service"
 )
 
 // parseAdminStatus converts a status string back to an engine.Status value.

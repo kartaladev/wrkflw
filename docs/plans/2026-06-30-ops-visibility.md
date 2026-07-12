@@ -15,7 +15,7 @@ testcontainers, protoc (+ protoc-gen-go / protoc-gen-go-grpc, both on `$(go env 
 
 ## Global Constraints
 
-- Module path `github.com/zakyalvan/krtlwrkflw`. TDD strict: failing test first, visible RED via
+- Module path `github.com/kartaladev/wrkflw`. TDD strict: failing test first, visible RED via
   `go test ./<pkg>/...`. Black-box tests (`<pkg>_test`); table form (assert-closure) for ≥2 cases.
 - DB tests use `database.RunTestDatabase(t)` (postgres) / `database.RunTestMySQL(t)` (mysql, auto-migrates);
   postgres needs an explicit `Migrate`. Real services via testcontainers, never mocked.

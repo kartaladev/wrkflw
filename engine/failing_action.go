@@ -1,6 +1,6 @@
 package engine
 
-import "github.com/zakyalvan/krtlwrkflw/definition/model"
+import "github.com/kartaladev/wrkflw/definition/model"
 
 // FailingActionName maps a command ID to the catalog lookup name of the action a
 // token is currently parked on awaiting it, together with the scope-effective

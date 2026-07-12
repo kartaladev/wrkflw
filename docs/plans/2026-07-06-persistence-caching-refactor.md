@@ -17,7 +17,7 @@
 - **Coverage:** each touched package ≥ 85% line coverage (`go test -race -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1`).
 - **Lint:** `golangci-lint run ./...` clean before any task is "done".
 - **Error sentinels:** message prefix `workflow-<package>:` (e.g. `workflow-cache: ...`).
-- **Module path:** `github.com/zakyalvan/krtlwrkflw`.
+- **Module path:** `github.com/kartaladev/wrkflw`.
 - **Docs:** ADRs use the Nygard template under `docs/adr/NNNN-<slug>.md`; next free number is **0099**.
 - **Commits:** Conventional Commits scoped to the area; commit per task. End commit messages with the two trailer lines the harness requires.
 
@@ -50,7 +50,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
 )
 
 type payload struct {
@@ -175,7 +175,7 @@ func TestNewCodecNilCache(t *testing.T) {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `go test ./persistence/cache/...`
-Expected: FAIL — `package github.com/zakyalvan/krtlwrkflw/persistence/cache is not in std` / `undefined: cache.NewCodec`.
+Expected: FAIL — `package github.com/kartaladev/wrkflw/persistence/cache is not in std` / `undefined: cache.NewCodec`.
 
 - [ ] **Step 3: Write minimal implementation**
 
@@ -336,8 +336,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/cachetest"
+	"github.com/kartaladev/wrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache/cachetest"
 )
 
 type mapProvider struct{ mu sync.Mutex; caches map[string]*mapCache }
@@ -402,7 +402,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
 )
 
 // RunConformance exercises the behavioral contract every cache.Cache must honor.
@@ -503,9 +503,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/cachetest"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/hotcache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache/cachetest"
+	"github.com/kartaladev/wrkflw/persistence/cache/hotcache"
 )
 
 func TestHotcacheConformance(t *testing.T) {
@@ -558,7 +558,7 @@ import (
 
 	"github.com/samber/hot"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
 )
 
 const (
@@ -685,9 +685,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/cachetest"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/ottercache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache/cachetest"
+	"github.com/kartaladev/wrkflw/persistence/cache/ottercache"
 )
 
 func TestOttercacheConformance(t *testing.T) {
@@ -736,7 +736,7 @@ import (
 
 	"github.com/maypok86/otter/v2"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
 )
 
 const (
@@ -852,7 +852,7 @@ package cachetest_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/cachetest"
+	"github.com/kartaladev/wrkflw/persistence/cache/cachetest"
 )
 
 func TestRunTestRedisReturnsAddr(t *testing.T) {
@@ -968,9 +968,9 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/cachetest"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/rediscache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache/cachetest"
+	"github.com/kartaladev/wrkflw/persistence/cache/rediscache"
 )
 
 func TestRediscacheConformance(t *testing.T) {
@@ -1016,7 +1016,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
 )
 
 // Option configures the provider.
@@ -1110,9 +1110,9 @@ import (
 
 	gomc "github.com/bradfitz/gomemcache/memcache"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/cachetest"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/memcache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache/cachetest"
+	"github.com/kartaladev/wrkflw/persistence/cache/memcache"
 )
 
 func TestMemcacheConformance(t *testing.T) {
@@ -1146,7 +1146,7 @@ import (
 
 	gomc "github.com/bradfitz/gomemcache/memcache"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
 )
 
 // Option configures the provider.
@@ -1285,9 +1285,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 var (
@@ -1436,7 +1436,7 @@ func MustCachingStore(t *testing.T, backing kernel.InstanceStore, owner kernel.I
 	return s
 }
 ```
-Add imports `github.com/zakyalvan/krtlwrkflw/persistence` and `github.com/zakyalvan/krtlwrkflw/persistence/cache/hotcache`. If any caller passed `kernel.WithCacheTTL`/`kernel.WithCacheMaxEntries`, translate to `persistence.WithInstanceCacheTTL` / drop max-entries (adapter concern).
+Add imports `github.com/kartaladev/wrkflw/persistence` and `github.com/kartaladev/wrkflw/persistence/cache/hotcache`. If any caller passed `kernel.WithCacheTTL`/`kernel.WithCacheMaxEntries`, translate to `persistence.WithInstanceCacheTTL` / drop max-entries (adapter concern).
 
 > Verify no import cycle: `persistence` must not import `runtime/internal/runtimetest`. It does not. `runtime/internal/runtimetest` importing `persistence` is one-directional and legal.
 
@@ -1491,9 +1491,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/persistence"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/hotcache"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/persistence"
+	"github.com/kartaladev/wrkflw/persistence/cache/hotcache"
 )
 
 // countingStore counts backing Get calls to prove cache hits skip the backing.
@@ -1591,10 +1591,10 @@ import (
 	"maps"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 var _ humantask.TaskStore = (*CachingTaskStore)(nil)
@@ -1733,9 +1733,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/hotcache"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/persistence/cache/hotcache"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 func TestDurableCacheConfigDefaults(t *testing.T) {
@@ -1821,10 +1821,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/hotcache"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache/hotcache"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // DurableOption configures caching (and future concerns) on a DurableProvider.

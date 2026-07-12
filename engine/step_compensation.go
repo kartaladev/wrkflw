@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // compensationRecordsForScope returns a read-only slice of CompensationRecords for

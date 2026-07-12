@@ -44,7 +44,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "modernc.org/sqlite"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/kartaladev/wrkflw/persistence"
 )
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout)) }

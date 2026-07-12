@@ -3,7 +3,7 @@ package engine
 import (
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/expreval"
+	"github.com/kartaladev/wrkflw/internal/expreval"
 )
 
 // ConditionEvaluator evaluates the expression strings a process definition

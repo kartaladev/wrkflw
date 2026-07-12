@@ -68,7 +68,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database"
 )
 
 func TestFromRejectsUnsupportedConn(t *testing.T) {
@@ -207,7 +207,7 @@ package database_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database"
 )
 
 func TestPgxQuerierRoundTrip(t *testing.T) {
@@ -354,7 +354,7 @@ package database_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database"
 )
 
 func TestSQLQuerierRoundTrip(t *testing.T) {
@@ -495,7 +495,7 @@ package database_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database"
 )
 
 func TestBeginTxCommitRollback(t *testing.T) {
@@ -602,7 +602,7 @@ package database_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database"
 )
 
 func TestPgxBatcher(t *testing.T) {
@@ -736,7 +736,7 @@ package database_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database"
 )
 
 func TestSQLBatcherEmulates(t *testing.T) {
@@ -828,7 +828,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database"
 )
 
 func TestUTCNormalizes(t *testing.T) {
@@ -950,7 +950,7 @@ package transaction_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
+	"github.com/kartaladev/wrkflw/internal/database/transaction"
 )
 
 func TestMarkRollbackNoAmbientIsNoop(t *testing.T) {
@@ -977,7 +977,7 @@ package transaction
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database"
 )
 
 // Control commits or rolls back a transaction. Commit honors a rollback-only mark.
@@ -1051,8 +1051,8 @@ package transaction_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database/transaction"
 )
 
 func TestBeginCommitPersists(t *testing.T) {
@@ -1110,7 +1110,7 @@ package transaction
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database"
 )
 
 // Begin starts a transaction on conn, stashes it into the returned context (so
@@ -1177,8 +1177,8 @@ package transaction_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database/transaction"
 )
 
 func TestJoinInnerCommitIsNoopOuterControls(t *testing.T) {
@@ -1299,7 +1299,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/kartaladev/wrkflw/persistence"
 )
 
 func TestMySQLDSNForcesUTC(t *testing.T) {
@@ -1380,8 +1380,8 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/persistence"
 )
 
 func TestOpenMySQLRejectsNonUTC(t *testing.T) {
@@ -1431,7 +1431,7 @@ In `OpenPostgres` (after obtaining `pool`):
 	}
 ```
 
-Add `"github.com/zakyalvan/krtlwrkflw/internal/database"` imports. Note the `ctx` parameter is currently named `_` in both `Open*` signatures — rename to `ctx` and use it.
+Add `"github.com/kartaladev/wrkflw/internal/database"` imports. Note the `ctx` parameter is currently named `_` in both `Open*` signatures — rename to `ctx` and use it.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -1542,8 +1542,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database/transaction"
 )
 
 // insertOne uses only database.Querier — no driver, no idea if q is a tx.
@@ -1683,4 +1683,4 @@ git commit -m "docs(adr): database transaction toolkit + UTC time discipline"
 - [ ] `go test -race -coverprofile=cover.out ./internal/database/... ./internal/database/transaction/... && go tool cover -func=cover.out | tail -1` — ≥ 85%
 - [ ] `go test ./...` from repo root — no regressions
 - [ ] `golangci-lint run ./...` — clean
-- [ ] Confirm neither `internal/database` nor `internal/database/transaction` imports any wrkflw package other than each other (extraction constraint): `go list -deps ./internal/database/... | grep zakyalvan/krtlwrkflw` shows only `internal/database` paths.
+- [ ] Confirm neither `internal/database` nor `internal/database/transaction` imports any wrkflw package other than each other (extraction constraint): `go list -deps ./internal/database/... | grep kartaladev/wrkflw` shows only `internal/database` paths.

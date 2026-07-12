@@ -26,11 +26,11 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 	_ "modernc.org/sqlite" // pure-Go SQLite driver (ADR-0082)
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/eventing"
-	"github.com/zakyalvan/krtlwrkflw/persistence"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/definition"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/eventing"
+	"github.com/kartaladev/wrkflw/persistence"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 // demoPublisher stands in for a real broker's watermill message.Publisher. In

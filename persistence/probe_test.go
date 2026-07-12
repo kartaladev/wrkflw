@@ -7,8 +7,8 @@ import (
 
 	gomysql "github.com/go-sql-driver/mysql"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
+	"github.com/kartaladev/wrkflw/persistence"
 )
 
 // forceLocalLoc rewrites dsn so that loc=time.Local and parseTime=true, which

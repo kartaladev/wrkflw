@@ -203,8 +203,8 @@ package runtime
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // jobStore is the runtime JobStore: it rebuilds executable ScheduledJobs from the

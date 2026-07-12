@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/ThreeDotsLabs/watermill"
+	watermillpub "github.com/kartaladev/wrkflw/internal/eventing/watermill"
 	"github.com/stretchr/testify/require"
-	watermillpub "github.com/zakyalvan/krtlwrkflw/internal/eventing/watermill"
 )
 
 func newTestLogger(buf *bytes.Buffer) watermill.LoggerAdapter {

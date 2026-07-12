@@ -9,4 +9,4 @@ package kernel
 // callers' dashboards and alerts depend on. Defining it once here (the leaf all
 // those packages import) means a module rename touches exactly one line and the
 // three call sites cannot silently drift (ADR-0087).
-const InstrumentationScope = "github.com/zakyalvan/krtlwrkflw/runtime"
+const InstrumentationScope = "github.com/kartaladev/wrkflw/runtime"

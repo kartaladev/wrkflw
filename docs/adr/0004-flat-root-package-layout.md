@@ -22,8 +22,8 @@ We will place the **public engine packages at the module root** — e.g.
   wiring).
 - `examples/` (reference wiring) and `docs/` are unchanged.
 - The module import path is the repository URL
-  (`github.com/zakyalvan/krtlwrkflw`), so a consumer imports e.g.
-  `github.com/zakyalvan/krtlwrkflw/engine`.
+  (`github.com/kartaladev/wrkflw`), so a consumer imports e.g.
+  `github.com/kartaladev/wrkflw/engine`.
 
 This decision supersedes the `pkg/`-based layout described in CLAUDE.md's
 Repository Layout section; CLAUDE.md must be updated to match (follow-up).

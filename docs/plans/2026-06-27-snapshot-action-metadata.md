@@ -1,7 +1,7 @@
 # Plan — T1: Surface action metadata in snapshots + gRPC snapshot RPCs
 
 Spec: `docs/specs/2026-06-27-snapshot-action-metadata-design.md`. ADR: `docs/adr/0068-snapshot-action-metadata.md`.
-Branch: `feat/snapshot-action-metadata`. Module: `github.com/zakyalvan/krtlwrkflw`.
+Branch: `feat/snapshot-action-metadata`. Module: `github.com/kartaladev/wrkflw`.
 
 ## Global Constraints (binding — copy to reviewers verbatim)
 

@@ -17,7 +17,7 @@
 - **No schema migration** (D2): the `definition_ref` TEXT columns and watermill `definition_ref` metadata keep the joined string via `Qualifier.String()`/`ParseQualifier`.
 - **Field names kept:** the `…DefRef` / `…DefinitionRef` field names are unchanged; only their types change.
 - **Error sentinels:** message prefix `workflow-<package>:` (e.g. `workflow-model:` for `ParseQualifier`).
-- **Module path:** `github.com/zakyalvan/krtlwrkflw`.
+- **Module path:** `github.com/kartaladev/wrkflw`.
 - **Coverage:** each touched package ≥ 85% line coverage. **Lint:** `golangci-lint run ./...` clean before any task is "done".
 - **Docs:** ADRs use the Nygard template under `docs/adr/NNNN-<slug>.md`; next free number is **0101**.
 - **Table tests:** use the project `table-test` skill's `assert` closure form. **DB tests:** use `database.RunTestDatabase(t, …)` (never a hand-rolled container).
@@ -70,7 +70,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 func TestQualifierConstructorsAndString(t *testing.T) {

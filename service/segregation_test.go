@@ -3,7 +3,7 @@ package service_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/service"
+	"github.com/kartaladev/wrkflw/service"
 )
 
 var (

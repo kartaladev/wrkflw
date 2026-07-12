@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/kartaladev/wrkflw/authz"
 )
 
 // AuthzCall is one recorded call to a [SpyAuthorizer].

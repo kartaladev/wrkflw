@@ -8,7 +8,7 @@
 // flows (see model.Validate and the runtime).
 package gateway
 
-import "github.com/zakyalvan/krtlwrkflw/definition/model"
+import "github.com/kartaladev/wrkflw/definition/model"
 
 // ExclusiveGateway routes to exactly one outgoing flow (XOR split / merge).
 type ExclusiveGateway struct{ model.Base }

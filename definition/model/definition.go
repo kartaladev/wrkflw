@@ -6,8 +6,8 @@
 package model
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/definition/flow"
 )
 
 // NodeKind discriminates the kind of a Node.

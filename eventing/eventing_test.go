@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/ThreeDotsLabs/watermill/message"
+	"github.com/kartaladev/wrkflw/eventing"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/eventing"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"

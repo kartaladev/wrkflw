@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 )
 
 // timeArg converts t into the correct bind argument for the given dialect.

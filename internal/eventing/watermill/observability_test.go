@@ -4,9 +4,9 @@ import (
 	"errors"
 	"testing"
 
+	watermillpub "github.com/kartaladev/wrkflw/internal/eventing/watermill"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/stretchr/testify/require"
-	watermillpub "github.com/zakyalvan/krtlwrkflw/internal/eventing/watermill"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/sdk/metric"

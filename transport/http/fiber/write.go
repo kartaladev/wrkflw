@@ -3,7 +3,7 @@ package fiber
 import (
 	fiberlib "github.com/gofiber/fiber/v3"
 
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 // writeErr classifies err, logs 5xx details via cfg.Logger (never sends raw

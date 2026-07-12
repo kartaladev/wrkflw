@@ -5,7 +5,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/kartaladev/wrkflw/authz"
 )
 
 // Compile-time assertions that the in-memory fakes satisfy the ports.

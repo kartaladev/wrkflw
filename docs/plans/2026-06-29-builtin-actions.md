@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Module path: `github.com/zakyalvan/krtlwrkflw`. Go 1.25.7.
+- Module path: `github.com/kartaladev/wrkflw`. Go 1.25.7.
 - No new third-party **runtime** dependency. Only stdlib + `expr-lang/expr` (already present). testcontainers/mailpit is test-only.
 - Error sentinel/message prefix: `"workflow-<pkg>: ..."` (e.g. `"workflow-action: ..."`, `"workflow-httpcall: ..."`).
 - Black-box tests: package `<pkg>_test`. Table tests use the project `table-test` `assert`-closure form; use `t.Context()` not `context.Background()`.
@@ -44,7 +44,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 func TestIsRetryable(t *testing.T) {
@@ -193,7 +193,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 // TestActionFailedHonoursRetryContract asserts that when a service action returns
@@ -280,7 +280,7 @@ package transform_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action/transform"
+	"github.com/kartaladev/wrkflw/action/transform"
 )
 
 func TestTransform(t *testing.T) {
@@ -362,7 +362,7 @@ import (
 
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 // Option configures a transform action.
@@ -441,7 +441,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/action/transform"
+	"github.com/kartaladev/wrkflw/action/transform"
 )
 
 func ExampleNewTransform() {
@@ -496,7 +496,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action/logaction"
+	"github.com/kartaladev/wrkflw/action/logaction"
 )
 
 func TestLog(t *testing.T) {
@@ -579,7 +579,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 // Option configures a log action.
@@ -649,7 +649,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/zakyalvan/krtlwrkflw/action/logaction"
+	"github.com/kartaladev/wrkflw/action/logaction"
 )
 
 func ExampleNewLog() {
@@ -706,8 +706,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/action/httpcall"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/action/httpcall"
 )
 
 func TestHTTPCall(t *testing.T) {
@@ -868,7 +868,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 // Option configures an HTTP call action.
@@ -1027,7 +1027,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/zakyalvan/krtlwrkflw/action/httpcall"
+	"github.com/kartaladev/wrkflw/action/httpcall"
 )
 
 func ExampleNewHTTPCall() {
@@ -1085,7 +1085,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action/email"
+	"github.com/kartaladev/wrkflw/action/email"
 )
 
 type capturedSend struct {
@@ -1164,7 +1164,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 // sender abstracts the SMTP send so message assembly is testable without a server.
@@ -1298,7 +1298,7 @@ import (
 	"fmt"
 	"net/smtp"
 
-	"github.com/zakyalvan/krtlwrkflw/action/email"
+	"github.com/kartaladev/wrkflw/action/email"
 )
 
 func ExampleNewEmail() {
@@ -1335,7 +1335,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/zakyalvan/krtlwrkflw/action/email"
+	"github.com/kartaladev/wrkflw/action/email"
 )
 
 func TestEmailSendsViaMailpit(t *testing.T) {

@@ -7,12 +7,12 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/internal/observability"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/internal/observability"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // TaskService authorizes human-task interactions and returns the engine triggers
@@ -54,7 +54,7 @@ type TaskServiceOption func(*taskServiceConfig)
 //
 // Use the same provider as the ProcessDriver to aggregate all lifecycle events
 // (created, claimed, reassigned, completed) into one metric stream under the
-// shared instrumentation scope "github.com/zakyalvan/krtlwrkflw/runtime".
+// shared instrumentation scope "github.com/kartaladev/wrkflw/runtime".
 func WithTaskServiceMeterProvider(mp metric.MeterProvider) TaskServiceOption {
 	return func(c *taskServiceConfig) {
 		if mp != nil {

@@ -42,7 +42,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 func act(tag string) action.ServiceAction {
@@ -193,8 +193,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/model"
 )
 
 func noopFn(_ context.Context, in map[string]any) (map[string]any, error) { return in, nil }
@@ -617,7 +617,7 @@ package engine
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/kartaladev/wrkflw/model"
 )
 
 func TestMainActionName(t *testing.T) {
@@ -654,7 +654,7 @@ Create `engine/main_action.go`:
 ```go
 package engine
 
-import "github.com/zakyalvan/krtlwrkflw/model"
+import "github.com/kartaladev/wrkflw/model"
 
 // mainActionName returns the lookup key for a task's primary action: the
 // explicit action name, or the node id when no name was set (default-by-id).
@@ -845,9 +845,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/model"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/model"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 func tag(name string) action.ServiceAction {
@@ -928,8 +928,8 @@ Create `runtime/resolve_action.go`:
 package runtime
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/model"
 )
 
 // resolveActionName resolves name against the definition-scoped catalog first,
@@ -1028,8 +1028,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/model"
 )
 
 // ExampleDefinitionBuilder_RegisterAction shows the three ways to bind an action

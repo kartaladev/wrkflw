@@ -17,7 +17,7 @@ signature grew with each infrastructure plan:
 Eight or nine consecutive interface-typed parameters create a *positional swap
 hazard*: swapping two adjacent arguments of compatible types compiles silently
 but causes a runtime failure. This is especially dangerous for a **public library
-constructor** (`github.com/zakyalvan/krtlwrkflw/runtime.NewRunner`), where
+constructor** (`github.com/kartaladev/wrkflw/runtime.NewRunner`), where
 callers cannot rely on IDE type-checking alone and where a breaking signature
 change would force a semver bump.
 

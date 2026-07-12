@@ -6,8 +6,8 @@
 package activity
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
 
 // --- concrete node types ---

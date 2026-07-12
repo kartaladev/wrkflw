@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Go 1.25, module `github.com/zakyalvan/krtlwrkflw`.
+- Go 1.25, module `github.com/kartaladev/wrkflw`.
 - **Strict TDD** (CLAUDE.md TDD Operational Discipline — observable RED before every new symbol). Black-box tests (`_test` packages); `table-test` closure form for 2+ cases; `t.Context()`.
 - Type-safe options (Item 0 convention): a subset-applicable option returns a narrow anonymous interface; `activityOnlyOption`/`BoundaryOption` for genuinely-broad ones. `WithDeadlineFlow`/`WithDeadlineAction` stay `activityOnlyOption` (all activity kinds — do NOT narrow; preserves `WithDeadline`'s scope). The 3 new boundary options are plain `BoundaryOption`.
 - Use `expr-lang` for the error-matching predicate (`ErrorExpr`) — never hand-roll (CLAUDE.md).

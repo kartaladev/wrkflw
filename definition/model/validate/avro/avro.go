@@ -11,7 +11,7 @@ import (
 
 	"github.com/linkedin/goavro/v2"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
 
 // Kind is the registry key for Avro strategies.

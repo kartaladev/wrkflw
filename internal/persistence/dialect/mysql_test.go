@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 )
 
 // TestMySQLRebind verifies that MySQL Rebind is an identity function because

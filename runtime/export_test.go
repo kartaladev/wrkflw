@@ -1,6 +1,6 @@
 package runtime
 
-import "github.com/zakyalvan/krtlwrkflw/definition/model"
+import "github.com/kartaladev/wrkflw/definition/model"
 
 // ExportForceTerminationWarnings exposes forceTerminationWarnings to black-box
 // tests in package runtime_test.

@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/humantask"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
 )
 
 // makeTask is a minimal HumanTask fixture.

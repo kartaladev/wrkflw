@@ -1,7 +1,7 @@
 # Plan — H3: Make the gocron/clockwork clock seam optional
 
 Spec: `docs/specs/2026-06-27-optional-gocron-clock-design.md`. ADR: `docs/adr/0069-optional-gocron-clock.md`.
-Branch: `refactor/optional-gocron-clock`. Module: `github.com/zakyalvan/krtlwrkflw`.
+Branch: `refactor/optional-gocron-clock`. Module: `github.com/kartaladev/wrkflw`.
 
 ## Global Constraints (binding — copy to reviewers verbatim)
 

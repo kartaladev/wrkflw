@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // msgKey is the composite key used to look up a message waiter by name+correlation.

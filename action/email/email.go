@@ -29,7 +29,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 // sender abstracts the SMTP send so message assembly is testable without a server.

@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Module path:** `github.com/zakyalvan/krtlwrkflw` — import `.../model`, `.../engine`, `.../runtime`, `.../persistence`.
+- **Module path:** `github.com/kartaladev/wrkflw` — import `.../model`, `.../engine`, `.../runtime`, `.../persistence`.
 - **Pure core:** `engine` and `model` import only stdlib (+ `model`/`authz`/`humantask`/`expreval`). **No clock, no randomness, no transport/storage/bus/time-vendor** in `engine`/`model`. Jitter RNG and `time.Now` live ONLY in `runtime`/`internal/*`.
 - **`Step` determinism:** identical `(state, trigger)` ⇒ identical `(state, commands)`. All IDs from `InstanceState` counters; jitter enters via `ActionFailed.JitterFraction` (recorded on the trigger), never sampled in `Step`.
 - **`Step` purity:** never mutate input `InstanceState`; **extend `cloneState` for every new state field** (`Incidents`, `Token.RetryAttempts`, `Token.RetryStartedAt`).
@@ -69,7 +69,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/kartaladev/wrkflw/model"
 )
 
 func TestDefaultRetryPolicy(t *testing.T) {
@@ -494,8 +494,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/model"
 )
 
 // helper: a one-service-task definition with a node-level retry policy.

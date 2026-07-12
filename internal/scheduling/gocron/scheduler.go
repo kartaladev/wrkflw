@@ -17,8 +17,8 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
-	"github.com/zakyalvan/krtlwrkflw/internal/observability"
+	"github.com/kartaladev/wrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/internal/observability"
 )
 
 // defaultTimeSkew is the out-of-the-box tolerance for the past-due one-shot
@@ -206,7 +206,7 @@ func NewGocronScheduler(opts ...Option) (*GocronScheduler, error) {
 	// Build the Telemetry value after all options have been applied so that any
 	// subset of logger/tracer/meter providers can be set independently.
 	s.tel = observability.New(
-		"github.com/zakyalvan/krtlwrkflw/scheduling",
+		"github.com/kartaladev/wrkflw/scheduling",
 		filterNilOpts(s.logOpt, s.tpOpt, s.mpOpt)...,
 	)
 	return s, nil

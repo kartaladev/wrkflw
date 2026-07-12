@@ -11,11 +11,11 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/observability"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/internal/observability"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // ChainEvent is the broker-agnostic input to a chaining decision, projected from
@@ -141,7 +141,7 @@ func NewChainer(starter InstanceStarter, policy SuccessorPolicy, opts ...Chainer
 	}, nil
 }
 
-const chainerInstrumentationName = "github.com/zakyalvan/krtlwrkflw/runtime/chainer"
+const chainerInstrumentationName = "github.com/kartaladev/wrkflw/runtime/chainer"
 
 // successorID is the deterministic id of the successor for one (predecessor,
 // outcome) hop. Determinism is the first idempotency layer: a redelivered

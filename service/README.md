@@ -18,7 +18,7 @@ The package plays three roles:
    separately as fields on the adapter's `AdminRoutes` struct so a minimal deployment
    omits the overhead.
 
-Import path: `github.com/zakyalvan/krtlwrkflw/service`
+Import path: `github.com/kartaladev/wrkflw/service`
 
 ## Contents
 

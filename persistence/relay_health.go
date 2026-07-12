@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // relayBacklogConfig holds the threshold values for [RelayBacklogCheck].

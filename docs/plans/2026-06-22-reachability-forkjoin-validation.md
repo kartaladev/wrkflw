@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Module path `github.com/zakyalvan/krtlwrkflw`; no `pkg/` prefix (ADR-0004).
+- Module path `github.com/kartaladev/wrkflw`; no `pkg/` prefix (ADR-0004).
 - **Strict TDD**: RED before GREEN, observable as a separate `go test` Bash call.
 - **`model` must not import `engine`** (engine imports model). New code uses only stdlib + existing model helpers (`Outgoing`/`Incoming`/`Node`/`StartNodes`).
 - **Engine production diff: ZERO.** Only `model/validate.go` (+ its test) change.

@@ -3,7 +3,7 @@ package transaction
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database"
 )
 
 // Control commits or rolls back a transaction. Commit honors a rollback-only mark.

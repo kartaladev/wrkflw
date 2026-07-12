@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Go 1.25; single `go.mod`; module path `github.com/zakyalvan/krtlwrkflw`.
+- Go 1.25; single `go.mod`; module path `github.com/kartaladev/wrkflw`.
 - No `pkg/` prefix; `model`, `engine` stay at the module root (ADR-0004).
 - **TDD strict** (CLAUDE.md): for every new exported symbol, write the failing test, run it red, implement, run it green, commit. The model-layer tasks (1, 3, 4, 5, 6) are pure TDD. The engine-migration task (Task 2) is a behavior-preserving refactor whose gate is the **existing** `engine` test suite staying green; no new behavior is added there.
 - **Red window disclosure:** an interface replacement is an atomic type change. After Task 1 lands, `model` compiles and its tests pass, but `engine/step.go` will NOT compile until Task 2 completes. Tasks 1 and 2 therefore form one continuous red window for the repo-wide build — do them back-to-back and do not merge to `main` between them. Every OTHER task boundary is fully green (`go build ./...` + `go test ./...`).
@@ -91,7 +91,7 @@ package model_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/kartaladev/wrkflw/model"
 )
 
 func TestServiceTaskConstructorAndAccessors(t *testing.T) {

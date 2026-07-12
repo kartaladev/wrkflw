@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Module path:** `github.com/zakyalvan/krtlwrkflw`.
+- **Module path:** `github.com/kartaladev/wrkflw`.
 - **Language:** Go 1.25 (hard requirement).
 - **TDD strict:** No production code before a failing test. Every new exported symbol and every behavioural change follows Red → Red-verify (`go test` shows failure/compile error) → Green → Green-verify → Refactor. The red state MUST be observable in the transcript (a separate `Bash` `go test` call between writing the test and writing the impl). See CLAUDE.md "TDD Operational Discipline".
 - **Table tests:** Use the project `table-test` skill form — `assert func(t, ...)` closures (NOT `want`/`wantErr` fields), a `ctx` modifier where context matters, and `t.Context()` over `context.Background()`.
@@ -302,9 +302,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/internal/persistence/store"
 )
 
 // compile-time guard: the neutral store satisfies the public interface.
@@ -359,10 +359,10 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 )
 
 // HumanTaskStore is the neutral, dialect-parametrised SQL implementation of
@@ -634,9 +634,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/persistence/store"
 )
 
 // NewTaskStore returns a durable PostgreSQL-backed humantask.TaskStore over the
@@ -733,8 +733,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // ProcessInstance is the read-only, fused view of a running instance: its
@@ -991,11 +991,11 @@ var ErrNilDependency = errors.New("workflow-service: nil required dependency")
 package service
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // Option configures NewEngine. Options that receive nil are ignored (the
@@ -1320,7 +1320,7 @@ package service_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/service"
+	"github.com/kartaladev/wrkflw/service"
 )
 
 var (
@@ -1424,8 +1424,8 @@ Expected: FAIL — `undefined: service.WithDurableStore` / `service.DurableProvi
 package service
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // DurableProvider supplies a coherent set of durable graph leaves. The
@@ -1678,9 +1678,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/persistence"
-	"github.com/zakyalvan/krtlwrkflw/service"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
+	"github.com/kartaladev/wrkflw/persistence"
+	"github.com/kartaladev/wrkflw/service"
 )
 
 var _ service.DurableProvider = (*persistence.DurableProvider)(nil)
@@ -1712,8 +1712,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // DurableProvider is a coherent set of durable graph leaves for one backend,
@@ -1872,7 +1872,7 @@ import (
 
 func TestServiceDependencyGraphIsVendorFree(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps",
-		"github.com/zakyalvan/krtlwrkflw/service").CombinedOutput()
+		"github.com/kartaladev/wrkflw/service").CombinedOutput()
 	if err != nil {
 		t.Fatalf("go list -deps: %v\n%s", err, out)
 	}
@@ -1882,8 +1882,8 @@ func TestServiceDependencyGraphIsVendorFree(t *testing.T) {
 		"github.com/go-sql-driver/mysql",
 		"modernc.org/sqlite",
 		"database/sql",
-		"github.com/zakyalvan/krtlwrkflw/persistence",
-		"github.com/zakyalvan/krtlwrkflw/internal/persistence",
+		"github.com/kartaladev/wrkflw/persistence",
+		"github.com/kartaladev/wrkflw/internal/persistence",
 	}
 	for _, b := range banned {
 		for _, line := range strings.Split(deps, "\n") {

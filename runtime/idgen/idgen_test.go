@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime/idgen"
+	"github.com/kartaladev/wrkflw/runtime/idgen"
 )
 
 func TestXID(t *testing.T) {

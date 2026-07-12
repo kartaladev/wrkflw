@@ -3,8 +3,8 @@ package dbtest_test
 import (
 	"testing"
 
+	"github.com/kartaladev/wrkflw/internal/dbtest"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 func TestRunTestSQLite_PingsSuccessfully(t *testing.T) {

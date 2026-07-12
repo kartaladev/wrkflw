@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Go 1.25; module `github.com/zakyalvan/krtlwrkflw`. No new deps, no new wire/definition fields.
+- Go 1.25; module `github.com/kartaladev/wrkflw`. No new deps, no new wire/definition fields.
 - `table-test` skill closure form for multi-case tests; `t.Context()`; black-box where feasible, white-box (`package engine`) where arms must be constructed.
 - Coverage ≥ 85% on touched packages; `go test ./...` clean; `golangci-lint run ./...` clean.
 - Interrupting paths, reverse/terminate/compensation sweeps, arm-time, and wire format MUST remain untouched.

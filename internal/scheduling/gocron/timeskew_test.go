@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
-	sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
+	"github.com/kartaladev/wrkflw/definition/schedule"
+	sched "github.com/kartaladev/wrkflw/internal/scheduling/gocron"
 )
 
 // TestGocronScheduler_TimeSkew verifies the WithTimeSkew option behaviour for

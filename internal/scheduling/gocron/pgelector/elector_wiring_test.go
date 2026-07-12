@@ -9,10 +9,10 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	gocronsched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
-	"github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron/pgelector"
+	"github.com/kartaladev/wrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
+	gocronsched "github.com/kartaladev/wrkflw/internal/scheduling/gocron"
+	"github.com/kartaladev/wrkflw/internal/scheduling/gocron/pgelector"
 )
 
 // TestGocronSchedulerElectorGatesFire proves the end-to-end wiring: when a

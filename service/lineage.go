@@ -5,8 +5,8 @@ package service
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/monitor"
 )
 
 // LineageAdmin is the admin port for single-hop process-instance lineage

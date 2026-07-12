@@ -12,7 +12,7 @@
 **Context recap:** the feature validates external input at three boundaries (start `Drive`, completion `TaskService.Complete`, message `DeliverMessage`) via a neutral `validation` port + memoizing `Gate` + adapters. The review confirmed three paths where it silently no-ops or fails, plus cleanups. Branch is green (build/lint/`-race`); these are logic/design fixes.
 
 ## Global Constraints
-- Module `github.com/zakyalvan/krtlwrkflw`; Go 1.25; `go build ./...`, `go test -race ./...`, `golangci-lint run ./...` clean per task.
+- Module `github.com/kartaladev/wrkflw`; Go 1.25; `go build ./...`, `go test -race ./...`, `golangci-lint run ./...` clean per task.
 - TDD strict: failing test first, observed RED via a separate `go test` run, then GREEN. Fail-closed principle: validation must NEVER be silently skipped.
 - Error-sentinel prefix `workflow-<pkg>: ...` (note: `runtime/task` uses `workflow-runtime: taskservice:` file-consistently — keep it).
 - `table-test` custom skill (`assert`-closure form); black-box `<package>_test`; `t.Context()`; testcontainers via `database.RunTestDatabase` (Docker required for PG/MySQL).

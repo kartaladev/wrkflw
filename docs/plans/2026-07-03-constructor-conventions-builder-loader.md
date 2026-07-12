@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Go 1.25; module path `github.com/zakyalvan/krtlwrkflw`. One `go.mod` at repo root.
+- Go 1.25; module path `github.com/kartaladev/wrkflw`. One `go.mod` at repo root.
 - **TDD strict** (CLAUDE.md "TDD Operational Discipline"): every new/changed exported symbol is preceded by a **visible failing `go test` run** (red) before implementation (green). No test+impl in one edit pass. A compile error like `undefined: X` is a valid red.
 - **Required Go skills — load at the start of every code task:** `cc-skills-golang:golang-code-style`, `golang-naming`, `golang-error-handling`, `golang-design-patterns`, `golang-structs-interfaces`, `golang-safety`, `golang-documentation`, `golang-testing`, `golang-modernize`. Load `golang-database`/`golang-concurrency`/`golang-samber-do` when the task touches those areas. Run `golang-modernize` on every file you touch and apply its suggestions.
 - **Project test skills override the Go baseline:** `table-test` (assert-closure form, `ctx` modifier, `t.Context()`), `use-mockgen` (`--typed`, mocks beside the interface), `use-testcontainers` (`database.RunTestDatabase(t, opts...)`; never mock a DB).
@@ -468,7 +468,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 // mustMemStore builds a MemStore or fails the test. Keeps option-free call sites terse.

@@ -13,7 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	monitor "github.com/zakyalvan/krtlwrkflw/runtime/monitor"
+	monitor "github.com/kartaladev/wrkflw/runtime/monitor"
 	gomock "go.uber.org/mock/gomock"
 )
 

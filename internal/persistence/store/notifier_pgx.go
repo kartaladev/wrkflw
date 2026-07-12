@@ -8,7 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 )
 
 // pgxNotifier implements [dialect.Notifier] over a [*pgxpool.Pool] using

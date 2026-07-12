@@ -14,7 +14,7 @@ import (
 	invopop "github.com/invopop/jsonschema"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
 
 // Kind is the registry key for JSON Schema strategies.

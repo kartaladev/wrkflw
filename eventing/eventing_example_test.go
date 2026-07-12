@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/eventing"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/eventing"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // ExampleNewGoChannelPublisher shows publishing an outbox event in-process and

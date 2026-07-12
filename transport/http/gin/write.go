@@ -3,7 +3,7 @@ package gin
 import (
 	ginlib "github.com/gin-gonic/gin"
 
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 // writeErr classifies err using httpcore.ClassifyError, logs 5xx raw errors via

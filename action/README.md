@@ -5,7 +5,7 @@ task invokes by name, the registries that resolve names to implementations, and
 the retry contract that classifies action errors. Its `action/*` subpackages ship
 a small set of dependency-free built-in actions (HTTP, email, transform, log).
 
-Import path: `github.com/zakyalvan/krtlwrkflw/action`
+Import path: `github.com/kartaladev/wrkflw/action`
 
 ## Contents
 

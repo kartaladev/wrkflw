@@ -358,4 +358,4 @@ release.
   CI pipeline (build, race tests, lint, `gosec`/`bodyclose`/`errorlint`, vulnerability scan,
   CodeQL).
 
-[Unreleased]: https://github.com/zakyalvan/krtlwrkflw/commits/main
+[Unreleased]: https://github.com/kartaladev/wrkflw/commits/main

@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kartaladev/wrkflw/internal/persistence/store"
 	"github.com/stretchr/testify/assert"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 )
 
 // TestRelayBackoff verifies the capped exponential backoff schedule used to

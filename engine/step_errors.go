@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // boundaryErrorMatches decides whether error boundary n catches a thrown error.

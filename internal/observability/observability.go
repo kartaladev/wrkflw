@@ -71,7 +71,7 @@ func WithMeterProvider(mp metric.MeterProvider) Option {
 }
 
 // New builds a [Telemetry] scoped to instrumentationName (typically the
-// importing package path, e.g. "github.com/zakyalvan/krtlwrkflw/runtime").
+// importing package path, e.g. "github.com/kartaladev/wrkflw/runtime").
 // Unset providers fall back to the OTel globals; the logger defaults to
 // [slog.Default]. All three fields in the returned value are guaranteed
 // non-nil.

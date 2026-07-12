@@ -22,7 +22,7 @@ import (
 
 	gomc "github.com/bradfitz/gomemcache/memcache"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
 )
 
 // Compile-time assertion: mcCache satisfies cache.Cache but NOT cache.ValueCache.

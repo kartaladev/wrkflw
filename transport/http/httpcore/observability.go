@@ -12,10 +12,10 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/observability"
+	"github.com/kartaladev/wrkflw/internal/observability"
 )
 
-const instrumentationScope = "github.com/zakyalvan/krtlwrkflw/transport/http"
+const instrumentationScope = "github.com/kartaladev/wrkflw/transport/http"
 
 // Instrumentation holds OTel instruments for per-route HTTP observability.
 // It is created once per mounted handler group and shared across requests.

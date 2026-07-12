@@ -7,7 +7,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 // Option configures a log action.

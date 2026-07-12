@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action/logaction"
+	"github.com/kartaladev/wrkflw/action/logaction"
 )
 
 func TestLog(t *testing.T) {

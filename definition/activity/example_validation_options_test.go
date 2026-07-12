@@ -3,9 +3,9 @@ package activity_test
 import (
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	vexpr "github.com/zakyalvan/krtlwrkflw/definition/model/validate/expr"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/model"
+	vexpr "github.com/kartaladev/wrkflw/definition/model/validate/expr"
 )
 
 // ExampleWithCompletionValidation shows how to attach an expr-lang predicate

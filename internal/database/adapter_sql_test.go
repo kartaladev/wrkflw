@@ -3,10 +3,10 @@ package database_test
 import (
 	"testing"
 
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 func TestSQLQuerierRoundTrip(t *testing.T) {

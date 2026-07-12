@@ -7,8 +7,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 )
 
 // QuerierForTest exposes the internal querier(ctx) accessor for use by

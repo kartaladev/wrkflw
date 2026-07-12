@@ -78,7 +78,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 )
 
 func TestErrUnsupportedIsSentinel(t *testing.T) {
@@ -189,7 +189,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 )
 
 func TestPostgresRebindNumbers(t *testing.T) {
@@ -327,7 +327,7 @@ import (
 	"testing"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 )
 
 func TestMySQLRebindLeavesQuestionMarks(t *testing.T) {
@@ -447,7 +447,7 @@ import (
 
 	sqlitedriver "modernc.org/sqlite"
 	sqlitelib "modernc.org/sqlite/lib"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 )
 
 func TestSQLiteRebindLeavesQuestionMarks(t *testing.T) {
@@ -565,7 +565,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
 )
 
 func TestRunTestSQLite_PingsAndMigrates(t *testing.T) {
@@ -687,10 +687,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/persistence/store"
 )
 
 type backend struct {
@@ -746,9 +746,9 @@ package store
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database/transaction"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 )
 
 // Store is the neutral, dialect-parametrized persistence store.
@@ -834,8 +834,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/internal/persistence/store"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 func TestStoreCreateLoadCommit(t *testing.T) {

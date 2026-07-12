@@ -10,10 +10,10 @@ import (
 	ginlib "github.com/gin-gonic/gin"
 	"go.uber.org/mock/gomock"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
-	"github.com/zakyalvan/krtlwrkflw/service"
-	ginadapter "github.com/zakyalvan/krtlwrkflw/transport/http/gin"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/monitor"
+	"github.com/kartaladev/wrkflw/service"
+	ginadapter "github.com/kartaladev/wrkflw/transport/http/gin"
 )
 
 // Keep errors imported for test helper usage.

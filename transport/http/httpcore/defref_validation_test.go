@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 // TestStartInputDefRefWireString asserts the def_ref DTO field (de)serializes as

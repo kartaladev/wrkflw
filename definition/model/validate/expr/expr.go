@@ -12,7 +12,7 @@ import (
 	exprlang "github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
 
 // Kind is the registry key for expr strategies.

@@ -3,12 +3,12 @@ package model
 import (
 	"errors"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
 
 // ErrKindNotRegistered is returned by the deserializer when a node's kind has no
 // registered spec — almost always because the leaf package that owns the kind was
-// not imported. Blank-import github.com/zakyalvan/krtlwrkflw/definition/kinds (or
+// not imported. Blank-import github.com/kartaladev/wrkflw/definition/kinds (or
 // the specific leaf) to register every kind.
 var ErrKindNotRegistered = errors.New("workflow-definition: node kind not registered (blank-import .../definition/kinds)")
 

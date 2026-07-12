@@ -13,7 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	kernel "github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	kernel "github.com/kartaladev/wrkflw/runtime/kernel"
 	gomock "go.uber.org/mock/gomock"
 )
 

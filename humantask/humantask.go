@@ -11,7 +11,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/kartaladev/wrkflw/authz"
 )
 
 // ErrTaskNotFound is returned by [TaskStore.Get] when no task with the given

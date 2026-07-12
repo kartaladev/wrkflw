@@ -12,8 +12,8 @@ import (
 
 	"github.com/jonboulle/clockwork"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron/myelector"
-	"github.com/zakyalvan/krtlwrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/internal/scheduling/gocron/myelector"
+	"github.com/kartaladev/wrkflw/scheduling"
 )
 
 // Option configures the MySQL leader elector built by [NewElector].

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // TestCursorRoundTrip verifies that EncodeCursor and DecodeCursor are inverses.

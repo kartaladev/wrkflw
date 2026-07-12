@@ -34,7 +34,7 @@ Outbox-event derivation moves out of `perform` into the pure helper
 
 **Tech Stack.** Go 1.25; PostgreSQL 17; `pgx` v5 + `pgxpool` (no `database/sql`);
 `pressly/goose` embedded migrations via `SetBaseFS` + `embed.FS`;
-testcontainers-go; module path `github.com/zakyalvan/krtlwrkflw`.
+testcontainers-go; module path `github.com/kartaladev/wrkflw`.
 
 **Global Constraints.**
 
@@ -131,8 +131,8 @@ and delete the old declaration as part of this task.
       "time"
 
       "github.com/stretchr/testify/require"
-      "github.com/zakyalvan/krtlwrkflw/engine"
-      "github.com/zakyalvan/krtlwrkflw/runtime"
+      "github.com/kartaladev/wrkflw/engine"
+      "github.com/kartaladev/wrkflw/runtime"
   )
 
   func step(id, topic string) runtime.AppliedStep {
@@ -278,7 +278,7 @@ and delete the old declaration as part of this task.
   import (
       "context"
 
-      "github.com/zakyalvan/krtlwrkflw/engine"
+      "github.com/kartaladev/wrkflw/engine"
   )
 
   // Compile-time checks: MemStore satisfies both ports.
@@ -360,7 +360,7 @@ and delete the old declaration as part of this task.
   ```bash
   go test ./runtime/...
   ```
-  Expected: `ok  github.com/zakyalvan/krtlwrkflw/runtime`. (Existing runner tests
+  Expected: `ok  github.com/kartaladev/wrkflw/runtime`. (Existing runner tests
   still pass because the old ports remain until Task 3.)
 - [ ] 1.6 Commit:
   ```
@@ -397,7 +397,7 @@ exhaustiveness guard.
       "testing"
 
       "github.com/stretchr/testify/require"
-      "github.com/zakyalvan/krtlwrkflw/engine"
+      "github.com/kartaladev/wrkflw/engine"
   )
 
   func TestOutboxEventsFor(t *testing.T) {
@@ -458,7 +458,7 @@ exhaustiveness guard.
   ```go
   package runtime
 
-  import "github.com/zakyalvan/krtlwrkflw/engine"
+  import "github.com/kartaladev/wrkflw/engine"
 
   // outboxEventsFor derives the domain events to relay from the commands a Step
   // produced. Only terminal commands produce events: CompleteInstance →
@@ -751,9 +751,9 @@ including `authz.Actor` and payload maps.
       "time"
 
       "github.com/stretchr/testify/require"
-      "github.com/zakyalvan/krtlwrkflw/authz"
-      "github.com/zakyalvan/krtlwrkflw/engine"
-      pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
+      "github.com/kartaladev/wrkflw/authz"
+      "github.com/kartaladev/wrkflw/engine"
+      pg "github.com/kartaladev/wrkflw/internal/persistence/postgres"
   )
 
   func TestTriggerCodecRoundTrip(t *testing.T) {
@@ -821,8 +821,8 @@ including `authz.Actor` and payload maps.
       "fmt"
       "time"
 
-      "github.com/zakyalvan/krtlwrkflw/authz"
-      "github.com/zakyalvan/krtlwrkflw/engine"
+      "github.com/kartaladev/wrkflw/authz"
+      "github.com/kartaladev/wrkflw/engine"
   )
 
   // Trigger kind discriminators stored in wrkflw_journal.kind.
@@ -989,8 +989,8 @@ entry point for all Postgres tests.
       "testing"
 
       "github.com/stretchr/testify/require"
-      "github.com/zakyalvan/krtlwrkflw/database"
-      pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
+      "github.com/kartaladev/wrkflw/database"
+      pg "github.com/kartaladev/wrkflw/internal/persistence/postgres"
   )
 
   func TestMigrateCreatesTables(t *testing.T) {
@@ -1243,10 +1243,10 @@ in one pgx.Tx), with SQLSTATE `40001` mapped to `ErrConcurrentUpdate`.
       "time"
 
       "github.com/stretchr/testify/require"
-      "github.com/zakyalvan/krtlwrkflw/database"
-      "github.com/zakyalvan/krtlwrkflw/engine"
-      pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
-      "github.com/zakyalvan/krtlwrkflw/runtime"
+      "github.com/kartaladev/wrkflw/database"
+      "github.com/kartaladev/wrkflw/engine"
+      pg "github.com/kartaladev/wrkflw/internal/persistence/postgres"
+      "github.com/kartaladev/wrkflw/runtime"
   )
 
   func newStore(t *testing.T) *pg.Store {
@@ -1361,8 +1361,8 @@ in one pgx.Tx), with SQLSTATE `40001` mapped to `ErrConcurrentUpdate`.
       "github.com/jackc/pgx/v5"
       "github.com/jackc/pgx/v5/pgconn"
       "github.com/jackc/pgx/v5/pgxpool"
-      "github.com/zakyalvan/krtlwrkflw/engine"
-      "github.com/zakyalvan/krtlwrkflw/runtime"
+      "github.com/kartaladev/wrkflw/engine"
+      "github.com/kartaladev/wrkflw/runtime"
   )
 
   // Compile-time checks.
@@ -1611,9 +1611,9 @@ or `"defID"` DefRef in `Lookup`. The `CachingDefinitionRegistry` wraps any
       "time"
 
       "github.com/stretchr/testify/require"
-      "github.com/zakyalvan/krtlwrkflw/clock"
-      "github.com/zakyalvan/krtlwrkflw/model"
-      "github.com/zakyalvan/krtlwrkflw/runtime"
+      "github.com/kartaladev/wrkflw/clock"
+      "github.com/kartaladev/wrkflw/model"
+      "github.com/kartaladev/wrkflw/runtime"
   )
 
   type countingRegistry struct {
@@ -1676,8 +1676,8 @@ or `"defID"` DefRef in `Lookup`. The `CachingDefinitionRegistry` wraps any
 
       "golang.org/x/sync/singleflight"
 
-      "github.com/zakyalvan/krtlwrkflw/clock"
-      "github.com/zakyalvan/krtlwrkflw/model"
+      "github.com/kartaladev/wrkflw/clock"
+      "github.com/kartaladev/wrkflw/model"
   )
 
   var _ DefinitionRegistry = (*CachingDefinitionRegistry)(nil)
@@ -1754,9 +1754,9 @@ or `"defID"` DefRef in `Lookup`. The `CachingDefinitionRegistry` wraps any
       "testing"
 
       "github.com/stretchr/testify/require"
-      "github.com/zakyalvan/krtlwrkflw/database"
-      pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
-      "github.com/zakyalvan/krtlwrkflw/model"
+      "github.com/kartaladev/wrkflw/database"
+      pg "github.com/kartaladev/wrkflw/internal/persistence/postgres"
+      "github.com/kartaladev/wrkflw/model"
   )
 
   func TestDefinitionStore(t *testing.T) {
@@ -1799,8 +1799,8 @@ or `"defID"` DefRef in `Lookup`. The `CachingDefinitionRegistry` wraps any
 
       "github.com/jackc/pgx/v5"
       "github.com/jackc/pgx/v5/pgxpool"
-      "github.com/zakyalvan/krtlwrkflw/model"
-      "github.com/zakyalvan/krtlwrkflw/runtime"
+      "github.com/kartaladev/wrkflw/model"
+      "github.com/kartaladev/wrkflw/runtime"
   )
 
   var _ runtime.DefinitionRegistry = (*DefinitionStore)(nil)
@@ -1942,7 +1942,7 @@ configurable poll interval/batch, `Run(ctx)` until cancel. No watermill.
       "context"
       "testing"
 
-      "github.com/zakyalvan/krtlwrkflw/runtime"
+      "github.com/kartaladev/wrkflw/runtime"
   )
 
   type fakePub struct{ got []runtime.OutboxEvent }
@@ -1994,9 +1994,9 @@ configurable poll interval/batch, `Run(ctx)` until cancel. No watermill.
       "testing"
 
       "github.com/stretchr/testify/require"
-      "github.com/zakyalvan/krtlwrkflw/database"
-      pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
-      "github.com/zakyalvan/krtlwrkflw/runtime"
+      "github.com/kartaladev/wrkflw/database"
+      pg "github.com/kartaladev/wrkflw/internal/persistence/postgres"
+      "github.com/kartaladev/wrkflw/runtime"
   )
 
   type recordingPub struct {
@@ -2076,7 +2076,7 @@ configurable poll interval/batch, `Run(ctx)` until cancel. No watermill.
 
       "github.com/jackc/pgx/v5"
       "github.com/jackc/pgx/v5/pgxpool"
-      "github.com/zakyalvan/krtlwrkflw/runtime"
+      "github.com/kartaladev/wrkflw/runtime"
   )
 
   // Relay drains wrkflw_outbox and hands each event to a Publisher (at-least-once).
@@ -2255,11 +2255,11 @@ Implements spec §7 / ADR-0008: the consumer-facing façade delegating to
       "testing"
 
       "github.com/stretchr/testify/require"
-      "github.com/zakyalvan/krtlwrkflw/clock"
-      "github.com/zakyalvan/krtlwrkflw/database"
-      "github.com/zakyalvan/krtlwrkflw/engine"
-      "github.com/zakyalvan/krtlwrkflw/persistence"
-      "github.com/zakyalvan/krtlwrkflw/runtime"
+      "github.com/kartaladev/wrkflw/clock"
+      "github.com/kartaladev/wrkflw/database"
+      "github.com/kartaladev/wrkflw/engine"
+      "github.com/kartaladev/wrkflw/persistence"
+      "github.com/kartaladev/wrkflw/runtime"
   )
 
   func TestOpenPostgresEndToEnd(t *testing.T) {
@@ -2306,9 +2306,9 @@ Implements spec §7 / ADR-0008: the consumer-facing façade delegating to
       "time"
 
       "github.com/jackc/pgx/v5/pgxpool"
-      "github.com/zakyalvan/krtlwrkflw/clock"
-      "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
-      "github.com/zakyalvan/krtlwrkflw/runtime"
+      "github.com/kartaladev/wrkflw/clock"
+      "github.com/kartaladev/wrkflw/internal/persistence/postgres"
+      "github.com/kartaladev/wrkflw/runtime"
   )
 
   // Publisher is the broker-agnostic outbox publisher (alias of runtime.Publisher).

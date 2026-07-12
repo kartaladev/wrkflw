@@ -9,9 +9,9 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill/message"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/runtime/chain"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // chainTopics are the three status-accurate terminal topics a chaining consumer

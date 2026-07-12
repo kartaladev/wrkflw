@@ -7,7 +7,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // Compile-time checks: MemInstanceStore satisfies both ports.

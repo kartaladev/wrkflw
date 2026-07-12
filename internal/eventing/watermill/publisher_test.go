@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"github.com/ThreeDotsLabs/watermill/message"
+	"github.com/kartaladev/wrkflw/definition/model"
+	watermillpub "github.com/kartaladev/wrkflw/internal/eventing/watermill"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	watermillpub "github.com/zakyalvan/krtlwrkflw/internal/eventing/watermill"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // fakePub captures the topic and messages of the last Publish call.

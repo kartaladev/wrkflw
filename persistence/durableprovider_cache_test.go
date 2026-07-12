@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/hotcache"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/persistence/cache/hotcache"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // stubOwnership is a distinct InstanceOwnership so option tests can assert the

@@ -6,8 +6,8 @@ import (
 
 	casbinv2 "github.com/casbin/casbin/v2"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/service"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/service"
 )
 
 // policyAdmin wraps a *casbinv2.SyncedEnforcer and implements service.PolicyAdmin.

@@ -1,6 +1,6 @@
 package engine
 
-import "github.com/zakyalvan/krtlwrkflw/definition/model"
+import "github.com/kartaladev/wrkflw/definition/model"
 
 // TargetNode resolves the scope-correct node an external-input trigger
 // targets, or (nil,false) if trg is not an external-input trigger kind

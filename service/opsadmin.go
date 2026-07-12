@@ -5,7 +5,7 @@ package service
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // RelayStatsAdmin is the optional admin port for inspecting aggregate statistics

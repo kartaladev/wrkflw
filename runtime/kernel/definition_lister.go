@@ -3,7 +3,7 @@ package kernel
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // DefinitionLister is an OPTIONAL capability a DefinitionRegistry may

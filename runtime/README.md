@@ -5,7 +5,7 @@ persists state, and feeds external results back as triggers. It is the package
 most library consumers use — the layer between the pure functional engine and
 the rest of the application.
 
-Import path: `github.com/zakyalvan/krtlwrkflw/runtime`
+Import path: `github.com/kartaladev/wrkflw/runtime`
 
 ## Overview
 
@@ -62,11 +62,11 @@ Wire a `MapCatalog`, an in-memory store, and a runner; call `Run`.
 import (
     "context"
 
-    "github.com/zakyalvan/krtlwrkflw/action"
-    "github.com/zakyalvan/krtlwrkflw/engine"
-    "github.com/zakyalvan/krtlwrkflw/definition"
-    "github.com/zakyalvan/krtlwrkflw/runtime"
-    "github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+    "github.com/kartaladev/wrkflw/action"
+    "github.com/kartaladev/wrkflw/engine"
+    "github.com/kartaladev/wrkflw/definition"
+    "github.com/kartaladev/wrkflw/runtime"
+    "github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 action.MustRegister("greet", action.ActionFunc(func(_ context.Context, in map[string]any) (map[string]any, error) {

@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Go **1.25**; module `github.com/zakyalvan/krtlwrkflw`; root packages.
+- Go **1.25**; module `github.com/kartaladev/wrkflw`; root packages.
 - Engine never reads a clock: `ScheduleTimer.FireAt = trg.OccurredAt() + dur`, computed in `Step` from data. `clockwork` only enters via the runtime's `Scheduler`/`clock.Clock` (ADR-0003). No `time.Now()` in engine.
 - `Step` deterministic + pure; public signature unchanged. Black-box tests with a **fake clock** (`clockwork.NewFakeClock()`), `assert`-closure tables, `t.Context()`.
 - Coverage ≥ 85% touched packages; `-race` green; lint clean. Conventional Commits; commit per green step.

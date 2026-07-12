@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/cachetest"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/ottercache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache/cachetest"
+	"github.com/kartaladev/wrkflw/persistence/cache/ottercache"
 )
 
 func TestOttercacheConformance(t *testing.T) {

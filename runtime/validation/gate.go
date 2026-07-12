@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
 
 // ErrInvalidInput is the sentinel wrapping every validation failure. The transport

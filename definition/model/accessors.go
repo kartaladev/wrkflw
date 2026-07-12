@@ -1,7 +1,7 @@
 package model
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 // The kind-agnostic accessors below dispatch on the unexported carrier methods

@@ -111,7 +111,7 @@ or may override per-component for fine-grained control (e.g. silence the schedul
 
 ### (f) Metric catalog
 
-All metrics use the instrumentation scope `github.com/zakyalvan/krtlwrkflw/runtime`
+All metrics use the instrumentation scope `github.com/kartaladev/wrkflw/runtime`
 (or the per-component scope). All attribute keys are lowercase snake_case.
 
 | Metric | Type | Attributes | Description |

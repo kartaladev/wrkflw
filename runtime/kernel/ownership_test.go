@@ -3,9 +3,9 @@ package kernel_test
 import (
 	"testing"
 
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 func TestAlwaysOwnAlwaysAcquires(t *testing.T) {

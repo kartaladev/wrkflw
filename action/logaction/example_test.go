@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/zakyalvan/krtlwrkflw/action/logaction"
+	"github.com/kartaladev/wrkflw/action/logaction"
 )
 
 func ExampleNewLog() {

@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Module path: `github.com/zakyalvan/krtlwrkflw`. Single Go module at repo root; public packages have **no `pkg/` prefix** (ADR-0004).
+- Module path: `github.com/kartaladev/wrkflw`. Single Go module at repo root; public packages have **no `pkg/` prefix** (ADR-0004).
 - **Strict TDD** (CLAUDE.md): no production code before a failing test; the RED state must be observable in the transcript as a separate `go test` Bash call.
 - **Engine/model: ZERO production diff.** This track touches only `service/`, `transport/grpc/`, `transport/rest/`, and a test file under `persistence/`.
 - All production error messages carry the **`workflow-`** prefix (e.g. `workflow-grpc:`); assert sentinels via `errors.Is`, never string-matching (ADR-0026).
@@ -65,8 +65,8 @@ package persistence_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence"
-	"github.com/zakyalvan/krtlwrkflw/service"
+	"github.com/kartaladev/wrkflw/persistence"
+	"github.com/kartaladev/wrkflw/service"
 )
 
 // TestRelaySatisfiesDeadLetterAdmin is a compile-time guard that the persistence
@@ -91,7 +91,7 @@ package service
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 // DeadLetterAdmin is the optional admin port for inspecting and redriving
@@ -220,10 +220,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/service"
-	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/service"
+	"github.com/kartaladev/wrkflw/transport/grpc/workflowpb"
 )
 
 // resolveStub is a service.Service stub with a configurable ResolveIncident.
@@ -355,10 +355,10 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/service"
-	grpctransport "github.com/zakyalvan/krtlwrkflw/transport/grpc"
-	"github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/service"
+	grpctransport "github.com/kartaladev/wrkflw/transport/grpc"
+	"github.com/kartaladev/wrkflw/transport/grpc/workflowpb"
 )
 
 // dlaStub is a configurable service.DeadLetterAdmin test double.
@@ -453,7 +453,7 @@ func TestWithDeadLetterAdminNilPanics(t *testing.T) {
 Run: `go test ./transport/grpc/ -run 'TestServerListDeadLetters|TestServerRedriveDeadLetters|TestWithDeadLetterAdminNilPanics'`
 Expected: FAIL — build error `undefined: grpctransport.WithDeadLetterAdmin`.
 
-- [ ] **Step 3: Implement the option** — in `transport/grpc/options.go`, add the import `"github.com/zakyalvan/krtlwrkflw/service"`, add the field, and the option:
+- [ ] **Step 3: Implement the option** — in `transport/grpc/options.go`, add the import `"github.com/kartaladev/wrkflw/service"`, add the field, and the option:
 
 ```go
 // (in serverConfig struct)
@@ -592,9 +592,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/service"
-	"github.com/zakyalvan/krtlwrkflw/transport/rest"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/service"
+	"github.com/kartaladev/wrkflw/transport/rest"
 )
 
 type dlaStub struct {
@@ -713,7 +713,7 @@ func TestRESTWithDeadLetterAdminNilPanics(t *testing.T) {
 Run: `go test ./transport/rest/ -run 'TestRESTListDeadLetters|TestRESTRedriveDeadLetters|TestRESTWithDeadLetterAdminNilPanics'`
 Expected: FAIL — build error `undefined: rest.WithDeadLetterAdmin`.
 
-- [ ] **Step 3: Add the option** — in `transport/rest/options.go`, add import `"github.com/zakyalvan/krtlwrkflw/service"`, add the field to `config`:
+- [ ] **Step 3: Add the option** — in `transport/rest/options.go`, add import `"github.com/kartaladev/wrkflw/service"`, add the field to `config`:
 
 ```go
 	deadLetters service.DeadLetterAdmin

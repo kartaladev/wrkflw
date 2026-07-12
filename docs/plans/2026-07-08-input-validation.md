@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Module path:** `github.com/zakyalvan/krtlwrkflw`. Public packages at repo root (no `pkg/` prefix, ADR-0004).
+- **Module path:** `github.com/kartaladev/wrkflw`. Public packages at repo root (no `pkg/` prefix, ADR-0004).
 - **Go 1.25**; `go build ./...`, `go test -race ./...`, `golangci-lint run ./...` must all be clean before a task is done.
 - **TDD strict (CLAUDE.md):** every new exported symbol gets a failing test FIRST, verified red via `go test`, before the implementation. The red state must be observable in the transcript as a separate `go test` run. No batching test+impl in one edit.
 - **Error sentinels** use the prefix `workflow-<pkg>: ...` (e.g. `errors.New("workflow-validation: invalid input")`).
@@ -81,7 +81,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/kartaladev/wrkflw/validation"
 )
 
 // funcValidator adapts a func to the Validator port for tests.
@@ -177,7 +177,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/kartaladev/wrkflw/validation"
 )
 
 func TestRegistry_RegisterAndResolve(t *testing.T) {
@@ -290,7 +290,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/kartaladev/wrkflw/validation"
 )
 
 // countingStrategy counts how many times NewValidator is invoked.
@@ -428,8 +428,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
-	vexpr "github.com/zakyalvan/krtlwrkflw/validation/expr"
+	"github.com/kartaladev/wrkflw/validation"
+	vexpr "github.com/kartaladev/wrkflw/validation/expr"
 )
 
 func TestExpr_ValidateAndRoundTrip(t *testing.T) {
@@ -491,7 +491,7 @@ import (
 	exprlang "github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/kartaladev/wrkflw/validation"
 )
 
 // Kind is the registry key for expr strategies.
@@ -585,8 +585,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
-	"github.com/zakyalvan/krtlwrkflw/validation/callback"
+	"github.com/kartaladev/wrkflw/validation"
+	"github.com/kartaladev/wrkflw/validation/callback"
 )
 
 func TestCallback_ValidatesAndIsNotDescribable(t *testing.T) {
@@ -626,7 +626,7 @@ package callback
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/kartaladev/wrkflw/validation"
 )
 
 type strategy struct {
@@ -694,8 +694,8 @@ package jsonschema_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
-	vjs "github.com/zakyalvan/krtlwrkflw/validation/jsonschema"
+	"github.com/kartaladev/wrkflw/validation"
+	vjs "github.com/kartaladev/wrkflw/validation/jsonschema"
 )
 
 const schemaJSON = `{
@@ -798,7 +798,7 @@ import (
 	invopop "github.com/invopop/jsonschema"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/kartaladev/wrkflw/validation"
 )
 
 // Kind is the registry key for JSON Schema strategies.
@@ -910,7 +910,7 @@ package avro_test
 import (
 	"testing"
 
-	vavro "github.com/zakyalvan/krtlwrkflw/validation/avro"
+	vavro "github.com/kartaladev/wrkflw/validation/avro"
 )
 
 const avsc = `{
@@ -971,7 +971,7 @@ import (
 
 	"github.com/linkedin/goavro/v2"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
+	"github.com/kartaladev/wrkflw/validation"
 )
 
 // Kind is the registry key for Avro strategies.
@@ -1081,7 +1081,7 @@ Expected: FAIL — `activity.WithCompletionValidation` undefined + `CompletionVa
 
 - [ ] **Step 3: Add struct fields + options (activity)**
 
-In `definition/activity/activity.go`, add to `UserTask`: `CompletionValidation validation.ValidationStrategy` and to `ReceiveTask`: `PayloadValidation validation.ValidationStrategy` (import `github.com/zakyalvan/krtlwrkflw/validation`).
+In `definition/activity/activity.go`, add to `UserTask`: `CompletionValidation validation.ValidationStrategy` and to `ReceiveTask`: `PayloadValidation validation.ValidationStrategy` (import `github.com/kartaladev/wrkflw/validation`).
 
 In `definition/activity/options.go`:
 ```go
@@ -1186,8 +1186,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
-	vexpr "github.com/zakyalvan/krtlwrkflw/validation/expr"
+	"github.com/kartaladev/wrkflw/definition"
+	vexpr "github.com/kartaladev/wrkflw/validation/expr"
 )
 
 func TestStartValidation_WireRoundTrip(t *testing.T) {
@@ -1436,8 +1436,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
-	vexpr "github.com/zakyalvan/krtlwrkflw/validation/expr"
+	"github.com/kartaladev/wrkflw/validation"
+	vexpr "github.com/kartaladev/wrkflw/validation/expr"
 	// + definition + runtime imports as used by existing driver tests
 )
 
@@ -1513,8 +1513,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
-	vexpr "github.com/zakyalvan/krtlwrkflw/validation/expr"
+	"github.com/kartaladev/wrkflw/validation"
+	vexpr "github.com/kartaladev/wrkflw/validation/expr"
 	// + task, humantask, authz, definition, kernel imports
 )
 
@@ -1599,8 +1599,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/validation"
-	vexpr "github.com/zakyalvan/krtlwrkflw/validation/expr"
+	"github.com/kartaladev/wrkflw/validation"
+	vexpr "github.com/kartaladev/wrkflw/validation/expr"
 )
 
 func TestDeliverMessage_RejectsInvalidPayload(t *testing.T) {
@@ -1699,7 +1699,7 @@ In `transport/http/httpcore/errors.go`, extend the 400 case:
 case errors.Is(err, kernel.ErrBadCursor), errors.Is(err, ErrBadInput), errors.Is(err, validation.ErrInvalidInput):
 	return http.StatusBadRequest, ErrorBody{Error: "bad_request", Message: err.Error()}
 ```
-Add `import "github.com/zakyalvan/krtlwrkflw/validation"`.
+Add `import "github.com/kartaladev/wrkflw/validation"`.
 
 - [ ] **Step 4: Run test to verify it passes**
 

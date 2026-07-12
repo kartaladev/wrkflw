@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // OutboxStats summarises the current health of the wrkflw_outbox table for

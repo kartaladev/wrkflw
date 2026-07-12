@@ -3,8 +3,8 @@ package stdlib
 import (
 	"net/http"
 
-	"github.com/zakyalvan/krtlwrkflw/service"
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/service"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 // Mount registers the core workflow routes (instances, tasks, messages) onto mux.

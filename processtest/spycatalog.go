@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 // Invocation is one recorded call to an action resolved through a [SpyCatalog].

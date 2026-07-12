@@ -5,7 +5,7 @@
 **Goal:** Scope-targeted compensation via a compensation throw event (`Node.CompensateRef`) + archive-by-scope (`ArchivedCompensations`, replacing the ADR-0013 hoist) + a `Compensate` handler with resume-and-continue. Single-ownership ⇒ each record compensated at most once.
 
 ## Global Constraints
-- Module `github.com/zakyalvan/krtlwrkflw`; no `pkg/` prefix.
+- Module `github.com/kartaladev/wrkflw`; no `pkg/` prefix.
 - STRICT TDD; RED before GREEN, visible in its own `go test` call.
 - `Step` PURE + DETERMINISTIC (sorted archive iteration; no clock/random); engine import-purity; `cloneState` deep-copies `ArchivedCompensations`.
 - **No double-compensation:** a completed compensable activity is compensable at most once across throw / cancel / error paths (single ownership: open-scope | archive | already-run).

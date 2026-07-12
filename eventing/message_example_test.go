@@ -1,8 +1,8 @@
 package eventing_test
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/eventing"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/eventing"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 // ExampleNewMessageHandler shows wiring a message.* subscription to intra-engine delivery.

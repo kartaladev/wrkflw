@@ -12,7 +12,7 @@ Spec: `docs/specs/2026-07-05-sensible-default-driver-construction-design.md`
 
 ## Global Constraints
 
-- **Go 1.25+**, single module `github.com/zakyalvan/krtlwrkflw`.
+- **Go 1.25+**, single module `github.com/kartaladev/wrkflw`.
 - **TDD strict** (CLAUDE.md): no production code before a failing test; every new symbol shows a red state. Pure renames are the sole exception — they carry no new behaviour, so "the existing suite stays green before and after" is the test.
 - **Renames are symbol-scoped** via `gopls rename` (installed to `$(go env GOPATH)/bin/gopls`). NEVER text-global sed — `engine.Token`, `internal/persistence/store.Store`, and `internal/eventing/watermill.Publisher` must NOT be touched.
 - **Error sentinel prefix**: `workflow-<pkg>: …` (existing convention; no new sentinels here).
@@ -176,7 +176,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 func TestDefaultCatalog_RegisterAndResolve(t *testing.T) {

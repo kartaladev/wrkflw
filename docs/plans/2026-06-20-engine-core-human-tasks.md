@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Go **1.25**; module `github.com/zakyalvan/krtlwrkflw`; root packages (no `pkg/`).
+- Go **1.25**; module `github.com/kartaladev/wrkflw`; root packages (no `pkg/`).
 - Core stays pure: `engine`/`model` import no transport/storage/bus/time-vendor; engine never calls `time.Now()` (time via `Trigger.OccurredAt`). `engine` may import `authz` + `humantask` (both pure data + interfaces) per spec §2.
 - Authorization is a **runtime** concern (the `Authorizer` does I/O); the core records already-authorized actions. `Step` stays deterministic + pure; public signature unchanged.
 - Black-box tests, `assert`-closure tables, `t.Context()`. Coverage ≥ 85% on touched packages; `-race` green; lint clean. Conventional Commits; commit per green step.
@@ -103,7 +103,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/kartaladev/wrkflw/authz"
 )
 
 type TaskState int

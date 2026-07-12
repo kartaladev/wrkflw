@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/kartaladev/wrkflw/humantask"
 )
 
 // timerRecord is the engine's internal bookkeeping entry for a scheduled timer.

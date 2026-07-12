@@ -3,7 +3,7 @@ package httpcore
 import (
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // InstanceView is the stable JSON projection of an engine.InstanceState.

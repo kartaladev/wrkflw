@@ -5,8 +5,8 @@
 package service
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // StartInstanceRequest carries the parameters for starting a new process instance.

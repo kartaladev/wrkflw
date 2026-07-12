@@ -117,11 +117,11 @@ remains outside the neutral surface. Code that needs LISTEN/NOTIFY imports pgx d
 
 ### 6. Extraction constraint
 
-`go list -deps ./internal/database/... | grep zakyalvan/krtlwrkflw` must return only:
+`go list -deps ./internal/database/... | grep kartaladev/wrkflw` must return only:
 
 ```
-github.com/zakyalvan/krtlwrkflw/internal/database
-github.com/zakyalvan/krtlwrkflw/internal/database/transaction
+github.com/kartaladev/wrkflw/internal/database
+github.com/kartaladev/wrkflw/internal/database/transaction
 ```
 
 This invariant is guarded in CI by the `extraction` job (`.github/workflows/ci.yml`),

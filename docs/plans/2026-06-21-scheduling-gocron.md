@@ -33,7 +33,7 @@ are added.
 - `github.com/jonboulle/clockwork v0.5.0` (already pinned; has
   `BlockUntilContext`).
 - `github.com/google/uuid` (transitive via gocron; job IDs).
-- Existing: `github.com/zakyalvan/krtlwrkflw/{runtime,engine,action,model,clock}`.
+- Existing: `github.com/kartaladev/wrkflw/{runtime,engine,action,model,clock}`.
 
 ## Global Constraints
 
@@ -96,7 +96,7 @@ func (s *GocronScheduler) Close() error
       "github.com/jonboulle/clockwork"
       "github.com/stretchr/testify/require"
 
-      sched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
+      sched "github.com/kartaladev/wrkflw/internal/scheduling/gocron"
   )
 
   func TestGocronScheduler_FiresAtTime(t *testing.T) {
@@ -359,8 +359,8 @@ No `...Option` variadic in v1 (no real knob; avoids the unusable-option mistake)
       "github.com/jonboulle/clockwork"
       "github.com/stretchr/testify/require"
 
-      "github.com/zakyalvan/krtlwrkflw/runtime"
-      "github.com/zakyalvan/krtlwrkflw/scheduling"
+      "github.com/kartaladev/wrkflw/runtime"
+      "github.com/kartaladev/wrkflw/scheduling"
   )
 
   func TestNewScheduler_SatisfiesPortAndFires(t *testing.T) {
@@ -397,8 +397,8 @@ No `...Option` variadic in v1 (no real knob; avoids the unusable-option mistake)
 
       "github.com/jonboulle/clockwork"
 
-      gocronsched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
-      "github.com/zakyalvan/krtlwrkflw/runtime"
+      gocronsched "github.com/kartaladev/wrkflw/internal/scheduling/gocron"
+      "github.com/kartaladev/wrkflw/runtime"
   )
 
   // Scheduler is the production, gocron-backed runtime.Scheduler. Construct it
@@ -482,11 +482,11 @@ Reuse the timer-intermediate definition shape from `runtime/timer_example_test.g
       "github.com/stretchr/testify/assert"
       "github.com/stretchr/testify/require"
 
-      "github.com/zakyalvan/krtlwrkflw/action"
-      "github.com/zakyalvan/krtlwrkflw/engine"
-      "github.com/zakyalvan/krtlwrkflw/model"
-      "github.com/zakyalvan/krtlwrkflw/runtime"
-      "github.com/zakyalvan/krtlwrkflw/scheduling"
+      "github.com/kartaladev/wrkflw/action"
+      "github.com/kartaladev/wrkflw/engine"
+      "github.com/kartaladev/wrkflw/model"
+      "github.com/kartaladev/wrkflw/runtime"
+      "github.com/kartaladev/wrkflw/scheduling"
   )
 
   func timerIntermediateDef() *model.ProcessDefinition {

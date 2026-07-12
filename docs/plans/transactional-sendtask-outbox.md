@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Go 1.25; module `github.com/zakyalvan/krtlwrkflw`.
+- Go 1.25; module `github.com/kartaladev/wrkflw`.
 - TDD strict (CLAUDE.md): every new symbol/behavior change gets a failing test (visible RED — a compile error counts) before implementation; the implementer's report must show RED and GREEN command output.
 - Black-box tests preferred (`<package>_test`); `t.Context()` over `context.Background()`; testify assert/require; project `table-test` `assert`-closure form when 2+ cases share one SUT call.
 - Never import `watermill` from `engine`/`runtime`/workflow code — the `message.*` subscriber adapter lives in `eventing/` (watermill is confined there and `internal/eventing/watermill`).

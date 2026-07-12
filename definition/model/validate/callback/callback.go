@@ -6,7 +6,7 @@ package callback
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
 
 type strategy struct {

@@ -3,7 +3,7 @@ package engine
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // armBearingKinds is the complete set of node kinds that have a drive() strategy.

@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Go 1.25**; module path `github.com/zakyalvan/krtlwrkflw`.
+- **Go 1.25**; module path `github.com/kartaladev/wrkflw`.
 - **TDD strict** (CLAUDE.md): every new symbol gets a failing test with a *visible RED* (`go test ./<pkg>/...`) before implementation. Never write impl before observing the red.
 - **Tests:** black-box (`package <pkg>_test`); table-driven with an **`assert` closure per case** (project `table-test` skill — NOT `want`/`wantErr` fields); use `t.Context()` not `context.Background()`; pair each `foo.go` with `foo_test.go`.
 - **Postgres tests:** use `database.RunTestDatabase(t)` (returns `*pgxpool.Pool`); never mock the DB; run the Postgres package with limited parallelism (`go test -p 1 ./internal/persistence/postgres/...`) — high container concurrency surfaces spurious testcontainers startup failures.
@@ -61,8 +61,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/internal/persistence/postgres"
 )
 
 func ptrTime(t time.Time) *time.Time { return &t }
@@ -150,7 +150,7 @@ Create `internal/persistence/postgres/history_cap.go`:
 ```go
 package postgres
 
-import "github.com/zakyalvan/krtlwrkflw/engine"
+import "github.com/kartaladev/wrkflw/engine"
 
 // capHistory returns a copy of st whose History retains every OPEN visit
 // (LeftAt == nil) plus at most the most recent n CLOSED visits, preserving the
@@ -230,10 +230,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/database"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/database"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/internal/persistence/postgres"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 func TestStoreHistoryCapTrimsClosedVisitsOnLoad(t *testing.T) {
@@ -397,10 +397,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/database"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/database"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/internal/persistence/postgres"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 func TestStoreOutboxNotifyWakesListener(t *testing.T) {
@@ -535,10 +535,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/database"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/database"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/internal/persistence/postgres"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 // countingPublisher records how many events it has published.
@@ -750,7 +750,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 func TestAlwaysOwnAlwaysAcquires(t *testing.T) {
@@ -857,8 +857,8 @@ import (
 
 	"github.com/jonboulle/clockwork"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 // countingStore wraps a backing Store and counts Load calls (cache-miss proxy).
@@ -977,8 +977,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // Compile-time assertions.
@@ -1330,8 +1330,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
+	"github.com/kartaladev/wrkflw/database"
+	"github.com/kartaladev/wrkflw/internal/persistence/postgres"
 )
 
 func TestAdvisoryLockOwnershipContention(t *testing.T) {
@@ -1388,7 +1388,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 // Compile-time assertion.

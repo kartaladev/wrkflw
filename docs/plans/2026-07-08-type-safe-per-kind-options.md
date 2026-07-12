@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Go 1.25; module path `github.com/zakyalvan/krtlwrkflw`.
+- Go 1.25; module path `github.com/kartaladev/wrkflw`.
 - Behavior-preserving: all existing tests stay green except the deliberately-deleted lint tests and the two reminder assertions removed from the ServiceTask test. No runtime behavior changes for UserTask/ReceiveTask reminders.
 - No new dependency; keep the existing marker-interface + `applyXxx` pattern. Do NOT adopt `lestrrat-go/option`.
 - TDD discipline (CLAUDE.md): every behavioral change is preceded by an observable red state in a Bash `go test`/`go build` run. This phase is largely a behavior-preserving refactor whose "test" is the type system — the observable red is the compile failure the narrowing induces in existing mis-scoped call sites, made green by fixing those sites.
@@ -174,7 +174,7 @@ Delete the entire method (currently ~lines 318-344), from the `// lintDefinition
 
 - [ ] **Step 5: Remove now-unused imports**
 
-In the import block, remove `"strconv"` (only used by the deleted key builder) and `"github.com/zakyalvan/krtlwrkflw/definition"` (only used by the deleted method). Verify with:
+In the import block, remove `"strconv"` (only used by the deleted key builder) and `"github.com/kartaladev/wrkflw/definition"` (only used by the deleted method). Verify with:
 
 Run: `grep -n 'strconv\.\|definition\.' runtime/processdriver.go`
 Expected: no matches.

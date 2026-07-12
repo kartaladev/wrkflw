@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/validation"
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/validation"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 func TestClassifyError(t *testing.T) {

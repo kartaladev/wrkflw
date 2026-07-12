@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Go 1.25; module path `github.com/zakyalvan/krtlwrkflw` (root packages, no `pkg/` prefix — ADR-0004).
+- Go 1.25; module path `github.com/kartaladev/wrkflw` (root packages, no `pkg/` prefix — ADR-0004).
 - **TDD strict** (CLAUDE.md rule #6): every new exported symbol and behavioural change is preceded by a **visible failing test** run via `go test`. No implementation before red. No batching test+impl in one edit.
 - Never import gin/fiber outside their own adapter subpackage; `httpcore` and `stdlib` pull **zero** third-party transport deps.
 - Never import watermill/casbin/gocron/clockwork from transport code — go through existing abstractions.
@@ -123,7 +123,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - Test: `transport/http/httpcore/seam_test.go`
 
 **Interfaces:**
-- Consumes: `github.com/zakyalvan/krtlwrkflw/engine` (for `engine.InstanceState`), `log/slog`, `go.opentelemetry.io/otel/trace`, `go.opentelemetry.io/otel/metric`.
+- Consumes: `github.com/kartaladev/wrkflw/engine` (for `engine.InstanceState`), `log/slog`, `go.opentelemetry.io/otel/trace`, `go.opentelemetry.io/otel/metric`.
 - Produces:
   ```go
   type CustomizeConfig[R any] struct {
@@ -154,8 +154,8 @@ package httpcore_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 func TestResolveConfigDefaults(t *testing.T) {
@@ -234,7 +234,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // CustomizeConfig carries per-mount configuration for a route group. R is the
@@ -380,9 +380,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 func TestClassifyError(t *testing.T) {
@@ -450,11 +450,11 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/service"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/service"
 )
 
 // ErrBadInput is the sentinel for 400-class decode/validation errors.
@@ -541,7 +541,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 func TestStartInputJSONTags(t *testing.T) {
@@ -640,10 +640,10 @@ import (
 
 	"go.uber.org/mock/gomock"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/service"
-	svcmock "github.com/zakyalvan/krtlwrkflw/service/mock" // per use-mockgen placement
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/service"
+	svcmock "github.com/kartaladev/wrkflw/service/mock" // per use-mockgen placement
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 func TestStartInstance(t *testing.T) {

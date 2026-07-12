@@ -4,8 +4,8 @@ package humantask_test
 import (
 	"testing"
 
+	"github.com/kartaladev/wrkflw/humantask"
 	"github.com/stretchr/testify/assert"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
 )
 
 func TestTaskState_Values(t *testing.T) {

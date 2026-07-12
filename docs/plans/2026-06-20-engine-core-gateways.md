@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Go **1.25**; module `github.com/zakyalvan/krtlwrkflw`; public packages at module root (no `pkg/`).
+- Go **1.25**; module `github.com/kartaladev/wrkflw`; public packages at module root (no `pkg/`).
 - The core (`engine`, `model`, `expreval`) imports only stdlib + `model` + `expreval` + `expr-lang/expr` (the last only inside `expreval`). **No** transport/storage/bus/time-vendor; the engine **never calls `time.Now()`** — time enters as `Trigger.OccurredAt`.
 - `Step` stays **deterministic** (identical `(state,trigger)` ⇒ identical `(state,commands)`; IDs from in-state counters; flows evaluated in definition order) and **pure** (never mutates its input `InstanceState`).
 - `Step`'s public signature is unchanged: `Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error)`.
@@ -66,7 +66,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/expreval"
+	"github.com/kartaladev/wrkflw/expreval"
 )
 
 func TestEvalBool(t *testing.T) {
@@ -409,8 +409,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/model"
 )
 
 // exclusiveDef: start -> xor -{amount > 100}-> big ; -default-> small ; both -> end
@@ -493,7 +493,7 @@ Create `engine/conditions.go`:
 ```go
 package engine
 
-import "github.com/zakyalvan/krtlwrkflw/expreval"
+import "github.com/kartaladev/wrkflw/expreval"
 
 // conditions is the engine's shared, memoizing expression evaluator. Compilation
 // is deterministic and the cache is referentially transparent, so using a shared

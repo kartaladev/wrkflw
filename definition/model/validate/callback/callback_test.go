@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate/callback"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/model/validate/callback"
 )
 
 func TestCallback_ValidatesAndIsNotDescribable(t *testing.T) {

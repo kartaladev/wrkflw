@@ -1,7 +1,7 @@
 # definition
 
 Package `definition` is the **process-definition authoring layer** for
-`github.com/zakyalvan/krtlwrkflw`. It is pure data plus validation — it imports
+`github.com/kartaladev/wrkflw`. It is pure data plus validation — it imports
 only the Go standard library (plus the `action` interface). Consumers use it to
 describe the shape of a workflow; the `runtime` and `engine` packages execute it.
 
@@ -182,8 +182,8 @@ mirrors a node-family constructor; node options come from the leaf packages:
 
 ```go
 import (
-    "github.com/zakyalvan/krtlwrkflw/definition"
-    "github.com/zakyalvan/krtlwrkflw/definition/activity"
+    "github.com/kartaladev/wrkflw/definition"
+    "github.com/kartaladev/wrkflw/definition/activity"
 )
 
 def, err := definition.NewBuilder("order-fulfillment", 1).
@@ -204,7 +204,7 @@ for programmatic/dynamic construction — and routing conditions come from the
 `flow` package:
 
 ```go
-import "github.com/zakyalvan/krtlwrkflw/definition/flow"
+import "github.com/kartaladev/wrkflw/definition/flow"
 
 def, err := definition.NewBuilder("loan", 1).
     Add(event.NewStart("start")).
@@ -235,7 +235,7 @@ Because each node kind registers itself from its leaf package's `init`, code tha
 ensure the leaves are imported. Blank-import the bundle:
 
 ```go
-import _ "github.com/zakyalvan/krtlwrkflw/definition/kinds"
+import _ "github.com/kartaladev/wrkflw/definition/kinds"
 ```
 
 Code that **constructs** definitions in Go already imports the specific leaf

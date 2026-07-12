@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/action/transform"
+	"github.com/kartaladev/wrkflw/action/transform"
 )
 
 func ExampleNewTransform() {

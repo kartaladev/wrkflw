@@ -6,12 +6,12 @@
 # wrkflw packages live in internal/dbtest, which is not part of this graph.
 #
 # Fails (exit 1) if `go list -deps ./internal/database/...` pulls in any
-# github.com/zakyalvan/krtlwrkflw package other than the two toolkit packages.
+# github.com/kartaladev/wrkflw package other than the two toolkit packages.
 #
 # Usage: scripts/check-extraction.sh   (run from the repo root)
 set -euo pipefail
 
-module="github.com/zakyalvan/krtlwrkflw"
+module="github.com/kartaladev/wrkflw"
 
 allowed="$(printf '%s\n' \
   "${module}/internal/database" \

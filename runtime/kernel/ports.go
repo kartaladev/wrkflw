@@ -7,8 +7,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // ErrInstanceNotFound is returned by Store.Load when no instance exists for the id.

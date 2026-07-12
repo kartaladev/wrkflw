@@ -66,7 +66,7 @@ Mirror the relay's telemetry wiring (`postgres/relay.go`):
 
 - `postgres.Store` gains `logOpt/tpOpt/mpOpt observability.Option` + `tel observability.Telemetry` +
   a `storeDuration metric.Float64Histogram`. `NewStore(pool, opts...)` builds `tel =
-  observability.New("github.com/zakyalvan/krtlwrkflw/persistence", …)` and the histogram
+  observability.New("github.com/kartaladev/wrkflw/persistence", …)` and the histogram
   (`wrkflw_store_duration_seconds`, "Duration of persistence Store operations in seconds").
 - New `StoreOption`s: `WithStoreLogger(*slog.Logger)`, `WithStoreTracerProvider(trace.TracerProvider)`,
   `WithStoreMeterProvider(metric.MeterProvider)` (mirroring `WithRelay*`).

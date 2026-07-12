@@ -25,7 +25,7 @@ var forbiddenDBDeps = map[string]struct{}{
 // without polluting its dependency graph with a DB driver.
 func TestSchedulingHasNoDBDeps(t *testing.T) {
 	cfg := &packages.Config{Mode: packages.NeedImports | packages.NeedDeps}
-	pkgs, err := packages.Load(cfg, "github.com/zakyalvan/krtlwrkflw/scheduling")
+	pkgs, err := packages.Load(cfg, "github.com/kartaladev/wrkflw/scheduling")
 	require.NoError(t, err)
 	require.NotEmpty(t, pkgs)
 
