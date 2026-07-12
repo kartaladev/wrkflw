@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 // observe wraps h with OTel instrumentation via inst.Observe. routeTemplate is

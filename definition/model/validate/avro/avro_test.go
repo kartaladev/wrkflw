@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
-	vavro "github.com/zakyalvan/krtlwrkflw/definition/model/validate/avro"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
+	vavro "github.com/kartaladev/wrkflw/definition/model/validate/avro"
 )
 
 const avsc = `{

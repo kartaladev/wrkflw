@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 	"github.com/stretchr/testify/assert"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
 )
 
 func TestErrUnsupportedIsSentinel(t *testing.T) {

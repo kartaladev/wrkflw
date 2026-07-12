@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Module path: `github.com/zakyalvan/krtlwrkflw`. Go 1.25.7.
+- Module path: `github.com/kartaladev/wrkflw`. Go 1.25.7.
 - **watermill is NEVER imported from `engine`/`model`/`runtime` production code** — only from `eventing/`, `internal/eventing/watermill/`, and `_test.go` files. Same rule for the OTel SDK (API-only in library code).
 - **TDD strict:** every new exported symbol gets a failing test FIRST with a visible RED (`go test` showing build-fail or assertion-fail) before the implementation, per CLAUDE.md "TDD Operational Discipline." A `Write` of `foo_test.go` immediately followed by `foo.go` with no `go test` between them is forbidden.
 - **Tests:** black-box (`package <pkg>_test`); table-driven tests use the project `table-test` skill's **`assert` closure per case** (NOT `want`/`wantErr` fields); use `t.Context()` not `context.Background()`; pair each `foo.go` with `foo_test.go`; reserve `*_example_test.go` for genuine e2e/godoc examples.
@@ -183,7 +183,7 @@ The concrete adapter wrapping a watermill `message.Publisher`, plus a slog-backe
   - `(*Publisher).Publish(ctx context.Context, ev runtime.OutboxEvent) error`
   - `watermillpub.WithLogger(l *slog.Logger) Option`
   - `watermillpub.NewWatermillLogger(l *slog.Logger) watermill.LoggerAdapter`
-  - (package import alias used throughout the plan: `watermillpub "github.com/zakyalvan/krtlwrkflw/internal/eventing/watermill"`)
+  - (package import alias used throughout the plan: `watermillpub "github.com/kartaladev/wrkflw/internal/eventing/watermill"`)
 
 - [ ] **Step 1: Add the watermill dependency**
 
@@ -204,8 +204,8 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/stretchr/testify/require"
-	watermillpub "github.com/zakyalvan/krtlwrkflw/internal/eventing/watermill"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	watermillpub "github.com/kartaladev/wrkflw/internal/eventing/watermill"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 // fakePub captures the topic and messages of the last Publish call.
@@ -329,7 +329,7 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 // Publisher adapts a watermill message.Publisher to runtime.Publisher. It maps
@@ -405,7 +405,7 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/stretchr/testify/require"
-	watermillpub "github.com/zakyalvan/krtlwrkflw/internal/eventing/watermill"
+	watermillpub "github.com/kartaladev/wrkflw/internal/eventing/watermill"
 )
 
 func TestNewWatermillLoggerForwardsToSlog(t *testing.T) {
@@ -518,8 +518,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	watermillpub "github.com/zakyalvan/krtlwrkflw/internal/eventing/watermill"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	watermillpub "github.com/kartaladev/wrkflw/internal/eventing/watermill"
+	"github.com/kartaladev/wrkflw/runtime"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -608,7 +608,7 @@ type config struct {
 Update `internal/eventing/watermill/publisher.go`. Add fields and build them in `NewPublisher`; wrap `Publish`. Imports add `"go.opentelemetry.io/otel"`, `"go.opentelemetry.io/otel/attribute"`, `"go.opentelemetry.io/otel/codes"`, `"go.opentelemetry.io/otel/metric"`, `"go.opentelemetry.io/otel/trace"`.
 
 ```go
-const instrumentationName = "github.com/zakyalvan/krtlwrkflw/eventing"
+const instrumentationName = "github.com/kartaladev/wrkflw/eventing"
 
 type Publisher struct {
 	pub       message.Publisher
@@ -713,8 +713,8 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/eventing"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/eventing"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 type fakePub struct{ published int }
@@ -754,8 +754,8 @@ import (
 	"log/slog"
 
 	"github.com/ThreeDotsLabs/watermill/message"
-	watermillpub "github.com/zakyalvan/krtlwrkflw/internal/eventing/watermill"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	watermillpub "github.com/kartaladev/wrkflw/internal/eventing/watermill"
+	"github.com/kartaladev/wrkflw/runtime"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -843,8 +843,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/eventing"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/eventing"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 func TestGoChannelPublisherRoundTrip(t *testing.T) {
@@ -913,8 +913,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/eventing"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/eventing"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 // ExampleNewGoChannelPublisher shows publishing an outbox event in-process and

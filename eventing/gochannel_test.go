@@ -3,9 +3,9 @@ package eventing_test
 import (
 	"testing"
 
+	"github.com/kartaladev/wrkflw/eventing"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/eventing"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 func TestGoChannelPublisherRoundTrip(t *testing.T) {

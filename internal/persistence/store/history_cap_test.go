@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/internal/persistence/store"
 )
 
 func ptrTime(t time.Time) *time.Time { return &t }

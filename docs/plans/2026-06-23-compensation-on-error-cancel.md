@@ -9,7 +9,7 @@
 **Tech Stack:** Go 1.25, engine pure state machine, testify, clockwork (test-only at runtime layer).
 
 ## Global Constraints
-- Module `github.com/zakyalvan/krtlwrkflw`; no `pkg/` prefix.
+- Module `github.com/kartaladev/wrkflw`; no `pkg/` prefix.
 - **STRICT TDD**, RED before GREEN, visible in its own `go test` call.
 - **`Step` stays PURE + DETERMINISTIC** (no clock/random; commands a pure fn of `(def, state, trigger)`). **`cloneState` must copy the new cursor fields** (extend the cloneState test). **Engine import-purity** (no transport/storage/bus/time-vendor imports).
 - **No model change, no migration.** Changes only in `engine/` (+ a runtime e2e test).

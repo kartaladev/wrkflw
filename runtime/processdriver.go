@@ -14,18 +14,18 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/internal/observability"
-	"github.com/zakyalvan/krtlwrkflw/runtime/idgen"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
-	"github.com/zakyalvan/krtlwrkflw/runtime/validation"
-	"github.com/zakyalvan/krtlwrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/internal/observability"
+	"github.com/kartaladev/wrkflw/runtime/idgen"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/signal"
+	"github.com/kartaladev/wrkflw/runtime/validation"
+	"github.com/kartaladev/wrkflw/scheduling"
 )
 
 // ProcessDriver is the reference single-process driver loop.
@@ -359,7 +359,7 @@ func (driver *ProcessDriver) createAtNode(ctx context.Context, def *model.Proces
 
 // resolveInstanceDef loads instanceID's snapshot and resolves its definition from
 // the registry via the snapshot's own DefID/DefVersion. It is how the message
-// correlate path recovers the definition the caller no longer supplies.
+// correlate path recovers the definition the caller does not supply.
 func (driver *ProcessDriver) resolveInstanceDef(ctx context.Context, instanceID string) (*model.ProcessDefinition, error) {
 	st, _, err := driver.store.Load(ctx, instanceID)
 	if err != nil {

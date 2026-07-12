@@ -3,10 +3,10 @@ package database_test
 import (
 	"testing"
 
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 func TestSQLQuerierRoundTrip(t *testing.T) {
@@ -35,7 +35,7 @@ func TestSQLQuerierRoundTrip(t *testing.T) {
 }
 
 // TestSQLQuerierQueryRows exercises the sqlQuerier.Query → sqlRows iteration path
-// (Next/Scan/Err/Close) which was previously at 0% coverage.
+// (Next/Scan/Err/Close).
 func TestSQLQuerierQueryRows(t *testing.T) {
 	db := dbtest.RunTestMySQL(t)
 	q, err := database.From(db)

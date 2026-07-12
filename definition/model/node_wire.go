@@ -4,13 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/flow"
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
 
 // NodeWire is the flat JSON/JSONB representation of any node. It is the single
-// serialization shape; previously stored definitions decode through it
-// unchanged. Field names/order mirror the pre-interface Node struct.
+// serialization shape through which every node kind decodes and encodes.
 type NodeWire struct {
 	ID                 string   `json:"id"`
 	Kind               NodeKind `json:"kind"`
@@ -51,9 +50,9 @@ type NodeWire struct {
 	MessageStartSingleton bool   `json:"messageStartSingleton,omitempty"`
 	ErrorCode             string `json:"errorCode,omitempty"`
 	// EndBehavior is the name-based discriminator for an EndEvent's behavior
-	// (ADR-0127): "terminate" or "error"; empty means a normal end. It replaces
-	// the former forceTermination bool. TerminationReason/TerminationOutcome are
-	// written only for "terminate"; ErrorCode only for "error".
+	// (ADR-0127): "terminate" or "error"; empty means a normal end.
+	// TerminationReason/TerminationOutcome are written only for "terminate";
+	// ErrorCode only for "error".
 	EndBehavior        string             `json:"endBehavior,omitempty"`
 	TerminationReason  string             `json:"terminationReason,omitempty"`
 	TerminationOutcome string             `json:"terminationOutcome,omitempty"`

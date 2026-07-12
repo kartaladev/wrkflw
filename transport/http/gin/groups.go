@@ -7,8 +7,8 @@ import (
 
 	ginlib "github.com/gin-gonic/gin"
 
-	"github.com/zakyalvan/krtlwrkflw/service"
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/service"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 // ─── InstanceRoutes ───────────────────────────────────────────────────────────

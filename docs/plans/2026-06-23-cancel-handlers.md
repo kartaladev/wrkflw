@@ -5,7 +5,7 @@
 **Goal:** Add `model.Node.CancelHandler`; the engine emits its fire-and-forget `InvokeCancelAction` for each active node on `CancelRequested`, beside `def.CancelActions`. No runtime change, no new command, no migration.
 
 ## Global Constraints
-- Module `github.com/zakyalvan/krtlwrkflw`; no `pkg/` prefix.
+- Module `github.com/kartaladev/wrkflw`; no `pkg/` prefix.
 - STRICT TDD, RED before GREEN.
 - `Step` PURE + DETERMINISTIC; engine import-purity; no `InstanceState`/`cloneState` change. Model diff = ONE additive field (`Node.CancelHandler string`); no `Validate` rule.
 - Reuse the ADR-0028 `InvokeCancelAction` fire-and-forget path (no runtime production change).

@@ -11,7 +11,7 @@ import (
 
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 // Mapper computes zero or more output variables from the current variable set.

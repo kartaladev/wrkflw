@@ -10,7 +10,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/zakyalvan/krtlwrkflw/action/email"
+	"github.com/kartaladev/wrkflw/action/email"
 )
 
 func TestEmailSendsViaMailpit(t *testing.T) {

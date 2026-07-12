@@ -11,7 +11,7 @@ import (
 
 	"github.com/maypok86/otter/v2"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
 )
 
 // Compile-time interface conformance checks.

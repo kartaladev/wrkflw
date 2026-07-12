@@ -8,7 +8,7 @@ import (
 	"github.com/go-co-op/gocron/v2"
 	"github.com/stretchr/testify/require"
 
-	gocronsched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
+	gocronsched "github.com/kartaladev/wrkflw/internal/scheduling/gocron"
 )
 
 // fakeNeutralLock records whether Unlock ran.

@@ -50,7 +50,7 @@ import (
 
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 // HeaderFunc sets request headers programmatically with access to ctx and the

@@ -2,7 +2,7 @@
 
 **An embeddable Go workflow engine — library, not a daemon.**
 
-`wrkflw` is a single importable Go module (`github.com/zakyalvan/krtlwrkflw`) that a
+`wrkflw` is a single importable Go module (`github.com/kartaladev/wrkflw`) that a
 consumer embeds in their own application. There is no owned binary, no daemon, and no
 container you run. Process execution, human tasks, timers, compensation, and
 authorization all live in the library's root packages. The HTTP transport
@@ -46,7 +46,7 @@ adapters are mountable route groups a consumer registers in their own server.
 ## Install
 
 ```bash
-go get github.com/zakyalvan/krtlwrkflw
+go get github.com/kartaladev/wrkflw
 ```
 
 ---
@@ -62,8 +62,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition"
+	"github.com/kartaladev/wrkflw/definition/activity"
 )
 
 func main() {
@@ -167,12 +167,12 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/definition"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 func main() {
@@ -263,8 +263,8 @@ Import only the subpackage you use — a stdlib consumer never pulls gin or fibe
 import (
     "net/http"
 
-    "github.com/zakyalvan/krtlwrkflw/service"
-    "github.com/zakyalvan/krtlwrkflw/transport/http/stdlib"
+    "github.com/kartaladev/wrkflw/service"
+    "github.com/kartaladev/wrkflw/transport/http/stdlib"
 )
 
 // svc is a service.Service (constructed via service.New or wired manually).
@@ -282,8 +282,8 @@ http.ListenAndServe(":8080", mux)
 import (
     "github.com/gin-gonic/gin"
 
-    "github.com/zakyalvan/krtlwrkflw/transport/http/gin" // package alias: gintransport
-    "github.com/zakyalvan/krtlwrkflw/service"
+    "github.com/kartaladev/wrkflw/transport/http/gin" // package alias: gintransport
+    "github.com/kartaladev/wrkflw/service"
 )
 
 g := gin.Default()
@@ -298,8 +298,8 @@ g.Run(":8080")
 import (
     "github.com/gofiber/fiber/v3"
 
-    "github.com/zakyalvan/krtlwrkflw/transport/http/fiber" // package alias: fibertransport
-    "github.com/zakyalvan/krtlwrkflw/service"
+    "github.com/kartaladev/wrkflw/transport/http/fiber" // package alias: fibertransport
+    "github.com/kartaladev/wrkflw/service"
 )
 
 app := fiber.New()
@@ -319,8 +319,8 @@ group — which is safer than a built-in default-deny gate.
 ```go
 // stdlib — no sub-router; use WithBasePath
 import (
-    "github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
-    "github.com/zakyalvan/krtlwrkflw/transport/http/stdlib"
+    "github.com/kartaladev/wrkflw/transport/http/httpcore"
+    "github.com/kartaladev/wrkflw/transport/http/stdlib"
 )
 
 mux := http.NewServeMux()
@@ -334,7 +334,7 @@ stdlib.MountHealth(mux)
 ```go
 // gin — native sub-router; WithBasePath still works but sub-routers are idiomatic
 import (
-    gintransport "github.com/zakyalvan/krtlwrkflw/transport/http/gin"
+    gintransport "github.com/kartaladev/wrkflw/transport/http/gin"
 )
 
 base  := g.Group("/api/v1/workflow")
@@ -351,7 +351,7 @@ gintransport.HealthRoutes{Checks: checks}.Customize(base)
 ```go
 // fiber — same pattern as gin
 import (
-    fibertransport "github.com/zakyalvan/krtlwrkflw/transport/http/fiber"
+    fibertransport "github.com/kartaladev/wrkflw/transport/http/fiber"
 )
 
 base  := app.Group("/api/v1/workflow")

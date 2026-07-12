@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/build"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/build"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // TestNewLoader covers the YAML authoring entry — the symmetric counterpart to

@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
 
 // stubStrategy is a no-op validate.ValidationStrategy used to exercise the

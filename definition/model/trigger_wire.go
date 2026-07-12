@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 // TriggerWire is the JSON encoding of a schedule.TriggerSpec.

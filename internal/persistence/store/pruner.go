@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 )
 
 // Pruner deletes safely-eligible rows from the unbounded-growth tables so a

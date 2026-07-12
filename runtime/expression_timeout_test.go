@@ -9,16 +9,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/flow"
-	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/expreval"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/definition/gateway"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/internal/expreval"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/internal/runtimetest"
 )
 
 // gatewayBlockDef builds start → xor -{block()}-> big ; -default-> small → end.
@@ -54,10 +54,10 @@ func noopCatalog() action.Catalog {
 }
 
 // TestRunnerWithExpressionTimeoutGuardsGateway proves the DoS guard is reachable
-// in-engine when opted in: a Runner built WithExpressionTimeout(50ms) evaluating
+// in-engine when opted in: a ProcessDriver built WithExpressionTimeout(50ms) evaluating
 // a blocking gateway condition aborts with expreval.ErrEvalTimeout (surfaced as a
-// Run error) rather than hanging the driver loop. This is the explicit opt-in the
-// ADR-0049 follow-up called for.
+// Drive error) rather than hanging the driver loop. This is the explicit opt-in
+// for untrusted definitions (ADR-0049).
 func TestRunnerWithExpressionTimeoutGuardsGateway(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	release := make(chan struct{})
@@ -99,7 +99,7 @@ func TestRunnerDefaultEvaluatesNormallyAndStaysPure(t *testing.T) {
 }
 
 // exclusiveRuntimeDef mirrors the engine exclusiveDef but with noop actions so a
-// runtime Runner can execute it end-to-end.
+// runtime ProcessDriver can execute it end-to-end.
 func exclusiveRuntimeDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "xor-rt", Version: 1,

@@ -10,12 +10,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/processtest"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/processtest"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/internal/runtimetest"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/scheduling"
 )
 
 // greetAction is a trivial action used across rehydration tests.
@@ -130,8 +130,8 @@ func TestLoadScheduledPartialUnresolved_ResolvableJobsReturned(t *testing.T) {
 }
 
 // TestSchedulerStart_UnresolvedDefinitions_NonFatal proves that scheduling.Scheduler.Start
-// returns nil (non-fatal) when LoadScheduled returns ErrUnresolvedTimerDefinitions.
-// This is the regression test for the issue: previously Start returned the error, blocking startup.
+// returns nil (non-fatal) when LoadScheduled returns ErrUnresolvedTimerDefinitions,
+// so unresolved-def timers do not block startup.
 func TestSchedulerStart_UnresolvedDefinitions_NonFatal(t *testing.T) {
 	t.Parallel()
 
@@ -176,7 +176,6 @@ func TestSchedulerStart_UnresolvedDefinitions_NonFatal(t *testing.T) {
 	)
 
 	// THE KEY ASSERTION: Start must return nil even though LoadScheduled returns the sentinel.
-	// Previously this would return an error, blocking startup.
 	err = sched2.Start(t.Context())
 	assert.NoError(t, err, "Start must succeed (non-fatal) when only unresolved-def timers are present")
 }

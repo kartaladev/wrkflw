@@ -20,7 +20,7 @@ gate a commit). Package split keeps authoring (`definition/model/validate`) apar
 `linkedin/goavro/v2` (adapters, unchanged); testcontainers (Postgres/MySQL — Docker required).
 
 ## Global Constraints
-- Module `github.com/zakyalvan/krtlwrkflw`; Go 1.25. `go build ./...`, `go test -race ./...`,
+- Module `github.com/kartaladev/wrkflw`; Go 1.25. `go build ./...`, `go test -race ./...`,
   `golangci-lint run ./...` clean per task.
 - **TDD strict**, fail-closed: validation must NEVER be silently skipped.
 - Error-sentinel prefix `workflow-<pkg>: ...`. `runtime/task` keeps `workflow-runtime: taskservice:`.
@@ -132,9 +132,9 @@ columns, population, write-once, and their tests). Note the migration count drop
   `git mv validation/gate_test.go runtime/validation/gate_test.go`.
 - Set `package validate` in the definition-side files (and `_test` → `validate_test`), `package validation`
   stays in the runtime-side gate files.
-- Rewrite every import: `krtlwrkflw/validation` → `krtlwrkflw/definition/model/validate` for the
-  port/strategy/descriptor/registry; but `Gate`/`ErrInvalidInput` references → `krtlwrkflw/runtime/validation`.
-  Adapters `krtlwrkflw/validation/{expr,…}` → `krtlwrkflw/definition/model/validate/{expr,…}`.
+- Rewrite every import: `wrkflw/validation` → `wrkflw/definition/model/validate` for the
+  port/strategy/descriptor/registry; but `Gate`/`ErrInvalidInput` references → `wrkflw/runtime/validation`.
+  Adapters `wrkflw/validation/{expr,…}` → `wrkflw/definition/model/validate/{expr,…}`.
 
 **No behavior change** — the gate on this task is the existing test suite passing before and after.
 
@@ -142,7 +142,7 @@ columns, population, write-once, and their tests). Note the migration count drop
   `package validate`. Update intra-package references.
 - [ ] **Step 2:** Move `gate.go` (+test) to `runtime/validation/`, `package validation`. `gate.go`
   imports `definition/model/validate` for `ValidationStrategy`; `ErrInvalidInput` stays with the gate.
-- [ ] **Step 3:** Rewrite all importers (`grep -rln 'krtlwrkflw/validation' --include=*.go .`):
+- [ ] **Step 3:** Rewrite all importers (`grep -rln 'wrkflw/validation' --include=*.go .`):
   definition/{model,activity,event,build}, transport/http/httpcore (ErrInvalidInput → runtime/validation),
   examples/scenarios/input_validation. Node-slot field types become `validate.ValidationStrategy`.
 - [ ] **Step 4:** `go build ./...`. Fix every import until it compiles.

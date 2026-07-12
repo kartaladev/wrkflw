@@ -1,7 +1,7 @@
 # Plan — P1: Serialize concurrent compensation throws
 
 Spec: `docs/specs/2026-06-27-parallel-compensation-throw-design.md`. ADR: `docs/adr/0071-serialize-parallel-compensation-throws.md`.
-Branch: `fix/parallel-compensation-cursor`. Module: `github.com/zakyalvan/krtlwrkflw`.
+Branch: `fix/parallel-compensation-cursor`. Module: `github.com/kartaladev/wrkflw`.
 
 ## Global Constraints (binding — copy to reviewers verbatim)
 

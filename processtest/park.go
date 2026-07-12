@@ -1,8 +1,8 @@
 package processtest
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
 )
 
 // Reason is the primary classification of why an instance is parked, i.e. why a

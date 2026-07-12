@@ -5,7 +5,7 @@
 **Goal:** (B) `DefinitionRegistry.Lookup(ctx, defRef)`; (A) opt-in admin-list total-count (REST `?total=true`, gRPC `include_total`). `ended_at`-optional confirmed already-done. Engine/model untouched.
 
 ## Global Constraints
-- Module `github.com/zakyalvan/krtlwrkflw`; no `pkg/` prefix.
+- Module `github.com/kartaladev/wrkflw`; no `pkg/` prefix.
 - Strict TDD; RED before GREEN.
 - Engine/model production diff ZERO.
 - `workflow-` error prefix; black-box tests; table-test assert-closure; `t.Context()`.

@@ -7,13 +7,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/flow"
-	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	vexpr "github.com/zakyalvan/krtlwrkflw/definition/model/validate/expr"
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/definition/gateway"
+	"github.com/kartaladev/wrkflw/definition/model"
+	vexpr "github.com/kartaladev/wrkflw/definition/model/validate/expr"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 func TestValidate(t *testing.T) {
@@ -686,7 +686,7 @@ func TestValidate(t *testing.T) {
 		},
 		// CompensateRef validation rules
 		"normal intermediate throw event is unaffected": {
-			// KindIntermediateThrowEvent no longer carries CompensateRef at all (ADR-0120);
+			// KindIntermediateThrowEvent does not carry CompensateRef (ADR-0120);
 			// a normal signal throw must not trigger ErrCompensateRefNotFound.
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,

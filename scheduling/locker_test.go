@@ -8,10 +8,10 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/persistence"
-	"github.com/zakyalvan/krtlwrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
+	"github.com/kartaladev/wrkflw/persistence"
+	"github.com/kartaladev/wrkflw/scheduling"
 )
 
 // TestSchedulerWithDistributedTimerLock proves the public façade plumbs a

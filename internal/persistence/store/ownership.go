@@ -10,8 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // Compile-time assertion: AdvisoryLockOwnership must satisfy kernel.InstanceOwnership.

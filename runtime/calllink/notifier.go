@@ -10,11 +10,11 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/observability"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/internal/observability"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // CallDeliverFunc delivers a trigger to a parent process instance. The

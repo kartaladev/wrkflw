@@ -50,7 +50,7 @@ package service
 
 import (
     "context"
-    "github.com/zakyalvan/krtlwrkflw/runtime"
+    "github.com/kartaladev/wrkflw/runtime"
 )
 
 // DeadLetterAdmin is the optional admin port for inspecting and redriving

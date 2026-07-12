@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // compensationRecordsForScope returns a read-only slice of CompensationRecords for
@@ -305,8 +305,8 @@ func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at 
 	}
 
 	// Emit the next compensation action. Preserve all cursor fields — including
-	// the Phase 3 fields (ArchiveKey, ResumeNode, ResumeScope) — so that
-	// stepCompensationFinish can use them when the walk eventually ends.
+	// ArchiveKey, ResumeNode, and ResumeScope — so that stepCompensationFinish
+	// can use them when the walk eventually ends.
 	rec := records[nextIdx]
 	cmdID := s.nextCommandID()
 	s.Compensating = compensationCursor{
@@ -335,8 +335,7 @@ func stepCompensationAdvance(def *model.ProcessDefinition, s *InstanceState, at 
 // finishPlan is the parameterized description of ONE compensation-walk finish
 // outcome. Every finish — throw-resume, partial-rollback, full-reverse, and
 // terminate — is expressed as a finishPlan and applied by applyFinish, so the
-// resume/terminate invariant-restoration lives in exactly one place (previously
-// four independent branches drifted apart — finding #4).
+// resume/terminate invariant-restoration lives in exactly one place.
 type finishPlan struct {
 	// resume is true for a resume outcome (Status → Running, place a token, drive)
 	// and false for a terminate outcome (apply FinalStatus, stamp EndedAt).
@@ -636,7 +635,7 @@ func applyFinish(def *model.ProcessDefinition, s *InstanceState, plan finishPlan
 		// prefix (scopeWideThrow, review A1): the re-issued beginCompensation then
 		// compensates any sibling record appended mid-walk and terminates
 		// (FailInstance{"cancelled"}, StatusTerminated) — the correct compensate-once
-		// outcome that no longer loses the sibling record. A full-reverse walk
+		// outcome that preserves the sibling record. A full-reverse walk
 		// compensated ALL of RootCompensations and clears the whole list the same way.
 		applyPlanRecordClearing(s, plan)
 		s.Status = StatusCompensating

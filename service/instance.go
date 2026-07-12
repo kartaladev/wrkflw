@@ -5,8 +5,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // ProcessInstance is the read-only, fused view of a running instance: its
@@ -38,8 +38,8 @@ func (p processInstance) MarshalJSON() ([]byte, error) {
 	return json.Marshal(newInstanceJSON(p.def, p.st))
 }
 
-// instanceJSON is the UNEXPORTED serialized projection. Field names/tags match
-// the retired runtime/view.InstanceSnapshot for wire compatibility.
+// instanceJSON is the UNEXPORTED serialized projection. Its field names/tags
+// define the ProcessInstance JSON wire format.
 type instanceJSON struct {
 	InstanceID     string              `json:"instance_id"`
 	DefID          string              `json:"def_id"`
@@ -101,8 +101,7 @@ type actionBindingJSON struct {
 }
 
 // tokenStateString converts an engine.TokenState to its canonical string
-// representation. Out-of-range values map to "unknown". Copied verbatim from
-// runtime/view to keep the unexported mapping co-located with its consumer.
+// representation. Out-of-range values map to "unknown".
 func tokenStateString(s engine.TokenState) string {
 	switch s {
 	case engine.TokenActive:

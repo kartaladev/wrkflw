@@ -3,9 +3,9 @@ package transaction_test
 import (
 	"testing"
 
+	"github.com/kartaladev/wrkflw/internal/database/transaction"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
 	"github.com/stretchr/testify/assert"
-	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 func TestMarkRollbackNoAmbientIsNoop(t *testing.T) {
@@ -19,7 +19,7 @@ func TestMarkRollbackNoAmbientIsNoop(t *testing.T) {
 
 // TestIsRollbackMarkedTruePath verifies that IsRollbackMarked returns true after
 // MarkRollback is called on a context that holds an ambient transaction.
-// This covers the true-return branch that was previously unreachable in tests.
+// This covers the true-return branch.
 func TestIsRollbackMarkedTruePath(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 

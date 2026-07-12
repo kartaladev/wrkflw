@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/action/transform"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/action/transform"
 )
 
 func TestTransform(t *testing.T) {

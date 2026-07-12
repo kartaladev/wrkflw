@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime/internal/runtimetest"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 func runningChild(id string) engine.InstanceState {

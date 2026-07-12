@@ -29,9 +29,9 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
-	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database/transaction"
+	"github.com/kartaladev/wrkflw/persistence"
 )
 
 func main() {

@@ -7,9 +7,9 @@ import (
 
 	gomc "github.com/bradfitz/gomemcache/memcache"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/cachetest"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/memcache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache/cachetest"
+	"github.com/kartaladev/wrkflw/persistence/cache/memcache"
 )
 
 func TestMemcacheConformance(t *testing.T) {

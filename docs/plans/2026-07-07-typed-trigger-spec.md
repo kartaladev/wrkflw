@@ -16,7 +16,7 @@
 - Never import `gocron`/`clockwork`/`robfig/cron` from engine/definition code.
 - Breaking API allowed (pre-v1.0); migrate all call sites in the task that breaks them so the tree compiles at task boundaries.
 - Touched packages ≥ 85% coverage; new public symbols carry godoc; `definition/schedule` ships a testable `Example`.
-- Module path `github.com/zakyalvan/krtlwrkflw`. This is **Plan 1 of 3** (see revised spec `docs/specs/2026-07-07-typed-trigger-spec-and-cron.md`, ADR-0102). Plan 2 = scheduler port + gocron + MemScheduler; Plan 3 = JobStore + persistence + consistency + rehydration + ADR-0102 (supersedes ADR-0027 timer-write).
+- Module path `github.com/kartaladev/wrkflw`. This is **Plan 1 of 3** (see revised spec `docs/specs/2026-07-07-typed-trigger-spec-and-cron.md`, ADR-0102). Plan 2 = scheduler port + gocron + MemScheduler; Plan 3 = JobStore + persistence + consistency + rehydration + ADR-0102 (supersedes ADR-0027 timer-write).
 
 ---
 
@@ -57,7 +57,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 func TestTriggerSpecKinds(t *testing.T) {
@@ -237,7 +237,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 func ExampleAfterDuration() {
@@ -277,8 +277,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 func TestTriggerWire(t *testing.T) {
@@ -327,7 +327,7 @@ package model
 import (
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 // TriggerWire is the JSON encoding of a schedule.TriggerSpec.
@@ -690,9 +690,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/expreval"
+	"github.com/kartaladev/wrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/internal/expreval"
 )
 
 func TestResolveTrigger(t *testing.T) {
@@ -732,7 +732,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 var ErrUnsupportedTrigger = errors.New("workflow-engine: trigger kind needs a native scheduler (not available in this build)")

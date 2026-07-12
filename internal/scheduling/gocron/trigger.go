@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-co-op/gocron/v2"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 // jobDefinition maps a neutral TriggerSpec to a gocron JobDefinition and

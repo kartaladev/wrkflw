@@ -15,12 +15,12 @@ import (
 
 	ginlib "github.com/gin-gonic/gin"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/internal/transporttest"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/service"
-	ginadapter "github.com/zakyalvan/krtlwrkflw/transport/http/gin"
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/internal/transporttest"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/service"
+	ginadapter "github.com/kartaladev/wrkflw/transport/http/gin"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 func init() {

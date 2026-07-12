@@ -8,9 +8,9 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/observability"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/observability"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 )
 
 // Store is the vendor-neutral, dialect-parametrised persistence store. It holds
@@ -114,7 +114,7 @@ func New(conn any, d dialect.Dialect, opts ...Option) (*Store, error) {
 		o(s)
 	}
 	s.tel = observability.New(
-		"github.com/zakyalvan/krtlwrkflw/persistence",
+		"github.com/kartaladev/wrkflw/persistence",
 		filterNilOpts(s.logOpt, s.tpOpt, s.mpOpt)...,
 	)
 	s.storeDuration = s.tel.Float64Histogram(

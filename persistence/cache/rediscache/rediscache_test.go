@@ -6,9 +6,9 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/cachetest"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/rediscache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache/cachetest"
+	"github.com/kartaladev/wrkflw/persistence/cache/rediscache"
 )
 
 func TestRediscacheConformance(t *testing.T) {

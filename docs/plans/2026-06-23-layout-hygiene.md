@@ -6,11 +6,11 @@
 
 **Architecture:** Pure-refactor package moves (no behavioral change) plus two doc-only artifacts. `database/` is a testcontainers helper imported only by `_test.go` files; `expreval/` is the expr-lang wrapper imported only in-module. Both move under `internal/`, where they stay importable by every in-module package but vanish from the consumer's public import surface. Package *names* are unchanged, so only import paths move; package-qualified call sites (`database.RunTestDatabase`, `expreval.New`) are untouched.
 
-**Tech Stack:** Go 1.25, single module `github.com/zakyalvan/krtlwrkflw`. Verification via `go build ./...`, `go vet ./...`, `golangci-lint run ./...`, and the existing test suite (testcontainers tests need a running Docker daemon).
+**Tech Stack:** Go 1.25, single module `github.com/kartaladev/wrkflw`. Verification via `go build ./...`, `go vet ./...`, `golangci-lint run ./...`, and the existing test suite (testcontainers tests need a running Docker daemon).
 
 ## Global Constraints
 
-- Go 1.25; single `go.mod` at repo root; module path `github.com/zakyalvan/krtlwrkflw`.
+- Go 1.25; single `go.mod` at repo root; module path `github.com/kartaladev/wrkflw`.
 - No `pkg/` prefix — public packages live at the module root (ADR-0004). This sub-project **reaffirms** that.
 - `internal/` is for non-exported implementation consumers must not import; it remains importable by every package in this module.
 - This is a **pure refactor**: no new exported symbols, no behavior change. Per CLAUDE.md TDD discipline, pure refactors need no new tests, but the existing suite MUST pass before AND after each task. The per-task verification gate is `go build ./...` + `go vet ./...` + `golangci-lint run ./...` (and targeted `go test` where noted).
@@ -125,11 +125,11 @@ Pure refactor. `database` is package-`database` and imported only by `_test.go` 
 
 **Files:**
 - Move: `database/testutils.go` → `internal/database/testutils.go`
-- Modify (import path only): the 36 `_test.go` files importing `github.com/zakyalvan/krtlwrkflw/database` (across `casbinauthz/`, `internal/authz/casbin/`, `internal/persistence/postgres/`, `persistence/`).
+- Modify (import path only): the 36 `_test.go` files importing `github.com/kartaladev/wrkflw/database` (across `casbinauthz/`, `internal/authz/casbin/`, `internal/persistence/postgres/`, `persistence/`).
 
 **Interfaces:**
 - Consumes: ADR-0041 (rationale).
-- Produces: package `database` at import path `github.com/zakyalvan/krtlwrkflw/internal/database`, exporting unchanged: `RunTestDatabase(t *testing.T, opts ...TestOption) *pgxpool.Pool`, `TestOption`, `WithDBName(string) TestOption`, `WithUser(string) TestOption`, `WithPassword(string) TestOption`.
+- Produces: package `database` at import path `github.com/kartaladev/wrkflw/internal/database`, exporting unchanged: `RunTestDatabase(t *testing.T, opts ...TestOption) *pgxpool.Pool`, `TestOption`, `WithDBName(string) TestOption`, `WithUser(string) TestOption`, `WithPassword(string) TestOption`.
 
 - [ ] **Step 1: Confirm the suite builds before the move (baseline)**
 
@@ -150,14 +150,14 @@ Expected: `database/` no longer exists; `internal/database/testutils.go` exists.
 
 Run:
 ```bash
-grep -rl '"github.com/zakyalvan/krtlwrkflw/database"' --include="*.go" . \
-  | xargs sed -i '' 's#github.com/zakyalvan/krtlwrkflw/database#github.com/zakyalvan/krtlwrkflw/internal/database#g'
+grep -rl '"github.com/kartaladev/wrkflw/database"' --include="*.go" . \
+  | xargs sed -i '' 's#github.com/kartaladev/wrkflw/database#github.com/kartaladev/wrkflw/internal/database#g'
 ```
 (Note: `sed -i ''` is the macOS/BSD form. On GNU/Linux use `sed -i` without the `''`.)
 
 - [ ] **Step 4: Verify no stale import path remains**
 
-Run: `grep -rn '"github.com/zakyalvan/krtlwrkflw/database"' --include="*.go" . || echo CLEAN`
+Run: `grep -rn '"github.com/kartaladev/wrkflw/database"' --include="*.go" . || echo CLEAN`
 Expected: `CLEAN` (zero matches for the old path).
 
 - [ ] **Step 5: Verify the suite still builds and vets (after)**
@@ -194,7 +194,7 @@ Pure refactor. `expreval` is package-`expreval`; 3 non-test importers plus its o
 
 **Interfaces:**
 - Consumes: ADR-0041 (rationale).
-- Produces: package `expreval` at import path `github.com/zakyalvan/krtlwrkflw/internal/expreval`, exporting unchanged: `Evaluator`, `New() *Evaluator`, and the `(*Evaluator).EvalBool/EvalDuration/EvalString(code string, env map[string]any)` methods.
+- Produces: package `expreval` at import path `github.com/kartaladev/wrkflw/internal/expreval`, exporting unchanged: `Evaluator`, `New() *Evaluator`, and the `(*Evaluator).EvalBool/EvalDuration/EvalString(code string, env map[string]any)` methods.
 
 - [ ] **Step 1: Move the package directory with git**
 
@@ -211,14 +211,14 @@ Expected: `expreval/` no longer exists; both files now under `internal/expreval/
 
 Run:
 ```bash
-grep -rl '"github.com/zakyalvan/krtlwrkflw/expreval"' --include="*.go" . \
-  | xargs sed -i '' 's#github.com/zakyalvan/krtlwrkflw/expreval#github.com/zakyalvan/krtlwrkflw/internal/expreval#g'
+grep -rl '"github.com/kartaladev/wrkflw/expreval"' --include="*.go" . \
+  | xargs sed -i '' 's#github.com/kartaladev/wrkflw/expreval#github.com/kartaladev/wrkflw/internal/expreval#g'
 ```
 (GNU/Linux: drop the `''` after `-i`.)
 
 - [ ] **Step 3: Verify no stale import path remains**
 
-Run: `grep -rn '"github.com/zakyalvan/krtlwrkflw/expreval"' --include="*.go" . || echo CLEAN`
+Run: `grep -rn '"github.com/kartaladev/wrkflw/expreval"' --include="*.go" . || echo CLEAN`
 Expected: `CLEAN`.
 
 - [ ] **Step 4: Verify build + vet**
@@ -258,7 +258,7 @@ A doc-only package at the module root whose package comment is the "start here" 
 
 - [ ] **Step 1: Write `doc.go`**
 
-The root package is named `wrkflw` (the product name used throughout the codebase, e.g. the `wrkflw_definitions` table). It is intentionally doc-only — it exports nothing and exists so `go doc github.com/zakyalvan/krtlwrkflw` and pkg.go.dev show a navigation landing. Create `doc.go` with exactly:
+The root package is named `wrkflw` (the product name used throughout the codebase, e.g. the `wrkflw_definitions` table). It is intentionally doc-only — it exports nothing and exists so `go doc github.com/kartaladev/wrkflw` and pkg.go.dev show a navigation landing. Create `doc.go` with exactly:
 
 ```go
 // Package wrkflw is the documentation landing for the wrkflw workflow engine —
@@ -334,7 +334,7 @@ git commit -m "docs(root): add front-door package overview (ADR-0041)"
 ## Verification checklist (whole sub-project)
 
 - [ ] `database/` and `expreval/` no longer exist at the module root; they live under `internal/`.
-- [ ] `grep -rn 'krtlwrkflw/database"' --include=*.go .` and the same for `/expreval"` return zero matches (only the `internal/...` paths remain).
+- [ ] `grep -rn 'wrkflw/database"' --include=*.go .` and the same for `/expreval"` return zero matches (only the `internal/...` paths remain).
 - [ ] `go build ./...` and `go vet ./...` are clean.
 - [ ] `golangci-lint run ./...` is clean.
 - [ ] Targeted tests pass: `./internal/expreval/...`, `./engine/...`, `./authz/...` (no Docker), and at least one testcontainers package (`./internal/persistence/postgres/ -run '^TestMigrate'`) if Docker is available.

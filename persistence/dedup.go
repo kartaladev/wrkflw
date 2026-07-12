@@ -7,8 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/persistence/store"
 )
 
 // Deduper is the stable public interface for idempotent-consumer deduplication
@@ -16,25 +16,13 @@ import (
 // business transaction so the dedup record and the side effect commit
 // atomically.
 //
-// # Breaking change (store unification, Phase 2)
-//
-// Deduper.Seen no longer takes an explicit transaction handle. It joins the
-// ambient transaction stashed in ctx by the internal transaction helper, so the
-// dedup record commits or rolls back together with the surrounding business
-// unit. When no ambient transaction is present, Seen begins and commits a fresh
-// leaf transaction so the call is always atomic. This also unifies the former
-// separate Deduper (pgx.Tx) and MySQLDeduper (*sql.Tx) interfaces into one
-// backend-neutral type — MySQLDeduper has been removed; use Deduper.
-//
-// Migration: replace
-//
-//	tx, _ := pool.Begin(ctx)
-//	first, _ := d.Seen(ctx, tx, sub, id)
-//	tx.Commit(ctx)
-//
-// with a call whose ctx already carries the ambient transaction (obtained from
-// the engine's own commit path); a bare d.Seen(ctx, sub, id) with no ambient
-// transaction transparently begins and commits its own leaf transaction.
+// Deduper.Seen joins the ambient transaction stashed in ctx by the internal
+// transaction helper, so the dedup record commits or rolls back together with
+// the surrounding business unit. When no ambient transaction is present, Seen
+// begins and commits a fresh leaf transaction so the call is always atomic. A
+// single backend-neutral type serves every dialect: a bare d.Seen(ctx, sub, id)
+// with no ambient transaction transparently begins and commits its own leaf
+// transaction.
 type Deduper interface {
 	// Seen records (subscriber, messageID) and reports whether this is the FIRST
 	// time the pair was seen. firstTime==false means the message is a duplicate
@@ -67,7 +55,7 @@ func NewDeduper(pool *pgxpool.Pool) (Deduper, error) {
 //
 // It returns the same unified Deduper interface as NewDeduper (the Postgres
 // analog) so the two backends are interchangeable at the consumer site. See the
-// Deduper doc for the store-unification breaking change to Seen's signature.
+// Deduper doc for how Seen participates in the ambient transaction.
 func NewMySQLDeduper(db *sql.DB) (Deduper, error) {
 	return store.NewDeduper(db, dialect.NewMySQL())
 }

@@ -6,7 +6,7 @@ import (
 
 	fiberlib "github.com/gofiber/fiber/v3"
 
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 // fiberHeaders builds a net/http.Header map from fiber's c.GetReqHeaders(),

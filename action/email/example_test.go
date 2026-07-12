@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/smtp"
 
-	"github.com/zakyalvan/krtlwrkflw/action/email"
+	"github.com/kartaladev/wrkflw/action/email"
 )
 
 func ExampleNewEmail() {

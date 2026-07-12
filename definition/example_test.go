@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition"
+	"github.com/kartaladev/wrkflw/definition/activity"
 )
 
 // ExampleNewLoader demonstrates authoring a definition from YAML via the root

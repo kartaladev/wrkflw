@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Go 1.25**; module `github.com/zakyalvan/krtlwrkflw`.
+- **Go 1.25**; module `github.com/kartaladev/wrkflw`.
 - **casbin confinement:** casbin (`github.com/casbin/casbin/v2` + `.../model`, `.../persist`) is imported ONLY in `casbinauthz/` and `internal/authz/casbin/`. Do NOT import casbin from `engine`/`model`/`runtime`/`internal/persistence/*`.
 - **No new ORM / driver:** do NOT add `gorm`, `go-pg`, `sqlx`, `ent`, or any `casbin-*-adapter` to `go.mod`. The adapter is hand-rolled over `*pgxpool.Pool`. casbin stays pinned at **v2.135.0**.
 - **Façade discipline (ADR-0008/0010):** the public constructor returns `authz.Authorizer` + `io.Closer`, never the internal concrete types.
@@ -77,8 +77,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/database"
-	authzcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
+	"github.com/kartaladev/wrkflw/database"
+	authzcasbin "github.com/kartaladev/wrkflw/internal/authz/casbin"
 )
 
 func TestMigrateCasbinCreatesRuleTable(t *testing.T) {
@@ -153,7 +153,7 @@ func MigrateCasbin(ctx context.Context, pool *pgxpool.Pool) error {
 
 - [ ] **Step 5: Add the façade passthrough**
 
-In `casbinauthz/casbinauthz.go`, add the import `internalcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"` (if not already imported under that or another alias — match the existing alias) and `"github.com/jackc/pgx/v5/pgxpool"`, then:
+In `casbinauthz/casbinauthz.go`, add the import `internalcasbin "github.com/kartaladev/wrkflw/internal/authz/casbin"` (if not already imported under that or another alias — match the existing alias) and `"github.com/jackc/pgx/v5/pgxpool"`, then:
 
 ```go
 // MigrateCasbin applies the casbin_rule schema to pool (tracked in its own
@@ -219,8 +219,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/database"
-	authzcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
+	"github.com/kartaladev/wrkflw/database"
+	authzcasbin "github.com/kartaladev/wrkflw/internal/authz/casbin"
 )
 
 // rbacModel is a minimal model for adapter round-trip tests.
@@ -587,8 +587,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/database"
-	authzcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
+	"github.com/kartaladev/wrkflw/database"
+	authzcasbin "github.com/kartaladev/wrkflw/internal/authz/casbin"
 )
 
 func TestPGWatcherNotifiesOtherNodesNotSelf(t *testing.T) {
@@ -857,8 +857,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/casbinauthz"
-	"github.com/zakyalvan/krtlwrkflw/database"
+	"github.com/kartaladev/wrkflw/casbinauthz"
+	"github.com/kartaladev/wrkflw/database"
 )
 
 func TestNewCasbinAuthorizerFromDB_MultiNodeReload(t *testing.T) {
@@ -915,8 +915,8 @@ import (
 	"io"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	internalcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
-	"github.com/zakyalvan/krtlwrkflw/authz"
+	internalcasbin "github.com/kartaladev/wrkflw/internal/authz/casbin"
+	"github.com/kartaladev/wrkflw/authz"
 )
 
 // DBOption configures NewCasbinAuthorizerFromDB.

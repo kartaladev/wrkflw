@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Module `github.com/zakyalvan/krtlwrkflw`; no `pkg/` prefix.
+- Module `github.com/kartaladev/wrkflw`; no `pkg/` prefix.
 - **Strict TDD**, RED before GREEN.
 - **Engine/model production diff ZERO.** Changes only in `runtime/`, `internal/persistence/postgres/`, `persistence/`.
 - `workflow-` error prefix; assert `errors.Is`; black-box tests; table-test assert-closure; `t.Context()`; `clock.Clock` (clockwork test-only).

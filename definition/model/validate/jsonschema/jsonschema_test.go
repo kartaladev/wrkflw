@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
-	vjs "github.com/zakyalvan/krtlwrkflw/definition/model/validate/jsonschema"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
+	vjs "github.com/kartaladev/wrkflw/definition/model/validate/jsonschema"
 )
 
 const schemaJSON = `{

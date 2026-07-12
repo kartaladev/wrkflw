@@ -11,13 +11,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
-	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime/calllink"
+	"github.com/kartaladev/wrkflw/runtime/internal/runtimetest"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // minimalDef is a trivial single-node definition; the notifier only needs a

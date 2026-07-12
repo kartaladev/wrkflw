@@ -6,10 +6,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/service"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/service"
 )
 
 // TestErrConflict_ClosedTask verifies that ClaimTask returns service.ErrConflict

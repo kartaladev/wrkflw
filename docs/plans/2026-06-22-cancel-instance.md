@@ -319,10 +319,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/model"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 // cancelDef parks at a service task that waits on an external action result,

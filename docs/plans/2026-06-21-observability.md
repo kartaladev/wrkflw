@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Module path:** `github.com/zakyalvan/krtlwrkflw`.
+- **Module path:** `github.com/kartaladev/wrkflw`.
 - **Engine purity (Invariant #1):** `engine/` and `model/` import only stdlib (+ `model`/`authz`/`humantask`/`expreval`). **No `go.opentelemetry.io/...` import in `engine/` or `model/`** — enforced by Task 2.
 - **`Step` stays pure & deterministic (Invariants #3, #4):** observability is a read-only wrapper around `Step`; never mutate `(state, commands)`; **no new `InstanceState` field** for observability.
 - **Wiring parity:** option names/semantics match `eventing.WithLogger`/`WithTracerProvider`/`WithMeterProvider` exactly — nil arg is ignored; default logger `slog.Default()`; default providers `otel.GetTracerProvider()`/`otel.GetMeterProvider()`; metric init never fails construction (noop fallback).
@@ -48,7 +48,7 @@ import (
 	"testing"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"github.com/zakyalvan/krtlwrkflw/internal/observability"
+	"github.com/kartaladev/wrkflw/internal/observability"
 )
 
 func TestNewDefaults(t *testing.T) {
@@ -115,7 +115,7 @@ func TestInstrumentsNeverFail(t *testing.T) {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/observability/...`
-Expected: FAIL — `package github.com/zakyalvan/krtlwrkflw/internal/observability is not in std` / undefined `observability.New`.
+Expected: FAIL — `package github.com/kartaladev/wrkflw/internal/observability is not in std` / undefined `observability.New`.
 
 - [ ] **Step 3: Write minimal implementation**
 
@@ -351,9 +351,9 @@ import (
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 // Constructing a Runner with observability options must not panic and must
@@ -382,7 +382,7 @@ Expected: FAIL — undefined `runtime.WithTracerProvider`.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Add to `runtime/runner.go` imports: `"go.opentelemetry.io/otel/trace"`, `"go.opentelemetry.io/otel/metric"`, and `"github.com/zakyalvan/krtlwrkflw/internal/observability"`. Add a field to `Runner`:
+Add to `runtime/runner.go` imports: `"go.opentelemetry.io/otel/trace"`, `"go.opentelemetry.io/otel/metric"`, and `"github.com/kartaladev/wrkflw/internal/observability"`. Add a field to `Runner`:
 
 ```go
 	// obs carries the logger/tracer/meter and the pre-built process instruments.
@@ -418,10 +418,10 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/observability"
+	"github.com/kartaladev/wrkflw/internal/observability"
 )
 
-const runnerInstrumentationName = "github.com/zakyalvan/krtlwrkflw/runtime"
+const runnerInstrumentationName = "github.com/kartaladev/wrkflw/runtime"
 
 // runnerObs bundles the runner's telemetry and pre-built process instruments.
 type runnerObs struct {

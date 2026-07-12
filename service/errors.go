@@ -3,7 +3,7 @@ package service
 import (
 	"errors"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // ErrConflict classifies a wrong-state operation — one targeting an instance or

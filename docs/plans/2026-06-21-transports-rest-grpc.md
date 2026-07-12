@@ -32,13 +32,13 @@ surface lands first (independently shippable, zero new deps); gRPC lands last.
 
 ## Tech Stack
 
-- Go 1.25.7 (per `go.mod`). Module path `github.com/zakyalvan/krtlwrkflw`.
+- Go 1.25.7 (per `go.mod`). Module path `github.com/kartaladev/wrkflw`.
 - REST: stdlib `net/http`, `encoding/json`, `encoding/base64`, `errors` — **zero
   new dependencies**.
 - gRPC: `google.golang.org/grpc` + `google.golang.org/protobuf` (latest stable).
   buf + `protoc-gen-go` + `protoc-gen-go-grpc` are **dev-tooling**, not `go.mod`
   deps; generated `workflowpb` is **committed**.
-- Existing: `github.com/zakyalvan/krtlwrkflw/{engine,runtime,model,humantask,authz,clock,action}`.
+- Existing: `github.com/kartaladev/wrkflw/{engine,runtime,model,humantask,authz,clock,action}`.
 - Postgres test: `database.RunTestDatabase` (testcontainers).
 
 ## Global Constraints
@@ -114,7 +114,7 @@ type InstanceLister interface {
       "testing"
       "time"
 
-      "github.com/zakyalvan/krtlwrkflw/runtime"
+      "github.com/kartaladev/wrkflw/runtime"
   )
 
   func TestCursorRoundTrip(t *testing.T) {
@@ -661,7 +661,7 @@ type server struct {
 
 - [ ] **Author `workflow.proto`.** Define `service WorkflowService` with one RPC
   per façade op and their messages. Set
-  `option go_package = "github.com/zakyalvan/krtlwrkflw/transport/grpc/workflowpb;workflowpb";`.
+  `option go_package = "github.com/kartaladev/wrkflw/transport/grpc/workflowpb;workflowpb";`.
   Variables/payloads carry `map<string, ...>` or a `google.protobuf.Struct`
   (decide: `Struct` round-trips `map[string]any` faithfully — prefer it).
 

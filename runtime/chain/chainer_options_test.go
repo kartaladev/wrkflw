@@ -11,10 +11,10 @@ import (
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/runtime/chain"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/runtime/chain"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // TestChainerObservabilityOptionsHandleSuccessor constructs a Chainer with the

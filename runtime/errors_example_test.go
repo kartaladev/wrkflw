@@ -10,14 +10,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/flow"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/internal/runtimetest"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -109,7 +109,7 @@ func sagaDef() *model.ProcessDefinition {
 //  1. book and pay run to completion, recording their compensation actions.
 //  2. ship fails; a boundary error event catches it → instance routes to end-fail
 //     → StatusCompleted (boundary path; RootCompensations preserved for admin rollback).
-//  3. Admin delivers CompensateRequested{ToNode:""} via Runner.ApplyTrigger.
+//  3. Admin delivers CompensateRequested{ToNode:""} via ProcessDriver.ApplyTrigger.
 //  4. The driver drives the compensation InvokeAction stream to completion:
 //     refund (for pay) runs BEFORE cancel-booking (for book) — reverse order.
 //  5. Final status is StatusTerminated (full rollback, ToNode=="").

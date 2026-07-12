@@ -1633,7 +1633,7 @@ no grpc/protobuf/net-http in `engine`/`model`; `service` is transport-neutral.
   `RegisterWorkflowServiceServer` return/register into caller-provided server infrastructure. The
   consumer chooses how to compose, secure, and start the server. `wrkflw` ships no `main`.
 - **ADR-0004** — public packages at module root (no `pkg/` prefix). `service/`, `transport/rest/`,
-  `transport/grpc/` are all importable directly as `github.com/zakyalvan/krtlwrkflw/service`, etc.
+  `transport/grpc/` are all importable directly as `github.com/kartaladev/wrkflw/service`, etc.
 
 ### Deferred follow-ups (deliberate, not bugs)
 

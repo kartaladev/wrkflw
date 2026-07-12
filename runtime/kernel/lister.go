@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // ErrBadCursor is returned by DecodeCursor when the cursor is malformed.

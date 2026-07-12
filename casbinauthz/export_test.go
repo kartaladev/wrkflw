@@ -1,6 +1,6 @@
 package casbinauthz
 
-import internalcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
+import internalcasbin "github.com/kartaladev/wrkflw/internal/authz/casbin"
 
 // WithListenReady is a test-only DBOption that signals ch once the DB watcher's
 // LISTEN is established. It lets a test synchronise on the actual listen state

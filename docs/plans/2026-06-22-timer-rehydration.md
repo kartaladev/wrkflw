@@ -55,8 +55,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 func TestMemTimerStore(t *testing.T) {
@@ -136,7 +136,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // ArmedTimer is one timer currently armed (scheduled, not yet fired or cancelled).
@@ -373,7 +373,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 func TestTimerOpsFor(t *testing.T) {
@@ -510,7 +510,7 @@ func TestRunnerPersistsAndClearsTimer(t *testing.T) {
 }
 ```
 
-Add imports: `clockwork "github.com/jonboulle/clockwork"`, `"github.com/zakyalvan/krtlwrkflw/action"`. If `timerIntermediateDef` is unexported in `timer_example_test.go` (same `runtime_test` package), it is reusable directly; otherwise replicate a minimal 1h-intermediate-timer definition inline.
+Add imports: `clockwork "github.com/jonboulle/clockwork"`, `"github.com/kartaladev/wrkflw/action"`. If `timerIntermediateDef` is unexported in `timer_example_test.go` (same `runtime_test` package), it is reusable directly; otherwise replicate a minimal 1h-intermediate-timer definition inline.
 
 - [ ] **Step 7: Run** — `go test ./runtime/...` → all green. `golangci-lint run ./runtime/...` → clean.
 
@@ -548,9 +548,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 func TestRehydrateTimersResumesAfterRestart(t *testing.T) {
@@ -753,10 +753,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/database"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/database"
+	"github.com/kartaladev/wrkflw/engine"
+	pg "github.com/kartaladev/wrkflw/internal/persistence/postgres"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 func TestStorePersistsTimerOpsAtomically(t *testing.T) {
@@ -936,8 +936,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 // TimerStore is the Postgres-backed runtime.TimerStore. It reads armed timers
@@ -1028,12 +1028,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/database"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	pg "github.com/zakyalvan/krtlwrkflw/internal/persistence/postgres"
-	"github.com/zakyalvan/krtlwrkflw/model"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/database"
+	"github.com/kartaladev/wrkflw/engine"
+	pg "github.com/kartaladev/wrkflw/internal/persistence/postgres"
+	"github.com/kartaladev/wrkflw/model"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 func TestPostgresTimerRehydrationResumesAfterRestart(t *testing.T) {

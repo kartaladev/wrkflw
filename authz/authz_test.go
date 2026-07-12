@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/kartaladev/wrkflw/authz"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/authz"
 )
 
 func TestAllowAll(t *testing.T) {

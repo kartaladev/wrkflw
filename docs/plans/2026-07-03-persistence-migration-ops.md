@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Go 1.25**; single module `github.com/zakyalvan/krtlwrkflw`.
+- **Go 1.25**; single module `github.com/kartaladev/wrkflw`.
 - **Library-first (CLAUDE.md):** no shipped daemon/binary; the migration CLI lives in `examples/` as reference wiring only. No auto-migrate on import or on `Open*`.
 - **No new runtime dependency.** goose v3 is already present; the CLI uses stdlib `flag` (no cobra).
 - **Constructor convention (ADR-0083):** stateful constructors taking a required non-nilable dependency return `(T, error)` and reject nil (incl. typed-nil) with a wrapped `ErrNilDependency`.
@@ -439,8 +439,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/kartaladev/wrkflw/internal/persistence/store"
+	"github.com/kartaladev/wrkflw/persistence"
 )
 
 func rawSQLite(t *testing.T) *sql.DB {
@@ -503,7 +503,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
+	"github.com/kartaladev/wrkflw/internal/persistence/store"
 )
 
 // Migrator drives schema migrations for one backend. Construct it with the
@@ -614,7 +614,7 @@ Append to `persistence/migrator_test.go`:
 ```go
 import (
 	// add to the existing import block:
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
 )
 
 func TestMigrator_Postgres_Introspection(t *testing.T) {
@@ -753,7 +753,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "modernc.org/sqlite"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/kartaladev/wrkflw/persistence"
 )
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout)) }
@@ -908,7 +908,7 @@ import (
 	_ "modernc.org/sqlite"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
 )
 
 // colFacts is the logical (dialect-independent) shape of one column. Physical
@@ -1095,7 +1095,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/kartaladev/wrkflw/persistence"
 )
 
 func TestWarnUnsafeConfig(t *testing.T) {

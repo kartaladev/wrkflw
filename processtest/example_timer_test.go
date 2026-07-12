@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
-	"github.com/zakyalvan/krtlwrkflw/processtest"
+	"github.com/kartaladev/wrkflw/definition"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/processtest"
 )
 
 // Example_timerFlow drives a timer-based definition to completion using the

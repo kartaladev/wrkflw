@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 // mustExec executes a SQL statement via database.From and fails the test on error.

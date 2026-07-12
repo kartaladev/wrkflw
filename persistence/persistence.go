@@ -30,14 +30,14 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime/calllink"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/persistence/store"
+	"github.com/kartaladev/wrkflw/runtime/calllink"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/monitor"
 )
 
 // InstanceStore is the stable public interface for the Postgres-backed store.
@@ -92,8 +92,8 @@ type Relay interface {
 	// (quarantined after exhausting MaxDeliveryAttempts), and the age of the
 	// oldest pending row (zero when there are no pending rows).
 	//
-	// Implements [kernel.OutboxStatsReader] — callers that previously
-	// type-asserted to that interface can call this method directly.
+	// Implements [kernel.OutboxStatsReader] — callers can call this method
+	// directly.
 	OutboxStats(ctx context.Context) (kernel.OutboxStats, error)
 }
 
@@ -102,7 +102,7 @@ type OutboxPublisher = kernel.OutboxPublisher
 
 // Option configures the Store returned by OpenPostgres (alias of the neutral
 // store.Option). The same underlying type also backs OpenMySQL's MySQLOption:
-// the two backends share one option surface after the store-unification refactor.
+// the two backends share one option surface.
 type Option = store.Option
 
 // WithHistoryCap bounds the inline instance History persisted in the snapshot
@@ -369,7 +369,7 @@ func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (kernel.I
 
 // CallLinkOption configures a CallLinkStore returned by NewCallLinkStore
 // (alias of the neutral store.CallLinkOption). The same underlying type backs
-// NewMySQLCallLinkStore's MySQLCallLinkOption after store unification.
+// NewMySQLCallLinkStore's MySQLCallLinkOption.
 type CallLinkOption = store.CallLinkOption
 
 // WithCallLinkLease configures opt-in lease-based multi-replica exclusivity on

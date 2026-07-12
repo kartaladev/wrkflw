@@ -8,12 +8,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 // TestCatalogRegistryLazyDefault verifies that a Catalog/Registry default policy is
 // applied lazily at Resolve, only to an action that declares no policy of its own,
-// and that NewCatalog(m)/NewRegistry() with no opts stay bare (back-compatible).
+// and that NewCatalog(m)/NewRegistry() with no opts stay bare (no default policy).
 func TestCatalogRegistryLazyDefault(t *testing.T) {
 	t.Parallel()
 

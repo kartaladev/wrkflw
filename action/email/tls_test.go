@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/action/email"
+	"github.com/kartaladev/wrkflw/action/email"
 )
 
 // generateSelfSignedCert creates a self-signed TLS certificate for localhost.

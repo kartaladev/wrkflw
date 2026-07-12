@@ -9,18 +9,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/flow"
-	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/processtest"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/definition/gateway"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/processtest"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/internal/runtimetest"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/signal"
 )
 
 // messageCatchDef returns: start → message-catch(name, correlationKey="orderId") → end.
@@ -118,7 +118,7 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 	assert.Equal(t, engine.StatusCompleted, final2.Status, "inst-2 must complete")
 }
 
-// TestRunnerThrowSignalWithoutBusErrors verifies that a Runner without a SignalBus
+// TestRunnerThrowSignalWithoutBusErrors verifies that a ProcessDriver without a SignalBus
 // returns a descriptive error when it encounters a ThrowSignal command.
 func TestRunnerThrowSignalWithoutBusErrors(t *testing.T) {
 	// Process: start → throw("approved") → end.

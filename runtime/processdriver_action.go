@@ -14,11 +14,11 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // terminalErr derives a short, human-readable error message from a terminal
@@ -413,9 +413,9 @@ func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefi
 		}
 
 		// Synchronous path (opt-out: driver.callLinks == nil): run the child to completion
-		// in-process. This is the VERBATIM original behavior.
+		// in-process.
 
-		// Fix 2: Recursion / cycle depth guard.
+		// Recursion / cycle depth guard.
 		//
 		// A definition whose call activity references itself (direct: A→A, or via a
 		// cycle: A→B→A) causes unbounded synchronous recursion through perform →
@@ -454,7 +454,7 @@ func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefi
 			return engine.NewSubInstanceCompleted(driver.clk.Now(), cmd.CommandID, childSt.Variables), nil
 
 		case engine.StatusRunning:
-			// Fix 1: Explicit parked-child error.
+			// Explicit parked-child error.
 			//
 			// The child parked (StatusRunning) without completing. This happens when
 			// the child contains a node that requires external input — a human task,

@@ -7,10 +7,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // ErrAmbiguousMessageStart is returned by DeliverMessage when a message name
@@ -23,7 +23,7 @@ var ErrAmbiguousMessageStart = errors.New("workflow-runtime: ambiguous message s
 // engine. It first tries to correlate the message to a RUNNING instance parked
 // on it (intermediate catch / message boundary / event-based-gateway arm); the
 // matched instance's definition is resolved from its own snapshot, so the caller
-// no longer supplies one. When no running waiter matches, the message may START
+// need not supply one. When no running waiter matches, the message may START
 // a new instance from a unique message-start event (ADR-0121).
 //
 // Message-start dedup breadth depends on how the start is configured (ADR-0121):

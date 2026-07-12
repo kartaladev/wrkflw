@@ -20,7 +20,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
 )
 
 // Compile-time assertion: redisCache satisfies cache.Cache but NOT cache.ValueCache.

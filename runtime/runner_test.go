@@ -12,17 +12,17 @@ import (
 
 	"github.com/jonboulle/clockwork"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/flow"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/processtest"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/processtest"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/internal/runtimetest"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // errStore is an InstanceStore whose Create and Commit always fail with a concurrency error.
@@ -131,11 +131,11 @@ func userTaskOnlyDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRunnerUserTaskWithoutDepsErrors verifies that a Runner constructed without
-// human-task dependencies (nil resolver and nil TaskStore) returns a descriptive
-// error — rather than panicking — when it reaches an AwaitHuman command.
+// TestRunnerUserTaskWithoutDepsErrors verifies that a ProcessDriver constructed
+// without human-task dependencies (nil resolver and nil TaskStore) returns a
+// descriptive error — rather than panicking — when it reaches an AwaitHuman command.
 func TestRunnerUserTaskWithoutDepsErrors(t *testing.T) {
-	// Build a Runner with no human-task option (nil resolver and nil tasks).
+	// Build a ProcessDriver with no human-task option (nil resolver and nil tasks).
 	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), runtimetest.MustMemStore(t))
 	// WithHumanTasks intentionally omitted to test error path.
 
@@ -284,7 +284,7 @@ func TestDeliverLoopPropagatesConcurrentUpdate(t *testing.T) {
 		"ErrConcurrentUpdate from Create must be surfaced via errors.Is")
 }
 
-// TestNewRunnerDefaultUsesSystemClock verifies that a Runner constructed without a
+// TestNewRunnerDefaultUsesSystemClock verifies that a ProcessDriver constructed without a
 // clock option stamps instance StartedAt from the system clock (within a real-time bracket).
 func TestNewRunnerDefaultUsesSystemClock(t *testing.T) {
 	cat := action.NewCatalog(map[string]action.Action{

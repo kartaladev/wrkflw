@@ -12,8 +12,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/action/email"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/action/email"
 )
 
 // startPlaintextSMTPStub starts a minimal in-process SMTP stub that advertises NO

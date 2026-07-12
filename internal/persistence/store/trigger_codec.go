@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // Trigger kind discriminators stored in wrkflw_journal.kind.

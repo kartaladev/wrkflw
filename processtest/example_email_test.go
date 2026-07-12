@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/action/email"
-	"github.com/zakyalvan/krtlwrkflw/processtest"
+	"github.com/kartaladev/wrkflw/action/email"
+	"github.com/kartaladev/wrkflw/processtest"
 )
 
 // ExampleCaptureSender demonstrates capturing emails sent by the real

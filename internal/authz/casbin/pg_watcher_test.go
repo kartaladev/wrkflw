@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	authzcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
+	authzcasbin "github.com/kartaladev/wrkflw/internal/authz/casbin"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
 )
 
 func TestPGWatcherNotifiesOtherNodesNotSelf(t *testing.T) {
@@ -18,7 +18,7 @@ func TestPGWatcherNotifiesOtherNodesNotSelf(t *testing.T) {
 
 	// Each watcher signals its ready channel once LISTEN is established, so the
 	// test synchronises on the ACTUAL listen state rather than a sleep — closing
-	// the NOTIFY-before-LISTEN race that previously made this test flaky.
+	// the NOTIFY-before-LISTEN race.
 	readyA := make(chan struct{}, 1)
 	readyB := make(chan struct{}, 1)
 

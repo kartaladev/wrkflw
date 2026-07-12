@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/zakyalvan/krtlwrkflw/service"
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/service"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 // handle registers a single handler on mux using stdlib's "METHOD path" pattern

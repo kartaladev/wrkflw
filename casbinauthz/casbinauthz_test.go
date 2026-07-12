@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/casbinauthz"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/casbinauthz"
 )
 
 // policy exercises the role graph and privilege check.

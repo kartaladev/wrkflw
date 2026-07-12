@@ -7,8 +7,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // ErrInstanceNotFound is returned by Store.Load when no instance exists for the id.
@@ -40,8 +40,8 @@ type OutboxEvent struct {
 	InstanceID string
 	// DefinitionRef is the id:version reference of the instance that produced the
 	// event, carried through to a consumer (e.g. chaining's PredecessorDefinitionRef).
-	// It is best-effort routing context — the zero Qualifier for events/rows
-	// produced before ADR-0047.
+	// It is best-effort routing context — the zero Qualifier when the producing
+	// path supplies no definition reference.
 	DefinitionRef model.Qualifier
 }
 

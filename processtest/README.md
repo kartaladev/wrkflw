@@ -4,7 +4,7 @@ Package `processtest` is an in-memory test harness for driving **your** workflow
 definitions to completion — without hand-rolling the park/deliver loop, without
 Docker, and deterministically.
 
-Import path: `github.com/zakyalvan/krtlwrkflw/processtest`
+Import path: `github.com/kartaladev/wrkflw/processtest`
 
 `processtest` is the consumer-facing counterpart to the engine: you build a
 process definition with `definition`, then use a `processtest.Harness` to run an

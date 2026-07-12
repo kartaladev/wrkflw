@@ -3,7 +3,7 @@ package cachetest_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/cachetest"
+	"github.com/kartaladev/wrkflw/persistence/cache/cachetest"
 )
 
 func TestRunTestRedisReturnsAddr(t *testing.T) {

@@ -35,7 +35,7 @@ ADR-0010. Read both before starting.
 ## Tech Stack
 
 Go 1.25.7 · `github.com/casbin/casbin/v2 v2.135.0` (with bundled `model` and
-`persist/string-adapter`) · existing `github.com/zakyalvan/krtlwrkflw/expreval`
+`persist/string-adapter`) · existing `github.com/kartaladev/wrkflw/expreval`
 for the attribute predicate.
 
 ## Global Constraints
@@ -98,8 +98,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	casbinauthz "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
+	"github.com/kartaladev/wrkflw/authz"
+	casbinauthz "github.com/kartaladev/wrkflw/internal/authz/casbin"
 )
 
 const testModel = `
@@ -239,8 +239,8 @@ import (
 
 	casbinv2 "github.com/casbin/casbin/v2"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/expreval"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/expreval"
 )
 
 // Authorizer is a hybrid authz.Authorizer: casbin owns the RBAC role graph and
@@ -405,8 +405,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/casbinauthz"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/casbinauthz"
 )
 
 const policy = `
@@ -451,8 +451,8 @@ import (
 	casbinmodel "github.com/casbin/casbin/v2/model"
 	stringadapter "github.com/casbin/casbin/v2/persist/string-adapter"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	internalcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
+	"github.com/kartaladev/wrkflw/authz"
+	internalcasbin "github.com/kartaladev/wrkflw/internal/authz/casbin"
 )
 
 // DefaultModel is a combined RBAC (g) + resource-privilege (p) casbin model used

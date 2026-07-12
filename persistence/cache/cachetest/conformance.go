@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
 )
 
 // RunConformance exercises the behavioral contract every cache.Cache must honor.

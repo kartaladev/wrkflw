@@ -6,8 +6,8 @@ import (
 
 	fiberlib "github.com/gofiber/fiber/v3"
 
-	"github.com/zakyalvan/krtlwrkflw/service"
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/service"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 // InstanceRoutes mounts the process-instance routes onto a fiber.Router:

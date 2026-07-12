@@ -8,13 +8,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate/callback"
-	vexpr "github.com/zakyalvan/krtlwrkflw/definition/model/validate/expr"
+	"github.com/kartaladev/wrkflw/definition"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/model/validate/callback"
+	vexpr "github.com/kartaladev/wrkflw/definition/model/validate/expr"
 )
 
 // TestStartValidation_WireRoundTrip marshals a StartEvent carrying an expr

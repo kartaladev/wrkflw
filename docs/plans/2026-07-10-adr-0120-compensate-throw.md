@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Go 1.25**; module `github.com/zakyalvan/krtlwrkflw`.
+- **Go 1.25**; module `github.com/kartaladev/wrkflw`.
 - **TDD strict** (CLAUDE.md): failing test (visible RED via `go test ./<pkg>/...`) before implementation, for every new symbol/behaviour. Deletion/refactor keeps existing tests green before AND after; new behaviour (e.g. the ITE→new-type wire-name change) gets its own RED first.
 - **BPMN conformance is the baseline** (user directive): default behavior must match BPMN compensation-throw — throwing-scope, reverse order, throw-then-continue (non-terminating), compensate-once, no propagation to enclosing scopes. The configurable root record breadth (`ScopeLocal`) is an addition, off by default.
 - **Black-box tests** (`package <pkg>_test`); pair each `.go` with a same-named `_test.go`. Table tests use the project `table-test` skill: `assert`-closure form, `t.Context()` over `context.Background()`.
@@ -84,8 +84,8 @@ package event_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 func TestNewCompensateThrow(t *testing.T) {

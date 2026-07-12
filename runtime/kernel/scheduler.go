@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 // ErrUnsupportedTrigger is returned by a [Scheduler.Schedule] call when the

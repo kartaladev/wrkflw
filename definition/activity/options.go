@@ -1,9 +1,9 @@
 package activity
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 // Option-scoping convention: an option valid on only a subset of activity kinds

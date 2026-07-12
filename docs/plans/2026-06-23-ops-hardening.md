@@ -5,7 +5,7 @@
 **Goal:** Three non-engine persistence-hardening items: `Deduper.Prune`, `MarkNotified` clock injection, `AdvisoryLockOwnership` close guard. Engine/model ZERO diff.
 
 ## Global Constraints
-- Module `github.com/zakyalvan/krtlwrkflw`; no `pkg/` prefix.
+- Module `github.com/kartaladev/wrkflw`; no `pkg/` prefix.
 - Strict TDD; RED before GREEN.
 - Engine/model production diff ZERO. Changes only in `internal/persistence/postgres` + `persistence`.
 - `workflow-` error prefix; assert `errors.Is`; testcontainers via `database.RunTestDatabase`; `-p 1`.

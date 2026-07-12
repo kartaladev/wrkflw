@@ -70,8 +70,8 @@ collectors and pass them a reader that implements the relevant interface.
 
 ```go
 import (
-    "github.com/zakyalvan/krtlwrkflw/runtime"
-    "github.com/zakyalvan/krtlwrkflw/observability"
+    "github.com/kartaladev/wrkflw/runtime"
+    "github.com/kartaladev/wrkflw/observability"
 )
 
 // relay is a *persistence.Relay (or any runtime.OutboxStatsReader)
@@ -118,8 +118,8 @@ alongside any other checks in your `rest.NewHealthHandler`:
 
 ```go
 import (
-    "github.com/zakyalvan/krtlwrkflw/persistence"
-    "github.com/zakyalvan/krtlwrkflw/rest"
+    "github.com/kartaladev/wrkflw/persistence"
+    "github.com/kartaladev/wrkflw/rest"
 )
 
 // relay implements persistence.OutboxStatsReader

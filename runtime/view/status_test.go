@@ -3,8 +3,8 @@ package view_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime/view"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime/view"
 )
 
 // TestStatusString verifies that StatusString maps every engine.Status value to

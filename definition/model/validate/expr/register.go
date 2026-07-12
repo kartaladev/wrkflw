@@ -1,6 +1,6 @@
 package expr
 
-import "github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+import "github.com/kartaladev/wrkflw/definition/model/validate"
 
 // init self-registers the expr kind in the process-global DefaultRegistry so
 // durably-persisted definitions carrying an expr `validation` descriptor

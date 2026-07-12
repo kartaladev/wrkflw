@@ -3,11 +3,11 @@ package transaction_test
 import (
 	"testing"
 
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database/transaction"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/database/transaction"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 func TestJoinInnerCommitIsNoopOuterControls(t *testing.T) {
@@ -57,8 +57,7 @@ func TestJoinInnerRollbackMarksWholeUnit(t *testing.T) {
 }
 
 // TestJoinOrBeginFallsBackToBegin verifies that JoinOrBegin starts a fresh
-// transaction when no ambient transaction is in ctx (covers the else-branch,
-// previously at 50% coverage).
+// transaction when no ambient transaction is in ctx (covers the else-branch).
 func TestJoinOrBeginFallsBackToBegin(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	base, err := database.From(pool)

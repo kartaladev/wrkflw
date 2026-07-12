@@ -6,16 +6,15 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // TestEndEventWireRoundTrip verifies EndEvent's behavior discriminator and its
 // terminate payload (Behavior, TerminationReason, Outcome) survive a JSON
 // round-trip through ProcessDefinition's MarshalJSON/UnmarshalJSON, which
-// flattens nodes via the model.NodeWire kind registry. The wire shape now uses
-// the name-based endBehavior discriminator, not the retired forceTermination
-// bool (ADR-0127).
+// flattens nodes via the model.NodeWire kind registry. The wire shape carries
+// the name-based endBehavior discriminator (ADR-0127).
 func TestEndEventWireRoundTrip(t *testing.T) {
 	t.Parallel()
 

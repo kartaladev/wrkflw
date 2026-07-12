@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // ErrDefinitionNotFound is returned by DefinitionRegistry.Lookup when no

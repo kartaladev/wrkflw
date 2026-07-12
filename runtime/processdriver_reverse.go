@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // ReverseOption configures a [ProcessDriver.ReverseInstance] call. Construct
@@ -40,9 +40,6 @@ func WithFullReverse() ReverseOption {
 // instance started with no variables at all and nodeID was the first
 // recorded node), the current variables are left untouched rather than being
 // wiped to an empty map.
-//
-// This restore-on-target-reverse behavior is a BREAKING change: previously
-// WithTargetNode kept the instance's current variables as-is.
 //
 // nodeID is matched against [engine.CompensationRecord.NodeID]. When the same
 // node was visited more than once (e.g. a retry loop), the walk resolves to the

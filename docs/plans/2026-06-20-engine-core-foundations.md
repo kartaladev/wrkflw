@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Go **1.25** (hard requirement; `go.mod` declares `go 1.25`).
-- Module path: **`github.com/zakyalvan/krtlwrkflw`** (ADR-0004); public packages at the module root, **no `pkg/` prefix**.
+- Module path: **`github.com/kartaladev/wrkflw`** (ADR-0004); public packages at the module root, **no `pkg/` prefix**.
 - The core (`engine/`, `model/`) imports **no** transport/storage/bus/time-vendor packages, and **never calls `time.Now()`** — time enters as `Trigger.OccurredAt` (ADR-0002/0003).
 - `Step` is **deterministic**: identical `(state, trigger)` ⇒ identical `(state, commands)`. CommandID/Token IDs derive from in-state counters, never from randomness or the clock.
 - `Step` is **pure**: it must not mutate its input `InstanceState`; it returns a new value.
@@ -23,7 +23,7 @@
 ## File Structure
 
 ```
-go.mod                          # module github.com/zakyalvan/krtlwrkflw, go 1.25
+go.mod                          # module github.com/kartaladev/wrkflw, go 1.25
 .golangci.yml                   # baseline linter config
 model/
   definition.go                 # ProcessDefinition, Node, NodeKind, SequenceFlow + lookups
@@ -66,15 +66,15 @@ Each task below is self-contained and ends with a green test and a commit.
 Run:
 ```bash
 cd /Users/zakyalvan/Documents/RND/wrkflw
-go mod init github.com/zakyalvan/krtlwrkflw
+go mod init github.com/kartaladev/wrkflw
 ```
-Expected: creates `go.mod` containing `module github.com/zakyalvan/krtlwrkflw` and a `go 1.25` line.
+Expected: creates `go.mod` containing `module github.com/kartaladev/wrkflw` and a `go 1.25` line.
 
 - [ ] **Step 2: Pin the Go version line**
 
 Open `go.mod` and ensure it reads exactly:
 ```
-module github.com/zakyalvan/krtlwrkflw
+module github.com/kartaladev/wrkflw
 
 go 1.25
 ```
@@ -128,7 +128,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/kartaladev/wrkflw/model"
 )
 
 func linearDef() *model.ProcessDefinition {
@@ -329,7 +329,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/kartaladev/wrkflw/model"
 )
 
 func TestValidate(t *testing.T) {
@@ -519,7 +519,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/kartaladev/wrkflw/clock"
 )
 
 func TestSystemClockNow(t *testing.T) {
@@ -603,7 +603,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 func TestTriggersCarryOccurredAt(t *testing.T) {
@@ -726,7 +726,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 func TestCommandsImplementInterface(t *testing.T) {
@@ -922,8 +922,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/model"
 )
 
 func linearDef() *model.ProcessDefinition {
@@ -1036,7 +1036,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/kartaladev/wrkflw/model"
 )
 
 var (
@@ -1301,7 +1301,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 func TestMapCatalogResolveAndRun(t *testing.T) {
@@ -1406,7 +1406,7 @@ Create `runtime/ports.go`:
 // later sub-projects replace the in-memory ports with real implementations.
 package runtime
 
-import "github.com/zakyalvan/krtlwrkflw/engine"
+import "github.com/kartaladev/wrkflw/engine"
 
 // StateStore persists the authoritative instance snapshot.
 type StateStore interface {
@@ -1429,7 +1429,7 @@ Create `runtime/memory.go`:
 ```go
 package runtime
 
-import "github.com/zakyalvan/krtlwrkflw/engine"
+import "github.com/kartaladev/wrkflw/engine"
 
 type memStateStore struct{ m map[string]engine.InstanceState }
 
@@ -1503,11 +1503,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/model"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 func linearDef() *model.ProcessDefinition {
@@ -1564,10 +1564,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/model"
 )
 
 // Runner is the reference single-process driver loop.

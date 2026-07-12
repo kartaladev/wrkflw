@@ -12,12 +12,12 @@
 
 - **Language:** Go 1.25 (hard requirement).
 - **TDD strict:** No production code before a failing test. Every new exported symbol and behavioral change is preceded by a Bash `go test ./<package>/...` run showing red (a compile error like `undefined: idgen.XID` is a valid red state). Never create test + impl in one edit pass with no `go test` between them.
-- **Package location:** the generator lives in the NEW nested package `runtime/idgen` (module path `github.com/zakyalvan/krtlwrkflw/runtime/idgen`) — NOT a new root package, NOT in `engine` (engine stays vendor-pure).
+- **Package location:** the generator lives in the NEW nested package `runtime/idgen` (module path `github.com/kartaladev/wrkflw/runtime/idgen`) — NOT a new root package, NOT in `engine` (engine stays vendor-pure).
 - **Generator interface:** `NewID() (string, error)` — the error lets a rare UUID v7 entropy failure surface as a clean `StartInstance` error. `xid` never errors (returns nil).
 - **Default strategy:** `idgen.XID()`. Options are nil-guarded and preserve the default (mirror `WithClock`).
 - **Derived IDs untouched:** command IDs, task tokens, timer IDs, outbox dedup keys, and child-instance IDs (`<parent>-sub-cN`) keep embedding the InstanceID verbatim — do NOT modify them.
 - **Error sentinels:** message prefix `workflow-<package>:` (e.g. `workflow-idgen:`).
-- **Module path:** `github.com/zakyalvan/krtlwrkflw`.
+- **Module path:** `github.com/kartaladev/wrkflw`.
 - **Coverage:** each touched package ≥ 85% line coverage (`go test -race -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1`).
 - **Lint:** `golangci-lint run ./...` clean before any task is "done".
 - **Docs:** ADRs use the Nygard template under `docs/adr/NNNN-<slug>.md`; next free number is **0100**.
@@ -55,7 +55,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime/idgen"
+	"github.com/kartaladev/wrkflw/runtime/idgen"
 )
 
 func TestXID(t *testing.T) {
@@ -209,9 +209,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/idgen"
+	"github.com/kartaladev/wrkflw/definition"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/idgen"
 )
 
 // minimalDef builds a trivial single-node definition that starts and ends.
@@ -277,7 +277,7 @@ In `runtime/processdriver.go`, add the field to the `ProcessDriver` struct (afte
 ```go
 	idgen      idgen.Generator
 ```
-Add the import `"github.com/zakyalvan/krtlwrkflw/runtime/idgen"`.
+Add the import `"github.com/kartaladev/wrkflw/runtime/idgen"`.
 
 In `NewProcessDriver`, add the default to the struct literal (alongside `clk: clock.System(),`):
 ```go
@@ -358,8 +358,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime/idgen"
-	"github.com/zakyalvan/krtlwrkflw/service"
+	"github.com/kartaladev/wrkflw/runtime/idgen"
+	"github.com/kartaladev/wrkflw/service"
 )
 
 func TestStartInstanceGeneratesID(t *testing.T) {
@@ -430,7 +430,7 @@ In `service/service.go`:
       return NewProcessInstance(def, st), nil
   }
   ```
-- Add the import `"github.com/zakyalvan/krtlwrkflw/runtime/idgen"`.
+- Add the import `"github.com/kartaladev/wrkflw/runtime/idgen"`.
 
 In `service/options.go`, add after `WithClock`:
 ```go

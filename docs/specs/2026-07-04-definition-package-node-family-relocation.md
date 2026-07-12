@@ -170,7 +170,7 @@ Deserializing needs the kinds registered. `definition/kinds` blank-imports the
 three leaves; **all deserialization paths (persistence, REST/gRPC decode) import
 `definition/kinds`.** If a kind is not registered, `FromWire` lookup returns a
 **loud, actionable error** — `workflow-definition: node kind %q not registered
-(blank-import github.com/zakyalvan/krtlwrkflw/definition/kinds)` — never a silent
+(blank-import github.com/kartaladev/wrkflw/definition/kinds)` — never a silent
 zero-value. A package-level test asserts all 19 kinds round-trip, guarding against
 a leaf forgetting to register.
 
@@ -205,8 +205,8 @@ Applied inside `definition` as the machinery is reshaped:
 
   ```go
   import (
-      "github.com/zakyalvan/krtlwrkflw/definition/activity"
-      "github.com/zakyalvan/krtlwrkflw/definition/build"
+      "github.com/kartaladev/wrkflw/definition/activity"
+      "github.com/kartaladev/wrkflw/definition/build"
   )
   def, err := build.New("order", 1).
       AddStart("s").

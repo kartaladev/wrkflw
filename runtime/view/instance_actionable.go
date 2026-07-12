@@ -1,8 +1,8 @@
 package view
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // NextAction describes a single outgoing sequence flow from a task node —

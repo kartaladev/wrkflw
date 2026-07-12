@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 func TestTriggerSpecKinds(t *testing.T) {

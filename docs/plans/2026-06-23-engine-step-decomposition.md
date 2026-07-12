@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Go 1.25; single `go.mod`; module `github.com/zakyalvan/krtlwrkflw`; flat root layout (ADR-0004).
+- Go 1.25; single `go.mod`; module `github.com/kartaladev/wrkflw`; flat root layout (ADR-0004).
 - **Pure refactor:** no behavior change, no change to `Step`'s `(StepResult, error)` contract or any exported signature. Per CLAUDE.md, pure refactors need no new behavioral tests, but the existing suite MUST be green before AND after every task. The single *new* test is the strategy-registry completeness test (TDD'd in Task 2).
 - **ADR-0002 purity:** `Step` stays a pure function — no I/O, no clock reads (time arrives as `at time.Time`), no goroutines. Strategies are **stateless zero-size structs**; the registry is built once at package init and never mutated.
 - **Preserve the non-exhaustive fall-through:** the registry holds ONLY kinds with a `drive()` arm today; all other kinds must keep falling through to the existing post-switch logic identically.
@@ -124,7 +124,7 @@ package engine
 import (
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/kartaladev/wrkflw/model"
 )
 
 type stepCtx struct {

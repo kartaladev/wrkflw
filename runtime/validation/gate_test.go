@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
-	"github.com/zakyalvan/krtlwrkflw/runtime/validation"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/runtime/validation"
 )
 
 // funcValidator adapts a func to the validate.Validator port for tests.

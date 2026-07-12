@@ -6,7 +6,7 @@ package engine
 import (
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
+	"github.com/kartaladev/wrkflw/authz"
 )
 
 // Trigger is the sealed set of things that drive the next step: initiating

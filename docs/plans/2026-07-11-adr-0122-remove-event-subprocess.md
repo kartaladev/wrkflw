@@ -148,7 +148,7 @@ git commit -m "feat(definition): StartEvent.NonInterrupting + WithNonInterruptin
 Run: `go test ./engine/... -run 'ESP|EventSubprocess|EventSubProcess|Subprocess' -v 2>&1 | tail -30`
 Expected: PASS (this is the behavior to preserve).
 
-- [ ] **Step 2: Add the discriminator.** In `engine/step_eventsubprocess.go`, add (import `activity` "github.com/zakyalvan/krtlwrkflw/definition/activity"):
+- [ ] **Step 2: Add the discriminator.** In `engine/step_eventsubprocess.go`, add (import `activity` "github.com/kartaladev/wrkflw/definition/activity"):
 
 ```go
 func eventSubprocessNested(raw model.Node) (*model.ProcessDefinition, bool, bool) {

@@ -20,8 +20,8 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
-	watermillpub "github.com/zakyalvan/krtlwrkflw/internal/eventing/watermill"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	watermillpub "github.com/kartaladev/wrkflw/internal/eventing/watermill"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/service"
+	"github.com/kartaladev/wrkflw/service"
 )
 
 // TestEngineLifecycleOwnedDriver verifies that a zero-config engine (which owns

@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // Compile-time assertions.

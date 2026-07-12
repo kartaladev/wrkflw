@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Go 1.25**; module path `github.com/zakyalvan/krtlwrkflw`.
+- **Go 1.25**; module path `github.com/kartaladev/wrkflw`.
 - **TDD strict** (CLAUDE.md): no production code before a failing test. Every new symbol / behavioural change gets a visible RED (`go test ./<pkg>/...` fails) before GREEN. Deletion/refactor tasks keep existing tests green before AND after; new *behaviour* within them (e.g. a retired wire name now erroring) gets its own RED test first.
 - **Black-box tests** (`package <pkg>_test`) preferred. Pair each `.go` with a same-named `_test.go`.
 - **Table tests** use the project `table-test` skill: `assert` closure form (not `want`/`wantErr` fields), `t.Context()` over `context.Background()`.
@@ -65,7 +65,7 @@ package event_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/event"
 )
 
 func TestTerminationOutcomeString(t *testing.T) {
@@ -283,8 +283,8 @@ package event_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 func TestEndEventWireRoundTrip(t *testing.T) {
@@ -489,7 +489,7 @@ package engine_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/event"
 	// ... same imports the neighbouring engine behaviour tests use
 )
 
@@ -706,7 +706,7 @@ Create `runtime/export_test.go`:
 ```go
 package runtime
 
-import "github.com/zakyalvan/krtlwrkflw/definition/model"
+import "github.com/kartaladev/wrkflw/definition/model"
 
 // ExportForceTerminationWarnings exposes forceTerminationWarnings to black-box tests.
 func ExportForceTerminationWarnings(d *model.ProcessDefinition) []string {
@@ -714,7 +714,7 @@ func ExportForceTerminationWarnings(d *model.ProcessDefinition) []string {
 }
 ```
 
-In `runtime/definition_registry.go`, add imports (`log/slog`, `github.com/zakyalvan/krtlwrkflw/definition/event`) and:
+In `runtime/definition_registry.go`, add imports (`log/slog`, `github.com/kartaladev/wrkflw/definition/event`) and:
 
 ```go
 // forceTerminationWarnings returns a non-fatal warning for each force-termination

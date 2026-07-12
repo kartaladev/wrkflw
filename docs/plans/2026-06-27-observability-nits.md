@@ -1,7 +1,7 @@
 # Plan — L1: Observability nits
 
 Spec: `docs/specs/2026-06-27-observability-nits-design.md`. ADR: `docs/adr/0070-observability-nits.md`.
-Branch: `feat/observability-nits`. Module: `github.com/zakyalvan/krtlwrkflw`.
+Branch: `feat/observability-nits`. Module: `github.com/kartaladev/wrkflw`.
 
 ## Global Constraints (binding — copy to reviewers verbatim)
 
@@ -27,7 +27,7 @@ Branch: `feat/observability-nits`. Module: `github.com/zakyalvan/krtlwrkflw`.
   test asserting `wrkflw_callnotifier_links_notified_total` increments by the number of links notified.
 - Green: add `tel observability.Telemetry` + staged `logOpt/tpOpt/mpOpt` + options
   `WithCallNotifierLogger`/`WithCallNotifierTracerProvider`/`WithCallNotifierMeterProvider`; assemble
-  `tel` in the constructor (scope `github.com/zakyalvan/krtlwrkflw/runtime`); wrap `DrainOnce` in the
+  `tel` in the constructor (scope `github.com/kartaladev/wrkflw/runtime`); wrap `DrainOnce` in the
   span and record the counter. Confirm existing CallNotifier callers/constructor signature stay
   compatible (options are additive/variadic).
 

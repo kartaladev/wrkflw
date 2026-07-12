@@ -10,10 +10,10 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/kartaladev/wrkflw/internal/persistence/store"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tcmysql "github.com/testcontainers/testcontainers-go/modules/mysql"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 )
 
 const (

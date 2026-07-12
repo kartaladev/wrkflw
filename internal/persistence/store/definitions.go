@@ -10,11 +10,11 @@ import (
 
 	// kinds registers every node kind so definitions read back from the store
 	// deserialize into their concrete types (see definition/kinds).
-	_ "github.com/zakyalvan/krtlwrkflw/definition/kinds"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	_ "github.com/kartaladev/wrkflw/definition/kinds"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // DefinitionStore is the vendor-neutral, dialect-parametrised durable

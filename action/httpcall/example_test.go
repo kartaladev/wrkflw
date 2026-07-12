@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/zakyalvan/krtlwrkflw/action/httpcall"
+	"github.com/kartaladev/wrkflw/action/httpcall"
 )
 
 func ExampleNewHTTPCall() {

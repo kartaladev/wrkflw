@@ -1,8 +1,8 @@
 package engine
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // compensateActionOf returns the CompensateAction of an activity node, or "".

@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
+	"github.com/kartaladev/wrkflw/persistence"
 )
 
 // TestPrunerFacade verifies the public persistence.Pruner surfaces every

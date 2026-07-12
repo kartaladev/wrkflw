@@ -4,7 +4,7 @@ import (
 	"net/smtp"
 	"sync"
 
-	"github.com/zakyalvan/krtlwrkflw/action/email"
+	"github.com/kartaladev/wrkflw/action/email"
 )
 
 // SentEmail is one message captured by a [CaptureSender].

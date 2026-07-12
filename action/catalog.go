@@ -20,8 +20,8 @@ type MapCatalog map[string]Action
 // NewCatalog wraps m in a read-only Catalog. The caller must not modify m after
 // calling NewCatalog.
 //
-// With no opts it returns a bare [MapCatalog] (identical to the historical
-// behavior): stored actions resolve exactly as registered. When one or more
+// With no opts it returns a bare [MapCatalog]: stored actions resolve exactly as
+// registered. When one or more
 // resiliency options are supplied they become a DEFAULT policy applied lazily at
 // Resolve — only to a resolved action that declares no policy of its own (see
 // [ResolvePolicy]). A per-action [Wrap] (or a type implementing a capability
@@ -121,7 +121,7 @@ type Registry struct {
 // options are supplied they become a DEFAULT policy applied lazily at [Registry.Resolve]
 // — only to a resolved action that declares no policy of its own (a per-action
 // [Wrap], or a type implementing a capability interface directly, wins). NewRegistry()
-// with no options is fully back-compatible. A default retry policy applies in the
+// with no options yields a plain registry with no default policy. A default retry policy applies in the
 // ACTION tier and thus overrides a node-level retry policy for actions that declare
 // none of their own — see the precedence note on [RetrySpecs].
 func NewRegistry(opts ...Option) *Registry {

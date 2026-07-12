@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 func act(tag string) action.Action {

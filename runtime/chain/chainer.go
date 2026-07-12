@@ -11,11 +11,11 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/observability"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/internal/observability"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // ChainEvent is the broker-agnostic input to a chaining decision, projected from
@@ -28,9 +28,8 @@ type ChainEvent struct {
 	// PredecessorDefinitionRef is the id:version reference of the instance that
 	// reached a terminal state, carried end-to-end through the outbox by the
 	// built-in publisher/relay (ADR-0047) so a SuccessorPolicy can route on the
-	// predecessor's definition. It is the zero Qualifier only for events produced
-	// before ADR-0047 or by a consumer pipeline that does not set the
-	// "definition_ref" metadata key.
+	// predecessor's definition. It is the zero Qualifier when a consumer pipeline
+	// does not set the "definition_ref" metadata key.
 	PredecessorDefinitionRef model.Qualifier
 	// Outcome is the terminal outcome that fired the event.
 	Outcome kernel.ChainOutcome
@@ -141,7 +140,7 @@ func NewChainer(starter InstanceStarter, policy SuccessorPolicy, opts ...Chainer
 	}, nil
 }
 
-const chainerInstrumentationName = "github.com/zakyalvan/krtlwrkflw/runtime/chainer"
+const chainerInstrumentationName = "github.com/kartaladev/wrkflw/runtime/chainer"
 
 // successorID is the deterministic id of the successor for one (predecessor,
 // outcome) hop. Determinism is the first idempotency layer: a redelivered

@@ -15,7 +15,7 @@ package fiber
 import (
 	fiberlib "github.com/gofiber/fiber/v3"
 
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 // WithBasePath is a convenience alias for httpcore.WithBasePath typed for

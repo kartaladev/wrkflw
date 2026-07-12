@@ -1,4 +1,4 @@
-module github.com/zakyalvan/krtlwrkflw
+module github.com/kartaladev/wrkflw
 
 go 1.25.7
 

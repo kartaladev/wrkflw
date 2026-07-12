@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
 func TestIsRetryable(t *testing.T) {

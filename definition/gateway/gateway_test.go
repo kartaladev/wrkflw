@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/gateway"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 func TestGatewayConstructors(t *testing.T) {

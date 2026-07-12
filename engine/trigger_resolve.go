@@ -1,7 +1,7 @@
 package engine
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 // ResolveTrigger resolves the dynamic expr forms of a [schedule.TriggerSpec] to

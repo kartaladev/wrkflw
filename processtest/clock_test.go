@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/processtest"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/processtest"
 )
 
 var clockBase = time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)

@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/zakyalvan/krtlwrkflw/observability"
+	"github.com/kartaladev/wrkflw/observability"
 )
 
 // bufHandler is a minimal slog.Handler that writes JSON to a buffer so we can

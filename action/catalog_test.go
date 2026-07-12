@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
+	"github.com/kartaladev/wrkflw/action"
 )
 
-// ── MapCatalog (moved from action_test.go) ─────────────────────────────────
+// ── MapCatalog ─────────────────────────────────────────────────────────────
 
 func TestMapCatalogResolveAndRun(t *testing.T) {
 	cat := action.NewCatalog(map[string]action.Action{

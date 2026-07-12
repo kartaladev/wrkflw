@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/action/httpcall"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/action/httpcall"
 )
 
 // TestHTTPCall_ResponseSizeCap verifies the response body is bounded by the

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/dialect"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
+	"github.com/kartaladev/wrkflw/internal/persistence/store"
 )
 
 // TestNewStoreNilArgs verifies that New rejects nil conn and nil dialect.

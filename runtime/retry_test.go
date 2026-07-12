@@ -11,15 +11,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/flow"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/internal/runtimetest"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // noRetryServiceTaskDef returns a process with a single service-task node that
@@ -48,10 +48,10 @@ func noRetryServiceTaskDef() *model.ProcessDefinition {
 // causes a service-task node that declares no RetryPolicy of its own to
 // schedule a retry timer when its action fails, instead of failing the instance.
 //
-// RED proof: before the change (StepOptions{} with nil DefaultRetryPolicy),
-// the node has no policy → no retry is scheduled → instance fails (StatusFailed)
-// and the recording scheduler captures nothing. So both assertions fail BEFORE
-// the implementation and pass AFTER.
+// Without a default policy (StepOptions{} with nil DefaultRetryPolicy), the node
+// has no policy → no retry is scheduled → the instance fails (StatusFailed) and
+// the recording scheduler captures nothing. WithDefaultRetryPolicy schedules the
+// retry timer instead.
 func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 	cases := []struct {
 		name             string
@@ -149,7 +149,7 @@ func incidentTaskDef() *model.ProcessDefinition {
 
 // TestRunnerResolveIncident drives an instance to an incident (via a default
 // MaxAttempts=1 policy that exhausts on the first failure), then calls
-// Runner.ResolveIncident and asserts the incident is cleared and the action
+// ProcessDriver.ResolveIncident and asserts the incident is cleared and the action
 // re-invoked successfully.
 //
 // The test also verifies that MemInstanceStore.List reports IncidentCount==1 while the

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/kartaladev/wrkflw/humantask"
 )
 
 // timerRecord is the engine's internal bookkeeping entry for a scheduled timer.
@@ -130,10 +130,9 @@ type eventTriggeredSubprocessArm struct {
 	// EventSubprocessNode is the BPMN node ID of the event sub-process node (see
 	// eventSubprocessNested) in the enclosing scope's definition.
 	EventSubprocessNode string
-	// NonInterrupting mirrors the event sub-process's non-interrupting flag (see
-	// eventSubprocessNested — the legacy node's own flag, or the SubProcess-form
-	// inner event-triggered start's flag). false = interrupting (the default);
-	// true = non-interrupting.
+	// NonInterrupting mirrors the event sub-process's non-interrupting flag — the
+	// SubProcess-form inner event-triggered start's flag (see eventSubprocessNested).
+	// false = interrupting (the default); true = non-interrupting.
 	NonInterrupting bool
 	// Signal is the signal name from the event sub-process's nested start event.
 	// Non-empty for signal-triggered event sub-processes.
@@ -345,7 +344,7 @@ type NodeVisit struct {
 //     when ArchiveKey is empty.
 //   - ArchiveKey: when non-empty, the walk is drawing records from
 //     ArchivedCompensations[ArchiveKey] rather than a live scope or
-//     RootCompensations. Set by the compensation throw producer (Phase 3);
+//     RootCompensations. Set by the compensation throw producer;
 //     empty for all beginCompensation (admin / cancel / error) walks.
 //   - ResumeNode: when non-empty, stepCompensationFinish resumes execution at
 //     this node (sets Status = StatusRunning, places a token here) instead of
@@ -1085,10 +1084,9 @@ func (s *InstanceState) tokensInScope(scopeID string) int {
 
 // archiveCompensations moves the Compensations of the scope identified by scopeID
 // into ArchivedCompensations keyed by that scope's NodeID (the sub-process node
-// that opened the scope). This replaces hoistCompensations on normal sub-process
-// exit (ADR-0039): scope identity is preserved for scope-targeted compensation,
-// and records are still reachable by the root/instance walk via
-// consolidateArchiveIntoRoot. A sub-process entered more than once accumulates
+// that opened the scope). On normal sub-process exit (ADR-0039) scope identity is
+// preserved for scope-targeted compensation, and records are still reachable by
+// the root/instance walk via consolidateArchiveIntoRoot. A sub-process entered more than once accumulates
 // records in the same archive slot. No-op if the scope has no records or is not
 // found.
 func (s *InstanceState) archiveCompensations(scopeID string) {

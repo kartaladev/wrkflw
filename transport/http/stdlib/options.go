@@ -3,7 +3,7 @@ package stdlib
 import (
 	"net/http"
 
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 // WithBasePath returns a [httpcore.CustomizeOption] that prefixes every route

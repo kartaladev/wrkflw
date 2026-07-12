@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Go **1.25**; module `github.com/zakyalvan/krtlwrkflw`; public packages at module root (no `pkg/`).
+- Go **1.25**; module `github.com/kartaladev/wrkflw`; public packages at module root (no `pkg/`).
 - The core (`engine`, `model`, `expreval`) imports only stdlib + `model` + `expreval` (+ `expr-lang/expr` inside `expreval` only). **No** transport/storage/bus/time-vendor; the engine **never calls `time.Now()`** — time enters as `Trigger.OccurredAt`.
 - `Step` stays **deterministic** (identical `(state,trigger)` ⇒ identical `(state,commands)`; IDs from in-state counters; flows evaluated in definition order) and **pure** (never mutates input state). Public `Step` signature unchanged.
 - Tests are **black-box**, table-driven with an **`assert` closure per case**, `t.Context()` where needed.
@@ -64,8 +64,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/model"
 )
 
 // inclusiveForkDef: start -> or -{a>0}-> ta ; -{b>0}-> tb ; -default-> tc ; each -> its end

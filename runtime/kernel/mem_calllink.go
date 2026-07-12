@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/kartaladev/wrkflw/clock"
 )
 
 // memLink is the in-memory record for one call link + its terminal outcome.

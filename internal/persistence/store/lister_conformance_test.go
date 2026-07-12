@@ -4,11 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/internal/persistence/store"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
 )
 
 // seedInstance inserts a minimal instance via Store.Create for use in Lister tests.

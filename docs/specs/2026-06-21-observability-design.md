@@ -98,7 +98,7 @@ func WithTracerProvider(tp trace.TracerProvider) Option // nil → otel global
 func WithMeterProvider(mp metric.MeterProvider) Option  // nil → otel global
 
 // New builds a Telemetry for a given instrumentation scope (e.g.
-// "github.com/zakyalvan/krtlwrkflw/runtime"). Defaults: slog.Default(),
+// "github.com/kartaladev/wrkflw/runtime"). Defaults: slog.Default(),
 // otel.GetTracerProvider(), otel.GetMeterProvider().
 func New(instrumentationName string, opts ...Option) Telemetry
 
@@ -153,7 +153,7 @@ instances nest** because the parent's span context rides the `ctx` into the chil
 ## 6. Metric catalog (full)
 
 All instruments live on the per-package meter (instrumentation scope =
-`github.com/zakyalvan/krtlwrkflw/<pkg>`). Labels are deliberately **low-cardinality** (never the
+`github.com/kartaladev/wrkflw/<pkg>`). Labels are deliberately **low-cardinality** (never the
 instance id).
 
 | Instrument | Type | Labels | Emitted when |

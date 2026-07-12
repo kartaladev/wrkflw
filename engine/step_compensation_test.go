@@ -14,11 +14,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/flow"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // compensableDef returns a minimal process:
@@ -283,11 +283,11 @@ func compensableSubThenRootDef() *model.ProcessDefinition {
 	}
 }
 
-// TestArchiveSubProcessCompensationAndReachViaWalk is the ADR-0039 replacement for
-// the former ADR-0013 "hoist" test. It verifies that after a sub-process completes
-// and its scope closes, the inner compensable activity's record is archived in
-// ArchivedCompensations (not RootCompensations), and that a subsequent
-// CompensateRequested consolidates the archive and emits the compensation action.
+// TestArchiveSubProcessCompensationAndReachViaWalk verifies that after a
+// sub-process completes and its scope closes, the inner compensable activity's
+// record is archived in ArchivedCompensations (not RootCompensations), and that
+// a subsequent CompensateRequested consolidates the archive and emits the
+// compensation action (ADR-0039).
 func TestArchiveSubProcessCompensationAndReachViaWalk(t *testing.T) {
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 	def := compensableSubThenRootDef()

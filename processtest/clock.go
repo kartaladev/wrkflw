@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/clock"
+	"github.com/kartaladev/wrkflw/clock"
 )
 
 // FakeClock is a manually-advanced [clock.Clock] for deterministic tests. It

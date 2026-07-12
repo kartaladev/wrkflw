@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/humantask"
 )
 
 // handleDeadlineFired processes a TimerFired event for a deadline timer. It is called
@@ -185,8 +185,8 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	// recurrence re-delivers TimerFired on the interval. The reminder record
 	// therefore STAYS in s.Timers (do NOT remove it) so the guard above keeps
 	// finding it on each fire, and the token does NOT move — the task is still
-	// pending. (Repeated-fire behavior is now the scheduler's responsibility,
-	// covered in Plan 2 Tasks 2–4, not re-armed here.)
+	// pending. (Repeated-fire behavior is the scheduler's responsibility, not
+	// re-armed here.)
 	return StepResult{State: *s, Commands: cmds}, nil
 }
 

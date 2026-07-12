@@ -19,7 +19,7 @@ standard `encoding/json`. No new dependencies.
 
 ## Global Constraints
 
-- Go 1.25; module `github.com/zakyalvan/krtlwrkflw`.
+- Go 1.25; module `github.com/kartaladev/wrkflw`.
 - `definition` and its leaves import **only the Go standard library +
   `action` + yaml.v3** (pure data + validation; no transport/storage/engine).
 - Wire format is **frozen**: JSON/YAML discriminator strings and field names are
@@ -93,7 +93,7 @@ No relocation yet: one package, new name. The compiler is the safety net.
 
 **Interfaces:**
 - Produces: package `definition` at import path
-  `github.com/zakyalvan/krtlwrkflw/definition`, with the **same exported symbols
+  `github.com/kartaladev/wrkflw/definition`, with the **same exported symbols
   as `model`** (no renames yet). Later tasks consume `definition.Node`,
   `definition.ProcessDefinition`, `definition.NewDefinition`, `definition.Validate`,
   `definition.NewServiceTask`, … .
@@ -119,9 +119,9 @@ grep -rn '^package model' definition   # expect empty
 
 Run:
 ```bash
-grep -rl 'krtlwrkflw/model' --include='*.go' . \
-  | xargs sed -i '' 's#krtlwrkflw/model#krtlwrkflw/definition#g'
-grep -rn 'krtlwrkflw/model"' --include='*.go' . | grep -v krtlwrkflw/definition   # expect empty
+grep -rl 'wrkflw/model' --include='*.go' . \
+  | xargs sed -i '' 's#wrkflw/model#wrkflw/definition#g'
+grep -rn 'wrkflw/model"' --include='*.go' . | grep -v wrkflw/definition   # expect empty
 ```
 
 - [ ] **Step 4: Rewrite qualified identifiers `model.` → `definition.`**
@@ -635,9 +635,9 @@ subprocess+nonInterrupting, ICE timer/signal/message + wait fields).
 package kinds
 
 import (
-	_ "github.com/zakyalvan/krtlwrkflw/definition/activity"
-	_ "github.com/zakyalvan/krtlwrkflw/definition/event"
-	_ "github.com/zakyalvan/krtlwrkflw/definition/gateway"
+	_ "github.com/kartaladev/wrkflw/definition/activity"
+	_ "github.com/kartaladev/wrkflw/definition/event"
+	_ "github.com/kartaladev/wrkflw/definition/gateway"
 )
 ```
 

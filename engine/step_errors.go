@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // boundaryErrorMatches decides whether error boundary n catches a thrown error.
@@ -18,12 +18,12 @@ import (
 //     When set, its return value is final: true = catch, false = no-catch
 //     (does NOT fall through to Expr or Code on false).
 //     vars is a SHALLOW CLONE so a misbehaving closure cannot mutate the live
-//     instance variable map (Fix 2).
+//     instance variable map.
 //  2. ErrorExpr — expr-lang predicate evaluated over vars + injected "_error"
 //     (the thrown error code string). Truthy = catch. Serializable.
 //     _error is injected into a CLONE of vars so it never leaks into instance state.
 //     A runtime eval error (e.g. type mismatch) is returned to the caller so it
-//     can decide whether to skip or abort (see propagateError for Fix 3 policy).
+//     can decide whether to skip or abort (see propagateError for the skip/abort policy).
 //  3. ErrorCode — exact match or catch-all: n.ErrorCode == "" || n.ErrorCode == errorCode.
 //
 // cause is the live thrown error: the original action error when available, or
@@ -33,7 +33,7 @@ import (
 func boundaryErrorMatches(n event.BoundaryEvent, vars map[string]any, cause error, errorCode string, eval ConditionEvaluator) (bool, error) {
 	if n.ErrorCheck != nil {
 		// Pass a shallow clone so a misbehaving closure cannot mutate the live
-		// instance variable map (Fix 2: mutation trap prevention).
+		// instance variable map (mutation trap prevention).
 		cloned := make(map[string]any, len(vars))
 		for k, v := range vars {
 			cloned[k] = v
@@ -139,7 +139,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 				continue
 			}
 			// Three-tier match: Check → Expr → Code.
-			// Fix 3: an ErrorExpr eval error (e.g. runtime type mismatch) is non-fatal
+			// An ErrorExpr eval error (e.g. runtime type mismatch) is non-fatal
 			// for matching — this is the error-recovery path and one malformed predicate
 			// must not brick routing for all boundaries. Treat the boundary as non-matching
 			// and continue to the next boundary rather than aborting the Step.
@@ -161,7 +161,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			// itself is still present but parked — we need to consume it now).
 			var cmds []Command
 
-			// Fix 1: Emit the fire-once boundary action before routing, mirroring
+			// Emit the fire-once boundary action before routing, mirroring
 			// fireBoundaryArm and handleDeadlineFired. FireAndForget means a catalog
 			// action failure does not block routing.
 			if directHandler.Action != "" {
@@ -263,7 +263,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 				continue // not an error boundary
 			}
 			// Three-tier match: Check → Expr → Code.
-			// Fix 3: an ErrorExpr eval error (e.g. runtime type mismatch) is non-fatal
+			// An ErrorExpr eval error (e.g. runtime type mismatch) is non-fatal
 			// for matching — this is the error-recovery path and one malformed predicate
 			// must not brick routing for all boundaries. Treat the boundary as non-matching
 			// and continue to the next boundary rather than aborting the Step.
@@ -287,7 +287,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 			// 1. Cancel all tokens in the erroring scope.
 			var cmds []Command
 
-			// Fix 1: Emit the fire-once boundary action before routing, mirroring
+			// Emit the fire-once boundary action before routing, mirroring
 			// fireBoundaryArm and handleDeadlineFired. FireAndForget means a catalog
 			// action failure does not block routing.
 			if handler.Action != "" {

@@ -45,7 +45,7 @@ loaders come later). The core only defines the interfaces these attach to.
 
 ## 2. Package layout (module root, per ADR-0004)
 
-Module path: `github.com/zakyalvan/krtlwrkflw` (consumer import root).
+Module path: `github.com/kartaladev/wrkflw` (consumer import root).
 
 | Package | Responsibility | May import |
 |---|---|---|

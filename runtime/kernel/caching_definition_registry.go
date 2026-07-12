@@ -8,8 +8,8 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // Compile-time assertion: CachingDefinitionRegistry satisfies DefinitionRegistry.

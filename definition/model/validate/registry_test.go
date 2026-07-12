@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
 
 func TestRegistry_RegisterAndResolve(t *testing.T) {

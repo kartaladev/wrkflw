@@ -8,12 +8,12 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/persistence"
-	"github.com/zakyalvan/krtlwrkflw/scheduling"
-	mysqlbackend "github.com/zakyalvan/krtlwrkflw/scheduling/backend/mysql"
-	pgbackend "github.com/zakyalvan/krtlwrkflw/scheduling/backend/postgres"
+	"github.com/kartaladev/wrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
+	"github.com/kartaladev/wrkflw/persistence"
+	"github.com/kartaladev/wrkflw/scheduling"
+	mysqlbackend "github.com/kartaladev/wrkflw/scheduling/backend/mysql"
+	pgbackend "github.com/kartaladev/wrkflw/scheduling/backend/postgres"
 )
 
 // TestSchedulerWithMySQLTimerElector proves the public façade plumbs the
@@ -150,7 +150,7 @@ func TestSchedulerMySQLElectorLockConflict(t *testing.T) {
 	t.Run("mysql elector + postgres elector last wins (no conflict)", func(t *testing.T) {
 		// Two electors are not a conflict at the façade: the last WithElector wins.
 		// This documents that the mutual-exclusion is Locker-vs-Elector, not
-		// elector-vs-elector (the DB-specific pairing lived in the old options).
+		// elector-vs-elector.
 		pgElector, err := pgbackend.NewElector(ctx, pool)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = pgElector.Close() })

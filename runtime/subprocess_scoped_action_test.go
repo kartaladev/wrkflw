@@ -11,7 +11,7 @@ package runtime_test
 // top-level definition's scoped catalog missed → ActionFailed
 // (retryable=false) → instance Failed, action never ran.
 //
-// This test runs the exact scenario end-to-end through the public Runner and
+// This test runs the exact scenario end-to-end through the public ProcessDriver and
 // asserts the nested definition's scoped action RAN and the instance did NOT
 // fail. The global catalog is deliberately empty: the nested definition's own
 // scoped catalog is the ONLY way "inner-svc" resolves.
@@ -25,13 +25,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/definition"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/internal/runtimetest"
 )
 
 // TestScopedActionInsideSubProcessRunsE2E reproduces I-1: a ServiceTask

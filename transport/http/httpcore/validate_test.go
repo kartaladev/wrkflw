@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 func TestValidate(t *testing.T) {
@@ -30,7 +30,7 @@ func TestValidateSignalInput(t *testing.T) {
 
 func TestValidateMessageInput(t *testing.T) {
 	// Name is the only required field; the definition is resolved by the engine,
-	// so MessageInput no longer carries a def_ref (ADR-0121).
+	// so MessageInput carries no def_ref (ADR-0121).
 	if err := httpcore.Validate(httpcore.MessageInput{Name: "payment"}); err != nil {
 		t.Fatalf("valid MessageInput should pass: %v", err)
 	}

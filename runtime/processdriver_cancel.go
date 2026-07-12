@@ -4,8 +4,8 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // CancelInstance terminates a running instance by delivering a CancelRequested

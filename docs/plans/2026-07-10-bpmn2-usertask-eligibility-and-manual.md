@@ -6,11 +6,11 @@
 
 **Architecture:** Two decisions, one file surface. ADR-0117 drops `NewUserTask`'s mandatory positional `roles []string`, replacing it with an optional `WithCandidateRoles(...)` option alongside the existing `WithEligibilityPrivileges`/`WithEligibilityExpr`; an empty eligibility spec means the engine gate is open and authorization defers to the consumer's transport layer (already the runtime behavior). ADR-0118 adds a `Manual bool` to `UserTask` + `WithManual()`: a manual task waits for a bare completion trigger (no payload), and carrying completion validation on it is rejected at Build time.
 
-**Tech Stack:** Go 1.25; `expr-lang/expr` (unaffected here); definition authoring layer (`definition/activity`, `definition/model`); engine (`engine`); runtime driver (`runtime`). Module path `github.com/zakyalvan/krtlwrkflw`.
+**Tech Stack:** Go 1.25; `expr-lang/expr` (unaffected here); definition authoring layer (`definition/activity`, `definition/model`); engine (`engine`); runtime driver (`runtime`). Module path `github.com/kartaladev/wrkflw`.
 
 ## Global Constraints
 
-- Go 1.25; single module rooted at `github.com/zakyalvan/krtlwrkflw`; public packages at the repo root (no `pkg/` prefix).
+- Go 1.25; single module rooted at `github.com/kartaladev/wrkflw`; public packages at the repo root (no `pkg/` prefix).
 - **TDD strict:** every new symbol/behaviour gets a failing test FIRST, with a visible RED (`go test ./<pkg>/...`) before implementation. Pure refactors (no behaviour change) need no new test but existing tests must pass before AND after.
 - **Black-box tests:** use `package <pkg>_test`.
 - **Table tests:** when ≥2 cases exercise the same call, use the project `table-test` skill (the `assert func(...)` closure form, `t.Context()` over `context.Background()`).
@@ -509,15 +509,15 @@ package runtime_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/definition"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/task"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/definition"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/task"
 )
 
 func TestManualTaskCompletesOnBareTrigger(t *testing.T) {
@@ -645,16 +645,16 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/definition"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/task"
-	"github.com/zakyalvan/krtlwrkflw/runtime/view"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/definition"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/task"
+	"github.com/kartaladev/wrkflw/runtime/view"
 )
 
 func main() {

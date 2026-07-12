@@ -1,6 +1,6 @@
 # Stability and versioning policy
 
-This document states the compatibility promise for the `github.com/zakyalvan/krtlwrkflw`
+This document states the compatibility promise for the `github.com/kartaladev/wrkflw`
 module. It is intentionally honest about the project's current maturity.
 
 ## Current status: pre-1.0, unreleased

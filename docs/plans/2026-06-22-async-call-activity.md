@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Go 1.25**; module `github.com/zakyalvan/krtlwrkflw`.
+- **Go 1.25**; module `github.com/kartaladev/wrkflw`.
 - **engine/model UNTOUCHED** — do NOT edit any production `.go` under `engine/` or `model/`. The `SubInstanceCompleted`/`SubInstanceFailed` triggers, `StartSubInstance` command, parent park (`AwaitCommand`), and resume (`engine/step.go:514–539`) already exist and are used as-is. A guard test (Task 9) asserts this.
 - **No parent fields on `engine.InstanceState`** — correlation lives in `wrkflw_call_links` only.
 - **Crash-safety:** the call-link write MUST share the child's `Create`/`Commit` transaction (ADR-0025) via `AppliedStep.NewCallLink` / `AppliedStep.CallOutcome` (both nil for all existing callers — additive, behavior-preserving).
@@ -57,8 +57,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime"
 )
 
 func runningChild(id string) engine.InstanceState {
@@ -441,8 +441,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/model"
 )
 
 // DeliverFunc delivers a trigger to an instance (typically wraps Runner.Deliver

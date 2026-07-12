@@ -19,18 +19,18 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/flow"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/internal/runtimetest"
-	"github.com/zakyalvan/krtlwrkflw/runtime/task"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/internal/runtimetest"
+	"github.com/kartaladev/wrkflw/runtime/task"
 )
 
 // collect gathers a ResourceMetrics snapshot from a ManualReader.
@@ -108,7 +108,7 @@ func histogramCountFiltered(rm metricdata.ResourceMetrics, name string, filter m
 	return 0
 }
 
-// TestNewRunnerWithObservabilityOptions verifies a Runner can be constructed
+// TestNewRunnerWithObservabilityOptions verifies a ProcessDriver can be constructed
 // with each of the three observability options without panicking.
 func TestNewRunnerWithObservabilityOptions(t *testing.T) {
 	t.Parallel()
@@ -230,7 +230,7 @@ func paymentDef() *model.ProcessDefinition {
 //   - exactly one observation in wrkflw_action_duration_seconds per outcome.
 //
 // M1: the error-outcome row additionally asserts that the span carries Error
-// status, covering the restructured I1 path that was previously untraced.
+// status on the error path.
 func TestActionSpanAndDurationMetric(t *testing.T) {
 	t.Parallel()
 
@@ -312,7 +312,7 @@ func TestActionSpanAndDurationMetric(t *testing.T) {
 
 // TestIncidentsResolvedMetric drives an instance to an incident (via MaxAttempts=1)
 // then calls ResolveIncident and asserts wrkflw_incidents_resolved_total{def=...}==1.
-// This is M2: covers the incidentsResolved counter that was previously untested.
+// M2: covers the incidentsResolved counter.
 func TestIncidentsResolvedMetric(t *testing.T) {
 	t.Parallel()
 
@@ -377,14 +377,14 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 }
 
 // TestHumanTaskLifecycleCounter verifies that wrkflw_human_tasks_total is
-// incremented for each lifecycle event emitted by Runner and TaskService.
+// incremented for each lifecycle event emitted by ProcessDriver and TaskService.
 //
-//   - {event=created}    : emitted by Runner when it parks at a user task.
+//   - {event=created}    : emitted by ProcessDriver when it parks at a user task.
 //   - {event=claimed}    : emitted by TaskService.Claim on success.
 //   - {event=reassigned} : emitted by TaskService.Reassign on success.
 //   - {event=completed}  : emitted by TaskService.Complete on success.
 //
-// Both Runner and TaskService use the same metric name and instrumentation
+// Both ProcessDriver and TaskService use the same metric name and instrumentation
 // scope so their increments aggregate into one stream.
 func TestHumanTaskLifecycleCounter(t *testing.T) {
 	t.Parallel()
@@ -497,8 +497,8 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 	}
 }
 
-// TestDeliverSpan verifies that Runner.ApplyTrigger produces a "wrkflw.runner.ApplyTrigger" span.
-// This is M3: covers the ApplyTrigger entry-point span that was previously untested.
+// TestDeliverSpan verifies that ProcessDriver.ApplyTrigger produces a "wrkflw.runner.ApplyTrigger" span.
+// M3: covers the ApplyTrigger entry-point span.
 func TestDeliverSpan(t *testing.T) {
 	t.Parallel()
 

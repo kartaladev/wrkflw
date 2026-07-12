@@ -7,10 +7,10 @@ import (
 	"maps"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // Compile-time assertion: CachingTaskStore satisfies humantask.TaskStore.

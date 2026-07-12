@@ -43,7 +43,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 func TestSentinelWrappingGraph(t *testing.T) {

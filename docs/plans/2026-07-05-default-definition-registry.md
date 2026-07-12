@@ -10,7 +10,7 @@ Spec: `docs/specs/2026-07-05-default-definition-registry-design.md` (read it —
 
 ## Global Constraints
 
-- Go 1.25+, module `github.com/zakyalvan/krtlwrkflw`. TDD strict (failing test first, observe red). Black-box tests (`_test` package), `t.Context()`, project table-test `assert`-closure style.
+- Go 1.25+, module `github.com/kartaladev/wrkflw`. TDD strict (failing test first, observe red). Black-box tests (`_test` package), `t.Context()`, project table-test `assert`-closure style.
 - Error sentinels `workflow-runtime:`-prefixed. Coverage ≥85% touched (kernel, runtime). `go build`, `go test -race`, `golangci-lint` clean.
 - Commits: Conventional Commits, ending with:
   `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` / `Claude-Session: https://claude.ai/code/session_01RVxKQ8g7m5haiTbnXjDbEf`.

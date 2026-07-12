@@ -15,7 +15,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/observability"
+	"github.com/kartaladev/wrkflw/internal/observability"
 )
 
 // errMeter is a metric.Meter that always returns an error from every instrument

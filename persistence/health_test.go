@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/persistence"
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
+	"github.com/kartaladev/wrkflw/persistence"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 func TestPingCheck(t *testing.T) {

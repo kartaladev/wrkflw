@@ -1,6 +1,6 @@
 package view
 
-import "github.com/zakyalvan/krtlwrkflw/engine"
+import "github.com/kartaladev/wrkflw/engine"
 
 // StatusString converts an engine.Status to its canonical string representation
 // ("running"/"completed"/"failed"/"compensating"/"terminated"; out-of-range →

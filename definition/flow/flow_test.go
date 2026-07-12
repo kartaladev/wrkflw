@@ -3,7 +3,7 @@ package flow_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/definition/flow"
 )
 
 func TestNewDefaultsAndOptions(t *testing.T) {

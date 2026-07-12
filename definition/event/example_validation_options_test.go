@@ -3,9 +3,9 @@ package event_test
 import (
 	"fmt"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	vexpr "github.com/zakyalvan/krtlwrkflw/definition/model/validate/expr"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/model"
+	vexpr "github.com/kartaladev/wrkflw/definition/model/validate/expr"
 )
 
 // ExampleWithInputValidation shows how to attach an expr-lang predicate that

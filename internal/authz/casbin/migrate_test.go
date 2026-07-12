@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	authzcasbin "github.com/zakyalvan/krtlwrkflw/internal/authz/casbin"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
+	authzcasbin "github.com/kartaladev/wrkflw/internal/authz/casbin"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
 )
 
 func TestMigrateCasbinCreatesRuleTable(t *testing.T) {

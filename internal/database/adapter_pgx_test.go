@@ -3,10 +3,10 @@ package database_test
 import (
 	"testing"
 
+	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zakyalvan/krtlwrkflw/internal/database"
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
 )
 
 func TestPgxQuerierRoundTrip(t *testing.T) {
@@ -35,7 +35,7 @@ func TestPgxQuerierRoundTrip(t *testing.T) {
 }
 
 // TestPgxQuerierQueryRows exercises the pgxQuerier.Query → pgxRows iteration
-// path (Next/Scan/Err/Close) which was previously at 0% coverage.
+// path (Next/Scan/Err/Close).
 func TestPgxQuerierQueryRows(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	q, err := database.From(pool)

@@ -25,17 +25,17 @@ import (
 	"net/http/httptest"
 	"net/smtp"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/action/email"
-	"github.com/zakyalvan/krtlwrkflw/action/httpcall"
-	"github.com/zakyalvan/krtlwrkflw/action/logaction"
-	"github.com/zakyalvan/krtlwrkflw/action/transform"
-	"github.com/zakyalvan/krtlwrkflw/definition"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/action/email"
+	"github.com/kartaladev/wrkflw/action/httpcall"
+	"github.com/kartaladev/wrkflw/action/logaction"
+	"github.com/kartaladev/wrkflw/action/transform"
+	"github.com/kartaladev/wrkflw/definition"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // customerDB is an in-memory stand-in for a real data store.

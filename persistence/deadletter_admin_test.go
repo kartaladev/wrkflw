@@ -3,8 +3,8 @@ package persistence_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence"
-	"github.com/zakyalvan/krtlwrkflw/service"
+	"github.com/kartaladev/wrkflw/persistence"
+	"github.com/kartaladev/wrkflw/service"
 )
 
 // TestRelaySatisfiesDeadLetterAdmin is a compile-time guard that the persistence

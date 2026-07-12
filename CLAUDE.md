@@ -62,7 +62,7 @@ public packages live directly at the repo root.
   embedded consumers. Token execution, process-definition model, gateway logic, the
   service-action catalog interface, the eventing/authz/persistence *abstractions*, and the
   **transport adapters consumers mount** (HTTP `http.Handler` route-group factories in
-  `transport/http/{stdlib,gin,fiber}`) all live here. Consumers import them as `github.com/zakyalvan/krtlwrkflw/engine`,
+  `transport/http/{stdlib,gin,fiber}`) all live here. Consumers import them as `github.com/kartaladev/wrkflw/engine`,
   etc.
 - `internal/` — non-exported implementation details (concrete persistence, outbox plumbing,
   casbin adapters, watermill wiring) that consumers must not import. (Concrete persistence

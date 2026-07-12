@@ -7,13 +7,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/flow"
-	"github.com/zakyalvan/krtlwrkflw/definition/gateway"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/definition/gateway"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // subProcessDef builds an outer definition:
@@ -114,8 +114,8 @@ func TestEmbeddedSubProcessRunsAndContinues(t *testing.T) {
 //   - Outer (root-scope) tokens carry an empty ScopeID.
 //   - Inner tokens carry the sub-process scope ID.
 //
-// This is folded into the main test above but verified explicitly here as a
-// focused assertion for clarity in the audit trail.
+// This is also covered by the main test above but verified explicitly here as a
+// focused assertion.
 func TestEmbeddedSubProcessTokenTagging(t *testing.T) {
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 	def := subProcessDef()

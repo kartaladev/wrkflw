@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/kartaladev/wrkflw/persistence"
 )
 
 func TestWarnUnsafeConfig(t *testing.T) {

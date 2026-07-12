@@ -22,9 +22,9 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
-	gocronsched "github.com/zakyalvan/krtlwrkflw/internal/scheduling/gocron"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/definition/schedule"
+	gocronsched "github.com/kartaladev/wrkflw/internal/scheduling/gocron"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // ErrTimerLockElectorConflict is returned by [NewScheduler] when both a [Locker]

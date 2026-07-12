@@ -3,7 +3,7 @@ package event_test
 import (
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/event"
 )
 
 func TestTerminationOutcomeString(t *testing.T) {

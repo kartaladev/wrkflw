@@ -10,7 +10,7 @@ import (
 
 	"github.com/samber/hot"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
 )
 
 const (

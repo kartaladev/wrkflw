@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	store "github.com/kartaladev/wrkflw/internal/persistence/store"
 	"github.com/stretchr/testify/require"
-	store "github.com/zakyalvan/krtlwrkflw/internal/persistence/store"
 	_ "modernc.org/sqlite" // register "sqlite" driver
 )
 

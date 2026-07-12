@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/stretchr/testify/assert"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
 // stubStrategy is a no-op validate.ValidationStrategy used to exercise the

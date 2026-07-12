@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zakyalvan/krtlwrkflw/transport/http/httpcore"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
 func TestEvaluateReady(t *testing.T) {

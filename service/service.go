@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/idgen"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/task"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/idgen"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/task"
 )
 
 // InstanceStarter starts new process instances.
@@ -358,7 +358,7 @@ func (e *Engine) DeliverSignal(ctx context.Context, req DeliverSignalRequest) (P
 // message-waiter table, or starts a new instance from a unique message-start
 // event when none is waiting (ADR-0121). The driver resolves the definition
 // itself — from the correlated instance's own snapshot, or from the registered
-// message-start definitions — so the caller no longer supplies a def reference.
+// message-start definitions — so the caller supplies no def reference.
 // No-op when the message matches neither a waiting instance nor a message-start.
 func (e *Engine) DeliverMessage(ctx context.Context, req DeliverMessageRequest) error {
 	if err := e.driver.DeliverMessage(ctx, req.Name, req.CorrelationKey, req.Payload); err != nil {

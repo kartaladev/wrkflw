@@ -1,8 +1,8 @@
 package persistence_test
 
-// facade_constructors_test.go covers thin façade constructors/options that were
-// previously untested: NewTimerStore and the WithStore* observability options.
-// The test asserts the façade wires through to a working store/timer reader.
+// facade_constructors_test.go covers thin façade constructors/options:
+// NewTimerStore and the WithStore* observability options. The test asserts the
+// façade wires through to a working store/timer reader.
 
 import (
 	"log/slog"
@@ -13,8 +13,8 @@ import (
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/dbtest"
-	"github.com/zakyalvan/krtlwrkflw/persistence"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
+	"github.com/kartaladev/wrkflw/persistence"
 )
 
 func TestTimerStoreFacade(t *testing.T) {

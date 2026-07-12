@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/model"
 )
 
 // ChainOutcome is the terminal outcome that triggered a chaining decision (ADR-0045).

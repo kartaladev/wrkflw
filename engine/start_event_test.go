@@ -13,11 +13,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/flow"
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // oneManualStartLinearDef returns a linear definition with a single manual start.
@@ -121,10 +121,9 @@ func TestHandleStartInstanceResolvesNode(t *testing.T) {
 	}
 }
 
-// TestNewStartInstance_DefaultsEmptyStartNodeID verifies that the existing
-// two-arg NewStartInstance constructor keeps its current signature and leaves
-// StartNodeID at its zero value ("") — the empty-node-id-resolves-manual-start
-// path — preserving pre-ADR-0121 behavior for every existing caller.
+// TestNewStartInstance_DefaultsEmptyStartNodeID verifies that the two-arg
+// NewStartInstance constructor leaves StartNodeID at its zero value ("") — the
+// empty-node-id-resolves-manual-start path (ADR-0121).
 func TestNewStartInstance_DefaultsEmptyStartNodeID(t *testing.T) {
 	trg := engine.NewStartInstance(time.Unix(0, 0), nil)
 	assert.Empty(t, trg.StartNodeID)

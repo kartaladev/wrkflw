@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache/cachetest"
+	"github.com/kartaladev/wrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache/cachetest"
 )
 
 type mapProvider struct {

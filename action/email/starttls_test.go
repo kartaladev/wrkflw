@@ -28,7 +28,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/action/email"
+	"github.com/kartaladev/wrkflw/action/email"
 )
 
 // startSTARTTLSStub starts an in-process SMTP stub that:

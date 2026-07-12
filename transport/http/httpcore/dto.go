@@ -1,6 +1,6 @@
 package httpcore
 
-import "github.com/zakyalvan/krtlwrkflw/definition/model"
+import "github.com/kartaladev/wrkflw/definition/model"
 
 // Actor carries identity and role membership for task-related requests.
 // It mirrors the original inline actorBody request structs.

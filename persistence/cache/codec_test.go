@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zakyalvan/krtlwrkflw/persistence/cache"
+	"github.com/kartaladev/wrkflw/persistence/cache"
 )
 
 type payload struct {

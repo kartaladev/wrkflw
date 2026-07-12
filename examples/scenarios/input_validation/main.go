@@ -45,19 +45,19 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/zakyalvan/krtlwrkflw/authz"
-	"github.com/zakyalvan/krtlwrkflw/clock"
-	"github.com/zakyalvan/krtlwrkflw/definition"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	vexpr "github.com/zakyalvan/krtlwrkflw/definition/model/validate/expr"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/humantask"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/task"
-	"github.com/zakyalvan/krtlwrkflw/runtime/validation"
-	"github.com/zakyalvan/krtlwrkflw/runtime/view"
+	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/clock"
+	"github.com/kartaladev/wrkflw/definition"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	vexpr "github.com/kartaladev/wrkflw/definition/model/validate/expr"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/task"
+	"github.com/kartaladev/wrkflw/runtime/validation"
+	"github.com/kartaladev/wrkflw/runtime/view"
 )
 
 func main() {
@@ -144,8 +144,8 @@ func main() {
 	fmt.Println("--- Input Validation: completion output ---")
 
 	// 3. REJECTED completion: decision="maybe" is not in the UserTask's
-	//    CompletionValidation set. svc.Complete no longer validates output —
-	//    it now does AUTHZ ONLY and always returns a HumanCompleted trigger.
+	//    CompletionValidation set. svc.Complete does AUTHZ ONLY and always
+	//    returns a HumanCompleted trigger.
 	//    The rejection surfaces at driver.ApplyTrigger instead: that is the
 	//    engine-decides design — ApplyTrigger's pre-Step hook resolves the
 	//    trigger's target node via the pure engine.TargetNode query, then

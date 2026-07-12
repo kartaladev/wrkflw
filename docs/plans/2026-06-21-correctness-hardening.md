@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Module `github.com/zakyalvan/krtlwrkflw`. Go 1.25.7.
+- Module `github.com/kartaladev/wrkflw`. Go 1.25.7.
 - **Engine purity:** `engine` and `model` import only stdlib (+ `model`/`authz`/`humantask`/`expreval`). No transport/storage/bus/time-vendor in the core. `Step` stays deterministic (IDs from `InstanceState` counters; slice-order iteration; no map iteration into command/record order) and pure (never mutates its input `InstanceState`; extend `cloneState` for any new state field — **this plan adds no new `InstanceState` field**).
 - **TDD strict** (CLAUDE.md "TDD Operational Discipline"): every new symbol and behavioural change gets a failing test FIRST with a visible RED (`go test` showing build-fail or assertion-fail) before the implementation. **Bug fixes get a regression test that reproduces the bug first.** A `Write` of a test file immediately followed by the impl with no `go test` between them is forbidden.
 - **Tests:** black-box (`package <pkg>_test`); table tests use the project `table-test` skill's **`assert` closure per case** (NOT `want`/`wantErr`); `t.Context()` not `context.Background()`; pair each `foo.go` with `foo_test.go`; Postgres tests use `database.RunTestDatabase` (testcontainers), never mocked.
@@ -292,7 +292,7 @@ package service
 import (
 	"errors"
 
-	"github.com/zakyalvan/krtlwrkflw/engine"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // ErrConflict classifies a wrong-state operation — one targeting an instance or

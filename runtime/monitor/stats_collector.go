@@ -6,11 +6,11 @@ import (
 
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/zakyalvan/krtlwrkflw/internal/observability"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/internal/observability"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
-const statsInstrumentationName = "github.com/zakyalvan/krtlwrkflw/runtime/stats"
+const statsInstrumentationName = "github.com/kartaladev/wrkflw/runtime/stats"
 
 // OutboxStatsCollector is an OTel observable-gauge collector for the wrkflw_outbox
 // table. It registers three int64 gauges and reads from the underlying

@@ -1,6 +1,6 @@
 package jsonschema
 
-import "github.com/zakyalvan/krtlwrkflw/definition/model/validate"
+import "github.com/kartaladev/wrkflw/definition/model/validate"
 
 // init self-registers the json-schema kind in the process-global DefaultRegistry
 // so durably-persisted definitions carrying a json-schema `validation` descriptor

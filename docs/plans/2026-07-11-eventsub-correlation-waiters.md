@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Go 1.25; module `github.com/zakyalvan/krtlwrkflw`.
+- Go 1.25; module `github.com/kartaladev/wrkflw`.
 - Error sentinels use the `workflow-<pkg>:` prefix (no new sentinels expected here).
 - Black-box tests (`package X_test`) preferred; white-box (`package engine`) only where unexported types must be constructed — matches `engine/state_esp_test.go`.
 - Table tests use the project `table-test` skill closure form (`assert` closure, `ctx` modifier where relevant, `t.Context()`).
@@ -355,14 +355,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
-	"github.com/zakyalvan/krtlwrkflw/definition/activity"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/runtime/signal"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/definition"
+	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/runtime/signal"
 )
 
 // eventSubMsgDef: main path parks on a ReceiveTask; a non-interrupting

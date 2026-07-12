@@ -1,9 +1,9 @@
 package runtime
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/definition/model"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // instanceDefRef builds the id:version Qualifier of an instance, carried on
@@ -25,10 +25,9 @@ func instanceDefRef(st engine.InstanceState) model.Qualifier {
 //
 // It returns nil when (prevStatus, st.Status) is not a terminal edge — i.e. the
 // instance was already terminal, or has not reached a terminal status. Routing
-// the topic off status (not the command) fixes two gaps: a cancelled instance
-// (StatusTerminated) used to publish "instance.failed", and an admin
-// full-rollback termination (also StatusTerminated, no terminal command) used to
-// publish nothing.
+// the topic off status (not the command) ensures both terminal cases publish
+// "instance.terminated": a cancelled instance (StatusTerminated) and an admin
+// full-rollback termination (also StatusTerminated, with no terminal command).
 func terminalOutboxEvent(prevStatus engine.Status, st engine.InstanceState, cmds []engine.Command) []kernel.OutboxEvent {
 	if !isTerminal(st.Status) || isTerminal(prevStatus) {
 		return nil

@@ -3,8 +3,8 @@
 // is parked awaiting the catch, and stops automatically the moment the catch
 // resolves.
 //
-// This is the executable proof that in-wait reminders — previously wired only
-// for UserTask — now arm, fire, and cancel for IntermediateCatchEvent too.
+// This is the executable proof that in-wait reminders arm, fire, and cancel
+// for an IntermediateCatchEvent.
 //
 // Flow:
 //
@@ -39,14 +39,14 @@ import (
 
 	"github.com/jonboulle/clockwork"
 
-	"github.com/zakyalvan/krtlwrkflw/action"
-	"github.com/zakyalvan/krtlwrkflw/definition"
-	"github.com/zakyalvan/krtlwrkflw/definition/event"
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
-	"github.com/zakyalvan/krtlwrkflw/engine"
-	"github.com/zakyalvan/krtlwrkflw/runtime"
-	"github.com/zakyalvan/krtlwrkflw/runtime/kernel"
-	"github.com/zakyalvan/krtlwrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/definition"
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/scheduling"
 )
 
 func main() {

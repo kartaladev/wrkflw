@@ -1,8 +1,8 @@
 package event
 
 import (
-	"github.com/zakyalvan/krtlwrkflw/definition/model/validate"
-	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/definition/model/validate"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 // --- option interfaces ---
@@ -129,7 +129,7 @@ func WithInputValidation(s validate.ValidationStrategy) StartOption {
 	return inputValidationOpt{s: s}
 }
 
-// --- IntermediateCatchEvent options (renamed from the WithICE*/WithTimerDuration family) ---
+// --- IntermediateCatchEvent options ---
 
 type catchFuncOpt struct{ fn func(*IntermediateCatchEvent) }
 

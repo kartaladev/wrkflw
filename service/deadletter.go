@@ -5,7 +5,7 @@ package service
 import (
 	"context"
 
-	"github.com/zakyalvan/krtlwrkflw/runtime/monitor"
+	"github.com/kartaladev/wrkflw/runtime/monitor"
 )
 
 // DeadLetterAdmin is the optional admin port for inspecting and redriving
