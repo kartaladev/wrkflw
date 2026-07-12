@@ -104,17 +104,15 @@ func handleActionCompleted(def *model.ProcessDefinition, s *InstanceState, t Act
 		}
 	}
 	mergeVars(s, t.Output)
-	tok.State = TokenActive
 	tok.AwaitCommand = ""
 	// Advance the token past the completed ServiceTask so drive sees it at
 	// the next node, not re-firing the action. Use the token's scope definition
 	// so inner-scope tokens resolve flows against the nested definition.
-	s.moveAlongSingleFlow(tdef, tok, t.OccurredAt())
-	driveCmds, err := drive(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+	cmds, err := resumeAndDrive(def, tdef, s, tok, t.OccurredAt(), opt, preCmds)
 	if err != nil {
 		return StepResult{}, err
 	}
-	return StepResult{State: *s, Commands: append(preCmds, driveCmds...)}, nil
+	return StepResult{State: *s, Commands: cmds}, nil
 }
 
 // handleCancelRequested processes a CancelRequested trigger: terminates the
@@ -458,7 +456,6 @@ func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFir
 	}
 	// Intermediate timer: remove its record (if any) so a later dup is a no-op.
 	s.removeTimer(t.TimerID)
-	tok.State = TokenActive
 	tok.AwaitCommand = ""
 	// Cancel any in-wait reminder armed on this parked token (timer catch): the
 	// reminder is a DIFFERENT TimerInWait than the intermediate that just fired;
@@ -471,12 +468,11 @@ func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFir
 	if timerTdefErr != nil {
 		return StepResult{}, timerTdefErr
 	}
-	s.moveAlongSingleFlow(timerTdef, tok, t.OccurredAt())
-	driveCmds, err := drive(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+	cmds, err := resumeAndDrive(def, timerTdef, s, tok, t.OccurredAt(), opt, timerPreCmds)
 	if err != nil {
 		return StepResult{}, err
 	}
-	return StepResult{State: *s, Commands: append(timerPreCmds, driveCmds...)}, nil
+	return StepResult{State: *s, Commands: cmds}, nil
 }
 
 // parkOnCompletionAction checks whether tok's node (resolved against tdef, the
@@ -662,22 +658,21 @@ func handleSignalReceived(def *model.ProcessDefinition, s *InstanceState, t Sign
 			matched = true
 		}
 		tok.AwaitSignal = ""
-		tok.State = TokenActive
 		// Cancel any in-wait reminder armed on this parked token (signal catch):
 		// the wait has resolved, so the recurring reminder job must be removed.
+		var timerPreCmds []Command
 		for _, timerID := range s.cancelTimersForToken(tok.ID, "") {
-			signalCmds = append(signalCmds, CancelTimer{TimerID: timerID})
+			timerPreCmds = append(timerPreCmds, CancelTimer{TimerID: timerID})
 		}
 		signalTdef, signalTdefErr := defForScope(def, s, tok.ScopeID)
 		if signalTdefErr != nil {
 			return StepResult{}, signalTdefErr
 		}
-		s.moveAlongSingleFlow(signalTdef, tok, t.OccurredAt())
-		driveCmds, err := drive(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+		cmds, err := resumeAndDrive(def, signalTdef, s, tok, t.OccurredAt(), opt, timerPreCmds)
 		if err != nil {
 			return StepResult{}, err
 		}
-		signalCmds = append(signalCmds, driveCmds...)
+		signalCmds = append(signalCmds, cmds...)
 	}
 	return StepResult{State: *s, Commands: signalCmds}, nil
 }
@@ -696,7 +691,6 @@ func handleSubInstanceCompleted(def *model.ProcessDefinition, s *InstanceState, 
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 	}
 	mergeVars(s, t.Output)
-	tok.State = TokenActive
 	tok.AwaitCommand = ""
 	// Advance the token past the call-activity node using the token's scope
 	// definition (call-activity nodes can live inside a sub-process scope).
@@ -704,12 +698,11 @@ func handleSubInstanceCompleted(def *model.ProcessDefinition, s *InstanceState, 
 	if err != nil {
 		return StepResult{}, err
 	}
-	s.moveAlongSingleFlow(tdef, tok, t.OccurredAt())
-	driveCmds, err := drive(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+	cmds, err := resumeAndDrive(def, tdef, s, tok, t.OccurredAt(), opt, nil)
 	if err != nil {
 		return StepResult{}, err
 	}
-	return StepResult{State: *s, Commands: driveCmds}, nil
+	return StepResult{State: *s, Commands: cmds}, nil
 }
 
 // handleSubInstanceFailed processes a SubInstanceFailed trigger: fails the
@@ -805,7 +798,6 @@ func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t Mes
 	mergeVars(s, t.Payload)
 	tok.AwaitMessage = ""
 	tok.AwaitMessageKey = ""
-	tok.State = TokenActive
 	// Cancel any in-wait reminder armed on this parked token (ReceiveTask or
 	// message intermediate catch): the wait has resolved, so the recurring
 	// reminder job must be removed to stop it firing forever.
@@ -830,12 +822,11 @@ func handleMessageReceived(def *model.ProcessDefinition, s *InstanceState, t Mes
 		return res, nil
 	}
 	// No completion action: advance + drive as before.
-	s.moveAlongSingleFlow(msgTdef, tok, t.OccurredAt())
-	driveCmds, err := drive(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+	cmds, err := resumeAndDrive(def, msgTdef, s, tok, t.OccurredAt(), opt, preCmds)
 	if err != nil {
 		return StepResult{}, err
 	}
-	return StepResult{State: *s, Commands: append(preCmds, driveCmds...)}, nil
+	return StepResult{State: *s, Commands: cmds}, nil
 }
 
 // handleResolveIncident processes a ResolveIncident trigger: clears a parked
