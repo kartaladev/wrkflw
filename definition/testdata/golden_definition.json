@@ -217,7 +217,7 @@
       "id": "kill",
       "kind": "endEvent",
       "name": "Kill",
-      "forceTermination": true,
+      "endBehavior": "terminate",
       "terminationReason": "operator-initiated kill",
       "terminationOutcome": "abort"
     },

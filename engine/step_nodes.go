@@ -215,7 +215,7 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	// Force-termination (ADR-0119) short-circuits the normal per-scope completion
 	// logic below: instead of consuming only this token, it cancels ALL remaining
 	// parallel work and ends the whole instance at the outcome-selected status.
-	if ev, ok := node.(event.EndEvent); ok && ev.ForceTermination {
+	if ev, ok := node.(event.EndEvent); ok && ev.Behavior == event.EndTerminate {
 		return forceTerminate(c, ev)
 	}
 

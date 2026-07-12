@@ -197,7 +197,7 @@ func forceTerminationWarnings(def *model.ProcessDefinition) []string {
 			continue
 		}
 		ends = append(ends, n.ID())
-		if ev, ok := n.(event.EndEvent); ok && ev.ForceTermination {
+		if ev, ok := n.(event.EndEvent); ok && ev.Behavior == event.EndTerminate {
 			forced = append(forced, n.ID())
 		}
 	}

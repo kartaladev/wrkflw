@@ -97,22 +97,26 @@ func (b EndBehavior) String() string {
 	}
 }
 
-// EndEvent is the workflow end event: a normal process completion point. When
-// ForceTermination is set (via WithForceTermination) it instead terminates the
-// whole instance — cancelling remaining parallel tokens, timers, boundaries,
-// event sub-process arms, and open tasks — and ends at the Outcome-selected
-// status carrying TerminationReason.
+// EndEvent is the workflow end event: a normal process completion point. Its
+// Behavior discriminator (ADR-0127) selects one of three behaviors. With
+// EndTerminate (via WithForceTermination) it terminates the whole instance —
+// cancelling remaining parallel tokens, timers, boundaries, event sub-process
+// arms, and open tasks — and ends at the Outcome-selected status carrying
+// TerminationReason. With EndError (via WithErrorCode) it throws ErrorCode as a
+// workflow error caught by an enclosing boundary error event.
 type EndEvent struct {
 	model.Base
-	// ForceTermination, when true, makes this end event terminate the entire
-	// instance rather than just consuming its own token.
-	ForceTermination bool
-	// TerminationReason is a human-readable reason recorded on force-termination
-	// (empty when ForceTermination is false).
+	// Behavior selects what happens when a token reaches this end event
+	// (ADR-0127). EndNormal (default) completes; EndTerminate force-terminates
+	// the instance; EndError throws ErrorCode.
+	Behavior EndBehavior
+	// TerminationReason is recorded on EndTerminate (empty otherwise).
 	TerminationReason string
-	// Outcome selects the terminal status on force-termination. Ignored when
-	// ForceTermination is false.
+	// Outcome selects the terminal status on EndTerminate. Ignored otherwise.
 	Outcome TerminationOutcome
+	// ErrorCode is the workflow error thrown on EndError ("" = anonymous
+	// catch-all). Ignored unless Behavior == EndError.
+	ErrorCode string
 }
 
 // Kind returns model.KindEndEvent.
@@ -325,22 +329,32 @@ func init() {
 	model.RegisterKind(model.KindEndEvent, model.NodeSpec{
 		Name: "endEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			outcome := OutcomeComplete
-			if w.TerminationOutcome == "abort" {
-				outcome = OutcomeAbort
+			e := EndEvent{Base: b}
+			switch w.EndBehavior {
+			case "terminate":
+				e.Behavior = EndTerminate
+				e.TerminationReason = w.TerminationReason
+				e.Outcome = OutcomeComplete
+				if w.TerminationOutcome == "abort" {
+					e.Outcome = OutcomeAbort
+				}
+			case "error":
+				e.Behavior = EndError
+				e.ErrorCode = w.ErrorCode
 			}
-			return EndEvent{
-				Base:              b,
-				ForceTermination:  w.ForceTermination,
-				TerminationReason: w.TerminationReason,
-				Outcome:           outcome,
-			}
+			return e
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(EndEvent)
-			w.ForceTermination, w.TerminationReason = v.ForceTermination, v.TerminationReason
-			if v.ForceTermination {
+			w.EndBehavior = ""
+			switch v.Behavior {
+			case EndTerminate:
+				w.EndBehavior = "terminate"
+				w.TerminationReason = v.TerminationReason
 				w.TerminationOutcome = v.Outcome.String()
+			case EndError:
+				w.EndBehavior = "error"
+				w.ErrorCode = v.ErrorCode
 			}
 		},
 	})

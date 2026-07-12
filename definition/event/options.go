@@ -274,7 +274,7 @@ type forceTerminationOpt struct {
 }
 
 func (o forceTerminationOpt) applyEnd(n *EndEvent) {
-	n.ForceTermination = true
+	n.Behavior = EndTerminate
 	n.TerminationReason = o.reason
 	n.Outcome = o.outcome
 }

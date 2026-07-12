@@ -50,11 +50,11 @@ type NodeWire struct {
 	// (ADR-0121 review).
 	MessageStartSingleton bool   `json:"messageStartSingleton,omitempty"`
 	ErrorCode             string `json:"errorCode,omitempty"`
-	// ForceTermination, TerminationReason, and TerminationOutcome carry
-	// EndEvent's force-termination fields (ADR-0119). TerminationOutcome is the
-	// string form of TerminationOutcome ("complete"/"abort"), written only when
-	// ForceTermination is true so plain end events' wire form stays clean.
-	ForceTermination   bool               `json:"forceTermination,omitempty"`
+	// EndBehavior is the name-based discriminator for an EndEvent's behavior
+	// (ADR-0127): "terminate" or "error"; empty means a normal end. It replaces
+	// the former forceTermination bool. TerminationReason/TerminationOutcome are
+	// written only for "terminate"; ErrorCode only for "error".
+	EndBehavior        string             `json:"endBehavior,omitempty"`
 	TerminationReason  string             `json:"terminationReason,omitempty"`
 	TerminationOutcome string             `json:"terminationOutcome,omitempty"`
 	AttachedTo         string             `json:"attachedTo,omitempty"`
