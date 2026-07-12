@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/event"
@@ -83,6 +84,12 @@ func findDirectBoundary(hostDef *model.ProcessDefinition, hostNodeID, errorCode 
 		matched, matchErr := boundaryErrorMatches(n, vars, cause, errorCode, eval)
 		if matchErr != nil {
 			// Treat as non-match; continue scanning remaining boundaries.
+			slog.Default().Debug("boundary ErrorExpr eval error",
+				"host_node_id", hostNodeID,
+				"boundary_node_id", n.ID(),
+				"error_code", errorCode,
+				"error", matchErr,
+			)
 			continue
 		}
 		if matched {

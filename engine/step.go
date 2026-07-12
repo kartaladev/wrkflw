@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/model"
@@ -127,6 +128,11 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 		node, ok := tdef.Node(tok.NodeID)
 		if !ok {
 			// Defensive: a token on a missing node cannot advance.
+			slog.Default().Warn("token routed to a missing node",
+				"instance_id", s.InstanceID,
+				"token_id", tok.ID,
+				"node_id", tok.NodeID,
+			)
 			tok.State = TokenWaitingCommand
 			continue
 		}

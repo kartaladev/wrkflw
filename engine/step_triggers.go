@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/activity"
@@ -137,6 +138,12 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 		tdef, derr := defForScope(def, s, tok.ScopeID)
 		if derr != nil {
 			// Defensive: skip on scope resolution error; cancel must not fail.
+			slog.Default().Debug("cancel: scope resolution error",
+				"instance_id", s.InstanceID,
+				"token_id", tok.ID,
+				"scope_id", tok.ScopeID,
+				"error", derr,
+			)
 			continue
 		}
 		if node, ok := tdef.Node(tok.NodeID); ok {
@@ -402,6 +409,11 @@ func handleTimerFired(def *model.ProcessDefinition, s *InstanceState, t TimerFir
 	// deadline, or event-sub arms, so a late timer must not fire any of them on a
 	// terminal instance.
 	if s.Status.IsTerminal() {
+		slog.Default().Warn("timer fired on terminal instance",
+			"instance_id", s.InstanceID,
+			"timer_id", t.TimerID,
+			"status", s.Status.String(),
+		)
 		return StepResult{State: *s, Commands: nil}, nil
 	}
 
