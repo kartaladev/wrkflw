@@ -77,27 +77,39 @@ var nodeStrategies = map[model.NodeKind]nodeStrategy{
 	model.KindCompensationThrowEvent: compensationThrowEventStrategy{},
 }
 
-// serviceTaskStrategy handles KindServiceTask node entry.
-type serviceTaskStrategy struct{}
-
-func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	var cmds []Command
+// emitActionInvoke is the shared node-entry body for the action-delegating
+// task kinds (KindServiceTask, KindBusinessRuleTask) and for service-action
+// re-invocation after a retry timer or incident resolution
+// (reinvokeServiceAction, engine/step_timers.go): resolve the primary action
+// name and input for node, emit InvokeAction, park tok on the new command ID,
+// and arm any boundary events attached to node. The three call sites differ
+// only in how they obtain c and node (drive()-supplied stepCtx for the
+// strategies, a freshly resolved stepCtx for re-invocation) — the invoke body
+// itself is identical.
+func emitActionInvoke(c *stepCtx, tok *Token, node model.Node) ([]Command, error) {
 	cmdID := c.s.nextCommandID()
-	cmds = append(cmds, InvokeAction{
+	cmds := []Command{InvokeAction{
 		CommandID: cmdID,
 		Name:      mainActionName(node),
 		Scoped:    c.tdef.ScopedCatalog(),
 		Input:     serviceActionInput(c.s, node),
-	})
+	}}
 	tok.State = TokenWaitingCommand
 	tok.AwaitCommand = cmdID
 	// Arm any boundary events attached to this host activity.
 	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID(), c.at, c.eval)
 	if err != nil {
-		return cmds, false, err
+		return cmds, err
 	}
-	cmds = append(cmds, bndCmds...)
-	return cmds, false, nil
+	return append(cmds, bndCmds...), nil
+}
+
+// serviceTaskStrategy handles KindServiceTask node entry.
+type serviceTaskStrategy struct{}
+
+func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+	cmds, err := emitActionInvoke(c, tok, node)
+	return cmds, false, err
 }
 
 // businessRuleTaskStrategy handles KindBusinessRuleTask node entry. It mirrors
@@ -107,23 +119,8 @@ func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 type businessRuleTaskStrategy struct{}
 
 func (businessRuleTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	var cmds []Command
-	cmdID := c.s.nextCommandID()
-	cmds = append(cmds, InvokeAction{
-		CommandID: cmdID,
-		Name:      mainActionName(node),
-		Scoped:    c.tdef.ScopedCatalog(),
-		Input:     serviceActionInput(c.s, node),
-	})
-	tok.State = TokenWaitingCommand
-	tok.AwaitCommand = cmdID
-	// Arm any boundary events attached to this host activity.
-	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID(), c.at, c.eval)
-	if err != nil {
-		return cmds, false, err
-	}
-	cmds = append(cmds, bndCmds...)
-	return cmds, false, nil
+	cmds, err := emitActionInvoke(c, tok, node)
+	return cmds, false, err
 }
 
 // receiveTaskStrategy handles KindReceiveTask node entry: park the token

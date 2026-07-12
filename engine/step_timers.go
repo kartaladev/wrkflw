@@ -207,25 +207,11 @@ func reinvokeServiceAction(def *model.ProcessDefinition, s *InstanceState, tok *
 		return nil, fmt.Errorf("workflow-engine: reinvoke: node %q not found", tok.NodeID)
 	}
 
-	// Re-emit InvokeAction — mirrors the KindServiceTask drive path exactly,
-	// including the stable idempotency key (see serviceActionInput).
-	cmdID := s.nextCommandID()
-	cmds := []Command{InvokeAction{
-		CommandID: cmdID,
-		Name:      mainActionName(node),
-		Scoped:    tdef.ScopedCatalog(),
-		Input:     serviceActionInput(s, node),
-	}}
-	tok.State = TokenWaitingCommand
-	tok.AwaitCommand = cmdID
-
-	// Re-arm boundary events (deadline timers, reminder timers) so they are active
-	// for this invocation attempt.
-	bndCmds, err := armBoundaries(tdef, s, tok.ID, node.ID(), at, eval)
-	if err != nil {
-		return cmds, err
-	}
-	return append(cmds, bndCmds...), nil
+	// Re-emit InvokeAction — mirrors the KindServiceTask drive path exactly
+	// (emitActionInvoke), including the stable idempotency key (see
+	// serviceActionInput) and re-arming boundary events (deadline timers,
+	// reminder timers) so they are active for this invocation attempt.
+	return emitActionInvoke(&stepCtx{def: def, tdef: tdef, s: s, at: at, eval: eval}, tok, node)
 }
 
 // handleRetryFired processes a TimerFired event for a TimerRetry timer. It is
