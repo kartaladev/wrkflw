@@ -130,12 +130,50 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 		return StepResult{}, fmt.Errorf("workflow-engine: cannot reverse a terminal instance (status %v)", s.Status)
 	}
 	s.Status = StatusCompensating
-	return beginCompensation(def, s, t.ToNode, 0, "", t.OccurredAt(), mode, eval, t.ReverseNode, t.ResetVars, t.RestoreTargetVars)
+	return beginCompensation(def, s, t.OccurredAt(), mode, eval, compensationOutcome{
+		ToNode:            t.ToNode,
+		FinalStatus:       0,
+		FinalErr:          "",
+		ReverseNode:       t.ReverseNode,
+		ReverseResetVars:  t.ResetVars,
+		RestoreTargetVars: t.RestoreTargetVars,
+	})
+}
+
+// compensationOutcome bundles beginCompensation's trailing arguments: the
+// rollback target and terminal status/reason to apply when the walk
+// completes, plus the optional ReverseInstance resume intent. Grouping these
+// avoids an opaque positional tail (e.g. `"", false, false`) at call sites —
+// every field below is a named replacement for one of beginCompensation's
+// former bare positional params.
+type compensationOutcome struct {
+	// ToNode is the rollback target: "" compensates all root-scope records;
+	// non-empty stops the reverse walk at (and excludes) this node's record.
+	ToNode string
+	// FinalStatus/FinalErr are carried on the cursor across all advance steps
+	// so that stepCompensationFinish applies them when the walk completes (the
+	// admin path passes the zero Status and "").
+	FinalStatus Status
+	FinalErr    string
+	// ReverseNode/ReverseResetVars carry the ReverseInstance full-reverse
+	// intent (ADR-0109): when ReverseNode is non-empty, a FULL-rollback finish
+	// resumes at ReverseNode (StatusRunning) — optionally resetting Variables
+	// to StartVariables via ReverseResetVars — instead of terminating. All
+	// cancel/error/throw callers leave both zero so their terminate behaviour
+	// is unchanged.
+	ReverseNode      string
+	ReverseResetVars bool
+	// RestoreTargetVars carries the FU#1 target-reverse intent (ADR-0116):
+	// when true (only the NewReverseToNode path sets it, always alongside a
+	// non-empty ToNode), the PARTIAL-rollback finish restores Variables to
+	// ToNode's start-of-visit snapshot. Cancel/error/throw/admin/full-reverse
+	// callers leave this false so their variable handling is unchanged.
+	RestoreTargetVars bool
 }
 
 // beginCompensation is the shared initiator of a reverse-order compensation walk.
-// It is called by stepCompensateRequested (admin path, finalStatus=0, finalErr="")
-// and will be called by the error/cancel terminal paths (Task 2) with the
+// It is called by stepCompensateRequested (admin path, outcome.FinalStatus=0,
+// outcome.FinalErr="") and by the error/cancel terminal paths with the
 // appropriate outcome.
 //
 // s.Status must already be set to StatusCompensating by the caller.
@@ -144,28 +182,19 @@ func stepCompensateRequested(def *model.ProcessDefinition, s *InstanceState, t C
 //  1. Cancels all in-flight tokens, timers, armed events, and boundaries (emitting
 //     CancelTimer commands for each).
 //  2. Looks up the root-scope (scopeID="") compensation records.
-//  3. Validates toNode: if non-empty and not found in records, returns an error; if
-//     toNode is the last (most-recently completed) record, calls stepCompensationFinish
-//     immediately with the cancel commands prepended (nothing to compensate above it).
+//  3. Validates outcome.ToNode: if non-empty and not found in records, returns an
+//     error; if it is the last (most-recently completed) record, calls
+//     stepCompensationFinish immediately with the cancel commands prepended
+//     (nothing to compensate above it).
 //  4. If there are no eligible records (empty records list), calls
-//     stepCompensationFinish immediately, applying finalStatus/finalErr via the cursor.
-//  5. Otherwise sets compensationCursor (stamping finalStatus and finalErr for the
-//     terminal outcome) and emits the first compensation InvokeAction for the
-//     most-recently completed record (reverse walk).
+//     stepCompensationFinish immediately, applying outcome.FinalStatus/FinalErr
+//     via the cursor.
+//  5. Otherwise sets compensationCursor (stamping outcome.FinalStatus and
+//     FinalErr for the terminal outcome) and emits the first compensation
+//     InvokeAction for the most-recently completed record (reverse walk).
 //
-// The FinalStatus/FinalErr values are carried on the cursor across all advance steps
-// so that stepCompensationFinish applies them when the walk completes.
-// reverseNode/reverseResetVars carry the ReverseInstance full-reverse intent
-// (ADR-0109): when reverseNode is non-empty, a FULL-rollback finish resumes at
-// reverseNode (StatusRunning) — optionally resetting Variables to StartVariables —
-// instead of terminating. All cancel/error/throw callers pass "", false so their
-// terminate behaviour is unchanged.
-// restoreTargetVars carries the FU#1 target-reverse intent (ADR-0116): when true
-// (only the NewReverseToNode path sets it, always alongside a non-empty toNode),
-// the PARTIAL-rollback finish restores Variables to toNode's start-of-visit
-// snapshot. Cancel/error/throw/admin/full-reverse callers pass false so their
-// variable handling is unchanged.
-func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode string, finalStatus Status, finalErr string, at time.Time, mode StepMode, eval ConditionEvaluator, reverseNode string, reverseResetVars bool, restoreTargetVars bool) (StepResult, error) {
+// See compensationOutcome for the meaning of each field.
+func beginCompensation(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator, outcome compensationOutcome) (StepResult, error) {
 	// Cancel all in-flight tokens (interrupting normal execution).
 	// Also emit CancelTimer for any outstanding timers, armed events, and boundaries.
 	var preCmds []Command
@@ -193,6 +222,13 @@ func beginCompensation(def *model.ProcessDefinition, s *InstanceState, toNode st
 	// are now in RootCompensations after consolidation above).
 	const scopeID = ""
 	records := compensationRecordsForScope(s, scopeID)
+
+	toNode := outcome.ToNode
+	finalStatus := outcome.FinalStatus
+	finalErr := outcome.FinalErr
+	reverseNode := outcome.ReverseNode
+	reverseResetVars := outcome.ReverseResetVars
+	restoreTargetVars := outcome.RestoreTargetVars
 
 	// Determine the starting index and the toNode boundary via eligibleRange
 	// (shared with stepCompensationAdvance's re-derivation of the same rule).
@@ -633,7 +669,7 @@ func applyFinish(def *model.ProcessDefinition, s *InstanceState, plan finishPlan
 		// compensated ALL of RootCompensations and clears the whole list the same way.
 		applyPlanRecordClearing(s, plan)
 		s.Status = StatusCompensating
-		return beginCompensation(def, s, "", StatusTerminated, "cancelled", at, mode, eval, "", false, false)
+		return beginCompensation(def, s, at, mode, eval, compensationOutcome{FinalStatus: StatusTerminated, FinalErr: "cancelled"})
 	}
 
 	if !plan.resume {

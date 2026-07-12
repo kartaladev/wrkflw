@@ -189,7 +189,7 @@ func handleCancelRequested(def *model.ProcessDefinition, s *InstanceState, t Can
 		// and FinalErr="cancelled". stepCompensationFinish will emit
 		// FailInstance{"cancelled"} at walk end.
 		s.Status = StatusCompensating
-		res, err := beginCompensation(def, s, "", StatusTerminated, "cancelled", t.OccurredAt(), opt.Mode, resolveEvaluator(opt), "", false, false)
+		res, err := beginCompensation(def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), compensationOutcome{FinalStatus: StatusTerminated, FinalErr: "cancelled"})
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -337,8 +337,8 @@ func handleActionFailed(def *model.ProcessDefinition, s *InstanceState, t Action
 		}
 		// (2)+(3): no catch-flow → let propagateError catch the error via a
 		// boundary handler; if none is found, raise an incident (the
-		// raiseIncidentOnUnhandled=true flag) instead of failing the instance.
-		errCmds, err := propagateError(def, s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.Cause, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), true)
+		// raiseIncident policy) instead of failing the instance.
+		errCmds, err := propagateError(def, s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.Cause, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), raiseIncident)
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -353,7 +353,7 @@ func handleActionFailed(def *model.ProcessDefinition, s *InstanceState, t Action
 	// Pass tok.ID so the direct-attachment branch consumes THIS specific
 	// token, not the first token found at the same NodeID+ScopeID.
 	// Pass t.Cause so ErrorCheck closures receive the original typed error.
-	errCmds, err := propagateError(def, s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.Cause, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), false)
+	errCmds, err := propagateError(def, s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.Cause, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), failFast)
 	if err != nil {
 		return StepResult{}, err
 	}

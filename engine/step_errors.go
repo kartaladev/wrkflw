@@ -166,11 +166,29 @@ func routeToBoundary(top *model.ProcessDefinition, s *InstanceState, lookupDef *
 	return cmds, nil
 }
 
+// unhandledErrorPolicy is propagateError's (and handleUnhandledError's)
+// no-handler fallback policy: whether an error with no matching boundary
+// handler fails the instance immediately or is parked as an admin-resumable
+// incident. Named to make call sites self-documenting in place of a bare
+// trailing bool (e.g. propagateError(..., raiseIncident) vs (..., failFast)).
+type unhandledErrorPolicy bool
+
+const (
+	// failFast is the default no-handler outcome: StatusFailed via
+	// FailInstance (after an ADR-0034 compensation walk if records exist).
+	failFast unhandledErrorPolicy = false
+	// raiseIncident parks the failing token as a [TokenIncident] and keeps
+	// the instance running (admin-resumable) instead of failing it. Used by
+	// the retry-exhaustion path when an effective policy exists but neither a
+	// catch flow nor a boundary handled the terminal failure.
+	raiseIncident unhandledErrorPolicy = true
+)
+
 // handleUnhandledError is the no-handler fallback for propagateError: neither a
 // direct-attachment boundary nor an enclosing-scope boundary matched errorCode.
 // Precedence:
 //
-//  1. raiseIncidentOnUnhandled: park the failing token as a [TokenIncident] and
+//  1. policy == raiseIncident: park the failing token as a [TokenIncident] and
 //     keep the instance running (admin-resumable), instead of failing it. Used by
 //     the retry-exhaustion path when an effective policy exists but neither a
 //     catch flow nor a boundary handled the terminal failure.
@@ -178,8 +196,8 @@ func routeToBoundary(top *model.ProcessDefinition, s *InstanceState, lookupDef *
 //     ADR-0039): run the compensation walk before terminating (ADR-0034).
 //  3. Otherwise: immediate s.Status = StatusFailed, cancel open tasks/timers/arms,
 //     and emit FailInstance{Err: errorCode}.
-func handleUnhandledError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode, eval ConditionEvaluator, raiseIncidentOnUnhandled bool) ([]Command, error) {
-	if raiseIncidentOnUnhandled {
+func handleUnhandledError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode, eval ConditionEvaluator, policy unhandledErrorPolicy) ([]Command, error) {
+	if policy == raiseIncident {
 		// Do NOT fail the instance. Raise an incident on the failing token and
 		// keep the instance running (admin-resumable).
 		failingTok := s.tokenByID(failingTokenID)
@@ -209,7 +227,7 @@ func handleUnhandledError(top *model.ProcessDefinition, s *InstanceState, scopeI
 	// happens inside beginCompensation.
 	if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
 		s.Status = StatusCompensating
-		res, err := beginCompensation(top, s, "", StatusFailed, errorCode, at, mode, eval, "", false, false)
+		res, err := beginCompensation(top, s, at, mode, eval, compensationOutcome{FinalStatus: StatusFailed, FinalErr: errorCode})
 		if err != nil {
 			return nil, err
 		}
@@ -284,15 +302,16 @@ func handleUnhandledError(top *model.ProcessDefinition, s *InstanceState, scopeI
 // ID ensures only the exact failing token is removed. For the error-behavior end
 // event path (originatingNodeID == ""), the error-end token is already consumed by
 // drive before propagateError is called, so failingTokenID is unused.
-// raiseIncidentOnUnhandled controls the no-handler fallback: when true, an
-// unhandled error parks the failing token as a [TokenIncident] and keeps the
-// instance running (admin-resumable) instead of setting StatusFailed.
+// policy controls the no-handler fallback (see unhandledErrorPolicy): when
+// raiseIncident, an unhandled error parks the failing token as a
+// [TokenIncident] and keeps the instance running (admin-resumable) instead of
+// setting StatusFailed.
 //
 // cause is the original Go error from the live action invocation; pass nil for
 // bare-code sources (an error-behavior end event, sub-instance failures). When
 // nil, a synthesized errors.New(errorCode) is created so ErrorCheck closures
 // always receive a non-nil error.
-func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, cause error, at time.Time, mode StepMode, eval ConditionEvaluator, raiseIncidentOnUnhandled bool) ([]Command, error) {
+func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, cause error, at time.Time, mode StepMode, eval ConditionEvaluator, policy unhandledErrorPolicy) ([]Command, error) {
 	// Guarantee that ErrorCheck closures always receive a non-nil error.
 	// For bare-code sources (an error-behavior end event, sub-instance) the
 	// caller passes nil; synthesize errors.New(errorCode) so the closure can
@@ -377,5 +396,5 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 	}
 
 	// No handler found anywhere in the scope chain → unhandled error.
-	return handleUnhandledError(top, s, scopeID, originatingNodeID, failingTokenID, errorCode, at, mode, eval, raiseIncidentOnUnhandled)
+	return handleUnhandledError(top, s, scopeID, originatingNodeID, failingTokenID, errorCode, at, mode, eval, policy)
 }

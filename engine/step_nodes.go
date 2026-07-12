@@ -158,7 +158,7 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			// handler (may catch + recover) or fails the instance.
 			currentScopeID := tok.ScopeID
 			c.s.consumeToken(tok, c.at)
-			errCmds, propErr := propagateError(c.def, c.s, currentScopeID, "", "", ev.ErrorCode, nil, c.at, c.mode, c.eval, false)
+			errCmds, propErr := propagateError(c.def, c.s, currentScopeID, "", "", ev.ErrorCode, nil, c.at, c.mode, c.eval, failFast)
 			if propErr != nil {
 				return nil, false, propErr
 			}
