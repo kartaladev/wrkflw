@@ -8,7 +8,7 @@
 //	    → eventing.Chainer.Run (subscribes; calls runtime.Chainer.Handle)
 //	      → runtime.Chainer.Handle (evaluates policy, starts successor via driver.Drive, records ChainLink)
 //
-// This seam has never previously been tested against a real database.
+// It exercises this seam against a real database.
 package persistence_test
 
 import (

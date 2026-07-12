@@ -57,8 +57,7 @@ func TestJoinInnerRollbackMarksWholeUnit(t *testing.T) {
 }
 
 // TestJoinOrBeginFallsBackToBegin verifies that JoinOrBegin starts a fresh
-// transaction when no ambient transaction is in ctx (covers the else-branch,
-// previously at 50% coverage).
+// transaction when no ambient transaction is in ctx (covers the else-branch).
 func TestJoinOrBeginFallsBackToBegin(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	base, err := database.From(pool)

@@ -191,7 +191,7 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 //	child-start → child-user (KindUserTask) → child-end
 //
 // Without a resolver wired, the driver cannot proceed and the child stays
-// StatusRunning (parked). This is the definition for Fix 1 RED test.
+// StatusRunning (parked). This is the definition for the parked-child failure test.
 func parkingChildDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "parking-child", Version: 1,
@@ -223,10 +223,10 @@ func parkingParentDef() *model.ProcessDefinition {
 	}
 }
 
-// TestCallActivityParkedChildFailsParentWithClearError (Fix 1, TDD RED→GREEN):
+// TestCallActivityParkedChildFailsParentWithClearError:
 //
 // When the synchronous runner drives a child that parks (e.g. a user task),
-// driver.Run returns childSt.Status == StatusRunning. The runner must fail the parent
+// driver.Drive returns childSt.Status == StatusRunning. The runner must fail the parent
 // with a CLEAR, diagnosable error message that:
 //   - mentions the word "parked" or "does not support" so the limitation is obvious, and
 //   - does NOT emit the misleading generic "did not complete" message.
@@ -277,7 +277,7 @@ func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 	}
 	require.NotNil(t, failEvent, "expected 'instance.failed' outbox event for parent")
 
-	// Fix 1: the error message must explicitly name the limitation.
+	// The error message must explicitly name the limitation.
 	errMsg, _ := failEvent.Payload["error"].(string)
 	assert.True(t,
 		contains(errMsg, "parked") || contains(errMsg, "does not support"),
@@ -299,9 +299,8 @@ func contains(s, sub string) bool {
 }
 
 // selfRefDef builds a definition whose call-activity references itself
-// (A → call[DefRef:"self-ref"] → end). Running it causes unbounded synchronous
-// recursion in the current implementation. Fix 2 adds a depth guard that returns
-// a descriptive error instead of stack-overflowing.
+// (A → call[DefRef:"self-ref"] → end). Running it would cause unbounded synchronous
+// recursion; the depth guard returns a descriptive error instead of stack-overflowing.
 func selfRefDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "self-ref", Version: 1,
@@ -317,16 +316,12 @@ func selfRefDef() *model.ProcessDefinition {
 	}
 }
 
-// TestCallActivityRecursionDepthLimited (Fix 2, TDD RED→GREEN):
+// TestCallActivityRecursionDepthLimited:
 //
 // A definition whose call activity references itself causes unbounded synchronous
-// recursion in driver.Run. The depth guard must stop recursion at maxCallActivityDepth
+// recursion in driver.Drive. The depth guard must stop recursion at maxCallActivityDepth
 // and return a clean SubInstanceFailed with a descriptive error that mentions the
 // depth limit — NOT a stack overflow / panic.
-//
-// Observing RED: before the fix, running this test would either stackoverflow-crash
-// the test binary or timeout. The test is written to expect the CLEAN error path;
-// absence of that path (crash/panic) constitutes the RED state.
 func TestCallActivityRecursionDepthLimited(t *testing.T) {
 	ctx := t.Context()
 

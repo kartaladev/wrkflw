@@ -3,8 +3,8 @@
 // is parked awaiting the catch, and stops automatically the moment the catch
 // resolves.
 //
-// This is the executable proof that in-wait reminders — previously wired only
-// for UserTask — now arm, fire, and cancel for IntermediateCatchEvent too.
+// This is the executable proof that in-wait reminders arm, fire, and cancel
+// for an IntermediateCatchEvent.
 //
 // Flow:
 //

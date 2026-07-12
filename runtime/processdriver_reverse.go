@@ -41,9 +41,6 @@ func WithFullReverse() ReverseOption {
 // recorded node), the current variables are left untouched rather than being
 // wiped to an empty map.
 //
-// This restore-on-target-reverse behavior is a BREAKING change: previously
-// WithTargetNode kept the instance's current variables as-is.
-//
 // nodeID is matched against [engine.CompensationRecord.NodeID]. When the same
 // node was visited more than once (e.g. a retry loop), the walk resolves to the
 // most-recently completed visit — see [engine.NewReverseToNode].

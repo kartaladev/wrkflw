@@ -471,10 +471,10 @@ func (r *Relay) drainUntilEmpty(ctx context.Context) error {
 // fan-out (ADR-0022).
 //
 // When no Notifier is present (MySQL, SQLite, or poll-only Postgres), the wake
-// channel is nil and the select falls through to the ticker only — behaviour is
-// identical to the pre-Task-18 poll-only mode.
+// channel is nil and the select falls through to the ticker only — pure
+// poll-only mode.
 //
-// Publish failures no longer terminate Run: with per-row isolation they are
+// Publish failures do not terminate Run: with per-row isolation they are
 // recorded against the failing row (retry / quarantine) and the loop keeps
 // polling. Only infrastructure errors (claim / commit failures) propagate and
 // terminate the loop.

@@ -19,7 +19,7 @@ import (
 var memBase = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 // mustSchedule schedules a timer and fails the test if the trigger is rejected.
-// It keeps the migrated one-shot/order tests terse now that Schedule returns
+// It keeps the one-shot/order tests terse given that Schedule returns
 // (time.Time, error).
 func mustSchedule(t *testing.T, s *processtest.MemScheduler, ctx context.Context, id string, trig schedule.TriggerSpec, fire func()) {
 	t.Helper()

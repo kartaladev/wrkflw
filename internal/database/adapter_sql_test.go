@@ -35,7 +35,7 @@ func TestSQLQuerierRoundTrip(t *testing.T) {
 }
 
 // TestSQLQuerierQueryRows exercises the sqlQuerier.Query → sqlRows iteration path
-// (Next/Scan/Err/Close) which was previously at 0% coverage.
+// (Next/Scan/Err/Close).
 func TestSQLQuerierQueryRows(t *testing.T) {
 	db := dbtest.RunTestMySQL(t)
 	q, err := database.From(db)

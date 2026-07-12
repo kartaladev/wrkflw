@@ -222,8 +222,7 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			return forceTerminate(c, ev)
 		case event.EndError:
 			// propagateError walks the scope chain to a matching boundary error
-			// handler (may catch + recover) or fails the instance. Body preserved
-			// verbatim from the former dedicated error-end node strategy.
+			// handler (may catch + recover) or fails the instance.
 			currentScopeID := tok.ScopeID
 			c.s.consumeToken(tok, c.at)
 			errCmds, propErr := propagateError(c.def, c.s, currentScopeID, "", "", ev.ErrorCode, nil, c.at, c.mode, c.eval, false)
@@ -277,11 +276,10 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			//     was intentionally kept open (its tokens cancelled) so that we can
 			//     check for remaining non-interrupting children before exiting.
 			//
-			// Fix 2: detect ESP child scope by checking the NodeID in the parent
-			// definition regardless of whether parentScopeID is "" (root scope).
-			// The previous guard (parentScopeID != "") excluded root-level ESPs,
-			// causing the engine to fall into the regular sub-process branch and
-			// error ("no outgoing flows from root-esp in root definition").
+			// Detect an ESP child scope by checking the NodeID in the parent
+			// definition regardless of whether parentScopeID is "" (root scope), so
+			// root-level ESPs are recognized rather than falling into the regular
+			// sub-process branch (which would error with "no outgoing flows").
 			isEventSubprocess := false
 			parentDef, pErr := defForScope(c.def, c.s, parentScopeID)
 			if pErr == nil {
@@ -295,7 +293,7 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 				// Close this child scope.
 				c.s.closeScope(currentScopeID)
 
-				// Fix 2: handle root-level ESP (parentScopeID == "") distinctly from
+				// Handle root-level ESP (parentScopeID == "") distinctly from
 				// nested ESP (parentScopeID != ""). The root scope is implicit (no Scope
 				// object exists for it), so scopeByID("") always returns nil. We must
 				// NOT treat that nil as "enclosing scope already closed".
@@ -927,8 +925,8 @@ func (callActivityStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Co
 // intermediateThrowEventStrategy handles KindIntermediateThrowEvent node entry.
 // A throw either emits a signal (broadcast, fire-and-forget) or, with no
 // signal set, parks for future plans (e.g. message/error throw). Compensation
-// throws are handled by the separate compensationThrowEventStrategy (ADR-0120)
-// — IntermediateThrowEvent no longer carries compensation behaviour.
+// throws are handled by the separate compensationThrowEventStrategy (ADR-0120);
+// IntermediateThrowEvent does not carry compensation behaviour.
 type intermediateThrowEventStrategy struct{}
 
 func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
@@ -964,10 +962,9 @@ func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 // forms, distinguished by CompensateRef:
 //
 //   - Targeted (CompensateRef != ""): runs the archived records of a specific
-//     completed sub-process node (ArchivedCompensations[ref]). This is the
-//     behaviour ported from the legacy intermediateThrowEventStrategy compensation
-//     branch — same archive source, resume, serialize/defer, and single-ownership
-//     consume (ArchiveKey cursor).
+//     completed sub-process node (ArchivedCompensations[ref]): it uses that
+//     archive as its record source, resumes, serializes/defers, and consumes with
+//     single ownership (ArchiveKey cursor).
 //   - Scope-wide (CompensateRef == ""): runs the throwing scope's completed
 //     compensable activities. At the root scope the WHOLE-INSTANCE default first
 //     consolidates archived sub-process records into RootCompensations (BPMN
@@ -1001,10 +998,9 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 	tokScope := tok.ScopeID
 
 	if cte.CompensateRef != "" {
-		// Targeted throw (ported verbatim from intermediateThrowEventStrategy's
-		// CompensateRef branch): run the archived records for the referenced
-		// sub-process node in reverse, resume past the throw, and consume the
-		// archive entry on finish (single ownership via the ArchiveKey cursor).
+		// Targeted throw: run the archived records for the referenced sub-process
+		// node in reverse, resume past the throw, and consume the archive entry on
+		// finish (single ownership via the ArchiveKey cursor).
 		ref := cte.CompensateRef
 		records := c.s.ArchivedCompensations[ref]
 		if len(records) == 0 || resumeNode == "" {

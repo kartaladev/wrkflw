@@ -471,7 +471,7 @@ func TestListInstances(t *testing.T) {
 
 // TestDeliverMessageNoMatchIsNoop verifies that DeliverMessage is a clean no-op
 // when the message matches neither a running waiter nor a message-start
-// definition — the caller no longer supplies a def ref, so an unmatched message
+// definition — the caller supplies no def ref, so an unmatched message
 // simply does nothing (ADR-0121).
 func TestDeliverMessageNoMatchIsNoop(t *testing.T) {
 	h := newHarness(t) // no defs registered

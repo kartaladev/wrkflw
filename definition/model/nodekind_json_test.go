@@ -67,9 +67,9 @@ func TestNodeKindJSONUnmarshalUnknown(t *testing.T) {
 	require.Error(t, err, "unmarshalling an unknown NodeKind name must return an error")
 }
 
-// TestNodeKindTerminateEndRetired verifies that the retired "terminateEndEvent"
-// wire name no longer resolves to a NodeKind (TerminateEndEvent was folded into
-// EndEvent's ForceTermination field — ADR-0119).
+// TestNodeKindTerminateEndRetired verifies that "terminateEndEvent" is not a
+// recognised wire name: an EndEvent's terminate behavior is selected by its
+// EndBehavior discriminator (ADR-0119), so decoding that name must error.
 func TestNodeKindTerminateEndRetired(t *testing.T) {
 	t.Parallel()
 	var k model.NodeKind
@@ -78,12 +78,12 @@ func TestNodeKindTerminateEndRetired(t *testing.T) {
 	}
 }
 
-// TestRetiredErrorEndWireName verifies that the retired error-end wire name no
-// longer resolves to a NodeKind — the standalone error end kind was folded into
-// EndEvent's EndError behavior (ADR-0127), so decoding that name must error.
+// TestRetiredErrorEndWireName verifies that the "errorEndEvent" wire name is not
+// a recognised NodeKind: an EndEvent's error behavior is selected by EndBehavior
+// == EndError (ADR-0127), so decoding that name must error.
 func TestRetiredErrorEndWireName(t *testing.T) {
 	t.Parallel()
-	const wireName = "errorEndEvent" // retired name, folded into EndEvent (ADR-0127)
+	const wireName = "errorEndEvent" // not a recognised wire name; error behavior lives on EndBehavior (ADR-0127)
 	var k model.NodeKind
 	err := k.UnmarshalJSON([]byte(`"` + wireName + `"`))
 	require.Error(t, err, "decoding a retired wire name must error")

@@ -178,7 +178,7 @@ type BoundaryEvent struct {
 	ErrorExpr string
 	// ErrorCheck is an optional Go predicate (vars, thrown error) deciding
 	// whether an ERROR boundary catches. Highest precedence. Non-serializable
-	// (Go-authoring-only escape hatch, like inline actions) — absent from wire.
+	// (a Go-authoring-only escape hatch) — absent from wire.
 	ErrorCheck func(map[string]any, error) bool
 }
 

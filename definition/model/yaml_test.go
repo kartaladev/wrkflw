@@ -286,8 +286,7 @@ flows:
 // TestParseYAMLEndBehavior verifies that an EndEvent's behavior discriminator
 // and its full payload round-trip through the YAML authoring form: the
 // terminate payload (terminationReason + terminationOutcome) and the error
-// payload (errorCode). Regression for the YAML force-termination authoring gap
-// (nodeYAML previously carried endBehavior but not the terminate payload).
+// payload (errorCode) are all parsed alongside the endBehavior discriminator.
 func TestParseYAMLEndBehavior(t *testing.T) {
 	t.Parallel()
 

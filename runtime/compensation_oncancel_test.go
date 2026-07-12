@@ -6,7 +6,7 @@ package runtime_test
 // ADR: 0034.
 //
 // Verifies that when a running instance with a completed compensable service task
-// is cancelled, the Runner drives the full compensation walk (InvokeAction →
+// is cancelled, the ProcessDriver drives the full compensation walk (InvokeAction →
 // ActionCompleted → StatusTerminated) within the single CancelInstance call.
 
 import (

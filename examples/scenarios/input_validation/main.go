@@ -144,8 +144,8 @@ func main() {
 	fmt.Println("--- Input Validation: completion output ---")
 
 	// 3. REJECTED completion: decision="maybe" is not in the UserTask's
-	//    CompletionValidation set. svc.Complete no longer validates output —
-	//    it now does AUTHZ ONLY and always returns a HumanCompleted trigger.
+	//    CompletionValidation set. svc.Complete does AUTHZ ONLY and always
+	//    returns a HumanCompleted trigger.
 	//    The rejection surfaces at driver.ApplyTrigger instead: that is the
 	//    engine-decides design — ApplyTrigger's pre-Step hook resolves the
 	//    trigger's target node via the pure engine.TargetNode query, then

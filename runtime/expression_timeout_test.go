@@ -54,10 +54,10 @@ func noopCatalog() action.Catalog {
 }
 
 // TestRunnerWithExpressionTimeoutGuardsGateway proves the DoS guard is reachable
-// in-engine when opted in: a Runner built WithExpressionTimeout(50ms) evaluating
+// in-engine when opted in: a ProcessDriver built WithExpressionTimeout(50ms) evaluating
 // a blocking gateway condition aborts with expreval.ErrEvalTimeout (surfaced as a
-// Run error) rather than hanging the driver loop. This is the explicit opt-in the
-// ADR-0049 follow-up called for.
+// Drive error) rather than hanging the driver loop. This is the explicit opt-in
+// for untrusted definitions (ADR-0049).
 func TestRunnerWithExpressionTimeoutGuardsGateway(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	release := make(chan struct{})

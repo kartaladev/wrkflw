@@ -228,16 +228,16 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, []string{"manager", "admin"}, approve.EligibleRoles)
 	assert.Equal(t, "amount > 1000", approve.EligibleExpr)
-	// WaitEvery moved from charge (ServiceTask) to approve (UserTask) — verify it survived round-trip
+	// WaitEvery is set on approve (UserTask) — verify it survived round-trip
 	reminderDur, reminderOk := approve.WaitEvery.Duration()
 	require.True(t, reminderOk, "WaitEvery should be set on UserTask")
 	assert.Equal(t, 4*time.Hour, reminderDur)
 }
 
-// TestProcessDefinitionJSONBackwardCompat verifies that legacy flat-shaped JSON
-// (the pre-interface Node struct layout) still decodes into correct concrete types.
+// TestProcessDefinitionJSONBackwardCompat verifies that hand-authored flat-shaped
+// JSON decodes into the correct concrete node types.
 func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
-	// Hand-written flat JSON matching the pre-interface Node struct layout.
+	// Hand-written flat JSON in the NodeWire layout.
 	legacyJSON := `{
 		"id": "legacy",
 		"version": 1,
@@ -354,7 +354,7 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 }
 
 // TestDeadlineReminderTyped verifies that DeadlineOf and WaitActionOf return
-// schedule.TriggerSpec values (Task 3: typed deadline/wait migration).
+// schedule.TriggerSpec values.
 func TestDeadlineReminderTyped(t *testing.T) {
 	n := activity.NewUserTask("ut",
 		activity.WithWaitDeadline(schedule.AfterDuration(2*time.Hour), "sla"), activity.WithDeadlineAction("notify"),

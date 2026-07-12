@@ -138,8 +138,8 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 		// that produces new active tokens) leave stopped false so the loop continues.
 		stopped := false
 
-		// Dispatch through the nodeStrategy registry for migrated kinds.
-		// Kinds not yet in the registry fall through to the switch below.
+		// Dispatch node entry through the nodeStrategy registry. Kinds absent from
+		// the registry fall through to the else branch below, which parks the token.
 		if strat, ok := nodeStrategies[node.Kind()]; ok {
 			c := &stepCtx{def: def, tdef: tdef, s: s, at: at, mode: mode, eval: eval}
 			produced, halt, stratErr := strat.enter(c, tok, node)
@@ -154,9 +154,8 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 				// token.
 				return cmds, nil
 			}
-			// Preserve Micro-mode semantics: a strategy that parks the token
-			// (tok.State != TokenActive) counts as a stop, identical to the
-			// old `stopped = true` in the case arm.
+			// Micro-mode semantics: a strategy that parks the token
+			// (tok.State != TokenActive) counts as a stop.
 			stopped = tok.State != TokenActive
 		} else {
 			// Unhandled node kinds: park the token so the loop terminates rather

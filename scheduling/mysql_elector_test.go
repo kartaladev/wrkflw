@@ -150,7 +150,7 @@ func TestSchedulerMySQLElectorLockConflict(t *testing.T) {
 	t.Run("mysql elector + postgres elector last wins (no conflict)", func(t *testing.T) {
 		// Two electors are not a conflict at the façade: the last WithElector wins.
 		// This documents that the mutual-exclusion is Locker-vs-Elector, not
-		// elector-vs-elector (the DB-specific pairing lived in the old options).
+		// elector-vs-elector.
 		pgElector, err := pgbackend.NewElector(ctx, pool)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = pgElector.Close() })

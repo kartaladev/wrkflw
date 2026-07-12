@@ -121,7 +121,7 @@ func WithDefinitions(reg kernel.DefinitionRegistry) Option {
 // and starts the child's first burst without waiting for the child to complete —
 // the parent parks at the call node until a notifier delivers the outcome. When
 // this option is NOT set, the synchronous behavior (run child to completion
-// in-process) is preserved verbatim.
+// in-process) applies.
 func WithCallLinkStore(store kernel.CallLinkStore) Option {
 	return func(driver *ProcessDriver) { driver.callLinks = store }
 }
@@ -142,7 +142,7 @@ func WithJitterSource(src kernel.JitterSource) Option {
 
 // WithDefaultRetryPolicy sets the fallback retry policy applied to any action-bearing
 // node that declares no RetryPolicy of its own. Without this option, retry is disabled
-// by default and a failed action behaves as before (error boundary or instance failure).
+// by default and a failed action falls through to its error boundary or fails the instance.
 //
 // The policy value is copied on each call, so subsequent mutations by the caller do
 // not affect the ProcessDriver.
@@ -158,8 +158,8 @@ func WithDefaultRetryPolicy(p model.RetryPolicy) Option {
 // stalling the driver loop and every sibling instance behind it (the DoS the
 // audit flagged; ADR-0049).
 //
-// This is the explicit, per-runner opt-in the ADR-0049 follow-up called for
-// (ADR-0056). DETERMINISM TRADE-OFF: enabling the guard makes the engine's
+// This is the explicit, per-driver opt-in for untrusted definitions
+// (ADR-0049/0056). DETERMINISM TRADE-OFF: enabling the guard makes the engine's
 // expression evaluation wall-clock-dependent, so a timed-out result is no longer
 // reproducible on replay. Enable it only when you must evaluate UNTRUSTED
 // definitions; trusted-definition deployments should leave it off (the default)

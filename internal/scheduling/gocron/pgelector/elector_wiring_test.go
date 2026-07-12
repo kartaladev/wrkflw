@@ -89,9 +89,9 @@ func TestGocronSchedulerElectorGatesFire(t *testing.T) {
 }
 
 // stubLocker is a no-op [gocron.Locker] used only to exercise the
-// locker+elector mutual-exclusion guard at construction time. The concrete
-// Postgres-backed locker was removed as dead code; the conflict check operates
-// on the neutral gocron.Locker interface, so any implementation triggers it.
+// locker+elector mutual-exclusion guard at construction time. The conflict
+// check operates on the neutral gocron.Locker interface, so any implementation
+// triggers it.
 type stubLocker struct{}
 
 func (stubLocker) Lock(context.Context, string) (extgocron.Lock, error) { return nil, nil }

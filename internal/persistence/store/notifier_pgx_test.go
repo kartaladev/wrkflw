@@ -185,9 +185,9 @@ func TestPgxNotifierCoalescesBurst(t *testing.T) {
 //     channel receives again — proving self-heal.
 //  5. Cancels and verifies goleak-clean.
 //
-// This test FAILS on the pre-fix code because the goroutine returns on conn
-// loss and never re-acquires/re-LISTENs (RED state). The post-loss NOTIFY
-// times out with "self-heal failed" on buggy code.
+// The notifier's watch goroutine re-acquires a connection and re-LISTENs after
+// conn loss; without that self-heal the post-loss NOTIFY would time out with
+// "self-heal failed".
 func TestPgxNotifierRecoversFromConnLoss(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, persistence.Migrate(t.Context(), pool))

@@ -48,10 +48,10 @@ func noRetryServiceTaskDef() *model.ProcessDefinition {
 // causes a service-task node that declares no RetryPolicy of its own to
 // schedule a retry timer when its action fails, instead of failing the instance.
 //
-// RED proof: before the change (StepOptions{} with nil DefaultRetryPolicy),
-// the node has no policy → no retry is scheduled → instance fails (StatusFailed)
-// and the recording scheduler captures nothing. So both assertions fail BEFORE
-// the implementation and pass AFTER.
+// Without a default policy (StepOptions{} with nil DefaultRetryPolicy), the node
+// has no policy → no retry is scheduled → the instance fails (StatusFailed) and
+// the recording scheduler captures nothing. WithDefaultRetryPolicy schedules the
+// retry timer instead.
 func TestRunnerDefaultPolicyEnablesRetry(t *testing.T) {
 	cases := []struct {
 		name             string
@@ -149,7 +149,7 @@ func incidentTaskDef() *model.ProcessDefinition {
 
 // TestRunnerResolveIncident drives an instance to an incident (via a default
 // MaxAttempts=1 policy that exhausts on the first failure), then calls
-// Runner.ResolveIncident and asserts the incident is cleared and the action
+// ProcessDriver.ResolveIncident and asserts the incident is cleared and the action
 // re-invoked successfully.
 //
 // The test also verifies that MemInstanceStore.List reports IncidentCount==1 while the

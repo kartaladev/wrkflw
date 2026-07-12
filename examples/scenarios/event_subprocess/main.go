@@ -3,9 +3,9 @@
 // has an event-triggered inner start (event.NewStart + WithMessageCorrelator).
 // Such a node is latent — never entered by a flowing token — and instead arms
 // the moment its enclosing scope opens, firing only when the matching
-// message/signal/timer occurs. It replaces the pre-ADR-0122 EventSubProcess
-// kind: "event sub-process" is not a distinct node kind, it is an authoring
-// pattern over the ordinary SubProcess + event-triggered start.
+// message/signal/timer occurs. An "event sub-process" is not a distinct node
+// kind, it is an authoring pattern over the ordinary SubProcess +
+// event-triggered start (ADR-0122).
 //
 // This example uses the NON-INTERRUPTING flavor (event.WithNonInterrupting()):
 // when the "cancel" message arrives, the event sub-process runs ALONGSIDE the

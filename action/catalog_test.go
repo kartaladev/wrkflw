@@ -12,7 +12,7 @@ import (
 	"github.com/kartaladev/wrkflw/action"
 )
 
-// ── MapCatalog (moved from action_test.go) ─────────────────────────────────
+// ── MapCatalog ─────────────────────────────────────────────────────────────
 
 func TestMapCatalogResolveAndRun(t *testing.T) {
 	cat := action.NewCatalog(map[string]action.Action{

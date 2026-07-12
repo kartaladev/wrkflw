@@ -49,7 +49,7 @@ func TestPostgresElectorLeadership(t *testing.T) {
 
 // TestPostgresElectorInvokesOnLeadershipAcquired proves the Option-A failover
 // hook (ADR-0072): when an instance wins leadership, the registered
-// on-leadership-acquired callback fires. Wiring it to Runner.RehydrateTimers
+// on-leadership-acquired callback fires. Wiring it to ProcessDriver.RehydrateTimers
 // re-arms the full persisted timer set on a new leader after failover, closing
 // the window where runtime-armed timers would otherwise be lost until restart.
 // The callback runs asynchronously so it never blocks gocron's IsLeader hot path.

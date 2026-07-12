@@ -1,8 +1,8 @@
-// Package service_test covers previously-uncovered branches in service.go.
+// Package service_test covers hard-to-reach branches in service.go.
 //
-// This file targets the specific per-function gaps identified in the H2 hygiene
-// pass: GetInstance definition-resolution leniency, and error branches in
-// StartInstance, DeliverMessage, ClaimTask, ListInstances, and deliverTaskTrigger.
+// This file targets specific per-function gaps: GetInstance
+// definition-resolution leniency, and error branches in StartInstance,
+// DeliverMessage, ClaimTask, ListInstances, and deliverTaskTrigger.
 package service_test
 
 import (
@@ -33,10 +33,10 @@ func (l *errLister) List(_ context.Context, _ kernel.InstanceFilter) (kernel.Ins
 
 // ---- GetInstance definition-resolution behaviour ----
 
-// TestGetInstanceNilDefinitionWhenUnresolved covers the leniency contract of the
-// unified GetInstance (which replaced the removed GetInstanceWithDefinition): an
-// instance whose definition is not in the registry is returned with a nil fused
-// definition and NO error — only instance-not-found / store errors surface. The
+// TestGetInstanceNilDefinitionWhenUnresolved covers the leniency contract of
+// GetInstance: an instance whose definition is not in the registry is returned
+// with a nil fused definition and NO error — only instance-not-found / store
+// errors surface. The
 // happy path (definition resolves) and the unknown-instance error path are also
 // exercised here.
 func TestGetInstanceNilDefinitionWhenUnresolved(t *testing.T) {

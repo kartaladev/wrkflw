@@ -19,7 +19,7 @@ func TestMarkRollbackNoAmbientIsNoop(t *testing.T) {
 
 // TestIsRollbackMarkedTruePath verifies that IsRollbackMarked returns true after
 // MarkRollback is called on a context that holds an ambient transaction.
-// This covers the true-return branch that was previously unreachable in tests.
+// This covers the true-return branch.
 func TestIsRollbackMarkedTruePath(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 

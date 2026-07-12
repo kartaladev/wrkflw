@@ -686,7 +686,7 @@ func TestValidate(t *testing.T) {
 		},
 		// CompensateRef validation rules
 		"normal intermediate throw event is unaffected": {
-			// KindIntermediateThrowEvent no longer carries CompensateRef at all (ADR-0120);
+			// KindIntermediateThrowEvent does not carry CompensateRef (ADR-0120);
 			// a normal signal throw must not trigger ErrCompensateRefNotFound.
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,

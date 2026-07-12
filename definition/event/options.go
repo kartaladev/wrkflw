@@ -129,7 +129,7 @@ func WithInputValidation(s validate.ValidationStrategy) StartOption {
 	return inputValidationOpt{s: s}
 }
 
-// --- IntermediateCatchEvent options (renamed from the WithICE*/WithTimerDuration family) ---
+// --- IntermediateCatchEvent options ---
 
 type catchFuncOpt struct{ fn func(*IntermediateCatchEvent) }
 

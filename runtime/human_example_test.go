@@ -20,10 +20,10 @@ import (
 
 // TestHumanTaskEndToEnd tests the full human-task lifecycle:
 //
-//  1. Run parks at the user task.
+//  1. Drive parks at the user task.
 //  2. TaskStore.ClaimableBy returns the task for a manager actor.
-//  3. TaskService.Claim → Runner.ApplyTrigger(HumanClaimed) transitions the task to Claimed.
-//  4. TaskService.Complete → Runner.ApplyTrigger(HumanCompleted) completes the instance.
+//  3. TaskService.Claim → ProcessDriver.ApplyTrigger(HumanClaimed) transitions the task to Claimed.
+//  4. TaskService.Complete → ProcessDriver.ApplyTrigger(HumanCompleted) completes the instance.
 //  5. Journal shows StartInstance + HumanClaimed + HumanCompleted.
 //  6. Final task State==Completed and ClaimedBy==manager actor ID.
 func TestHumanTaskEndToEnd(t *testing.T) {

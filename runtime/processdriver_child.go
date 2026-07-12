@@ -9,7 +9,7 @@ import (
 )
 
 // callDepthKey is the private context key used to thread the call-activity
-// recursion depth counter through perform → driver.Run → deliverLoop → perform chains.
+// recursion depth counter through perform → driver.Drive → deliverLoop → perform chains.
 // It is unexported so that no caller outside this package can set or read it
 // accidentally; the helpers callDepth / withCallDepth are the only access points.
 type callDepthKey struct{}

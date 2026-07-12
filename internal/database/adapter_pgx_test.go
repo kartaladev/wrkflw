@@ -35,7 +35,7 @@ func TestPgxQuerierRoundTrip(t *testing.T) {
 }
 
 // TestPgxQuerierQueryRows exercises the pgxQuerier.Query → pgxRows iteration
-// path (Next/Scan/Err/Close) which was previously at 0% coverage.
+// path (Next/Scan/Err/Close).
 func TestPgxQuerierQueryRows(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	q, err := database.From(pool)

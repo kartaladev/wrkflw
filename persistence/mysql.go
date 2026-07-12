@@ -1,21 +1,18 @@
 package persistence
 
 // mysql.go contains the consumer-facing façade over the MySQL persistence
-// backend. After the store-unification refactor (Phase 2) every MySQL
-// constructor is rewired onto the neutral internal/persistence/store package
-// parametrised with dialect.NewMySQL(); only OpenMySQL's ProbeUTC guard and the
-// migration entry point (MigrateMySQL, still delegating to the internal mysql
-// package until Task 22 relocates it) remain MySQL-specific.
+// backend. Every MySQL constructor is built on the neutral
+// internal/persistence/store package parametrised with dialect.NewMySQL();
+// OpenMySQL's ProbeUTC guard and the MigrateMySQL entry point are the only
+// MySQL-specific pieces.
 //
-// Store unification collapsed the former per-backend option types: MySQLOption,
-// MySQLRelayOption, and MySQLCallLinkOption are now aliases of the single
-// store.Option / persistence.RelayOption / store.CallLinkOption surfaces. The
-// MySQLWith* constructor names are kept for source compatibility; each simply
-// returns the corresponding unified option value.
+// MySQLOption, MySQLRelayOption, and MySQLCallLinkOption are aliases of the
+// single store.Option / persistence.RelayOption / store.CallLinkOption
+// surfaces; the MySQLWith* constructors each return the corresponding unified
+// option value.
 //
-// The separate MySQLDeduper interface is gone: NewMySQLDeduper (in dedup.go) now
-// returns the unified persistence.Deduper, whose Seen joins the ambient
-// transaction rather than taking an explicit *sql.Tx.
+// NewMySQLDeduper (in dedup.go) returns the unified persistence.Deduper, whose
+// Seen joins the ambient transaction in ctx.
 
 import (
 	"context"
@@ -37,9 +34,9 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
-// MySQLOption configures the MySQL Store returned by OpenMySQL. After store
-// unification it is an alias of the single store.Option (the same type Option
-// aliases); the two backends share one option surface.
+// MySQLOption configures the MySQL Store returned by OpenMySQL. It is an alias
+// of the single store.Option (the same type Option aliases); the two backends
+// share one option surface.
 type MySQLOption = store.Option
 
 // MySQLWithHistoryCap bounds the inline instance History persisted in the
@@ -116,9 +113,9 @@ func NewMySQLTimerStore(db *sql.DB) (kernel.TimerStore, error) {
 	return store.NewTimerStore(db, dialect.NewMySQL())
 }
 
-// MySQLRelayOption configures a MySQL Relay returned by NewMySQLRelay. After
-// store unification it is an alias of the facade RelayOption. MySQL has no
-// LISTEN/NOTIFY; its relay is poll-only (there is no MySQLWithListenNotify).
+// MySQLRelayOption configures a MySQL Relay returned by NewMySQLRelay. It is an
+// alias of the facade RelayOption. MySQL has no LISTEN/NOTIFY; its relay is
+// poll-only (there is no MySQLWithListenNotify).
 type MySQLRelayOption = RelayOption
 
 // MySQLWithPollInterval sets the interval between DrainOnce calls in the MySQL
@@ -207,8 +204,7 @@ func NewMySQLRelay(db *sql.DB, pub kernel.OutboxPublisher, opts ...MySQLRelayOpt
 }
 
 // MySQLCallLinkOption configures a CallLinkStore returned by NewMySQLCallLinkStore.
-// After store unification it aliases the single store.CallLinkOption (same type
-// as CallLinkOption).
+// It aliases the single store.CallLinkOption (same type as CallLinkOption).
 type MySQLCallLinkOption = store.CallLinkOption
 
 // MySQLWithCallLinkLease configures opt-in lease-based multi-replica exclusivity

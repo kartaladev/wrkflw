@@ -18,7 +18,7 @@ func TestPGWatcherNotifiesOtherNodesNotSelf(t *testing.T) {
 
 	// Each watcher signals its ready channel once LISTEN is established, so the
 	// test synchronises on the ACTUAL listen state rather than a sleep — closing
-	// the NOTIFY-before-LISTEN race that previously made this test flaky.
+	// the NOTIFY-before-LISTEN race.
 	readyA := make(chan struct{}, 1)
 	readyB := make(chan struct{}, 1)
 

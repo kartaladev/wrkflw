@@ -336,11 +336,10 @@ func catchMessageValidationDef() *model.ProcessDefinition {
 	}
 }
 
-// TestValidateInputIntermediateCatchMessage is the driver E2E for the one
-// validation-bearing kind that previously lacked a driver-level rejection test:
-// an IntermediateCatchEvent message catch. A rejected payload leaves the parked
-// instance state unchanged (no advance); an accepted payload advances to
-// completion.
+// TestValidateInputIntermediateCatchMessage is the driver E2E for a
+// validation-bearing kind: an IntermediateCatchEvent message catch. A rejected
+// payload leaves the parked instance state unchanged (no advance); an accepted
+// payload advances to completion.
 func TestValidateInputIntermediateCatchMessage(t *testing.T) {
 	t.Parallel()
 

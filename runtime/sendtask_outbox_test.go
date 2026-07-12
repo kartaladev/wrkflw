@@ -49,11 +49,11 @@ func buildOrderPlacedSendTaskDef() *model.ProcessDefinition {
 
 // TestSendTaskCommitsMessageOutboxEvent asserts that a SendTask's message is written
 // atomically as a message.<Name> outbox event in AppliedStep.Events (ADR-0067),
-// and that Run succeeds without any MessageSink configured.
+// and that Drive succeeds with no message sink — SendTask relies solely on the outbox.
 func TestSendTaskCommitsMessageOutboxEvent(t *testing.T) {
 	def := buildOrderPlacedSendTaskDef()
 	store := &recordingStore{InstanceStore: runtimetest.MustMemStore(t)}
-	r := runtimetest.MustRunner(t, nil, store) // NO MessageSink — must not error
+	r := runtimetest.MustRunner(t, nil, store) // nil catalog; SendTask needs no message sink
 	_, err := r.Drive(t.Context(), def, "i-1", map[string]any{"k": "v"})
 	require.NoError(t, err)
 

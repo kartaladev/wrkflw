@@ -358,7 +358,7 @@ func (e *Engine) DeliverSignal(ctx context.Context, req DeliverSignalRequest) (P
 // message-waiter table, or starts a new instance from a unique message-start
 // event when none is waiting (ADR-0121). The driver resolves the definition
 // itself — from the correlated instance's own snapshot, or from the registered
-// message-start definitions — so the caller no longer supplies a def reference.
+// message-start definitions — so the caller supplies no def reference.
 // No-op when the message matches neither a waiting instance nor a message-start.
 func (e *Engine) DeliverMessage(ctx context.Context, req DeliverMessageRequest) error {
 	if err := e.driver.DeliverMessage(ctx, req.Name, req.CorrelationKey, req.Payload); err != nil {

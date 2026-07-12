@@ -118,7 +118,7 @@ func TestSignalBroadcastResumesTwoInstances(t *testing.T) {
 	assert.Equal(t, engine.StatusCompleted, final2.Status, "inst-2 must complete")
 }
 
-// TestRunnerThrowSignalWithoutBusErrors verifies that a Runner without a SignalBus
+// TestRunnerThrowSignalWithoutBusErrors verifies that a ProcessDriver without a SignalBus
 // returns a descriptive error when it encounters a ThrowSignal command.
 func TestRunnerThrowSignalWithoutBusErrors(t *testing.T) {
 	// Process: start → throw("approved") → end.

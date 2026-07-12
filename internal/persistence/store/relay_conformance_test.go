@@ -748,9 +748,8 @@ func TestRelayDrainOnce_ClaimQueryFails(t *testing.T) {
 // TestRelayDrainOnce_SQLiteInfraError exercises the SQLite (non-SkipLocked)
 // DrainOnce claim-path infra-error branch on the in-process backend: with the
 // outbox table dropped mid-flight, DrainOnce must surface the driver error (not
-// panic or leak) and publish nothing. This restores the runtime error-path
-// coverage that the removed nil-conn probe used to provide (dropped-table style,
-// cf. TestStoreWriteErrors).
+// panic or leak) and publish nothing. This covers the runtime error-path
+// (dropped-table style, cf. TestStoreWriteErrors).
 func TestRelayDrainOnce_SQLiteInfraError(t *testing.T) {
 	db := dbtest.RunTestSQLite(t)
 	b := backend{name: "sqlite", conn: db, dialect: dialect.NewSQLite()}
@@ -831,8 +830,8 @@ func TestRelayBatchSize(t *testing.T) {
 
 // blockingRelayPub records every Publish call (thread-safe) and stalls
 // briefly after acquiring the lock — widening the window in which a second
-// concurrent Relay replica can re-claim the same still-pending rows and
-// publish them again (exposes the two-tx bug pre-fix).
+// concurrent Relay replica could re-claim the same still-pending rows and
+// publish them again, so the test proves that window stays closed.
 type blockingRelayPub struct {
 	mu        sync.Mutex
 	delay     time.Duration
@@ -874,16 +873,14 @@ func (p *blockingRelayPub) dedupCounts() map[string]int {
 }
 
 // TestRelayDrainOnce_NoConcurrentDoublePublish is the gate test for the
-// single-tx drain fix.
+// single-tx drain.
 //
 // Two Relay instances share the same connection pool and the same
 // blockingRelayPub (which stalls each Publish call for 20 ms to widen the
-// window). With the pre-fix two-transaction structure, the second DrainOnce
-// re-claims the same pending rows after the first committed its claim tx but
-// before it committed the publish tx → double-publish. After the fix (one tx
-// holds SELECT…FOR UPDATE SKIP LOCKED until commit), SKIP LOCKED correctly
-// skips already-locked rows so each dedup_key is published exactly once and
-// the total equals N.
+// window). A single transaction holds SELECT…FOR UPDATE SKIP LOCKED until
+// commit, so SKIP LOCKED skips already-locked rows: the second DrainOnce cannot
+// re-claim rows the first is still holding, each dedup_key is published exactly
+// once, and the total equals N.
 //
 // SQLite reaches the same no-double-publish guarantee by a different mechanism:
 // it is single-writer (db.SetMaxOpenConns(1)), so the two DrainOnce calls

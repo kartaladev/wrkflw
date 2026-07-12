@@ -359,7 +359,7 @@ func (driver *ProcessDriver) createAtNode(ctx context.Context, def *model.Proces
 
 // resolveInstanceDef loads instanceID's snapshot and resolves its definition from
 // the registry via the snapshot's own DefID/DefVersion. It is how the message
-// correlate path recovers the definition the caller no longer supplies.
+// correlate path recovers the definition the caller does not supply.
 func (driver *ProcessDriver) resolveInstanceDef(ctx context.Context, instanceID string) (*model.ProcessDefinition, error) {
 	st, _, err := driver.store.Load(ctx, instanceID)
 	if err != nil {
