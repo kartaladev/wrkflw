@@ -76,7 +76,7 @@ func TestPerformRecordsJitterInRetryFireAt(t *testing.T) {
 	})
 
 	sched := &runtimetest.RecordingScheduler{Clock: clk}
-	driver := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
+	driver := runtimetest.MustProcessDriver(t, cat, runtimetest.MustMemStore(t),
 		runtime.WithClock(clk),
 		runtime.WithScheduler(sched),
 		runtime.WithJitterSource(runtimetest.FixedJitter{F: 0.5}),

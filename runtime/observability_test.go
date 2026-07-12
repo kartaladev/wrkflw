@@ -108,9 +108,9 @@ func histogramCountFiltered(rm metricdata.ResourceMetrics, name string, filter m
 	return 0
 }
 
-// TestNewRunnerWithObservabilityOptions verifies a ProcessDriver can be constructed
+// TestNewProcessDriverWithObservabilityOptions verifies a ProcessDriver can be constructed
 // with each of the three observability options without panicking.
-func TestNewRunnerWithObservabilityOptions(t *testing.T) {
+func TestNewProcessDriverWithObservabilityOptions(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
@@ -147,7 +147,7 @@ func TestNewRunnerWithObservabilityOptions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			driver := runtimetest.MustRunner(t, action.NewCatalog(nil), runtimetest.MustMemStore(t),
+			driver := runtimetest.MustProcessDriver(t, action.NewCatalog(nil), runtimetest.MustMemStore(t),
 				tc.opt,
 			)
 			tc.assert(t, driver)
@@ -173,7 +173,7 @@ func TestStepSpanAndLifecycleMetrics(t *testing.T) {
 		}),
 	})
 
-	driver := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
+	driver := runtimetest.MustProcessDriver(t, cat, runtimetest.MustMemStore(t),
 		runtime.WithTracerProvider(tp),
 		runtime.WithMeterProvider(mp),
 	)
@@ -299,7 +299,7 @@ func TestActionSpanAndDurationMetric(t *testing.T) {
 			cat := action.NewCatalog(map[string]action.Action{
 				"charge": action.ActionFunc(tc.actionFunc),
 			})
-			driver := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
+			driver := runtimetest.MustProcessDriver(t, cat, runtimetest.MustMemStore(t),
 				runtime.WithTracerProvider(tp), runtime.WithMeterProvider(mp))
 
 			_, _ = driver.Drive(t.Context(), paymentDef(), "i1", map[string]any{})
@@ -345,7 +345,7 @@ func TestIncidentsResolvedMetric(t *testing.T) {
 		},
 	}
 
-	driver := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
+	driver := runtimetest.MustProcessDriver(t, cat, runtimetest.MustMemStore(t),
 		runtime.WithClock(clk),
 		runtime.WithMeterProvider(mp),
 		// MaxAttempts=1: first failure parks immediately as an incident.
@@ -446,7 +446,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 			az := authz.RoleAuthorizer{}
 			clk := clock.System()
 
-			driver := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
+			driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),
 				runtime.WithClock(clk),
 				runtime.WithHumanTasks(resolver, taskStore, az),
 				runtime.WithMeterProvider(mp),
@@ -527,7 +527,7 @@ func TestDeliverSpan(t *testing.T) {
 	}
 
 	store := runtimetest.MustMemStore(t)
-	driver := runtimetest.MustRunner(t, nil, store, runtime.WithClock(clk), runtime.WithTracerProvider(tp))
+	driver := runtimetest.MustProcessDriver(t, nil, store, runtime.WithClock(clk), runtime.WithTracerProvider(tp))
 
 	// Run parks at the catch-message node.
 	parked, err := driver.Drive(t.Context(), msgDef, "del-obs-1", nil)

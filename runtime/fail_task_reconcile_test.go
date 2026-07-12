@@ -22,12 +22,12 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/internal/runtimetest"
 )
 
-// TestRunnerUnhandledFailureCancelsParkedTask is the end-to-end counterpart to
-// TestRunnerCancelInstanceCancelsParkedTask (ADR-0089): when a parallel branch
+// TestProcessDriverUnhandledFailureCancelsParkedTask is the end-to-end counterpart to
+// TestProcessDriverCancelInstanceCancelsParkedTask (ADR-0089): when a parallel branch
 // fails unhandled while another branch is parked at a UserTask, the instance
 // fails and the parked task is Cancelled in the TaskStore — not orphaned in an
 // inbox query.
-func TestRunnerUnhandledFailureCancelsParkedTask(t *testing.T) {
+func TestProcessDriverUnhandledFailureCancelsParkedTask(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	actor := authz.Actor{ID: "sam", Roles: []string{"r"}}
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"r": {actor}})
@@ -40,7 +40,7 @@ func TestRunnerUnhandledFailureCancelsParkedTask(t *testing.T) {
 			return nil, action.NonRetryable(errors.New("boom"))
 		}),
 	})
-	r := runtimetest.MustRunner(t, cat, store,
+	r := runtimetest.MustProcessDriver(t, cat, store,
 		runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, authz.RoleAuthorizer{}))
 
 	// start → fork → (user[UserTask] | svc[Service "boom"]) → join → end

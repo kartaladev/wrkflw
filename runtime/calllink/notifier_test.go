@@ -92,7 +92,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 	az := authz.RoleAuthorizer{}
 
-	driver := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),

@@ -58,7 +58,7 @@ func TestActionExecTimeoutOverridesRuntimeDefault(t *testing.T) {
 	cat := action.NewCatalog(map[string]action.Action{
 		"t": action.Wrap(inner, action.WithExecTimeout(2*time.Second)),
 	})
-	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
+	r := runtimetest.MustProcessDriver(t, cat, runtimetest.MustMemStore(t),
 		runtime.WithClock(clockwork.NewFakeClock()),
 		runtime.WithActionTimeout(50*time.Millisecond),
 	)
@@ -99,7 +99,7 @@ func TestActionRetryOverridesNodeRetry(t *testing.T) {
 	nodePolicy := &model.RetryPolicy{MaxAttempts: 1, InitialInterval: time.Second, BackoffCoef: 2, MaxInterval: time.Minute}
 
 	store := runtimetest.MustMemStore(t)
-	driver := runtimetest.MustRunner(t, cat, store,
+	driver := runtimetest.MustProcessDriver(t, cat, store,
 		runtime.WithClock(fc), runtime.WithScheduler(sched), runtime.WithJitterSource(jitter),
 	)
 	def := policyTaskDef(nodePolicy)
@@ -139,7 +139,7 @@ func TestActionRecoverFalsePropagatesPanic(t *testing.T) {
 	cat := action.NewCatalog(map[string]action.Action{
 		"t": action.Wrap(inner, action.WithRecover(false)),
 	})
-	r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
+	r := runtimetest.MustProcessDriver(t, cat, runtimetest.MustMemStore(t),
 		runtime.WithClock(clockwork.NewFakeClock()),
 	)
 

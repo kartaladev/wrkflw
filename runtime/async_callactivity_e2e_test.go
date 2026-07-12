@@ -125,7 +125,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	// and "defID:version" (pinned), so pass defs directly as variadic args.
 	reg := kernel.NewMapDefinitionRegistry(gcDef, cDef, pDef)
 
-	driver := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
@@ -235,7 +235,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 	// NewMapDefinitionRegistry auto-indexes by both "defID" (latest) and "defID:N" (pinned).
 	reg := kernel.NewMapDefinitionRegistry(child, parent)
 
-	driver := runtimetest.MustRunner(t, cat, store,
+	driver := runtimetest.MustProcessDriver(t, cat, store,
 		runtime.WithClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
@@ -328,7 +328,7 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 	// NewMapDefinitionRegistry auto-indexes by both "defID" (latest) and "defID:N" (pinned).
 	reg := kernel.NewMapDefinitionRegistry(def)
 
-	driver := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithClock(clk),
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
@@ -468,7 +468,7 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 
 	// ProcessDriver built WITHOUT WithCallLinkStore → synchronous call-activity path.
-	driver := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithClock(clk),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),

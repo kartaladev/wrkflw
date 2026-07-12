@@ -77,7 +77,7 @@ func TestAsyncCallActivityParentParks(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 
-	driver := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithCallLinkStore(cl),
 		runtime.WithDefinitions(reg),
 		runtime.WithHumanTasks(resolver, tasks, nil),
@@ -242,7 +242,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 		parent := asyncImmediateParentDef()
 		reg := kernel.NewMapDefinitionRegistry(child)
 
-		driver := runtimetest.MustRunner(t, cat, store,
+		driver := runtimetest.MustProcessDriver(t, cat, store,
 			runtime.WithCallLinkStore(cl),
 			runtime.WithDefinitions(reg),
 		)
@@ -281,7 +281,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 		parent := asyncFailingParentDef()
 		reg := kernel.NewMapDefinitionRegistry(child)
 
-		driver := runtimetest.MustRunner(t, cat, store,
+		driver := runtimetest.MustProcessDriver(t, cat, store,
 			runtime.WithCallLinkStore(cl),
 			runtime.WithDefinitions(reg),
 		)

@@ -122,7 +122,7 @@ func driveReverseFixtureToApprove2(t *testing.T) reverseFixture {
 	az := authz.RoleAuthorizer{}
 	store := runtimetest.MustMemStore(t)
 
-	driver := runtimetest.MustRunner(t, reverseFixtureCatalog(counts), store, runtime.WithHumanTasks(resolver, taskStore, az))
+	driver := runtimetest.MustProcessDriver(t, reverseFixtureCatalog(counts), store, runtime.WithHumanTasks(resolver, taskStore, az))
 	def := reverseFixtureDef()
 	instanceID := "reverse-facade-1"
 
@@ -208,7 +208,7 @@ func driveReverseTargetVarsFixtureToApprove3(t *testing.T) reverseFixture {
 	az := authz.RoleAuthorizer{}
 	store := runtimetest.MustMemStore(t)
 
-	driver := runtimetest.MustRunner(t, reverseFixtureCatalog(counts), store, runtime.WithHumanTasks(resolver, taskStore, az))
+	driver := runtimetest.MustProcessDriver(t, reverseFixtureCatalog(counts), store, runtime.WithHumanTasks(resolver, taskStore, az))
 	def := reverseTargetVarsFixtureDef()
 	instanceID := "reverse-target-vars-1"
 	svc := runtimetest.MustTaskService(t, taskStore, az)
@@ -271,7 +271,7 @@ func driveTerminalFixture(t *testing.T) reverseFixture {
 		Flows: []flow.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 	}
 	store := runtimetest.MustMemStore(t)
-	driver := runtimetest.MustRunner(t, nil, store)
+	driver := runtimetest.MustProcessDriver(t, nil, store)
 	instanceID := "reverse-terminal-1"
 
 	final, err := driver.Drive(t.Context(), def, instanceID, nil)
@@ -292,7 +292,7 @@ func driveRunningInstanceForMalformedDefCases(t *testing.T) reverseFixture {
 	def := runtimetest.ApprovalDef()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"manager": {{ID: "alice", Roles: []string{"manager"}}}})
 	store := runtimetest.MustMemStore(t)
-	driver := runtimetest.MustRunner(t, nil, store, runtime.WithHumanTasks(resolver, humantask.NewMemTaskStore(), authz.RoleAuthorizer{}))
+	driver := runtimetest.MustProcessDriver(t, nil, store, runtime.WithHumanTasks(resolver, humantask.NewMemTaskStore(), authz.RoleAuthorizer{}))
 	instanceID := "reverse-malformed-1"
 
 	parked, err := driver.Drive(t.Context(), def, instanceID, nil)

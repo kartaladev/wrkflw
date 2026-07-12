@@ -24,13 +24,13 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/internal/runtimetest"
 )
 
-// TestRunnerTimerIntermediateFiresUnderFakeClock verifies the full fake-clock
+// TestProcessDriverTimerIntermediateFiresUnderFakeClock verifies the full fake-clock
 // timer-intermediate e2e path:
 //
 //  1. Run parks at the intermediate-catch timer node (ScheduleTimer registered).
 //  2. Advancing the fake clock past FireAt and calling Tick fires TimerFired.
 //  3. The service task runs and the instance reaches StatusCompleted.
-func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
+func TestProcessDriverTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 	ctx := t.Context()
 
 	startAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
@@ -47,7 +47,7 @@ func TestRunnerTimerIntermediateFiresUnderFakeClock(t *testing.T) {
 	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	store := runtimetest.MustMemStore(t)
 
-	r := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithScheduler(sched))
+	r := runtimetest.MustProcessDriver(t, cat, store, runtime.WithClock(fc), runtime.WithScheduler(sched))
 
 	def := runtimetest.TimerIntermediateDef()
 	const instanceID = "timer-e2e-1"
@@ -99,10 +99,10 @@ func deadlineUserTaskDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRunnerUserTaskDeadlineFiresUnderFakeClock verifies that, when the deadline timer
+// TestProcessDriverUserTaskDeadlineFiresUnderFakeClock verifies that, when the deadline timer
 // fires (clock advanced past FireAt), the alternative path is taken and the task
 // is Cancelled — without ever completing the task.
-func TestRunnerUserTaskDeadlineFiresUnderFakeClock(t *testing.T) {
+func TestProcessDriverUserTaskDeadlineFiresUnderFakeClock(t *testing.T) {
 	ctx := t.Context()
 
 	startAt := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
@@ -125,7 +125,7 @@ func TestRunnerUserTaskDeadlineFiresUnderFakeClock(t *testing.T) {
 	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	store := runtimetest.MustMemStore(t)
 
-	r := runtimetest.MustRunner(t, cat, store,
+	r := runtimetest.MustProcessDriver(t, cat, store,
 		runtime.WithClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithScheduler(sched),

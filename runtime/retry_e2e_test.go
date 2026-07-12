@@ -80,7 +80,7 @@ func TestRetryThenSucceedDrivesToCompletion(t *testing.T) {
 	})
 
 	store := runtimetest.MustMemStore(t)
-	driver := runtimetest.MustRunner(t, cat, store,
+	driver := runtimetest.MustProcessDriver(t, cat, store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithJitterSource(jitter),

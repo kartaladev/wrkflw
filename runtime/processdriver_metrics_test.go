@@ -143,7 +143,7 @@ func TestActionFailuresCounter(t *testing.T) {
 				}),
 			})
 
-			r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t),
+			r := runtimetest.MustProcessDriver(t, cat, runtimetest.MustMemStore(t),
 				runtime.WithMeterProvider(mp),
 			)
 
@@ -178,7 +178,7 @@ func TestTimerFiredCounter(t *testing.T) {
 	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	store := runtimetest.MustMemStore(t)
 
-	r := runtimetest.MustRunner(t, cat, store,
+	r := runtimetest.MustProcessDriver(t, cat, store,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithMeterProvider(mp),

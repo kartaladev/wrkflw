@@ -53,14 +53,14 @@ func compensationOnCancelDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRunnerCompensationOnCancel is the runtime e2e for compensation on cancel (ADR-0034).
+// TestProcessDriverCompensationOnCancel is the runtime e2e for compensation on cancel (ADR-0034).
 //
 // Asserts:
 //  1. Run completes "charge" and parks at "approve" → StatusRunning.
 //  2. CancelInstance drives the compensation walk to completion within one call.
 //  3. The "refund" compensation action runs exactly once.
 //  4. Final status is StatusTerminated (no extra store load needed).
-func TestRunnerCompensationOnCancel(t *testing.T) {
+func TestProcessDriverCompensationOnCancel(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 
 	var chargeRan atomic.Int32
@@ -80,7 +80,7 @@ func TestRunnerCompensationOnCancel(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	r := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	r := runtimetest.MustProcessDriver(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
 	def := compensationOnCancelDef()
 	const instanceID = "comp-cancel-i1"

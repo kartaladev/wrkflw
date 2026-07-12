@@ -46,12 +46,12 @@ func (s *commitErrStore) Commit(_ context.Context, _ kernel.Version, _ kernel.Ap
 	return 0, kernel.ErrConcurrentUpdate
 }
 
-// TestRunnerUnknownActionFailsInstance verifies that a catalog with no actions
+// TestProcessDriverUnknownActionFailsInstance verifies that a catalog with no actions
 // causes the runner to produce FailInstance (recorded in the store's outbox).
-func TestRunnerUnknownActionFailsInstance(t *testing.T) {
+func TestProcessDriverUnknownActionFailsInstance(t *testing.T) {
 	cat := action.NewCatalog(nil)
 	store := runtimetest.MustMemStore(t)
-	driver := runtimetest.MustRunner(t, cat, store)
+	driver := runtimetest.MustProcessDriver(t, cat, store)
 
 	final, err := driver.Drive(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
@@ -62,14 +62,14 @@ func TestRunnerUnknownActionFailsInstance(t *testing.T) {
 	assert.Equal(t, "instance.failed", evs[0].Topic)
 }
 
-func TestRunnerActionErrorFailsInstance(t *testing.T) {
+func TestProcessDriverActionErrorFailsInstance(t *testing.T) {
 	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return nil, errors.New("greet exploded")
 		}),
 	})
 	store := runtimetest.MustMemStore(t)
-	driver := runtimetest.MustRunner(t, cat, store)
+	driver := runtimetest.MustProcessDriver(t, cat, store)
 
 	final, err := driver.Drive(t.Context(), linearDef(), "i1", nil)
 	require.NoError(t, err)
@@ -80,24 +80,24 @@ func TestRunnerActionErrorFailsInstance(t *testing.T) {
 	assert.Equal(t, "instance.failed", evs[0].Topic)
 }
 
-// TestRunnerStoreCreateErrorPropagates verifies that a Create failure from the
+// TestProcessDriverStoreCreateErrorPropagates verifies that a Create failure from the
 // store is surfaced as a hard error from Run (wrapping ErrConcurrentUpdate).
-func TestRunnerStoreCreateErrorPropagates(t *testing.T) {
+func TestProcessDriverStoreCreateErrorPropagates(t *testing.T) {
 	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return nil, nil
 		}),
 	})
-	driver := runtimetest.MustRunner(t, cat, errStore{runtimetest.MustMemStore(t)})
+	driver := runtimetest.MustProcessDriver(t, cat, errStore{runtimetest.MustMemStore(t)})
 
 	_, err := driver.Drive(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "workflow-runtime: commit:")
 }
 
-// TestRunnerStoreCommitErrorPropagates verifies that a Commit failure is surfaced
+// TestProcessDriverStoreCommitErrorPropagates verifies that a Commit failure is surfaced
 // as a hard error from Run for subsequent steps (after Create succeeds).
-func TestRunnerStoreCommitErrorPropagates(t *testing.T) {
+func TestProcessDriverStoreCommitErrorPropagates(t *testing.T) {
 	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return nil, nil
@@ -105,7 +105,7 @@ func TestRunnerStoreCommitErrorPropagates(t *testing.T) {
 	})
 	// commitErrStore: Create succeeds (first step), Commit fails (second step when
 	// ActionCompleted is delivered).
-	driver := runtimetest.MustRunner(t, cat, &commitErrStore{runtimetest.MustMemStore(t)})
+	driver := runtimetest.MustProcessDriver(t, cat, &commitErrStore{runtimetest.MustMemStore(t)})
 
 	_, err := driver.Drive(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
@@ -131,12 +131,12 @@ func userTaskOnlyDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRunnerUserTaskWithoutDepsErrors verifies that a ProcessDriver constructed
+// TestProcessDriverUserTaskWithoutDepsErrors verifies that a ProcessDriver constructed
 // without human-task dependencies (nil resolver and nil TaskStore) returns a
 // descriptive error — rather than panicking — when it reaches an AwaitHuman command.
-func TestRunnerUserTaskWithoutDepsErrors(t *testing.T) {
+func TestProcessDriverUserTaskWithoutDepsErrors(t *testing.T) {
 	// Build a ProcessDriver with no human-task option (nil resolver and nil tasks).
-	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), runtimetest.MustMemStore(t))
+	driver := runtimetest.MustProcessDriver(t, action.NewCatalog(nil), runtimetest.MustMemStore(t))
 	// WithHumanTasks intentionally omitted to test error path.
 
 	_, err := driver.Drive(t.Context(), userTaskOnlyDef(), "i1", nil)
@@ -162,15 +162,15 @@ func timerOnlyDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRunnerZeroConfigUsesDefaultScheduler verifies that a driver built without an
+// TestProcessDriverZeroConfigUsesDefaultScheduler verifies that a driver built without an
 // explicit WithScheduler still arms timers: NewProcessDriver supplies an in-process
 // default scheduler, so a process reaching a timer-catch node schedules the timer
 // and parks (StatusRunning) rather than failing with "no Scheduler configured".
 // (The perform nil-guard remains as defensive code but is unreachable through the
-// constructor, which always resolves a scheduler.) MustRunner tears the driver
+// constructor, which always resolves a scheduler.) MustProcessDriver tears the driver
 // down via t.Cleanup, releasing the default scheduler goroutine.
-func TestRunnerZeroConfigUsesDefaultScheduler(t *testing.T) {
-	driver := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t))
+func TestProcessDriverZeroConfigUsesDefaultScheduler(t *testing.T) {
+	driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t))
 	// WithScheduler intentionally omitted — the default scheduler must handle it.
 
 	st, err := driver.Drive(t.Context(), timerOnlyDef(), "i1", nil)
@@ -240,7 +240,7 @@ func TestTimerFireRetriesOnCASConflict(t *testing.T) {
 	store := &onceConflictStore{inner: inner}
 	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 
-	driver := runtimetest.MustRunner(t, nil, store, runtime.WithClock(fc), runtime.WithScheduler(sched))
+	driver := runtimetest.MustProcessDriver(t, nil, store, runtime.WithClock(fc), runtime.WithScheduler(sched))
 
 	def := conflictTimerDef()
 	const instanceID = "conflict-timer-1"
@@ -277,23 +277,23 @@ func TestDeliverLoopPropagatesConcurrentUpdate(t *testing.T) {
 			return map[string]any{"greeted": true}, nil
 		}),
 	})
-	driver := runtimetest.MustRunner(t, cat, errStore{runtimetest.MustMemStore(t)})
+	driver := runtimetest.MustProcessDriver(t, cat, errStore{runtimetest.MustMemStore(t)})
 	_, err := driver.Drive(t.Context(), linearDef(), "i1", nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, kernel.ErrConcurrentUpdate,
 		"ErrConcurrentUpdate from Create must be surfaced via errors.Is")
 }
 
-// TestNewRunnerDefaultUsesSystemClock verifies that a ProcessDriver constructed without a
+// TestNewProcessDriverDefaultUsesSystemClock verifies that a ProcessDriver constructed without a
 // clock option stamps instance StartedAt from the system clock (within a real-time bracket).
-func TestNewRunnerDefaultUsesSystemClock(t *testing.T) {
+func TestNewProcessDriverDefaultUsesSystemClock(t *testing.T) {
 	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"ok": true}, nil
 		}),
 	})
 	before := time.Now()
-	driver := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t))
+	driver := runtimetest.MustProcessDriver(t, cat, runtimetest.MustMemStore(t))
 	st, err := driver.Drive(t.Context(), linearDef(), "i-sys-1", nil)
 	after := time.Now()
 	require.NoError(t, err)
@@ -303,16 +303,16 @@ func TestNewRunnerDefaultUsesSystemClock(t *testing.T) {
 		"StartedAt must be within [before, after] wall-clock bracket")
 }
 
-// TestNewRunnerWithClockOption verifies that WithClock injects a fake clock
+// TestNewProcessDriverWithClockOption verifies that WithClock injects a fake clock
 // whose time flows into the engine's StartedAt stamp (behavioral assertion).
-func TestNewRunnerWithClockOption(t *testing.T) {
+func TestNewProcessDriverWithClockOption(t *testing.T) {
 	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
 	cat := action.NewCatalog(map[string]action.Action{
 		"greet": action.ActionFunc(func(_ context.Context, _ map[string]any) (map[string]any, error) {
 			return map[string]any{"ok": true}, nil
 		}),
 	})
-	driver := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), runtime.WithClock(fake))
+	driver := runtimetest.MustProcessDriver(t, cat, runtimetest.MustMemStore(t), runtime.WithClock(fake))
 	st, err := driver.Drive(t.Context(), linearDef(), "i-fake-1", nil)
 	require.NoError(t, err)
 	// StartedAt is stamped from driver.clk.Now() = fake.Now() = time.Unix(1000, 0).

@@ -51,7 +51,7 @@ func cancelActionDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRunnerPerNodeCancelHandlerFires is the runtime e2e for per-node cancel
+// TestProcessDriverPerNodeCancelHandlerFires is the runtime e2e for per-node cancel
 // handlers (ADR-0035).
 //
 // Asserts:
@@ -59,7 +59,7 @@ func cancelActionDef() *model.ProcessDefinition {
 //  2. CancelInstance executes the "cleanup" cancel handler exactly once.
 //  3. A failing cancel handler does NOT fail CancelInstance (best-effort).
 //  4. Final status is StatusTerminated with no live tokens.
-func TestRunnerPerNodeCancelHandlerFires(t *testing.T) {
+func TestProcessDriverPerNodeCancelHandlerFires(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 
 	var cleanupRan atomic.Int32
@@ -73,7 +73,7 @@ func TestRunnerPerNodeCancelHandlerFires(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	driver := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	driver := runtimetest.MustProcessDriver(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
 	def := cancelActionDef()
 	const instanceID = "ch-i1"
@@ -92,9 +92,9 @@ func TestRunnerPerNodeCancelHandlerFires(t *testing.T) {
 	assert.EqualValues(t, 1, cleanupRan.Load(), "cleanup cancel handler must run exactly once")
 }
 
-// TestRunnerPerNodeCancelHandlerFailIsBestEffort verifies that a failing
+// TestProcessDriverPerNodeCancelHandlerFailIsBestEffort verifies that a failing
 // per-node cancel handler does NOT cause CancelInstance to return an error.
-func TestRunnerPerNodeCancelHandlerFailIsBestEffort(t *testing.T) {
+func TestProcessDriverPerNodeCancelHandlerFailIsBestEffort(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 
 	cat := action.NewCatalog(map[string]action.Action{
@@ -106,7 +106,7 @@ func TestRunnerPerNodeCancelHandlerFailIsBestEffort(t *testing.T) {
 	store := runtimetest.MustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
-	driver := runtimetest.MustRunner(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	driver := runtimetest.MustProcessDriver(t, cat, store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
 	def := cancelActionDef()
 	const instanceID = "ch-i2"
@@ -119,17 +119,17 @@ func TestRunnerPerNodeCancelHandlerFailIsBestEffort(t *testing.T) {
 	assert.Equal(t, engine.StatusTerminated, cancelSt.Status)
 }
 
-// TestRunnerPerNodeCancelHandlerMissingActionBestEffort verifies that when the
+// TestProcessDriverPerNodeCancelHandlerMissingActionBestEffort verifies that when the
 // cancel handler name resolves to nothing in the catalog, CancelInstance still
 // succeeds and returns StatusTerminated.
-func TestRunnerPerNodeCancelHandlerMissingActionBestEffort(t *testing.T) {
+func TestProcessDriverPerNodeCancelHandlerMissingActionBestEffort(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 
 	store := runtimetest.MustMemStore(t)
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 	// Empty catalog — "cleanup" will not resolve.
-	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
+	driver := runtimetest.MustProcessDriver(t, action.NewCatalog(nil), store, runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, nil))
 
 	def := cancelActionDef()
 	const instanceID = "ch-i3"

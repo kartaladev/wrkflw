@@ -39,7 +39,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	az := authz.RoleAuthorizer{}
 	store := runtimetest.MustMemStore(t)
 
-	driver := runtimetest.MustRunner(t, nil, store,
+	driver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -127,7 +127,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 // store does not have a record for the given instance ID.
 func TestDeliverLoadError(t *testing.T) {
 	ctx := t.Context()
-	driver := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t))
+	driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t))
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	trg := engine.NewHumanClaimed(clock.System().Now(), "no-token", manager)
 	_, err := driver.ApplyTrigger(ctx, runtimetest.ApprovalDef(), "non-existent", trg)
@@ -135,12 +135,12 @@ func TestDeliverLoadError(t *testing.T) {
 	assert.Contains(t, err.Error(), "workflow-runtime: deliver: load:")
 }
 
-// TestRunnerSnapshotsVarsIntoHumanTask verifies that the runner, when it performs
+// TestProcessDriverSnapshotsVarsIntoHumanTask verifies that the runner, when it performs
 // an AwaitHuman command, copies the current process variables into
 // HumanTask.Vars as a defensive snapshot — so attribute-based eligibility
 // predicates that reference data variables work correctly without aliasing the
 // live process-variable map.
-func TestRunnerSnapshotsVarsIntoHumanTask(t *testing.T) {
+func TestProcessDriverSnapshotsVarsIntoHumanTask(t *testing.T) {
 	ctx := t.Context()
 
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
@@ -150,7 +150,7 @@ func TestRunnerSnapshotsVarsIntoHumanTask(t *testing.T) {
 	})
 	az := authz.RoleAuthorizer{}
 
-	driver := runtimetest.MustRunner(t, nil, runtimetest.MustMemStore(t),
+	driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 	)
 
@@ -196,7 +196,7 @@ func approvalWithEligibleExprDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRunnerAttributeOverVarsThroughRunner verifies the FULL runner→snapshot→claim
+// TestProcessDriverAttributeOverVarsThroughRunner verifies the FULL runner→snapshot→claim
 // chain: the runner snapshots process variables into HumanTask.Vars when it
 // performs an AwaitHuman command, and TaskService.Claim enforces the
 // EligibleExpr predicate against those snapshotted vars. The task is NOT
@@ -206,7 +206,7 @@ func approvalWithEligibleExprDef() *model.ProcessDefinition {
 // Two instances are run:
 //  1. region="EU"  → Claim succeeds (predicate true).
 //  2. region="US"  → Claim returns ErrNotAuthorized (predicate false).
-func TestRunnerAttributeOverVarsThroughRunner(t *testing.T) {
+func TestProcessDriverAttributeOverVarsThroughRunner(t *testing.T) {
 	approver := authz.Actor{ID: "alice", Roles: []string{"approver"}}
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"approver": {approver},
@@ -244,7 +244,7 @@ func TestRunnerAttributeOverVarsThroughRunner(t *testing.T) {
 			az := authz.RoleAuthorizer{}
 			store := runtimetest.MustMemStore(t)
 
-			driver := runtimetest.MustRunner(t, nil, store,
+			driver := runtimetest.MustProcessDriver(t, nil, store,
 				runtime.WithHumanTasks(resolver, taskStore, az),
 			)
 

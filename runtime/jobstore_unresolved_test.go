@@ -41,7 +41,7 @@ func TestLoadScheduledUnresolvedDefinition_ReturnsSentinel(t *testing.T) {
 	// Arm a timer by driving to the parked state.
 	{
 		sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
-		driver := runtimetest.MustRunner(t, cat, store,
+		driver := runtimetest.MustProcessDriver(t, cat, store,
 			runtime.WithClock(fc),
 			runtime.WithScheduler(sched),
 			runtime.WithTimerStore(mts),
@@ -54,7 +54,7 @@ func TestLoadScheduledUnresolvedDefinition_ReturnsSentinel(t *testing.T) {
 	// Build a fresh driver WITHOUT the definition registered — simulates unresolved defs.
 	emptyReg := kernel.NewMapDefinitionRegistry() // empty — no definitions
 	freshStore := runtimetest.MustMemStore(t, kernel.WithTimers(mts))
-	driver2 := runtimetest.MustRunner(t, cat, freshStore,
+	driver2 := runtimetest.MustProcessDriver(t, cat, freshStore,
 		runtime.WithClock(fc),
 		runtime.WithTimerStore(mts),
 		runtime.WithDefinitions(emptyReg),
@@ -90,7 +90,7 @@ func TestLoadScheduledPartialUnresolved_ResolvableJobsReturned(t *testing.T) {
 	// Arm two timer instances — both reference the same "timer-intermediate" def.
 	for _, id := range []string{"partial-1", "partial-2"} {
 		sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
-		driver := runtimetest.MustRunner(t, cat, store,
+		driver := runtimetest.MustProcessDriver(t, cat, store,
 			runtime.WithClock(fc),
 			runtime.WithScheduler(sched),
 			runtime.WithTimerStore(mts),
@@ -111,7 +111,7 @@ func TestLoadScheduledPartialUnresolved_ResolvableJobsReturned(t *testing.T) {
 
 	// Build fresh driver with ONLY the known definition — ghost timer cannot resolve.
 	freshStore := runtimetest.MustMemStore(t, kernel.WithTimers(mts))
-	driver2 := runtimetest.MustRunner(t, cat, freshStore,
+	driver2 := runtimetest.MustProcessDriver(t, cat, freshStore,
 		runtime.WithClock(fc),
 		runtime.WithTimerStore(mts),
 		runtime.WithDefinitions(reg), // has "timer-intermediate" but not "nonexistent-def"
@@ -147,7 +147,7 @@ func TestSchedulerStart_UnresolvedDefinitions_NonFatal(t *testing.T) {
 	// Arm a timer so the durable store is non-empty.
 	{
 		sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
-		driver := runtimetest.MustRunner(t, cat, store,
+		driver := runtimetest.MustProcessDriver(t, cat, store,
 			runtime.WithClock(fc),
 			runtime.WithScheduler(sched),
 			runtime.WithTimerStore(mts),
@@ -168,7 +168,7 @@ func TestSchedulerStart_UnresolvedDefinitions_NonFatal(t *testing.T) {
 	t.Cleanup(func() { _ = sched2.Close() })
 
 	freshStore := runtimetest.MustMemStore(t, kernel.WithTimers(mts))
-	driver2 = runtimetest.MustRunner(t, cat, freshStore,
+	driver2 = runtimetest.MustProcessDriver(t, cat, freshStore,
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched2),
 		runtime.WithTimerStore(mts),

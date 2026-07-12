@@ -36,10 +36,10 @@ func timeoutTaskDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRunner_ActionTimeout verifies WithActionTimeout: an active timeout cancels a
+// TestProcessDriver_ActionTimeout verifies WithActionTimeout: an active timeout cancels a
 // blocking action (driving the instance to StatusFailed), an explicit zero disables
 // the deadline, and the default applies a deadline to the action context.
-func TestRunner_ActionTimeout(t *testing.T) {
+func TestProcessDriver_ActionTimeout(t *testing.T) {
 	t.Parallel()
 
 	type obs struct {
@@ -112,7 +112,7 @@ func TestRunner_ActionTimeout(t *testing.T) {
 			o := &obs{}
 			cat := action.NewCatalog(map[string]action.Action{"t": tc.newAction(o)})
 			opts := append([]runtime.Option{runtime.WithClock(clockwork.NewFakeClock())}, tc.opts...)
-			r := runtimetest.MustRunner(t, cat, runtimetest.MustMemStore(t), opts...)
+			r := runtimetest.MustProcessDriver(t, cat, runtimetest.MustMemStore(t), opts...)
 
 			st, err := r.Drive(t.Context(), timeoutTaskDef(), "p1", nil)
 			require.NoError(t, err)

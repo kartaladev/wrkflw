@@ -53,7 +53,7 @@ func buildOrderPlacedSendTaskDef() *model.ProcessDefinition {
 func TestSendTaskCommitsMessageOutboxEvent(t *testing.T) {
 	def := buildOrderPlacedSendTaskDef()
 	store := &recordingStore{InstanceStore: runtimetest.MustMemStore(t)}
-	r := runtimetest.MustRunner(t, nil, store) // nil catalog; SendTask needs no message sink
+	r := runtimetest.MustProcessDriver(t, nil, store) // nil catalog; SendTask needs no message sink
 	_, err := r.Drive(t.Context(), def, "i-1", map[string]any{"k": "v"})
 	require.NoError(t, err)
 

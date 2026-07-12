@@ -58,14 +58,14 @@ func (h *recordingHandler) errorMessages() []string {
 	return msgs
 }
 
-// TestRunnerDeadlineBreachActionDoesNotLogDeliverError is the regression test for
+// TestProcessDriverDeadlineBreachActionDoesNotLogDeliverError is the regression test for
 // the fire-and-forget fix. Before the fix, the deadline-breach InvokeAction was
 // fed back into the engine, where no token awaited its CommandID, producing
 // ErrTokenNotFound ("no token awaiting command") that the timer-fire path logged
 // as a LevelError "ApplyTrigger failed". The instance still completed, so asserting on
 // sched.Tick's return is insufficient (Tick swallows the error) — we must assert
 // on the captured log records.
-func TestRunnerDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
+func TestProcessDriverDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
 	ctx := t.Context()
 
 	startAt := time.Date(2026, 6, 26, 9, 0, 0, 0, time.UTC)
@@ -107,7 +107,7 @@ func TestRunnerDeadlineBreachActionDoesNotLogDeliverError(t *testing.T) {
 	rec := &recordingHandler{}
 	logger := slog.New(rec)
 
-	r := runtimetest.MustRunner(t, cat, store,
+	r := runtimetest.MustProcessDriver(t, cat, store,
 		runtime.WithClock(fc),
 		runtime.WithHumanTasks(resolver, taskStore, az),
 		runtime.WithScheduler(sched),

@@ -53,17 +53,17 @@ func noopCatalog() action.Catalog {
 	})
 }
 
-// TestRunnerWithExpressionTimeoutGuardsGateway proves the DoS guard is reachable
+// TestProcessDriverWithExpressionTimeoutGuardsGateway proves the DoS guard is reachable
 // in-engine when opted in: a ProcessDriver built WithExpressionTimeout(50ms) evaluating
 // a blocking gateway condition aborts with expreval.ErrEvalTimeout (surfaced as a
 // Drive error) rather than hanging the driver loop. This is the explicit opt-in
 // for untrusted definitions (ADR-0049).
-func TestRunnerWithExpressionTimeoutGuardsGateway(t *testing.T) {
+func TestProcessDriverWithExpressionTimeoutGuardsGateway(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })
 
-	driver := runtimetest.MustRunner(t, noopCatalog(), runtimetest.MustMemStore(t),
+	driver := runtimetest.MustProcessDriver(t, noopCatalog(), runtimetest.MustMemStore(t),
 		runtime.WithClock(fc),
 		runtime.WithExpressionTimeout(50*time.Millisecond))
 
@@ -85,13 +85,13 @@ func TestRunnerWithExpressionTimeoutGuardsGateway(t *testing.T) {
 		"Run must return promptly after the timeout, not block on the runaway expression")
 }
 
-// TestRunnerDefaultEvaluatesNormallyAndStaysPure proves the DEFAULT runner (no
+// TestProcessDriverDefaultEvaluatesNormallyAndStaysPure proves the DEFAULT runner (no
 // expression-timeout option) still evaluates gateway conditions normally and does
 // not acquire the wall-clock guard: with a real (non-blocking) condition the
 // instance runs to completion. amount=150 takes the "big" branch.
-func TestRunnerDefaultEvaluatesNormallyAndStaysPure(t *testing.T) {
+func TestProcessDriverDefaultEvaluatesNormallyAndStaysPure(t *testing.T) {
 	fc := clockwork.NewFakeClock()
-	driver := runtimetest.MustRunner(t, noopCatalog(), runtimetest.MustMemStore(t), runtime.WithClock(fc))
+	driver := runtimetest.MustProcessDriver(t, noopCatalog(), runtimetest.MustMemStore(t), runtime.WithClock(fc))
 
 	st, err := driver.Drive(t.Context(), exclusiveRuntimeDef(), "d1", map[string]any{"amount": 150})
 	require.NoError(t, err)
@@ -120,12 +120,12 @@ func exclusiveRuntimeDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRunnerWithConditionEvaluatorInjectsCustom proves the lower-level option
+// TestProcessDriverWithConditionEvaluatorInjectsCustom proves the lower-level option
 // WithConditionEvaluator threads a caller-supplied evaluator into the engine.
-func TestRunnerWithConditionEvaluatorInjectsCustom(t *testing.T) {
+func TestProcessDriverWithConditionEvaluatorInjectsCustom(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	ev := expreval.New(expreval.WithTimeout(0)) // pure, explicit
-	driver := runtimetest.MustRunner(t, noopCatalog(), runtimetest.MustMemStore(t),
+	driver := runtimetest.MustProcessDriver(t, noopCatalog(), runtimetest.MustMemStore(t),
 		runtime.WithClock(fc),
 		runtime.WithConditionEvaluator(ev))
 
