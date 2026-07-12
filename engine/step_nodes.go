@@ -39,8 +39,9 @@ type nodeStrategy interface {
 	// commands to its accumulator.
 	//
 	// halt signals that drive() must exit immediately (return cmds, nil) rather
-	// than continuing to the next active token. Only errorEndEventStrategy
-	// returns halt=true; all other strategies return halt=false.
+	// than continuing to the next active token. Only endEventStrategy's error
+	// branch (an EndEvent with Behavior==EndError, ADR-0127) returns halt=true;
+	// all other strategies and end behaviors return halt=false.
 	//
 	// Stopped semantics: drive() derives stopped = tok.State != TokenActive
 	// after a registry hit. Strategies that auto-advance (e.g. StartEvent)
@@ -67,7 +68,6 @@ var nodeStrategies = map[model.NodeKind]nodeStrategy{
 	model.KindSubProcess:             subProcessStrategy{},
 	model.KindUserTask:               userTaskStrategy{},
 	model.KindIntermediateCatchEvent: intermediateCatchEventStrategy{},
-	model.KindErrorEndEvent:          errorEndEventStrategy{},
 	model.KindExclusiveGateway:       exclusiveGatewayStrategy{},
 	model.KindParallelGateway:        parallelGatewayStrategy{},
 	model.KindInclusiveGateway:       inclusiveGatewayStrategy{},
@@ -223,7 +223,7 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 		// Error end event (ADR-0127): throw ev.ErrorCode from the token's scope.
 		// propagateError walks the scope chain to a matching boundary error
 		// handler (may catch + recover) or fails the instance. Body preserved
-		// verbatim from the former errorEndEventStrategy.
+		// verbatim from the former dedicated error-end node strategy (ADR-0127).
 		currentScopeID := tok.ScopeID
 		c.s.consumeToken(tok, c.at)
 		errCmds, propErr := propagateError(c.def, c.s, currentScopeID, "", "", ev.ErrorCode, nil, c.at, c.mode, c.eval, false)
@@ -751,39 +751,6 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 	}
 	// token parked: stopped=true (tok.State == TokenWaitingCommand != TokenActive).
 	return cmds, false, nil
-}
-
-// errorEndEventStrategy handles KindErrorEndEvent node entry.
-type errorEndEventStrategy struct{}
-
-func (errorEndEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	eee, ok := node.(event.ErrorEndEvent)
-	if !ok {
-		tok.State = TokenWaitingCommand
-		return nil, false, nil
-	}
-	var cmds []Command
-	// Error end event: throw an error with eee.ErrorCode from the token's
-	// current scope. propagateError walks the scope chain outward looking for
-	// a matching boundary error handler on the enclosing sub-process. An error
-	// end event is not an activity node that carries a direct boundary, so we
-	// pass "" as originatingNodeID (no direct-attachment check needed) and ""
-	// as failingTokenID (the error-end token is already consumed above).
-	currentScopeID := tok.ScopeID
-	c.s.consumeToken(tok, c.at)
-	errCmds, propErr := propagateError(c.def, c.s, currentScopeID, "", "", eee.ErrorCode, nil, c.at, c.mode, c.eval, false)
-	if propErr != nil {
-		// Real error from propagateError: surface it; drive() returns it as-is.
-		return cmds, false, propErr
-	}
-	cmds = append(cmds, errCmds...)
-	// propagateError either caught the error (routing a token to the recovery
-	// flow and calling drive() internally) or failed the instance (terminal path).
-	// Either way, drive() must exit immediately — identical to the original
-	// switch arm's `return cmds, nil`. halt=true signals drive() to do so.
-	// (tok.State need not be set: tok was already consumed above and is no
-	// longer in s.Tokens; drive() exits before rechecking it.)
-	return cmds, true, nil
 }
 
 // exclusiveGatewayStrategy handles KindExclusiveGateway node entry.

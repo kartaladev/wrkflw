@@ -73,12 +73,10 @@ func (b *Builder) AddStartEvent(id string, opts ...event.StartOption) *Builder {
 	return b.Add(event.NewStart(id, opts...))
 }
 
-// AddEndEvent adds an EndEvent. Use event.WithName and event.WithForceTermination.
+// AddEndEvent adds an EndEvent. Use event.WithName, event.WithForceTermination,
+// or event.WithErrorCode (error end event, ADR-0127).
 func (b *Builder) AddEndEvent(id string, opts ...event.EndOption) *Builder {
 	return b.Add(event.NewEnd(id, opts...))
-}
-func (b *Builder) AddErrorEndEvent(id, errorCode string, name ...string) *Builder {
-	return b.Add(event.NewErrorEnd(id, errorCode, name...))
 }
 func (b *Builder) AddIntermediateCatchEvent(id string, opts ...event.CatchOption) *Builder {
 	return b.Add(event.NewIntermediateCatch(id, opts...))

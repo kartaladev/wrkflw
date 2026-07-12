@@ -23,7 +23,6 @@ func TestNodeKindJSONMarshal(t *testing.T) {
 		{model.KindUnspecified, `"unspecified"`},
 		{model.KindStartEvent, `"startEvent"`},
 		{model.KindEndEvent, `"endEvent"`},
-		{model.KindErrorEndEvent, `"errorEndEvent"`},
 		{model.KindServiceTask, `"serviceTask"`},
 		{model.KindUserTask, `"userTask"`},
 		{model.KindReceiveTask, `"receiveTask"`},
@@ -77,6 +76,18 @@ func TestNodeKindTerminateEndRetired(t *testing.T) {
 	if err := k.UnmarshalJSON([]byte(`"terminateEndEvent"`)); err == nil {
 		t.Fatal("UnmarshalJSON(\"terminateEndEvent\") = nil error, want error (kind retired)")
 	}
+}
+
+// TestRetiredErrorEndWireName verifies that the retired error-end wire name no
+// longer resolves to a NodeKind — the standalone error end kind was folded into
+// EndEvent's EndError behavior (ADR-0127), so decoding that name must error.
+func TestRetiredErrorEndWireName(t *testing.T) {
+	t.Parallel()
+	const wireName = "errorEndEvent" // retired name, folded into EndEvent (ADR-0127)
+	var k model.NodeKind
+	err := k.UnmarshalJSON([]byte(`"` + wireName + `"`))
+	require.Error(t, err, "decoding a retired wire name must error")
+	assert.Contains(t, err.Error(), wireName)
 }
 
 // TestNodeKindJSONInNode verifies that a Node containing a NodeKind field

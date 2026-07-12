@@ -61,7 +61,7 @@ func TestEndEventConstructor(t *testing.T) {
 	}
 }
 
-func TestErrorEndEventConstructor(t *testing.T) {
+func TestErrorEndConstructor(t *testing.T) {
 	n := event.NewEnd("err-end", event.WithErrorCode("ERR_PAYMENT"))
 	if n.Kind() != model.KindEndEvent {
 		t.Fatalf("Kind() = %v, want KindEndEvent", n.Kind())

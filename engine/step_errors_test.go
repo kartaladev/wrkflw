@@ -160,7 +160,7 @@ func actionFailedBoundaryDef() *model.ProcessDefinition {
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestErrorEndCaughtByBoundary verifies that a KindErrorEndEvent inside a
+// TestErrorEndCaughtByBoundary verifies that an error end event inside a
 // sub-process is caught by a boundary error event on the sub-process activity.
 // The recovery path must run (InvokeAction("recover-action")), the sub-process
 // scope's tokens must be cancelled (scope closed), and the instance must NOT

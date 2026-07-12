@@ -17,7 +17,6 @@ const (
 	KindUnspecified NodeKind = iota
 	KindStartEvent
 	KindEndEvent
-	KindErrorEndEvent
 	KindServiceTask
 	KindUserTask
 	KindReceiveTask

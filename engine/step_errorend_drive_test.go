@@ -1,21 +1,22 @@
 package engine_test
 
 // step_errorend_drive_test.go — regression test for the behavior-divergence
-// introduced by the nodeStrategy migration of KindErrorEndEvent.
+// once introduced by the nodeStrategy migration of the error-end node, plus a
+// parity test for the unified error-behavior end event (ADR-0127).
 //
-// Bug: after migration, errorEndEventStrategy.enter sets tok.State =
-// TokenWaitingCommand and returns, which makes drive() see stopped=true and
-// continue to the NEXT active token on the NEXT loop iteration. The ORIGINAL
-// switch arm executed `return cmds, nil` which exited drive() entirely.
+// Bug (historical): the error-end strategy set tok.State = TokenWaitingCommand
+// and returned, which made drive() see stopped=true and continue to the NEXT
+// active token on the NEXT loop iteration. The ORIGINAL switch arm executed
+// `return cmds, nil` which exited drive() entirely.
 //
 // When the instance hits the immediate-failure path inside propagateError (no
 // matching boundary handler + no compensation records → StatusFailed +
 // FailInstance but s.Tokens NOT cleared), a surviving sibling token from a
-// parallel fork that is STILL TokenActive (because the ErrorEndEvent branch
-// was processed FIRST) continues to be driven — emitting a spurious
-// InvokeAction on an already-Failed instance.
+// parallel fork that is STILL TokenActive (because the error-end branch was
+// processed FIRST) continues to be driven — emitting a spurious InvokeAction
+// on an already-Failed instance.
 //
-// Reproducing ordering: put the ErrorEndEvent branch FIRST in the fork's
+// Reproducing ordering: put the error-end branch FIRST in the fork's
 // outgoing-flow list so forkParallel places its token before the ServiceTask
 // token. firstActive() picks err-end first, propagateError fails the instance
 // but leaves svc-a's token as TokenActive; drive continues and drives svc-a.
@@ -35,24 +36,24 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/engine"
 )
 
-// parallelErrorEndFirstNoHandlerDef builds a process where the ErrorEndEvent
+// parallelErrorEndFirstNoHandlerDef builds a process where the error-end
 // branch is the FIRST outgoing flow of the parallel fork, so forkParallel
 // places its token before the ServiceTask token.
 //
 //	start → fork (parallel gateway)
-//	          ├── [0] err-end (ErrorEndEvent "FATAL", no boundary handler)  ← FIRST
+//	          ├── [0] err-end (EndError "FATAL", no boundary handler)  ← FIRST
 //	          └── [1] svc-a  (ServiceTask, parks awaiting InvokeAction)
 //
 // No boundary error handlers, no compensation records → propagateError takes
 // the immediate-failure path: sets StatusFailed + emits FailInstance but does
 // NOT clear s.Tokens.
 //
-// Bug behaviour: drive() continues after errorEndEventStrategy.enter returns
+// Bug behaviour: drive() continues after the error-end branch returns
 // (stopped=true is not a break in Macro mode), picks up svc-a (still
 // TokenActive), and emits a spurious second InvokeAction("svc-a") after
 // FailInstance.
 //
-// Fixed behaviour: errorEndEventStrategy returns halt=true, drive() exits
+// Fixed behaviour: the error-end branch returns halt=true, drive() exits
 // immediately via `return cmds, nil`; no InvokeAction appears after
 // FailInstance.
 func parallelErrorEndFirstNoHandlerDef() *model.ProcessDefinition {
@@ -75,25 +76,25 @@ func parallelErrorEndFirstNoHandlerDef() *model.ProcessDefinition {
 	}
 }
 
-// TestErrorEndEventHaltsDriveOnImmediateFailure is the regression test for the
+// TestErrorEndHaltsDriveOnImmediateFailure is the regression test for the
 // behavior-divergence bug.
 //
-// Before the fix (current code):
+// Before the fix:
 //   - drive picks err-end first (it's the first active token after forkParallel).
-//   - errorEndEventStrategy.enter consumes the err-end token, calls propagateError.
+//   - the error-end branch consumes the err-end token, calls propagateError.
 //   - propagateError: no handler → StatusFailed + FailInstance, but s.Tokens still
 //     contains svc-a with TokenActive.
-//   - errorEndEventStrategy sets tok.State = TokenWaitingCommand, returns.
+//   - the error-end branch sets tok.State = TokenWaitingCommand, returns.
 //   - drive: stopped = (TokenWaitingCommand != TokenActive) = true.
 //   - Macro mode: loop does NOT break on stopped; calls firstActive() again.
 //   - firstActive() finds svc-a (still TokenActive) → drives it → InvokeAction("svc-a").
 //   - RESULT: InvokeAction("svc-a") appears AFTER FailInstance → BUG.
 //
 // After the fix:
-//   - errorEndEventStrategy returns halt=true.
+//   - the error-end branch returns halt=true.
 //   - drive: halt=true → `return cmds, nil` immediately.
 //   - RESULT: no InvokeAction after FailInstance → CORRECT.
-func TestErrorEndEventHaltsDriveOnImmediateFailure(t *testing.T) {
+func TestErrorEndHaltsDriveOnImmediateFailure(t *testing.T) {
 	at := time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
 	def := parallelErrorEndFirstNoHandlerDef()
 
@@ -104,7 +105,7 @@ func TestErrorEndEventHaltsDriveOnImmediateFailure(t *testing.T) {
 
 	// The instance MUST be Failed (propagateError took the immediate-failure path).
 	assert.Equal(t, engine.StatusFailed, res.State.Status,
-		"instance must be StatusFailed after unhandled ErrorEndEvent")
+		"instance must be StatusFailed after an unhandled error end event")
 	require.NotNil(t, res.State.EndedAt, "EndedAt must be set on failure")
 
 	// Locate FailInstance — exactly one must exist.
@@ -128,15 +129,15 @@ func TestErrorEndEventHaltsDriveOnImmediateFailure(t *testing.T) {
 
 	// The instance must not be Completed.
 	assert.NotEqual(t, engine.StatusCompleted, res.State.Status,
-		"instance must not be Completed when ErrorEndEvent fails the instance")
+		"instance must not be Completed when an error end event fails the instance")
 }
 
 // newAPIErrorEndCaughtByBoundaryDef mirrors errorEndCaughtByBoundaryDef but
 // authors the inner error end via the unified EndEvent API (ADR-0127):
-// event.NewEnd(id, event.WithErrorCode("BOOM")) instead of the retired
-// event.NewErrorEnd. The behavioral contract is identical: the thrown error is
-// caught by the sub-process's boundary error event, the recovery flow runs, and
-// the instance is NOT failed.
+// event.NewEnd(id, event.WithErrorCode("BOOM")) instead of the retired dedicated
+// error-end constructor. The behavioral contract is identical: the thrown error
+// is caught by the sub-process's boundary error event, the recovery flow runs,
+// and the instance is NOT failed.
 //
 //	Root: start → sub(sp) → end-ok
 //	      sp has boundary error "BOOM" → recover → end
@@ -176,8 +177,9 @@ func newAPIErrorEndCaughtByBoundaryDef() *model.ProcessDefinition {
 
 // TestNewAPIErrorEndCaughtByBoundary verifies that an EndEvent with
 // Behavior==EndError (authored via event.WithErrorCode) throws exactly like the
-// former ErrorEndEvent: the error is caught by the sub-process boundary, the
-// recovery ServiceTask is invoked, and the instance is NOT failed (ADR-0127).
+// former standalone error end kind: the error is caught by the sub-process
+// boundary, the recovery ServiceTask is invoked, and the instance is NOT failed
+// (ADR-0127).
 func TestNewAPIErrorEndCaughtByBoundary(t *testing.T) {
 	def := newAPIErrorEndCaughtByBoundaryDef()
 	at := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)

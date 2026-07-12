@@ -148,9 +148,10 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 			}
 			cmds = append(cmds, produced...)
 			if halt {
-				// ErrorEndEvent: reproduce the original arm's `return cmds, nil` —
-				// exit drive() entirely (the instance is terminal or propagateError
-				// already drained/routed all tokens), not just this token.
+				// Error-behavior end event (EndEvent with Behavior==EndError,
+				// ADR-0127): exit drive() entirely (the instance is terminal or
+				// propagateError already drained/routed all tokens), not just this
+				// token.
 				return cmds, nil
 			}
 			// Preserve Micro-mode semantics: a strategy that parks the token

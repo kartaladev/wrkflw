@@ -122,16 +122,6 @@ type EndEvent struct {
 // Kind returns model.KindEndEvent.
 func (EndEvent) Kind() model.NodeKind { return model.KindEndEvent }
 
-// ErrorEndEvent throws a workflow error when reached, caught by a boundary error event.
-type ErrorEndEvent struct {
-	model.Base
-	// ErrorCode is the workflow error code thrown (empty = anonymous catch-all).
-	ErrorCode string
-}
-
-// Kind returns model.KindErrorEndEvent.
-func (ErrorEndEvent) Kind() model.NodeKind { return model.KindErrorEndEvent }
-
 // IntermediateCatchEvent waits for a timer, signal, or message. It can wait, so
 // it embeds model.WaitFields (deadline escalation + reminders).
 type IntermediateCatchEvent struct {
@@ -219,13 +209,6 @@ func (CompensationThrowEvent) Kind() model.NodeKind { return model.KindCompensat
 
 // --- constructors ---
 
-func optName(name []string) string {
-	if len(name) > 0 {
-		return name[0]
-	}
-	return ""
-}
-
 // NewStart constructs a StartEvent. Use WithName plus WithSignalName/
 // WithMessageCorrelator/WithStartTimer to configure an event-triggered
 // (signal/message/timer) start, e.g. the inner start of an event sub-process.
@@ -245,11 +228,6 @@ func NewEnd(id string, opts ...EndOption) model.Node {
 		o.applyEnd(&n)
 	}
 	return n
-}
-
-// NewErrorEnd constructs an ErrorEndEvent. An optional name may be provided.
-func NewErrorEnd(id, errorCode string, name ...string) model.Node {
-	return ErrorEndEvent{model.NewBase(id, optName(name)), errorCode}
 }
 
 // NewIntermediateCatch constructs an IntermediateCatchEvent. Options can be WithCatchTimer,
@@ -357,11 +335,6 @@ func init() {
 				w.ErrorCode = v.ErrorCode
 			}
 		},
-	})
-	model.RegisterKind(model.KindErrorEndEvent, model.NodeSpec{
-		Name:     "errorEndEvent",
-		FromWire: func(b model.Base, w model.NodeWire) model.Node { return ErrorEndEvent{b, w.ErrorCode} },
-		ToWire:   func(n model.Node, w *model.NodeWire) { w.ErrorCode = n.(ErrorEndEvent).ErrorCode },
 	})
 	model.RegisterKind(model.KindIntermediateCatchEvent, model.NodeSpec{
 		Name: "intermediateCatchEvent",

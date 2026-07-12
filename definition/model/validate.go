@@ -273,7 +273,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	}
 
 	for _, n := range d.Nodes {
-		isEnd := n.Kind() == KindEndEvent || n.Kind() == KindErrorEndEvent
+		isEnd := n.Kind() == KindEndEvent
 		// An event sub-process (a KindSubProcess whose inner start is
 		// event-triggered) is not sequenced by flow: it is latent until its
 		// trigger fires, runs its nested definition to its OWN end, and never
