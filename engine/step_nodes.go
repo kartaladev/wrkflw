@@ -81,10 +81,6 @@ var nodeStrategies = map[model.NodeKind]nodeStrategy{
 type serviceTaskStrategy struct{}
 
 func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	if _, ok := node.(activity.ServiceTask); !ok {
-		tok.State = TokenWaitingCommand
-		return nil, false, nil
-	}
 	var cmds []Command
 	cmdID := c.s.nextCommandID()
 	cmds = append(cmds, InvokeAction{
@@ -111,10 +107,6 @@ func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 type businessRuleTaskStrategy struct{}
 
 func (businessRuleTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	if _, ok := node.(activity.BusinessRuleTask); !ok {
-		tok.State = TokenWaitingCommand
-		return nil, false, nil
-	}
 	var cmds []Command
 	cmdID := c.s.nextCommandID()
 	cmds = append(cmds, InvokeAction{
@@ -140,11 +132,7 @@ func (businessRuleTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) (
 type receiveTaskStrategy struct{}
 
 func (receiveTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	rt, ok := node.(activity.ReceiveTask)
-	if !ok {
-		tok.State = TokenWaitingCommand
-		return nil, false, nil
-	}
+	rt := node.(activity.ReceiveTask)
 	resolvedKey, err := c.eval.EvalString(rt.CorrelationKey, c.s.Variables)
 	if err != nil {
 		return nil, false, fmt.Errorf("workflow-engine: receive task %q correlation key: %w", node.ID(), err)
@@ -175,11 +163,7 @@ func (receiveTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 type sendTaskStrategy struct{}
 
 func (sendTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	st, ok := node.(activity.SendTask)
-	if !ok {
-		tok.State = TokenWaitingCommand
-		return nil, false, nil
-	}
+	st := node.(activity.SendTask)
 	resolvedKey, err := c.eval.EvalString(st.CorrelationKey, c.s.Variables)
 	if err != nil {
 		return nil, false, fmt.Errorf("workflow-engine: send task %q correlation key: %w", node.ID(), err)
@@ -521,11 +505,7 @@ func forceTerminate(c *stepCtx, ev event.EndEvent) ([]Command, bool, error) {
 type subProcessStrategy struct{}
 
 func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	sp, ok := node.(activity.SubProcess)
-	if !ok {
-		tok.State = TokenWaitingCommand
-		return nil, false, nil
-	}
+	sp := node.(activity.SubProcess)
 	var cmds []Command
 	// Embedded sub-process entry: open a scope, place a token on the nested
 	// start node, and consume the sub-process activity token (it is "inside" now).
@@ -605,11 +585,7 @@ func armWaitReminder(c *stepCtx, tok *Token, node model.Node, cancelKey string, 
 type userTaskStrategy struct{}
 
 func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	ut, ok := node.(activity.UserTask)
-	if !ok {
-		tok.State = TokenWaitingCommand
-		return nil, false, nil
-	}
+	ut := node.(activity.UserTask)
 	var cmds []Command
 	taskToken := c.s.nextTaskToken()
 	spec := authz.AuthzSpec{
@@ -699,11 +675,7 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 type intermediateCatchEventStrategy struct{}
 
 func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	ice, ok := node.(event.IntermediateCatchEvent)
-	if !ok {
-		tok.State = TokenWaitingCommand
-		return nil, false, nil
-	}
+	ice := node.(event.IntermediateCatchEvent)
 	var cmds []Command
 	timerSpec, err := ResolveTrigger(c.eval, ice.Timer, c.s.Variables)
 	if err != nil {
@@ -895,11 +867,7 @@ func (eventBasedGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) 
 type callActivityStrategy struct{}
 
 func (callActivityStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	ca, ok := node.(activity.CallActivity)
-	if !ok {
-		tok.State = TokenWaitingCommand
-		return nil, false, nil
-	}
+	ca := node.(activity.CallActivity)
 	var cmds []Command
 	// Call activity: emit StartSubInstance and park the token. The runtime
 	// resolves DefRef via a DefinitionRegistry, runs the child to completion,
@@ -930,11 +898,7 @@ func (callActivityStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Co
 type intermediateThrowEventStrategy struct{}
 
 func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	ite, ok := node.(event.IntermediateThrowEvent)
-	if !ok {
-		tok.State = TokenWaitingCommand
-		return nil, false, nil
-	}
+	ite := node.(event.IntermediateThrowEvent)
 	var cmds []Command
 	if ite.SignalName != "" {
 		// Signal intermediate throw: emit ThrowSignal and continue along the
@@ -979,11 +943,7 @@ func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 type compensationThrowEventStrategy struct{}
 
 func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	cte, ok := node.(event.CompensationThrowEvent)
-	if !ok {
-		tok.State = TokenWaitingCommand
-		return nil, false, nil
-	}
+	cte := node.(event.CompensationThrowEvent)
 	var cmds []Command
 
 	// The resume target is the throw's single outgoing successor. A throw with no
