@@ -41,12 +41,15 @@ type nodeYAML struct {
 	MessageName          string `yaml:"messageName,omitempty"`
 	CorrelationKey       string `yaml:"correlationKey,omitempty"`
 	// MessageStartSingleton mirrors NodeWire.MessageStartSingleton (ADR-0121 review).
-	MessageStartSingleton bool            `yaml:"messageStartSingleton,omitempty"`
-	ErrorCode             string          `yaml:"errorCode,omitempty"`
-	AttachedTo            string          `yaml:"attachedTo,omitempty"`
-	NonInterrupting       bool            `yaml:"nonInterrupting,omitempty"`
-	Subprocess            *definitionYAML `yaml:"subprocess,omitempty"`
-	DefRef                string          `yaml:"defRef,omitempty"`
+	MessageStartSingleton bool   `yaml:"messageStartSingleton,omitempty"`
+	ErrorCode             string `yaml:"errorCode,omitempty"`
+	// EndBehavior mirrors NodeWire.EndBehavior — the name-based EndEvent
+	// discriminator ("terminate"/"error"); empty means normal (ADR-0127).
+	EndBehavior     string          `yaml:"endBehavior,omitempty"`
+	AttachedTo      string          `yaml:"attachedTo,omitempty"`
+	NonInterrupting bool            `yaml:"nonInterrupting,omitempty"`
+	Subprocess      *definitionYAML `yaml:"subprocess,omitempty"`
+	DefRef          string          `yaml:"defRef,omitempty"`
 	// Validation mirrors NodeWire.Validation for the YAML authoring form.
 	Validation *validate.ValidationDescriptor `yaml:"validation,omitempty"`
 }
@@ -122,6 +125,7 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 		CorrelationKey:        ny.CorrelationKey,
 		MessageStartSingleton: ny.MessageStartSingleton,
 		ErrorCode:             ny.ErrorCode,
+		EndBehavior:           ny.EndBehavior,
 		AttachedTo:            ny.AttachedTo,
 		NonInterrupting:       ny.NonInterrupting,
 		Subprocess:            subDef,

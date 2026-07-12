@@ -64,7 +64,7 @@ flows), `IsDefault`.
 | root (entry) | `.../definition` | **Only** `NewBuilder` (fluent Go entry) and `NewLoader` (YAML entry) — the one place that can import `build` without a cycle. No re-exports; every other symbol is used from its source package below. |
 | model | `.../definition/model` | `Node`, `NodeKind`, `ProcessDefinition`, `RetryPolicy`, `Validate`, JSON/YAML (de)serialization, the kind registry, shared embeds (`Base`, `ActivityFields`, `WaitFields`, `TaskAction`), the `ErrX` sentinels. The de-facto types package. Imports only `flow`. |
 | flow | `.../definition/flow` | `SequenceFlow`, `Option`, `WithFlowID`, `WithCondition`, `AsDefault`. |
-| events | `.../definition/event` | `NewStart`, `NewEnd`, `NewErrorEnd`, `NewIntermediateCatch`, `NewIntermediateThrow`, `NewBoundary` + their options |
+| events | `.../definition/event` | `NewStart`, `NewEnd`, `NewIntermediateCatch`, `NewIntermediateThrow`, `NewBoundary` + their options |
 | gateways | `.../definition/gateway` | `NewExclusive`, `NewParallel`, `NewInclusive`, `NewEventBased` |
 | activities | `.../definition/activity` | `NewServiceTask`, `NewUserTask`, `NewReceiveTask`, `NewSendTask`, `NewBusinessRuleTask`, `NewSubProcess`, `NewCallActivity` + their options |
 | fluent builder | `.../definition/build` | `Builder` with per-kind `AddX` methods (`AddStartEvent`, …); entered via `definition.NewBuilder`. |
@@ -95,8 +95,7 @@ kind-specific data generically).
 | Kind constant | Constructor |
 |---|---|
 | `KindStartEvent` | `event.NewStart(id, opts...)` (as the event-triggered inner start of an event sub-process, also `WithNonInterrupting`) |
-| `KindEndEvent` | `event.NewEnd(id, opts...)` (`WithName`, `WithForceTermination(reason, outcome)`) |
-| `KindErrorEndEvent` | `event.NewErrorEnd(id, errorCode, name...)` |
+| `KindEndEvent` | `event.NewEnd(id, opts...)` (`WithName`, `WithForceTermination(reason, outcome)`, `WithErrorCode(code)`) |
 | `KindIntermediateCatchEvent` | `event.NewIntermediateCatch(id, opts...)` |
 | `KindIntermediateThrowEvent` | `event.NewIntermediateThrow(id, opts...)` (signal broadcast only — see `NewCompensateThrow` for compensation) |
 | `KindCompensationThrowEvent` | `event.NewCompensateThrow(id, opts...)` (targeted or scope-wide compensation throw, ADR-0120) |

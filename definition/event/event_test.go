@@ -13,6 +13,25 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
+func TestEndBehaviorString(t *testing.T) {
+	t.Parallel()
+	cases := map[string]struct {
+		in   event.EndBehavior
+		want string
+	}{
+		"normal":    {event.EndNormal, "normal"},
+		"terminate": {event.EndTerminate, "terminate"},
+		"error":     {event.EndError, "error"},
+		"unknown":   {event.EndBehavior(99), "normal"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, c.want, c.in.String())
+		})
+	}
+}
+
 func TestStartEventOptions(t *testing.T) {
 	n := event.NewStart("s",
 		event.WithName("Start"),
@@ -89,15 +108,15 @@ func TestEndEventConstructors(t *testing.T) {
 	}{
 		{event.NewEnd("e", event.WithName("End")), model.KindEndEvent},
 		{event.NewEnd("t", event.WithForceTermination("terminated", event.OutcomeAbort)), model.KindEndEvent},
-		{event.NewErrorEnd("er", "E_BOOM", "Boom"), model.KindErrorEndEvent},
+		{event.NewEnd("er", event.WithErrorCode("E_BOOM"), event.WithName("Boom")), model.KindEndEvent},
 	}
 	for _, c := range cases {
 		if c.n.Kind() != c.k {
 			t.Errorf("Kind() = %v, want %v", c.n.Kind(), c.k)
 		}
 	}
-	if ee := event.NewErrorEnd("er", "E_X").(event.ErrorEndEvent); ee.ErrorCode != "E_X" {
-		t.Errorf("ErrorCode = %q", ee.ErrorCode)
+	if ee := event.NewEnd("er", event.WithErrorCode("E_X")).(event.EndEvent); ee.Behavior != event.EndError || ee.ErrorCode != "E_X" {
+		t.Errorf("Behavior = %v, ErrorCode = %q", ee.Behavior, ee.ErrorCode)
 	}
 }
 

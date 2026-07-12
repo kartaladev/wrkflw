@@ -27,9 +27,9 @@ import (
 //  3. ErrorCode — exact match or catch-all: n.ErrorCode == "" || n.ErrorCode == errorCode.
 //
 // cause is the live thrown error: the original action error when available, or
-// a synthesized errors.New(errorCode) for bare-code sources (ErrorEndEvent,
-// sub-instance failure). Callers guarantee cause is non-nil by the time
-// boundaryErrorMatches is called.
+// a synthesized errors.New(errorCode) for bare-code sources (an error-behavior
+// end event, sub-instance failure). Callers guarantee cause is non-nil by the
+// time boundaryErrorMatches is called.
 func boundaryErrorMatches(n event.BoundaryEvent, vars map[string]any, cause error, errorCode string, eval ConditionEvaluator) (bool, error) {
 	if n.ErrorCheck != nil {
 		// Pass a shallow clone so a misbehaving closure cannot mutate the live
@@ -88,29 +88,29 @@ func boundaryErrorMatches(n event.BoundaryEvent, vars map[string]any, cause erro
 //   - Emit CancelTimer for all outstanding timers, armed events, and boundaries.
 //
 // originatingNodeID should be set to the failing activity's NodeID (tok.NodeID) when
-// called from ActionFailed. For KindErrorEndEvent, pass "" (an error end event is not
-// an activity with a direct-attaching boundary).
+// called from ActionFailed. For an error-behavior end event, pass "" (an error end
+// event is not an activity with a direct-attaching boundary).
 //
 // failingTokenID is the ID of the specific token that failed. When originatingNodeID
 // is non-empty (ActionFailed path), the direct-attachment branch consumes THIS token
 // by ID rather than by NodeID+ScopeID. This is correct when two active tokens occupy
 // the same node in the same scope (e.g. in a parallel/loop topology) — consuming by
-// ID ensures only the exact failing token is removed. For the KindErrorEndEvent path
-// (originatingNodeID == ""), the error-end token is already consumed by drive before
-// propagateError is called, so failingTokenID is unused.
+// ID ensures only the exact failing token is removed. For the error-behavior end
+// event path (originatingNodeID == ""), the error-end token is already consumed by
+// drive before propagateError is called, so failingTokenID is unused.
 // raiseIncidentOnUnhandled controls the no-handler fallback: when true, an
 // unhandled error parks the failing token as a [TokenIncident] and keeps the
 // instance running (admin-resumable) instead of setting StatusFailed.
 //
 // cause is the original Go error from the live action invocation; pass nil for
-// bare-code sources (ErrorEndEvent, sub-instance failures). When nil, a
-// synthesized errors.New(errorCode) is created so ErrorCheck closures always
-// receive a non-nil error.
+// bare-code sources (an error-behavior end event, sub-instance failures). When
+// nil, a synthesized errors.New(errorCode) is created so ErrorCheck closures
+// always receive a non-nil error.
 func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, cause error, at time.Time, mode StepMode, eval ConditionEvaluator, raiseIncidentOnUnhandled bool) ([]Command, error) {
 	// Guarantee that ErrorCheck closures always receive a non-nil error.
-	// For bare-code sources (ErrorEndEvent, sub-instance) the caller passes
-	// nil; synthesize errors.New(errorCode) so the closure can inspect the
-	// code via err.Error() without requiring a nil-check.
+	// For bare-code sources (an error-behavior end event, sub-instance) the
+	// caller passes nil; synthesize errors.New(errorCode) so the closure can
+	// inspect the code via err.Error() without requiring a nil-check.
 	if cause == nil {
 		cause = errors.New(errorCode)
 	}

@@ -68,36 +68,59 @@ func (o TerminationOutcome) String() string {
 	}
 }
 
-// EndEvent is the workflow end event: a normal process completion point. When
-// ForceTermination is set (via WithForceTermination) it instead terminates the
-// whole instance — cancelling remaining parallel tokens, timers, boundaries,
-// event sub-process arms, and open tasks — and ends at the Outcome-selected
-// status carrying TerminationReason.
+// EndBehavior selects what an EndEvent does when a token reaches it. It mirrors
+// BPMN's optional end event definition — none, terminate, or error — which are
+// mutually exclusive (an end event carries at most one).
+type EndBehavior int
+
+const (
+	// EndNormal is a plain completion point (BPMN: no event definition).
+	EndNormal EndBehavior = iota
+	// EndTerminate force-terminates the whole instance (ADR-0119). Payload:
+	// TerminationReason + Outcome.
+	EndTerminate
+	// EndError throws a workflow error caught by a boundary error event (BPMN
+	// error end event). Payload: ErrorCode.
+	EndError
+)
+
+// String returns the stable lowercase name ("normal"/"terminate"/"error"),
+// used for wire encoding and logging.
+func (b EndBehavior) String() string {
+	switch b {
+	case EndTerminate:
+		return "terminate"
+	case EndError:
+		return "error"
+	default:
+		return "normal"
+	}
+}
+
+// EndEvent is the workflow end event: a normal process completion point. Its
+// Behavior discriminator (ADR-0127) selects one of three behaviors. With
+// EndTerminate (via WithForceTermination) it terminates the whole instance —
+// cancelling remaining parallel tokens, timers, boundaries, event sub-process
+// arms, and open tasks — and ends at the Outcome-selected status carrying
+// TerminationReason. With EndError (via WithErrorCode) it throws ErrorCode as a
+// workflow error caught by an enclosing boundary error event.
 type EndEvent struct {
 	model.Base
-	// ForceTermination, when true, makes this end event terminate the entire
-	// instance rather than just consuming its own token.
-	ForceTermination bool
-	// TerminationReason is a human-readable reason recorded on force-termination
-	// (empty when ForceTermination is false).
+	// Behavior selects what happens when a token reaches this end event
+	// (ADR-0127). EndNormal (default) completes; EndTerminate force-terminates
+	// the instance; EndError throws ErrorCode.
+	Behavior EndBehavior
+	// TerminationReason is recorded on EndTerminate (empty otherwise).
 	TerminationReason string
-	// Outcome selects the terminal status on force-termination. Ignored when
-	// ForceTermination is false.
+	// Outcome selects the terminal status on EndTerminate. Ignored otherwise.
 	Outcome TerminationOutcome
+	// ErrorCode is the workflow error thrown on EndError ("" = anonymous
+	// catch-all). Ignored unless Behavior == EndError.
+	ErrorCode string
 }
 
 // Kind returns model.KindEndEvent.
 func (EndEvent) Kind() model.NodeKind { return model.KindEndEvent }
-
-// ErrorEndEvent throws a workflow error when reached, caught by a boundary error event.
-type ErrorEndEvent struct {
-	model.Base
-	// ErrorCode is the workflow error code thrown (empty = anonymous catch-all).
-	ErrorCode string
-}
-
-// Kind returns model.KindErrorEndEvent.
-func (ErrorEndEvent) Kind() model.NodeKind { return model.KindErrorEndEvent }
 
 // IntermediateCatchEvent waits for a timer, signal, or message. It can wait, so
 // it embeds model.WaitFields (deadline escalation + reminders).
@@ -186,13 +209,6 @@ func (CompensationThrowEvent) Kind() model.NodeKind { return model.KindCompensat
 
 // --- constructors ---
 
-func optName(name []string) string {
-	if len(name) > 0 {
-		return name[0]
-	}
-	return ""
-}
-
 // NewStart constructs a StartEvent. Use WithName plus WithSignalName/
 // WithMessageCorrelator/WithStartTimer to configure an event-triggered
 // (signal/message/timer) start, e.g. the inner start of an event sub-process.
@@ -212,11 +228,6 @@ func NewEnd(id string, opts ...EndOption) model.Node {
 		o.applyEnd(&n)
 	}
 	return n
-}
-
-// NewErrorEnd constructs an ErrorEndEvent. An optional name may be provided.
-func NewErrorEnd(id, errorCode string, name ...string) model.Node {
-	return ErrorEndEvent{model.NewBase(id, optName(name)), errorCode}
 }
 
 // NewIntermediateCatch constructs an IntermediateCatchEvent. Options can be WithCatchTimer,
@@ -296,29 +307,34 @@ func init() {
 	model.RegisterKind(model.KindEndEvent, model.NodeSpec{
 		Name: "endEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			outcome := OutcomeComplete
-			if w.TerminationOutcome == "abort" {
-				outcome = OutcomeAbort
+			e := EndEvent{Base: b}
+			switch w.EndBehavior {
+			case "terminate":
+				e.Behavior = EndTerminate
+				e.TerminationReason = w.TerminationReason
+				e.Outcome = OutcomeComplete
+				if w.TerminationOutcome == "abort" {
+					e.Outcome = OutcomeAbort
+				}
+			case "error":
+				e.Behavior = EndError
+				e.ErrorCode = w.ErrorCode
 			}
-			return EndEvent{
-				Base:              b,
-				ForceTermination:  w.ForceTermination,
-				TerminationReason: w.TerminationReason,
-				Outcome:           outcome,
-			}
+			return e
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(EndEvent)
-			w.ForceTermination, w.TerminationReason = v.ForceTermination, v.TerminationReason
-			if v.ForceTermination {
+			w.EndBehavior = ""
+			switch v.Behavior {
+			case EndTerminate:
+				w.EndBehavior = "terminate"
+				w.TerminationReason = v.TerminationReason
 				w.TerminationOutcome = v.Outcome.String()
+			case EndError:
+				w.EndBehavior = "error"
+				w.ErrorCode = v.ErrorCode
 			}
 		},
-	})
-	model.RegisterKind(model.KindErrorEndEvent, model.NodeSpec{
-		Name:     "errorEndEvent",
-		FromWire: func(b model.Base, w model.NodeWire) model.Node { return ErrorEndEvent{b, w.ErrorCode} },
-		ToWire:   func(n model.Node, w *model.NodeWire) { w.ErrorCode = n.(ErrorEndEvent).ErrorCode },
 	})
 	model.RegisterKind(model.KindIntermediateCatchEvent, model.NodeSpec{
 		Name: "intermediateCatchEvent",

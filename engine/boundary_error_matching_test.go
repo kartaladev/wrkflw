@@ -475,7 +475,7 @@ func TestBoundaryErrorMatchingPrecedence(t *testing.T) {
 }
 
 // TestBoundaryErrorCheckNilCauseSynthesis verifies that when ActionFailed has
-// no live Cause (bare-code source like ErrorEndEvent/sub-instance), the ErrorCheck
+// no live Cause (bare-code source like an error end event / sub-instance), the ErrorCheck
 // closure receives a synthesized errors.New(errorCode) so it can inspect the code
 // via err.Error().
 func TestBoundaryErrorCheckNilCauseSynthesis(t *testing.T) {

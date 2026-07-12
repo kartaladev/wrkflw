@@ -106,3 +106,17 @@ func TestWithSignalName_ListenKinds(t *testing.T) {
 		assert.Equal(t, "s", b.SignalName)
 	})
 }
+
+func TestWithErrorCode(t *testing.T) {
+	t.Parallel()
+	n := event.NewEnd("e", event.WithErrorCode("ORDER_REJECTED")).(event.EndEvent)
+	assert.Equal(t, event.EndError, n.Behavior)
+	assert.Equal(t, "ORDER_REJECTED", n.ErrorCode)
+}
+
+func TestWithErrorCodeEmptyIsCatchAll(t *testing.T) {
+	t.Parallel()
+	n := event.NewEnd("e", event.WithErrorCode("")).(event.EndEvent)
+	assert.Equal(t, event.EndError, n.Behavior) // still error behavior, not EndNormal
+	assert.Empty(t, n.ErrorCode)
+}

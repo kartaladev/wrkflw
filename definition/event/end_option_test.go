@@ -35,8 +35,8 @@ func TestNewEndWithForceTermination(t *testing.T) {
 	if !ok {
 		t.Fatalf("NewEnd returned %T, want event.EndEvent", n)
 	}
-	if !ev.ForceTermination {
-		t.Fatal("ForceTermination = false, want true")
+	if ev.Behavior != event.EndTerminate {
+		t.Fatalf("Behavior = %v, want EndTerminate", ev.Behavior)
 	}
 	if ev.TerminationReason != "fraud detected" {
 		t.Fatalf("TerminationReason = %q, want %q", ev.TerminationReason, "fraud detected")
@@ -52,8 +52,8 @@ func TestNewEndWithForceTermination(t *testing.T) {
 func TestNewEndPlain(t *testing.T) {
 	t.Parallel()
 	ev := event.NewEnd("done").(event.EndEvent)
-	if ev.ForceTermination {
-		t.Fatal("plain NewEnd should not force-terminate")
+	if ev.Behavior != event.EndNormal {
+		t.Fatalf("plain NewEnd Behavior = %v, want EndNormal", ev.Behavior)
 	}
 	if ev.Outcome != event.OutcomeComplete {
 		t.Fatalf("plain NewEnd Outcome = %v, want OutcomeComplete (zero value)", ev.Outcome)

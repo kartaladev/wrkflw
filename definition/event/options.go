@@ -274,7 +274,7 @@ type forceTerminationOpt struct {
 }
 
 func (o forceTerminationOpt) applyEnd(n *EndEvent) {
-	n.ForceTermination = true
+	n.Behavior = EndTerminate
 	n.TerminationReason = o.reason
 	n.Outcome = o.outcome
 }
@@ -287,6 +287,24 @@ func (o forceTerminationOpt) applyEnd(n *EndEvent) {
 // Force-termination is only meaningful in a definition with multiple end events
 // (or parallel branches) to cancel; on a single-end definition it is redundant
 // (a WARN is logged at registration).
+//
+// Mutually exclusive with WithErrorCode; if both are applied the last one wins.
 func WithForceTermination(reason string, outcome TerminationOutcome) EndOption {
 	return forceTerminationOpt{reason: reason, outcome: outcome}
+}
+
+type errorCodeOpt struct{ code string }
+
+func (o errorCodeOpt) applyEnd(n *EndEvent) {
+	n.Behavior = EndError
+	n.ErrorCode = o.code
+}
+
+// WithErrorCode makes an EndEvent throw a workflow error when reached (BPMN
+// error end event). The error is caught by an enclosing boundary error event —
+// matched by exact errorCode or, if errorCode is "", as an anonymous catch-all —
+// otherwise it fails the instance. Mutually exclusive with WithForceTermination;
+// if both are applied the last one wins.
+func WithErrorCode(errorCode string) EndOption {
+	return errorCodeOpt{code: errorCode}
 }
