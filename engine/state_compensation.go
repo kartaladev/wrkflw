@@ -288,17 +288,31 @@ func (s *InstanceState) consolidateArchiveIntoRoot() {
 	})
 }
 
-// closeScope removes the Scope with the given scopeID from s.Scopes. It is a
-// no-op if no scope with that ID exists. Child scopes (those whose ParentID
-// equals scopeID) are NOT automatically removed — callers are responsible for
-// closing or reparenting children before closing a parent. This is intentionally
-// minimal; Plan 8 (compensation/rollback) will add the richer cascading logic.
+// closeScope removes the Scope with the given scopeID from s.Scopes, along
+// with every descendant scope reachable via the ParentID chain (a scope whose
+// ParentID is scopeID, or whose ParentID is itself a removed descendant). It
+// is a no-op if no scope with that ID exists (also covering the case where
+// scopeID was already closed). Callers remain responsible for any per-scope
+// cleanup outside s.Scopes (cancelling tokens, arms, timers) before invoking
+// closeScope; this only prunes the scope tree itself (ADR-0130).
 func (s *InstanceState) closeScope(scopeID string) {
+	if s.scopeByID(scopeID) == nil {
+		return
+	}
+
+	// doomed collects scopeID plus every descendant scope ID. A single
+	// forward pass over s.Scopes suffices because openScope always appends a
+	// child after its parent (ScopeSeq is monotonically increasing and a
+	// scope's ParentID must already exist when it is opened), so by the time
+	// a scope is visited its parent's doomed status is already known.
+	doomed := map[string]bool{scopeID: true}
 	out := make([]Scope, 0, len(s.Scopes))
 	for _, sc := range s.Scopes {
-		if sc.ID != scopeID {
-			out = append(out, sc)
+		if doomed[sc.ID] || doomed[sc.ParentID] {
+			doomed[sc.ID] = true
+			continue
 		}
+		out = append(out, sc)
 	}
 	s.Scopes = out
 }

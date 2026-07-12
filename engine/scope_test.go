@@ -123,6 +123,95 @@ func TestCloseScopeIsNoOpForMissing(t *testing.T) {
 	assert.Len(t, s.Scopes, 1)
 }
 
+// TestCloseScopeCascadesToDescendants asserts closeScope removes the target
+// scope AND every descendant scope reachable via the ParentID chain, leaves
+// unrelated scopes intact, and is idempotent (closing an absent/already-closed
+// scope is a safe no-op). (ADR-0130)
+func TestCloseScopeCascadesToDescendants(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name string
+		// build constructs the state, returns the scope ID to close and the
+		// sets of scope IDs expected to be removed vs. still present after
+		// the close.
+		build func(t *testing.T) (s *engine.InstanceState, closeTarget string, wantRemoved, wantRemain []string)
+	}
+
+	cases := []testCase{
+		{
+			name: "cascades to a single child",
+			build: func(t *testing.T) (*engine.InstanceState, string, []string, []string) {
+				t.Helper()
+				s := &engine.InstanceState{InstanceID: "cas-1"}
+				parent := engine.OpenScope(s, "sub-proc", "")
+				child := engine.OpenScope(s, "embedded", parent)
+				return s, parent, []string{parent, child}, nil
+			},
+		},
+		{
+			name: "cascades through multiple generations",
+			build: func(t *testing.T) (*engine.InstanceState, string, []string, []string) {
+				t.Helper()
+				s := &engine.InstanceState{InstanceID: "cas-2"}
+				parent := engine.OpenScope(s, "sub-proc", "")
+				child := engine.OpenScope(s, "embedded", parent)
+				grandchild := engine.OpenScope(s, "nested", child)
+				return s, parent, []string{parent, child, grandchild}, nil
+			},
+		},
+		{
+			name: "leaves unrelated sibling scopes intact",
+			build: func(t *testing.T) (*engine.InstanceState, string, []string, []string) {
+				t.Helper()
+				s := &engine.InstanceState{InstanceID: "cas-3"}
+				parent := engine.OpenScope(s, "sub-proc", "")
+				child := engine.OpenScope(s, "embedded", parent)
+				sibling := engine.OpenScope(s, "other-sub-proc", "")
+				return s, parent, []string{parent, child}, []string{sibling}
+			},
+		},
+		{
+			name: "idempotent when the scope id does not exist",
+			build: func(t *testing.T) (*engine.InstanceState, string, []string, []string) {
+				t.Helper()
+				s := &engine.InstanceState{InstanceID: "cas-4"}
+				parent := engine.OpenScope(s, "sub-proc", "")
+				child := engine.OpenScope(s, "embedded", parent)
+				return s, "does-not-exist", nil, []string{parent, child}
+			},
+		},
+		{
+			name: "idempotent when closing an already-closed scope",
+			build: func(t *testing.T) (*engine.InstanceState, string, []string, []string) {
+				t.Helper()
+				s := &engine.InstanceState{InstanceID: "cas-5"}
+				parent := engine.OpenScope(s, "sub-proc", "")
+				engine.OpenScope(s, "embedded", parent)
+				engine.CloseScope(s, parent) // pre-close: parent+child already gone
+				return s, parent, nil, nil
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			s, closeTarget, wantRemoved, wantRemain := tc.build(t)
+
+			engine.CloseScope(s, closeTarget)
+
+			for _, id := range wantRemoved {
+				assert.Nil(t, engine.ScopeByID(s, id), "expected scope %q to be removed", id)
+			}
+			for _, id := range wantRemain {
+				assert.NotNil(t, engine.ScopeByID(s, id), "expected scope %q to remain", id)
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // cloneState: Scopes deep-copy
 // ---------------------------------------------------------------------------
