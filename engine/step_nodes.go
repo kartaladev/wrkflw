@@ -212,25 +212,26 @@ func (startEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 type endEventStrategy struct{}
 
 func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	// Force-termination (ADR-0119) short-circuits the normal per-scope completion
-	// logic below: instead of consuming only this token, it cancels ALL remaining
-	// parallel work and ends the whole instance at the outcome-selected status.
-	if ev, ok := node.(event.EndEvent); ok && ev.Behavior == event.EndTerminate {
-		return forceTerminate(c, ev)
-	}
-
-	if ev, ok := node.(event.EndEvent); ok && ev.Behavior == event.EndError {
-		// Error end event (ADR-0127): throw ev.ErrorCode from the token's scope.
-		// propagateError walks the scope chain to a matching boundary error
-		// handler (may catch + recover) or fails the instance. Body preserved
-		// verbatim from the former dedicated error-end node strategy (ADR-0127).
-		currentScopeID := tok.ScopeID
-		c.s.consumeToken(tok, c.at)
-		errCmds, propErr := propagateError(c.def, c.s, currentScopeID, "", "", ev.ErrorCode, nil, c.at, c.mode, c.eval, false)
-		if propErr != nil {
-			return nil, false, propErr
+	// A non-normal EndEvent short-circuits the per-scope completion logic below
+	// (ADR-0127). EndTerminate cancels ALL remaining parallel work and ends the
+	// whole instance at the outcome-selected status (ADR-0119); EndError throws
+	// ev.ErrorCode from the token's scope.
+	if ev, ok := node.(event.EndEvent); ok {
+		switch ev.Behavior {
+		case event.EndTerminate:
+			return forceTerminate(c, ev)
+		case event.EndError:
+			// propagateError walks the scope chain to a matching boundary error
+			// handler (may catch + recover) or fails the instance. Body preserved
+			// verbatim from the former dedicated error-end node strategy.
+			currentScopeID := tok.ScopeID
+			c.s.consumeToken(tok, c.at)
+			errCmds, propErr := propagateError(c.def, c.s, currentScopeID, "", "", ev.ErrorCode, nil, c.at, c.mode, c.eval, false)
+			if propErr != nil {
+				return nil, false, propErr
+			}
+			return errCmds, true, nil
 		}
-		return errCmds, true, nil
 	}
 
 	var cmds []Command
