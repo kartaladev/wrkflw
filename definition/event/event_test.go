@@ -13,6 +13,25 @@ import (
 	"github.com/zakyalvan/krtlwrkflw/definition/schedule"
 )
 
+func TestEndBehaviorString(t *testing.T) {
+	t.Parallel()
+	cases := map[string]struct {
+		in   event.EndBehavior
+		want string
+	}{
+		"normal":    {event.EndNormal, "normal"},
+		"terminate": {event.EndTerminate, "terminate"},
+		"error":     {event.EndError, "error"},
+		"unknown":   {event.EndBehavior(99), "normal"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, c.want, c.in.String())
+		})
+	}
+}
+
 func TestStartEventOptions(t *testing.T) {
 	n := event.NewStart("s",
 		event.WithName("Start"),

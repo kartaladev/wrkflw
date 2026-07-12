@@ -68,6 +68,35 @@ func (o TerminationOutcome) String() string {
 	}
 }
 
+// EndBehavior selects what an EndEvent does when a token reaches it. It mirrors
+// BPMN's optional end event definition — none, terminate, or error — which are
+// mutually exclusive (an end event carries at most one).
+type EndBehavior int
+
+const (
+	// EndNormal is a plain completion point (BPMN: no event definition).
+	EndNormal EndBehavior = iota
+	// EndTerminate force-terminates the whole instance (ADR-0119). Payload:
+	// TerminationReason + Outcome.
+	EndTerminate
+	// EndError throws a workflow error caught by a boundary error event (BPMN
+	// error end event). Payload: ErrorCode.
+	EndError
+)
+
+// String returns the stable lowercase name ("normal"/"terminate"/"error"),
+// used for wire encoding and logging.
+func (b EndBehavior) String() string {
+	switch b {
+	case EndTerminate:
+		return "terminate"
+	case EndError:
+		return "error"
+	default:
+		return "normal"
+	}
+}
+
 // EndEvent is the workflow end event: a normal process completion point. When
 // ForceTermination is set (via WithForceTermination) it instead terminates the
 // whole instance — cancelling remaining parallel tokens, timers, boundaries,
