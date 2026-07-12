@@ -99,7 +99,7 @@ func TestRunnerDefaultEvaluatesNormallyAndStaysPure(t *testing.T) {
 }
 
 // exclusiveRuntimeDef mirrors the engine exclusiveDef but with noop actions so a
-// runtime Runner can execute it end-to-end.
+// runtime ProcessDriver can execute it end-to-end.
 func exclusiveRuntimeDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "xor-rt", Version: 1,

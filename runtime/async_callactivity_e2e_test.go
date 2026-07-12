@@ -467,7 +467,7 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	tasks := humantask.NewMemTaskStore()
 
-	// Runner built WITHOUT WithCallLinkStore → synchronous call-activity path.
+	// ProcessDriver built WITHOUT WithCallLinkStore → synchronous call-activity path.
 	driver := runtimetest.MustRunner(t, nil, store,
 		runtime.WithClock(clk),
 		runtime.WithDefinitions(reg),

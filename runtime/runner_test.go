@@ -131,11 +131,11 @@ func userTaskOnlyDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRunnerUserTaskWithoutDepsErrors verifies that a Runner constructed without
-// human-task dependencies (nil resolver and nil TaskStore) returns a descriptive
-// error — rather than panicking — when it reaches an AwaitHuman command.
+// TestRunnerUserTaskWithoutDepsErrors verifies that a ProcessDriver constructed
+// without human-task dependencies (nil resolver and nil TaskStore) returns a
+// descriptive error — rather than panicking — when it reaches an AwaitHuman command.
 func TestRunnerUserTaskWithoutDepsErrors(t *testing.T) {
-	// Build a Runner with no human-task option (nil resolver and nil tasks).
+	// Build a ProcessDriver with no human-task option (nil resolver and nil tasks).
 	driver := runtimetest.MustRunner(t, action.NewCatalog(nil), runtimetest.MustMemStore(t))
 	// WithHumanTasks intentionally omitted to test error path.
 
@@ -284,7 +284,7 @@ func TestDeliverLoopPropagatesConcurrentUpdate(t *testing.T) {
 		"ErrConcurrentUpdate from Create must be surfaced via errors.Is")
 }
 
-// TestNewRunnerDefaultUsesSystemClock verifies that a Runner constructed without a
+// TestNewRunnerDefaultUsesSystemClock verifies that a ProcessDriver constructed without a
 // clock option stamps instance StartedAt from the system clock (within a real-time bracket).
 func TestNewRunnerDefaultUsesSystemClock(t *testing.T) {
 	cat := action.NewCatalog(map[string]action.Action{

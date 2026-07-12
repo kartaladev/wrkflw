@@ -1,25 +1,21 @@
 package engine_test
 
-// step_errorend_drive_test.go — regression test for the behavior-divergence
-// once introduced by the nodeStrategy migration of the error-end node, plus a
-// parity test for the unified error-behavior end event (ADR-0127).
+// step_errorend_drive_test.go — verifies drive() halts immediately when an
+// error-behavior end event (an EndEvent with Behavior==EndError, ADR-0127) fails
+// the instance, so a sibling parallel token is not driven on an already-failed
+// instance.
 //
-// Bug (historical): the error-end strategy set tok.State = TokenWaitingCommand
-// and returned, which made drive() see stopped=true and continue to the NEXT
-// active token on the NEXT loop iteration. The ORIGINAL switch arm executed
-// `return cmds, nil` which exited drive() entirely.
+// Contract: when propagateError takes the immediate-failure path (no matching
+// boundary handler + no compensation records → StatusFailed + FailInstance, with
+// s.Tokens NOT cleared), drive() must return rather than advance to the next
+// active token. Otherwise a sibling token from a parallel fork that is still
+// TokenActive keeps being driven — emitting a spurious InvokeAction on an
+// already-Failed instance.
 //
-// When the instance hits the immediate-failure path inside propagateError (no
-// matching boundary handler + no compensation records → StatusFailed +
-// FailInstance but s.Tokens NOT cleared), a surviving sibling token from a
-// parallel fork that is STILL TokenActive (because the error-end branch was
-// processed FIRST) continues to be driven — emitting a spurious InvokeAction
-// on an already-Failed instance.
-//
-// Reproducing ordering: put the error-end branch FIRST in the fork's
-// outgoing-flow list so forkParallel places its token before the ServiceTask
-// token. firstActive() picks err-end first, propagateError fails the instance
-// but leaves svc-a's token as TokenActive; drive continues and drives svc-a.
+// Ordering: the error-end branch is placed FIRST in the fork's outgoing-flow
+// list so forkParallel positions its token before the ServiceTask token;
+// firstActive() picks the error-end first and propagateError fails the instance.
+// The test asserts svc-a is never invoked.
 
 import (
 	"testing"

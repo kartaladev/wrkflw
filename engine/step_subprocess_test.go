@@ -114,8 +114,8 @@ func TestEmbeddedSubProcessRunsAndContinues(t *testing.T) {
 //   - Outer (root-scope) tokens carry an empty ScopeID.
 //   - Inner tokens carry the sub-process scope ID.
 //
-// This is folded into the main test above but verified explicitly here as a
-// focused assertion for clarity in the audit trail.
+// This is also covered by the main test above but verified explicitly here as a
+// focused assertion.
 func TestEmbeddedSubProcessTokenTagging(t *testing.T) {
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 	def := subProcessDef()

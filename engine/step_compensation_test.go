@@ -283,11 +283,11 @@ func compensableSubThenRootDef() *model.ProcessDefinition {
 	}
 }
 
-// TestArchiveSubProcessCompensationAndReachViaWalk is the ADR-0039 replacement for
-// the former ADR-0013 "hoist" test. It verifies that after a sub-process completes
-// and its scope closes, the inner compensable activity's record is archived in
-// ArchivedCompensations (not RootCompensations), and that a subsequent
-// CompensateRequested consolidates the archive and emits the compensation action.
+// TestArchiveSubProcessCompensationAndReachViaWalk verifies that after a
+// sub-process completes and its scope closes, the inner compensable activity's
+// record is archived in ArchivedCompensations (not RootCompensations), and that
+// a subsequent CompensateRequested consolidates the archive and emits the
+// compensation action (ADR-0039).
 func TestArchiveSubProcessCompensationAndReachViaWalk(t *testing.T) {
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 	def := compensableSubThenRootDef()

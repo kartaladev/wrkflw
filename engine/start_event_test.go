@@ -121,10 +121,9 @@ func TestHandleStartInstanceResolvesNode(t *testing.T) {
 	}
 }
 
-// TestNewStartInstance_DefaultsEmptyStartNodeID verifies that the existing
-// two-arg NewStartInstance constructor keeps its current signature and leaves
-// StartNodeID at its zero value ("") — the empty-node-id-resolves-manual-start
-// path — preserving pre-ADR-0121 behavior for every existing caller.
+// TestNewStartInstance_DefaultsEmptyStartNodeID verifies that the two-arg
+// NewStartInstance constructor leaves StartNodeID at its zero value ("") — the
+// empty-node-id-resolves-manual-start path (ADR-0121).
 func TestNewStartInstance_DefaultsEmptyStartNodeID(t *testing.T) {
 	trg := engine.NewStartInstance(time.Unix(0, 0), nil)
 	assert.Empty(t, trg.StartNodeID)

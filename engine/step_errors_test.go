@@ -881,8 +881,6 @@ func TestCancelRequestedTerminates(t *testing.T) {
 // TestCompensateRequestedUnknownToNodeErrors verifies that when CompensateRequested
 // specifies a ToNode that does not match any compensation record in scope,
 // the engine returns a descriptive error rather than silently rolling back everything.
-//
-// This is the Task-3 review fix folded into Task 4.
 func TestCompensateRequestedUnknownToNodeErrors(t *testing.T) {
 	// Build a simple process with one compensable service task.
 	def := &model.ProcessDefinition{

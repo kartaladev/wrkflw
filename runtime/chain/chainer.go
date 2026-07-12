@@ -28,9 +28,8 @@ type ChainEvent struct {
 	// PredecessorDefinitionRef is the id:version reference of the instance that
 	// reached a terminal state, carried end-to-end through the outbox by the
 	// built-in publisher/relay (ADR-0047) so a SuccessorPolicy can route on the
-	// predecessor's definition. It is the zero Qualifier only for events produced
-	// before ADR-0047 or by a consumer pipeline that does not set the
-	// "definition_ref" metadata key.
+	// predecessor's definition. It is the zero Qualifier when a consumer pipeline
+	// does not set the "definition_ref" metadata key.
 	PredecessorDefinitionRef model.Qualifier
 	// Outcome is the terminal outcome that fired the event.
 	Outcome kernel.ChainOutcome

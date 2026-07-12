@@ -11,7 +11,7 @@ package runtime_test
 // top-level definition's scoped catalog missed → ActionFailed
 // (retryable=false) → instance Failed, action never ran.
 //
-// This test runs the exact scenario end-to-end through the public Runner and
+// This test runs the exact scenario end-to-end through the public ProcessDriver and
 // asserts the nested definition's scoped action RAN and the instance did NOT
 // fail. The global catalog is deliberately empty: the nested definition's own
 // scoped catalog is the ONLY way "inner-svc" resolves.
