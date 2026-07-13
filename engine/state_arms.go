@@ -1,5 +1,26 @@
 package engine
 
+// triggerMatch is the trigger-correlation quartet shared by the three arm
+// families (armedEvent, boundaryArm, eventTriggeredSubprocessArm): what an
+// incoming TimerFired/SignalReceived/MessageReceived trigger is matched
+// against. Embedded ANONYMOUSLY in each arm type so field access/assignment
+// (arm.TimerID, arm.Signal, ...) works unchanged via Go's field-promotion
+// rules, and so json.Marshal/Unmarshal of the enclosing arm type is
+// byte-identical to the pre-embed shape (an anonymous embedded struct's
+// fields are promoted into the parent JSON object — see ADR-0131 and the
+// parity test in state_arms_wire_test.go). At most one of the four fields is
+// non-empty for a given arm (timer XOR signal XOR message).
+type triggerMatch struct {
+	// TimerID is the scheduled timer id for timer arms (empty for signal/message arms).
+	TimerID string
+	// Signal is the signal name for signal arms (empty for timer/message arms).
+	Signal string
+	// Message is the message name for message arms (empty for timer/signal arms).
+	Message string
+	// MessageKey is the resolved correlation key for message arms (empty if no key).
+	MessageKey string
+}
+
 // armedEvent is the engine's bookkeeping entry for a single arm of an event-based
 // gateway. When a KindEventBasedGateway is driven, one armedEvent is recorded for
 // each outgoing catch-event node. The first arm to fire wins; its siblings are
@@ -29,14 +50,8 @@ type armedEvent struct {
 	CatchNode string
 	// Flow is the sequence flow ID from the gateway to the catch node.
 	Flow string
-	// TimerID is the scheduled timer id for timer arms (empty for signal/message arms).
-	TimerID string
-	// Signal is the signal name for signal arms (empty for timer/message arms).
-	Signal string
-	// Message is the message name for message arms (empty for timer/signal arms).
-	Message string
-	// MessageKey is the resolved correlation key for message arms (empty if no key).
-	MessageKey string
+	// triggerMatch carries TimerID/Signal/Message/MessageKey (promoted).
+	triggerMatch
 }
 
 // boundaryArm is the engine's bookkeeping entry for a single armed boundary
@@ -59,18 +74,8 @@ type boundaryArm struct {
 	// NonInterrupting mirrors model.Node.NonInterrupting; false = interrupting
 	// (the default), true = non-interrupting.
 	NonInterrupting bool
-	// TimerID is the scheduled timer id for timer boundary events. Empty for
-	// signal/message boundary events.
-	TimerID string
-	// Signal is the signal name for signal boundary events. Empty for
-	// timer/message boundary events.
-	Signal string
-	// Message is the message name for message boundary events. Empty for
-	// timer/signal boundary events.
-	Message string
-	// MessageKey is the resolved correlation key for message boundary events
-	// (empty if no CorrelationKey was configured — match on message name alone).
-	MessageKey string
+	// triggerMatch carries TimerID/Signal/Message/MessageKey (promoted).
+	triggerMatch
 	// Action is the catalog action name to invoke (FireAndForget) when the
 	// boundary fires, before routing. Empty means no action is emitted.
 	Action string
@@ -101,21 +106,13 @@ type eventTriggeredSubprocessArm struct {
 	// SubProcess-form inner event-triggered start's flag (see eventSubprocessNested).
 	// false = interrupting (the default); true = non-interrupting.
 	NonInterrupting bool
-	// Signal is the signal name from the event sub-process's nested start event.
-	// Non-empty for signal-triggered event sub-processes.
-	Signal string
-	// TimerID is the scheduled timer ID for timer-triggered event sub-processes.
-	// Non-empty for timer-triggered event sub-processes.
+	// triggerMatch carries TimerID/Signal/Message/MessageKey (promoted).
 	//
 	// NOTE: the corresponding ScheduleTimer.Token is intentionally EMPTY for ESP
 	// arms — the timer is keyed to the enclosing scope (EnclosingScopeID), not to
 	// any individual token. Cancellation is performed via
 	// removeEventTriggeredSubprocessArmsForScope (by TimerID), not by token lookup.
-	TimerID string
-	// Message is the message name for message-triggered event sub-processes.
-	Message string
-	// MessageKey is the resolved correlation key for message-triggered event sub-processes.
-	MessageKey string
+	triggerMatch
 }
 
 // cancelAllArmsAndBoundaries returns CancelTimer commands for every timer arm

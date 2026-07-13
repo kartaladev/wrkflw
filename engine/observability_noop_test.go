@@ -105,7 +105,7 @@ func TestHandleTimerFired_TerminalInstanceNoOp_LogsWarn(t *testing.T) {
 		InstanceID: "i1",
 		Status:     StatusFailed,
 		Boundaries: []boundaryArm{
-			{HostToken: "h1", HostNode: "work", BoundaryNode: "bnd", Flow: "f3", TimerID: "bt1"},
+			{HostToken: "h1", HostNode: "work", BoundaryNode: "bnd", Flow: "f3", triggerMatch: triggerMatch{TimerID: "bt1"}},
 		},
 	}
 
