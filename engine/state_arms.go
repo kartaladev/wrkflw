@@ -154,145 +154,153 @@ func (s *InstanceState) cancelAllArmsAndBoundaries() []Command {
 	return cmds
 }
 
-// armedEventByTimer returns a pointer to the first armedEvent with the given
-// timerID, or nil if none exists.
-func (s *InstanceState) armedEventByTimer(timerID string) *armedEvent {
-	for i := range s.ArmedEvents {
-		if s.ArmedEvents[i].TimerID == timerID {
-			return &s.ArmedEvents[i]
+// armMatchable constrains a *T that exposes the arm's embedded triggerMatch,
+// letting the generic scan/remove helpers (armByTimer/armBySignal/armByMessage,
+// removeArmsWhere) operate uniformly over all three arm families. Each arm type
+// satisfies it via the trivial matchPtr method below; PT is inferred from the
+// slice element type at every call site (no explicit type args needed).
+type armMatchable[T any] interface {
+	*T
+	matchPtr() *triggerMatch
+}
+
+func (a *armedEvent) matchPtr() *triggerMatch                  { return &a.triggerMatch }
+func (b *boundaryArm) matchPtr() *triggerMatch                 { return &b.triggerMatch }
+func (e *eventTriggeredSubprocessArm) matchPtr() *triggerMatch { return &e.triggerMatch }
+
+// armByTimer returns a pointer to the first arm in arms whose embedded timer id
+// equals timerID, or nil if none exists. Slice order is preserved (first match
+// wins) and the returned pointer aliases the slice element so callers may mutate
+// it in place.
+func armByTimer[T any, PT armMatchable[T]](arms []T, timerID string) *T {
+	for i := range arms {
+		if PT(&arms[i]).matchPtr().TimerID == timerID {
+			return &arms[i]
 		}
 	}
 	return nil
+}
+
+// armBySignal returns a pointer to the first arm whose embedded signal name
+// equals name, or nil. See armByTimer for the pointer-aliasing contract.
+func armBySignal[T any, PT armMatchable[T]](arms []T, name string) *T {
+	for i := range arms {
+		if PT(&arms[i]).matchPtr().Signal == name {
+			return &arms[i]
+		}
+	}
+	return nil
+}
+
+// armByMessage returns a pointer to the first arm whose embedded Message equals
+// name and MessageKey equals correlationKey, or nil. See armByTimer for the
+// pointer-aliasing contract.
+func armByMessage[T any, PT armMatchable[T]](arms []T, name, correlationKey string) *T {
+	for i := range arms {
+		m := PT(&arms[i]).matchPtr()
+		if m.Message == name && m.MessageKey == correlationKey {
+			return &arms[i]
+		}
+	}
+	return nil
+}
+
+// removeArmsWhere returns the subset of arms that do NOT satisfy owned, together
+// with the TimerIDs of every removed timer arm (empty TimerIDs skipped) so the
+// caller can emit CancelTimer commands. The kept slice is always non-nil (an
+// empty, allocated slice when everything is removed), matching the per-family
+// filters' prior behavior so the persisted JSON shape is unchanged. Slice order
+// is preserved. owned keys on the arm's OWNER field (GatewayToken/HostToken/
+// EnclosingScopeID) — the genuinely per-family part — supplied by each wrapper.
+func removeArmsWhere[T any, PT armMatchable[T]](arms []T, owned func(*T) bool) (kept []T, cancelTimerIDs []string) {
+	kept = make([]T, 0, len(arms))
+	for i := range arms {
+		if owned(&arms[i]) {
+			if id := PT(&arms[i]).matchPtr().TimerID; id != "" {
+				cancelTimerIDs = append(cancelTimerIDs, id)
+			}
+			continue
+		}
+		kept = append(kept, arms[i])
+	}
+	return kept, cancelTimerIDs
+}
+
+// armedEventByTimer returns a pointer to the first armedEvent with the given
+// timerID, or nil if none exists.
+func (s *InstanceState) armedEventByTimer(timerID string) *armedEvent {
+	return armByTimer(s.ArmedEvents, timerID)
 }
 
 // armedEventBySignal returns a pointer to the first armedEvent with the given
 // signal name, or nil if none exists.
 func (s *InstanceState) armedEventBySignal(name string) *armedEvent {
-	for i := range s.ArmedEvents {
-		if s.ArmedEvents[i].Signal == name {
-			return &s.ArmedEvents[i]
-		}
-	}
-	return nil
+	return armBySignal(s.ArmedEvents, name)
 }
 
 // armedEventByMessage returns a pointer to the first armedEvent whose Message
 // matches name and whose MessageKey matches correlationKey, or nil if none.
 func (s *InstanceState) armedEventByMessage(name, correlationKey string) *armedEvent {
-	for i := range s.ArmedEvents {
-		ae := &s.ArmedEvents[i]
-		if ae.Message == name && ae.MessageKey == correlationKey {
-			return ae
-		}
-	}
-	return nil
+	return armByMessage(s.ArmedEvents, name, correlationKey)
 }
 
 // removeArmedEventsForGateway removes all armedEvent entries whose GatewayToken
 // matches the given token ID, returning the TimerIDs of any timer-arm entries so
 // the caller can emit CancelTimer commands for them.
 func (s *InstanceState) removeArmedEventsForGateway(gatewayToken string) []string {
-	var cancelTimerIDs []string
-	out := make([]armedEvent, 0, len(s.ArmedEvents))
-	for _, ae := range s.ArmedEvents {
-		if ae.GatewayToken == gatewayToken {
-			if ae.TimerID != "" {
-				cancelTimerIDs = append(cancelTimerIDs, ae.TimerID)
-			}
-			continue
-		}
-		out = append(out, ae)
-	}
-	s.ArmedEvents = out
+	kept, cancelTimerIDs := removeArmsWhere(s.ArmedEvents, func(ae *armedEvent) bool {
+		return ae.GatewayToken == gatewayToken
+	})
+	s.ArmedEvents = kept
 	return cancelTimerIDs
 }
 
 // boundaryArmByTimer returns a pointer to the first boundaryArm with the given
 // timerID, or nil if none exists.
 func (s *InstanceState) boundaryArmByTimer(timerID string) *boundaryArm {
-	for i := range s.Boundaries {
-		if s.Boundaries[i].TimerID == timerID {
-			return &s.Boundaries[i]
-		}
-	}
-	return nil
+	return armByTimer(s.Boundaries, timerID)
 }
 
 // boundaryArmBySignal returns a pointer to the first boundaryArm with the given
 // signal name, or nil if none exists.
 func (s *InstanceState) boundaryArmBySignal(name string) *boundaryArm {
-	for i := range s.Boundaries {
-		if s.Boundaries[i].Signal == name {
-			return &s.Boundaries[i]
-		}
-	}
-	return nil
+	return armBySignal(s.Boundaries, name)
 }
 
 // boundaryArmByMessage returns a pointer to the first boundaryArm whose Message
 // matches name and whose MessageKey matches correlationKey, or nil if none.
 func (s *InstanceState) boundaryArmByMessage(name, correlationKey string) *boundaryArm {
-	for i := range s.Boundaries {
-		ba := &s.Boundaries[i]
-		if ba.Message == name && ba.MessageKey == correlationKey {
-			return ba
-		}
-	}
-	return nil
+	return armByMessage(s.Boundaries, name, correlationKey)
 }
 
 // removeBoundaryArmsForHost removes all boundaryArm entries for the given
 // hostToken, returning the TimerIDs of any timer-boundary arms so the caller
 // can emit CancelTimer commands for them.
 func (s *InstanceState) removeBoundaryArmsForHost(hostToken string) []string {
-	var cancelTimerIDs []string
-	out := make([]boundaryArm, 0, len(s.Boundaries))
-	for _, ba := range s.Boundaries {
-		if ba.HostToken == hostToken {
-			if ba.TimerID != "" {
-				cancelTimerIDs = append(cancelTimerIDs, ba.TimerID)
-			}
-			continue
-		}
-		out = append(out, ba)
-	}
-	s.Boundaries = out
+	kept, cancelTimerIDs := removeArmsWhere(s.Boundaries, func(ba *boundaryArm) bool {
+		return ba.HostToken == hostToken
+	})
+	s.Boundaries = kept
 	return cancelTimerIDs
 }
 
 // eventTriggeredSubprocessArmBySignal returns a pointer to the first
 // eventTriggeredSubprocessArm with the given signal name, or nil if none exists.
 func (s *InstanceState) eventTriggeredSubprocessArmBySignal(name string) *eventTriggeredSubprocessArm {
-	for i := range s.EventTriggeredSubprocesses {
-		if s.EventTriggeredSubprocesses[i].Signal == name {
-			return &s.EventTriggeredSubprocesses[i]
-		}
-	}
-	return nil
+	return armBySignal(s.EventTriggeredSubprocesses, name)
 }
 
 // eventTriggeredSubprocessArmByTimer returns a pointer to the first
 // eventTriggeredSubprocessArm with the given timerID, or nil if none exists.
 func (s *InstanceState) eventTriggeredSubprocessArmByTimer(timerID string) *eventTriggeredSubprocessArm {
-	for i := range s.EventTriggeredSubprocesses {
-		if s.EventTriggeredSubprocesses[i].TimerID == timerID {
-			return &s.EventTriggeredSubprocesses[i]
-		}
-	}
-	return nil
+	return armByTimer(s.EventTriggeredSubprocesses, timerID)
 }
 
 // eventTriggeredSubprocessArmByMessage returns a pointer to the first
 // eventTriggeredSubprocessArm whose Message matches name and whose MessageKey
 // matches correlationKey, or nil.
 func (s *InstanceState) eventTriggeredSubprocessArmByMessage(name, correlationKey string) *eventTriggeredSubprocessArm {
-	for i := range s.EventTriggeredSubprocesses {
-		ea := &s.EventTriggeredSubprocesses[i]
-		if ea.Message == name && ea.MessageKey == correlationKey {
-			return ea
-		}
-	}
-	return nil
+	return armByMessage(s.EventTriggeredSubprocesses, name, correlationKey)
 }
 
 // removeEventTriggeredSubprocessArmsForScope removes all
@@ -300,18 +308,10 @@ func (s *InstanceState) eventTriggeredSubprocessArmByMessage(name, correlationKe
 // scopeID, returning the TimerIDs of any timer-armed entries so the caller can
 // emit CancelTimer commands.
 func (s *InstanceState) removeEventTriggeredSubprocessArmsForScope(scopeID string) []string {
-	var cancelTimerIDs []string
-	out := make([]eventTriggeredSubprocessArm, 0, len(s.EventTriggeredSubprocesses))
-	for _, ea := range s.EventTriggeredSubprocesses {
-		if ea.EnclosingScopeID == scopeID {
-			if ea.TimerID != "" {
-				cancelTimerIDs = append(cancelTimerIDs, ea.TimerID)
-			}
-			continue
-		}
-		out = append(out, ea)
-	}
-	s.EventTriggeredSubprocesses = out
+	kept, cancelTimerIDs := removeArmsWhere(s.EventTriggeredSubprocesses, func(ea *eventTriggeredSubprocessArm) bool {
+		return ea.EnclosingScopeID == scopeID
+	})
+	s.EventTriggeredSubprocesses = kept
 	return cancelTimerIDs
 }
 
