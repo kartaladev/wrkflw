@@ -49,13 +49,13 @@ read worse); instead each type keeps only its own owner/routing fields plus the 
 **Files:** Create `docs/adr/0131-arm-model-unification.md` (Nygard: Status/Date, Context,
 Decision, Consequences).
 
-- [ ] **Step 1:** Write the ADR recording: the three arm families share a trigger-correlation
+- [x] **Step 1:** Write the ADR recording: the three arm families share a trigger-correlation
   quartet; we extract a shared **embedded** `triggerMatch` (wire-safe via JSON field promotion —
   cite `store_core.go` json.Marshal) and unify the ~13 duplicated scan/remove accessors behind
   generic helpers; we explicitly REJECT the fat single-type union (worse cognitive load; every
   owner field on every arm). Note the parity round-trip test as the wire safeguard and that NO
   migration is required because the serialized shape is unchanged.
-- [ ] **Step 2: Commit** `docs(adr): arm-model unification via embedded triggerMatch (ADR-0131)`.
+- [x] **Step 2: Commit** `docs(adr): arm-model unification via embedded triggerMatch (ADR-0131)`.
 
 ---
 
@@ -74,9 +74,9 @@ possibly touch `engine/step_state.go` (`cloneState`) if it lists arm fields.
   ACCESS (`arm.TimerID`, `arm.Signal`, …) continues to work via Go field promotion — call sites
   need NO change.
 
-- [ ] **Step 1: Capture doc baseline + confirm green.** `go doc ./engine > /tmp/engine-doc-b.txt`;
+- [x] **Step 1: Capture doc baseline + confirm green.** `go doc ./engine > /tmp/engine-doc-b.txt`;
   `go test ./engine/... -count=1 2>&1 | tail -1` → `ok`.
-- [ ] **Step 2: Write the WIRE-PARITY test FIRST** (`engine/state_arms_wire_test.go`, black-box
+- [x] **Step 2: Write the WIRE-PARITY test FIRST** (`engine/state_arms_wire_test.go`, black-box
   `engine_test` using `export_test.go` seams if needed): for each arm type, hand-author the
   EXACT current JSON (marshal a fully-populated arm value of the CURRENT type and copy the JSON
   string into the test as the golden fixture BEFORE the refactor). Assert: (a) `json.Unmarshal`
@@ -85,19 +85,19 @@ possibly touch `engine/step_state.go` (`cloneState`) if it lists arm fields.
   (byte-identical field set — order-insensitive compare via unmarshal-both-and-DeepEqual, or a
   normalized compare). Run it against the CURRENT (pre-embed) code → it passes (establishing the
   golden). This test is the parity gate that must STILL pass after embedding.
-- [ ] **Step 3: Introduce `triggerMatch` and embed it** anonymously in the three arm types,
+- [x] **Step 3: Introduce `triggerMatch` and embed it** anonymously in the three arm types,
   removing the four now-duplicated field declarations from each. Update `cloneState`
   (`engine/step_state.go`) ONLY if it constructs arms field-by-field (embedding is copied by
   value with the struct — a shallow slice copy still works since all fields are strings/bools; if
   cloneState does `armedEvent{TimerID: x.TimerID, ...}` field-lists, update to
   `armedEvent{..., triggerMatch: x.triggerMatch}` or just `x` copy).
-- [ ] **Step 4: Verify wire parity + green.** The B1 parity test MUST still pass (proving the
+- [x] **Step 4: Verify wire parity + green.** The B1 parity test MUST still pass (proving the
   JSON shape is unchanged). Then: `go test ./engine/... -count=1 2>&1 | tail -1` → `ok`;
   `go test -race ./engine/...`; **`go test ./persistence/... ./internal/persistence/... -count=1`
   → `ok`** (the real persistence round-trip, the ultimate wire gate); `golangci-lint run
   ./engine/...` clean; `gofmt -l engine/` empty; `go doc ./engine` diff vs `/tmp/engine-doc-b.txt`
   empty.
-- [ ] **Step 5: Commit** `refactor(engine): extract embedded triggerMatch shared by the 3 arm types (wire-safe, ADR-0131)`.
+- [x] **Step 5: Commit** `refactor(engine): extract embedded triggerMatch shared by the 3 arm types (wire-safe, ADR-0131)`.
 
 **STOP and escalate if:** embedding changes the marshaled JSON (parity test fails) — that would
 mean a non-anonymous embed or a json-tag conflict; report it, do NOT force a wire change.
@@ -122,24 +122,33 @@ mean a non-anonymous embed or a json-tag conflict; report it, do NOT force a wir
   filters (they key on the OWNER field — GatewayToken/HostToken/EnclosingScopeID — not the match,
   so they may stay per-type or take an owner-key accessor; unify only what is genuinely common).
 
-- [ ] **Step 1: Confirm green baseline.** `go test ./engine/... -count=1 2>&1 | tail -1` → `ok`.
-- [ ] **Step 2: Inventory the accessors.** List every `*ByTimer`/`*BySignal`/`*ByMessage` and
+- [x] **Step 1: Confirm green baseline.** `go test ./engine/... -count=1 2>&1 | tail -1` → `ok`.
+- [x] **Step 2: Inventory the accessors.** List every `*ByTimer`/`*BySignal`/`*ByMessage` and
   `removeFor*` method on the three arm families (grep `state_arms.go`). Note return type
   (pointer vs value) and the owner-key each filter uses.
-- [ ] **Step 3: Introduce the generic scan helpers** and replace the byTimer/bySignal/byMessage
+- [x] **Step 3: Introduce the generic scan helpers** and replace the byTimer/bySignal/byMessage
   trios. Preserve pointer-return + slice-order semantics EXACTLY. For the `removeForX` filters,
   unify only if a generic keyed on an owner-accessor reads clearly; otherwise leave them.
   **If the generic version reads WORSE than the duplication, extract less and report** — the goal
   is lower cognitive load, not fewer lines at any cost.
-- [ ] **Step 4: Verify green.** `go test ./engine/... -count=1 2>&1 | tail -1` → `ok`;
+- [x] **Step 4: Verify green.** `go test ./engine/... -count=1 2>&1 | tail -1` → `ok`;
   the arm/boundary/event-sub/gateway suites: `go test -run 'Boundary|EventSub|EventBased|Gateway|Arm|Signal|Message|Timer' ./engine/... -count=1`;
   `go test -race ./engine/...`; persistence round-trip green; `golangci-lint run ./engine/...`
   clean; `go doc ./engine` diff empty.
-- [ ] **Step 5: Commit** `refactor(engine): unify arm scan accessors via generics over triggerMatch`.
+- [x] **Step 5: Commit** `refactor(engine): unify arm scan accessors via generics over triggerMatch`.
 
 ---
 
 ### Task B3: Unify the arm→fire→cancel skeleton where genuinely common (best-effort)
+
+> **OUTCOME (2026-07-13): extract nothing, by design.** The genuinely-common
+> fire-skeleton parts (`emitFireOnceAction`, `cancelTokenWaits`,
+> `dispatchArmCascade`) were already factored out in Phase A; what remains is the
+> host-token-keyed (boundary) vs scope-keyed (event-sub) divergence this plan
+> told us to leave specialized. Judgment recorded in ADR-0131 Consequences; the
+> Step-4 commit is a `docs(adr)` commit (`d257c0b`), not a `refactor(engine)` one,
+> since no code changed. This is the plan's sanctioned "do LESS — or nothing —
+> and report" path.
 
 **Files:** Modify `engine/step_boundaries.go`, `engine/step_eventsubprocess.go`.
 
@@ -151,34 +160,34 @@ mean a non-anonymous embed or a json-tag conflict; report it, do NOT force a wir
   scope-keyed — extract ONLY the genuinely-common part and leave the keyed differences at the call
   sites (the pattern used successfully by Phase-A's A4 `dispatchArmCascade`).
 
-- [ ] **Step 1: Confirm green baseline + compare the two fire funcs.** Read `fireBoundaryArm` and
+- [x] **Step 1: Confirm green baseline + compare the two fire funcs.** Read `fireBoundaryArm` and
   `fireEventTriggeredSubprocessArm`. Table their steps side by side in your report; identify the
   truly-common sub-sequence vs the host-vs-scope-keyed differences.
-- [ ] **Step 2: Extract the common skeleton** (reusing `emitFireOnceAction`, `cancelTokenWaits`),
+- [x] **Step 2: Extract the common skeleton** (reusing `emitFireOnceAction`, `cancelTokenWaits`),
   leaving the keyed differences specialized. **If a clean shared helper would obscure more than it
   clarifies or risks behavior change, do LESS — extract only the fire-once + late-fire-guard, or
   nothing — and report the judgment.** Behavior must be identical (command order, interrupting vs
   non-interrupting semantics, repeatable-arm ADR-0124 behavior).
-- [ ] **Step 3: Verify green.** `go test ./engine/... -count=1 2>&1 | tail -1` → `ok`;
+- [x] **Step 3: Verify green.** `go test ./engine/... -count=1 2>&1 | tail -1` → `ok`;
   `go test -run 'Boundary|EventSub|Interrupt|Reminder|Repeatable' ./engine/... -count=1`;
   `go test -race ./engine/...`; persistence round-trip green; `golangci-lint run ./engine/...`
   clean; `go doc ./engine` diff empty.
-- [ ] **Step 4: Commit** `refactor(engine): unify boundary/event-sub fire skeleton where common`
+- [x] **Step 4: Commit** `refactor(engine): unify boundary/event-sub fire skeleton where common`
   (adjust message to state precisely what was unified vs left specialized).
 
 ---
 
 ## Phase B Self-Review (control gate before ship)
 
-- [ ] `go test ./... 2>&1 | tail -5` from repo root — all `ok` (incl testcontainers persistence
+- [x] `go test ./... 2>&1 | tail -5` from repo root — all `ok` (incl testcontainers persistence
   + runtime).
-- [ ] **Wire parity: the B1 golden-JSON test + the persistence round-trip suite both green** —
+- [x] **Wire parity: the B1 golden-JSON test + the persistence round-trip suite both green** —
   the definitive proof the serialized format is unchanged.
-- [ ] `go test -race ./engine/... -count=1` green. Coverage ≥85%.
-- [ ] `golangci-lint run ./...` clean; `gofmt -l engine/` empty.
-- [ ] `go doc ./engine` identical to the phase-start snapshot.
-- [ ] ADR-0131 committed (Nygard).
-- [ ] `/code-review` (whole Phase B diff vs `main`) — all findings adjudicated & resolved.
-- [ ] `/security-review` — clean.
-- [ ] `--no-ff` merge to `main` + push.
+- [x] `go test -race ./engine/... -count=1` green. Coverage ≥85%.
+- [x] `golangci-lint run ./...` clean; `gofmt -l engine/` empty.
+- [x] `go doc ./engine` identical to the phase-start snapshot.
+- [x] ADR-0131 committed (Nygard).
+- [x] `/code-review` (whole Phase B diff vs `main`) — all findings adjudicated & resolved.
+- [x] `/security-review` — clean.
+- [x] `--no-ff` merge to `main` + push.
 ```
