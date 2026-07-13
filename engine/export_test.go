@@ -40,3 +40,26 @@ func ScopeByID(s *InstanceState, id string) *Scope {
 func BeginCompensation(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, toNode string, finalStatus Status, finalErr string, at time.Time, mode StepMode) (StepResult, error) {
 	return beginCompensation(ctx, def, s, at, mode, conditions, compensationOutcome{ToNode: toNode, FinalStatus: finalStatus, FinalErr: finalErr})
 }
+
+// ArmBoundaryTimerForHost appends a boundaryArm for a timer boundary event
+// attached to hostToken/hostNode directly to s.Boundaries, for engine_test.
+//
+// This bypasses the normal arming path (armBoundaries, called from drive()'s
+// per-node-kind strategies) so tests can exercise the arm-cleanup machinery
+// (e.g. removeBoundaryArmsForHost) for a host kind the engine does not yet
+// call armBoundaries for — currently KindCallActivity: a CallActivity may
+// validly carry an attached boundary timer/signal/message event (definition
+// validation allows it), but callActivityStrategy.enter (engine/step_nodes.go)
+// only checks the direct-attachment ERROR-boundary case via findDirectBoundary
+// (ADR-0128) and never arms non-error boundary siblings. This helper lets a
+// test simulate "an arm exists for this host" independent of whether/when that
+// gap is closed, so the cleanup path (e.g. handleSubInstanceFailed's
+// consume callback) is verified in isolation.
+func ArmBoundaryTimerForHost(s *InstanceState, hostToken, hostNode, boundaryNode, timerID string) {
+	s.Boundaries = append(s.Boundaries, boundaryArm{
+		HostToken:    hostToken,
+		HostNode:     hostNode,
+		BoundaryNode: boundaryNode,
+		TimerID:      timerID,
+	})
+}

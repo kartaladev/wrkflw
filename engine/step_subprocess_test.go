@@ -646,6 +646,106 @@ func TestSubInstanceFailedRoutesToParentBoundary(t *testing.T) {
 	}
 }
 
+// callActivityWithBoundaryAndTimerDef builds:
+//
+//	Root: start → call (CallActivity, DefRef "child") → end
+//	      call has an error boundary (ErrorCode "E1") → recover → end-recover
+//	      call ALSO has an attached boundary timer "bnd-timer" → escalate → end-escalate
+//
+// Definition validation allows a CallActivity to host more than one attached
+// boundary event (KindCallActivity is a valid boundary host, ADR-0128's
+// findDirectBoundary predicate only inspects the ERROR boundary). Used by
+// TestSubInstanceFailedBoundaryRoutingCancelsSiblingBoundaryArms (C8 finding
+// 2 regression): a matched error boundary must not leak a sibling boundary
+// arm recorded against the same host token.
+func callActivityWithBoundaryAndTimerDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-call-bnd-timer", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewCallActivity("call", model.Latest("child")),
+			event.NewBoundary("bnd-call-err", "call", event.WithBoundaryErrorCode("E1")),
+			event.NewBoundary("bnd-call-timer", "call", event.WithBoundaryTimer(schedule.AfterExpr(`"2h"`))),
+			activity.NewServiceTask("recover", activity.WithTaskAction("recover-action")),
+			activity.NewServiceTask("escalate", activity.WithTaskAction("escalate-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end-recover"),
+			event.NewEnd("end-escalate"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f-start-call", Source: "start", Target: "call"},
+			{ID: "f-call-end", Source: "call", Target: "end"},
+			{ID: "f-bnd-recover", Source: "bnd-call-err", Target: "recover"},
+			{ID: "f-recover-end", Source: "recover", Target: "end-recover"},
+			{ID: "f-bnd-escalate", Source: "bnd-call-timer", Target: "escalate"},
+			{ID: "f-escalate-end", Source: "escalate", Target: "end-escalate"},
+		},
+	}
+}
+
+// TestSubInstanceFailedBoundaryRoutingCancelsSiblingBoundaryArms is the C8
+// review-finding-2 regression test: when a SubInstanceFailed routes to a
+// matched error boundary on the call-activity node (ADR-0128), the consume
+// callback must ALSO cancel the host's OTHER boundary arms — mirroring the
+// ActionFailed direct-boundary path (propagateError's Step 1, fed by
+// handleActionFailed's preCmds via removeBoundaryArmsForHost) — so a sibling
+// boundary timer/deadline is not leaked (it would otherwise fire later
+// against a host that no longer exists).
+//
+// The engine does not currently call armBoundaries for KindCallActivity (see
+// callActivityStrategy.enter, engine/step_nodes.go) — only the direct-attach
+// ERROR-boundary check (findDirectBoundary) participates for a call-activity
+// host today, so a sibling timer/signal/message boundary is never armed via
+// the normal StartInstance path. This test uses the white-box
+// engine.ArmBoundaryTimerForHost test helper to seed the sibling arm
+// directly, so the consume-callback cleanup logic is verified independent of
+// that separate (pre-existing, out-of-scope) arming gap.
+func TestSubInstanceFailedBoundaryRoutingCancelsSiblingBoundaryArms(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, 7, 13, 10, 0, 0, 0, time.UTC)
+	def := callActivityWithBoundaryAndTimerDef()
+
+	// ---- Step 1: StartInstance → parks at call ----
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "ca-bnd-timer-1"},
+		engine.NewStartInstance(at, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r1.State.Tokens, 1)
+	callTok := r1.State.Tokens[0]
+	require.Equal(t, "call", callTok.NodeID)
+	require.Len(t, r1.Commands, 1)
+	ssi, ok := r1.Commands[0].(engine.StartSubInstance)
+	require.True(t, ok)
+
+	// Seed a sibling boundary-timer arm on the call-activity host token,
+	// simulating the state that would exist once CallActivity boundary
+	// arming is wired up (out of scope here — see the doc comment above).
+	const sibTimerID = "sib-timer-1"
+	engine.ArmBoundaryTimerForHost(&r1.State, callTok.ID, "call", "bnd-call-timer", sibTimerID)
+	require.Len(t, r1.State.Boundaries, 1, "sibling boundary arm must be seeded")
+
+	// ---- Step 2: SubInstanceFailed with a matching error code → routes to
+	// the error boundary, which must also cancel the sibling timer arm ----
+	r2, err := engine.Step(t.Context(), def, r1.State,
+		engine.NewSubInstanceFailed(at.Add(time.Second), ssi.CommandID, "E1"),
+		engine.StepOptions{})
+	require.NoError(t, err)
+
+	assert.Equal(t, engine.StatusRunning, r2.State.Status,
+		"parent must stay running — the error boundary caught the child failure")
+
+	var cancelled bool
+	for _, c := range r2.Commands {
+		if ct, ok := c.(engine.CancelTimer); ok && ct.TimerID == sibTimerID {
+			cancelled = true
+		}
+	}
+	assert.True(t, cancelled,
+		"CancelTimer for the sibling boundary-timer arm %q must be emitted (not leaked) when the error boundary routes", sibTimerID)
+	assert.Empty(t, r2.State.Boundaries,
+		"the sibling boundary arm must be removed from state, not just cancelled on the wire")
+}
+
 // ---- Inner-scope topology tests (Task 6) ----
 
 // boundaryTimerInsideSubProcessDef builds:

@@ -158,13 +158,19 @@ func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s 
 	// second beginCompensation re-walks records that are still mid-consumption and
 	// re-emits the in-flight compensation, double-running money-moving actions.
 	if s.Status == StatusCompensating && s.Compensating.ActiveCmdID != "" {
-		switch s.Compensating.walkMode() {
-		case walkThrowTargeted, walkThrowScopeWide, walkReverse:
+		// Checked directly on the fields (not via walkMode()) because this site's
+		// defer-if-resuming semantics differ from walkMode()'s ToNode-precedence
+		// ordering: a cursor with BOTH ResumeNode and ReverseNode set must still
+		// defer here, whereas walkMode() would classify it as walkPartial (via
+		// ToNode) or otherwise not match the resuming case. That combination is
+		// unreachable via any constructor today, but this predicate restores the
+		// exact pre-refactor behaviour.
+		if s.Compensating.ResumeNode != "" || s.Compensating.ReverseNode != "" {
 			// A RESUMING walk is in flight — either a compensation THROW walk
-			// (walkThrowTargeted/walkThrowScopeWide, ADR-0039 B1) or a full-REVERSE
-			// walk (walkReverse, ADR-0109 Fork B). Both would otherwise RESUME
-			// (Running) at finish, so the instance would keep running and the caller
-			// who cancelled would be left with a live instance. Defer this cancel —
+			// (ResumeNode set, ADR-0039 B1) or a full-REVERSE walk (ReverseNode
+			// set, ADR-0109 Fork B). Both would otherwise RESUME (Running) at
+			// finish, so the instance would keep running and the caller who
+			// cancelled would be left with a live instance. Defer this cancel —
 			// record the intent and let the in-flight walk finish; applyFinish then
 			// consumes PendingCancel and runs a full cancel over the REMAINING
 			// records (the throw's archive / the reverse's records are cleared by
@@ -172,21 +178,20 @@ func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s 
 			s.PendingCancel = true
 			cmds := append(append([]Command(nil), cancelActionCmds...), nodeCancelCmds...)
 			return StepResult{State: *s, Commands: cmds}, nil
-		default:
-			// A TERMINAL (cancel/error/full-rollback, walkAdmin) or admin
-			// PARTIAL-rollback (walkPartial) walk is already in flight. The instance
-			// is already being compensated; a redundant cancel must NOT re-enter
-			// beginCompensation (which would re-emit the in-flight record →
-			// double-compensation). No-op: the in-flight walk drives the instance to
-			// its terminal (or, for an admin partial rollback, resuming) end on its
-			// own. The records already fired their cancel actions when the in-flight
-			// walk began, so none are re-emitted here.
-			//
-			// Limitation: a cancel racing an admin PARTIAL rollback is therefore dropped
-			// (the partial walk resumes at its ToNode) — a rare admin-debug edge accepted
-			// in exchange for the no-double-compensation guarantee.
-			return StepResult{State: *s, Commands: nil}, nil
 		}
+		// A TERMINAL (cancel/error/full-rollback) or admin PARTIAL-rollback
+		// (ToNode set) walk is already in flight. The instance is already being
+		// compensated; a redundant cancel must NOT re-enter beginCompensation
+		// (which would re-emit the in-flight record → double-compensation).
+		// No-op: the in-flight walk drives the instance to its terminal (or, for
+		// an admin partial rollback, resuming) end on its own. The records
+		// already fired their cancel actions when the in-flight walk began, so
+		// none are re-emitted here.
+		//
+		// Limitation: a cancel racing an admin PARTIAL rollback is therefore dropped
+		// (the partial walk resumes at its ToNode) — a rare admin-debug edge accepted
+		// in exchange for the no-double-compensation guarantee.
+		return StepResult{State: *s, Commands: nil}, nil
 	}
 
 	if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
@@ -732,6 +737,15 @@ func handleSubInstanceFailed(ctx context.Context, def *model.ProcessDefinition, 
 	if boundary, ok := findDirectBoundary(ctx, hostDef, tok.NodeID, t.Err, s.Variables, cause, resolveEvaluator(opt)); ok {
 		callActivityTok := tok
 		consume := func(cmds []Command) []Command {
+			// Mirror the ActionFailed direct-boundary path (propagateError's
+			// Step 1, fed by handleActionFailed's preCmds): cancel the call-activity
+			// token's OTHER boundary arms (e.g. a sibling boundary timer/deadline)
+			// before consuming it, so a matched error boundary doesn't leak a
+			// still-armed sibling arm that would otherwise fire later against a
+			// gone host.
+			for _, timerID := range s.removeBoundaryArmsForHost(callActivityTok.ID) {
+				cmds = append(cmds, CancelTimer{TimerID: timerID})
+			}
 			s.consumeToken(callActivityTok, t.OccurredAt())
 			return cmds
 		}
