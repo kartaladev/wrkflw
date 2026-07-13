@@ -112,12 +112,50 @@ is the second, end-to-end proof.
 - Production call sites are unaffected (field promotion covers both read and
   assignment); only test fixtures using keyed composite literals for the
   trigger fields needed mechanical nesting edits under `triggerMatch: {...}`.
-- This ADR intentionally does **not** unify the ~13 duplicated
-  `*ByTimer`/`*BySignal`/`*ByMessage`/`removeFor*` scan/remove accessors —
-  that is Task B2 (generic helpers over the now-shared `triggerMatch`), a
-  separate, independently-gated change.
 - The fat-union alternative is explicitly rejected: it would carry
   irrelevant owner fields on every arm and force a wire migration, for no
   benefit over the embedded-match approach.
 - `go doc ./engine` is unchanged — `triggerMatch` and all three arm types are
   unexported, so this is invisible to library consumers.
+
+### Task B2 — generic scan/remove accessors (done)
+
+The nine near-identical by-trigger scan loops
+(`armedEvent`/`boundaryArm`/`eventTriggeredSubprocessArm` ×
+`Timer`/`Signal`/`Message`) collapse into three generic helpers
+(`armByTimer`/`armBySignal`/`armByMessage`) keyed on the now-shared
+`triggerMatch` via an `armMatchable[T]` pointer-method constraint
+(`matchPtr() *triggerMatch`, one trivial method per arm type; `PT` is inferred
+from the slice element type at every call site). The three owner-keyed remove
+filters collapse into one `removeArmsWhere` helper taking a per-family owner
+predicate (`GatewayToken`/`HostToken`/`EnclosingScopeID` — the genuinely
+per-family part). Thin per-family wrapper methods preserve every method name,
+the pointer-return-for-mutation contract, slice order, and the non-nil
+kept-slice semantics, so all call sites and the persisted JSON shape are
+unchanged. `cancelAllArmsAndBoundaries` and `removeAllEventTriggeredSubprocessArms`
+are left specialized — they clear to `nil` (not an allocated empty slice) and
+operate over multiple slices / with ESP-survival semantics that the generic
+filter does not model.
+
+### Task B3 — arm→fire→cancel skeleton (nothing extracted, by design)
+
+Task B3 speculatively aimed to unify the boundary and event-sub fire skeletons
+(`fireBoundaryArm`, `fireEventTriggeredSubprocessArm`). On inspection there is
+no clean common skeleton left to extract: the genuinely-shared sub-parts —
+`emitFireOnceAction`, `cancelTokenWaits`, and the gateway→boundary→event-sub
+dispatch cascade (`dispatchArmCascade`) — were already factored out in Phase A.
+What remains differs structurally along the host-token-keyed (boundary) vs
+scope-keyed (event-sub) axis on four of the ~six steps: the stale-fire guard
+(host-token existence + defensive arm cleanup vs enclosing-scope/Status check),
+target resolution (outgoing flow vs `eventSubprocessNested` inner-start node),
+the interrupting cancel (one host token vs every token in the scope plus
+sibling-arm removal), and placement (a token in the host's own scope vs a new
+child scope). The only byte-identical fragment is the five-line `drive`-and-
+append tail, which is a pervasive engine idiom appearing at five unrelated
+sites (timers, compensation, gateways, boundary, event-sub) — not specific to
+the fire skeleton; unifying it would exceed B3's scope and hide the explicit
+resume-point `drive` call. A forced shared helper would parameterize over four
+of six steps and read worse than the two explicit, documented functions. Per
+the plan's sanctioned "do less / nothing and report" clause, B3 extracts
+nothing; the arm-cascade unification the umbrella spec envisioned was already
+delivered by Phase A's `dispatchArmCascade`.
