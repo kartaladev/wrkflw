@@ -23,10 +23,10 @@ func TestMessageEventSubprocessWaiters(t *testing.T) {
 		},
 		"only message arms, in slice order, timer/signal skipped": {
 			arms: []eventTriggeredSubprocessArm{
-				{EventSubprocessNode: "esp-msg", Message: "cancel", MessageKey: "order-1"},
-				{EventSubprocessNode: "esp-timer", TimerID: "t1"},
-				{EventSubprocessNode: "esp-sig", Signal: "sig-a"},
-				{EventSubprocessNode: "esp-msg2", Message: "amend", MessageKey: ""},
+				{EventSubprocessNode: "esp-msg", triggerMatch: triggerMatch{Message: "cancel", MessageKey: "order-1"}},
+				{EventSubprocessNode: "esp-timer", triggerMatch: triggerMatch{TimerID: "t1"}},
+				{EventSubprocessNode: "esp-sig", triggerMatch: triggerMatch{Signal: "sig-a"}},
+				{EventSubprocessNode: "esp-msg2", triggerMatch: triggerMatch{Message: "amend", MessageKey: ""}},
 			},
 			assert: func(t *testing.T, got []MessageWaiter) {
 				assert.Equal(t, []MessageWaiter{
@@ -59,10 +59,10 @@ func TestSignalEventSubprocessNames(t *testing.T) {
 		},
 		"only signal arms, in slice order, timer/message skipped": {
 			arms: []eventTriggeredSubprocessArm{
-				{EventSubprocessNode: "esp-sig", Signal: "sig-a"},
-				{EventSubprocessNode: "esp-msg", Message: "cancel"},
-				{EventSubprocessNode: "esp-sig2", Signal: "sig-b"},
-				{EventSubprocessNode: "esp-timer", TimerID: "t1"},
+				{EventSubprocessNode: "esp-sig", triggerMatch: triggerMatch{Signal: "sig-a"}},
+				{EventSubprocessNode: "esp-msg", triggerMatch: triggerMatch{Message: "cancel"}},
+				{EventSubprocessNode: "esp-sig2", triggerMatch: triggerMatch{Signal: "sig-b"}},
+				{EventSubprocessNode: "esp-timer", triggerMatch: triggerMatch{TimerID: "t1"}},
 			},
 			assert: func(t *testing.T, got []string) {
 				assert.Equal(t, []string{"sig-a", "sig-b"}, got)
@@ -88,15 +88,15 @@ func TestMessageWaiters_UnionInOrder(t *testing.T) {
 			{ID: "t2"}, // not awaiting a message
 		},
 		Boundaries: []boundaryArm{
-			{HostToken: "h1", BoundaryNode: "bnd", Message: "bnd-msg", MessageKey: "k2"},
-			{HostToken: "h2", BoundaryNode: "bnd-timer", TimerID: "bt1"}, // contributes nothing
+			{HostToken: "h1", BoundaryNode: "bnd", triggerMatch: triggerMatch{Message: "bnd-msg", MessageKey: "k2"}},
+			{HostToken: "h2", BoundaryNode: "bnd-timer", triggerMatch: triggerMatch{TimerID: "bt1"}}, // contributes nothing
 		},
 		ArmedEvents: []armedEvent{
-			{GatewayToken: "g1", CatchNode: "c1", Message: "gw-msg", MessageKey: "k3"},
+			{GatewayToken: "g1", CatchNode: "c1", triggerMatch: triggerMatch{Message: "gw-msg", MessageKey: "k3"}},
 		},
 		EventTriggeredSubprocesses: []eventTriggeredSubprocessArm{
-			{EventSubprocessNode: "esp", Message: "esp-msg", MessageKey: "k4"},
-			{EventSubprocessNode: "esp-timer", TimerID: "et1"}, // contributes nothing
+			{EventSubprocessNode: "esp", triggerMatch: triggerMatch{Message: "esp-msg", MessageKey: "k4"}},
+			{EventSubprocessNode: "esp-timer", triggerMatch: triggerMatch{TimerID: "et1"}}, // contributes nothing
 		},
 	}
 
@@ -123,8 +123,8 @@ func TestSignalWaiters_Union(t *testing.T) {
 			{ID: "t2"},
 		},
 		EventTriggeredSubprocesses: []eventTriggeredSubprocessArm{
-			{EventSubprocessNode: "esp", Signal: "esp-sig"},
-			{EventSubprocessNode: "esp-msg", Message: "m"}, // contributes nothing
+			{EventSubprocessNode: "esp", triggerMatch: triggerMatch{Signal: "esp-sig"}},
+			{EventSubprocessNode: "esp-msg", triggerMatch: triggerMatch{Message: "m"}}, // contributes nothing
 		},
 	}
 

@@ -60,6 +60,6 @@ func ArmBoundaryTimerForHost(s *InstanceState, hostToken, hostNode, boundaryNode
 		HostToken:    hostToken,
 		HostNode:     hostNode,
 		BoundaryNode: boundaryNode,
-		TimerID:      timerID,
+		triggerMatch: triggerMatch{TimerID: timerID},
 	})
 }

@@ -22,12 +22,12 @@ func TestInstanceState_removeAllEventTriggeredSubprocessArms(t *testing.T) {
 			{
 				EnclosingScopeID:    "",
 				EventSubprocessNode: "esp-timer",
-				TimerID:             "esp-t1",
+				triggerMatch:        triggerMatch{TimerID: "esp-t1"},
 			},
 			{
 				EnclosingScopeID:    "scope-1",
 				EventSubprocessNode: "esp-signal",
-				Signal:              "sig-a",
+				triggerMatch:        triggerMatch{Signal: "sig-a"},
 			},
 		},
 	}
