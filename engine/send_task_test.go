@@ -86,7 +86,7 @@ func TestSendTaskEmitsAndCompletes(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			def := sendTaskDef(tc.corr)
-			r, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+			r, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 				engine.NewStartInstance(t0, tc.vars), engine.StepOptions{})
 			require.NoError(t, err)
 
@@ -106,7 +106,7 @@ func TestSendTaskBadCorrelationKey(t *testing.T) {
 	t0 := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
 	def := sendTaskDef("this is not valid expr ++")
 
-	_, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	_, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "correlation key")

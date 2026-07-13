@@ -33,7 +33,7 @@ func TestStepStartInstanceReachesServiceTask(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	def := linearDef()
 
-	res, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	res, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"name": "Ada"}), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -57,12 +57,12 @@ func TestStepActionCompletedReachesEnd(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	def := linearDef()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"name": "Ada"}), engine.StepOptions{})
 	require.NoError(t, err)
 	cmdID := r1.Commands[0].(engine.InvokeAction).CommandID
 
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(time.Second), cmdID, map[string]any{"greeting": "hi Ada"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -82,9 +82,9 @@ func TestStepIsDeterministic(t *testing.T) {
 	in := engine.InstanceState{InstanceID: "i1"}
 	trg := engine.NewStartInstance(at, map[string]any{"name": "Ada"})
 
-	a, err := engine.Step(def, in, trg, engine.StepOptions{})
+	a, err := engine.Step(t.Context(), def, in, trg, engine.StepOptions{})
 	require.NoError(t, err)
-	b, err := engine.Step(def, in, trg, engine.StepOptions{})
+	b, err := engine.Step(t.Context(), def, in, trg, engine.StepOptions{})
 	require.NoError(t, err)
 
 	assert.Equal(t, a.Commands, b.Commands)
@@ -109,7 +109,7 @@ func TestStepDoesNotMutateInput(t *testing.T) {
 		},
 	}
 
-	_, err := engine.Step(def, in, engine.NewStartInstance(at, map[string]any{"extra": 1}), engine.StepOptions{})
+	_, err := engine.Step(t.Context(), def, in, engine.NewStartInstance(at, map[string]any{"extra": 1}), engine.StepOptions{})
 	require.NoError(t, err)
 
 	// Caller's state is untouched.
@@ -127,12 +127,12 @@ func TestStepActionFailedFailsInstance(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	def := linearDef()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	cmdID := r1.Commands[0].(engine.InvokeAction).CommandID
 
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionFailed(at.Add(time.Second), cmdID, "boom", false), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -159,11 +159,11 @@ func TestStepActionCompletedUnknownCommandID(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	def := linearDef()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
-	_, err = engine.Step(def, r1.State,
+	_, err = engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at, "no-such-command", nil), engine.StepOptions{})
 	require.ErrorIs(t, err, engine.ErrTokenNotFound)
 }

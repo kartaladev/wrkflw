@@ -55,7 +55,7 @@ func TestUnhandledFailureReconcilesOpenTasks(t *testing.T) {
 	}
 
 	// Start → fork splits: user task parks (task record), svc parks awaiting a command.
-	r0, err := engine.Step(def, engine.InstanceState{InstanceID: "fu-1"},
+	r0, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "fu-1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r0.State.Tasks, 1, "setup: user task must be parked")
@@ -70,7 +70,7 @@ func TestUnhandledFailureReconcilesOpenTasks(t *testing.T) {
 	require.NotEmpty(t, boomCmdID, "setup: svc InvokeAction must be emitted")
 
 	// svc fails unhandled (retryable=false, no boundary/recovery) → StatusFailed.
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewActionFailed(at.Add(time.Second), boomCmdID, "boom", false), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -116,7 +116,7 @@ func TestFailureWithCompensationReconcilesOpenTasks(t *testing.T) {
 	}
 
 	// Step 1: start → charge parks.
-	r0, err := engine.Step(def, engine.InstanceState{InstanceID: "fc-1"},
+	r0, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "fc-1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	chargeIA, ok := r0.Commands[0].(engine.InvokeAction)
@@ -124,7 +124,7 @@ func TestFailureWithCompensationReconcilesOpenTasks(t *testing.T) {
 	require.Equal(t, "charge", chargeIA.Name)
 
 	// Step 2: charge completes → fork → user parks (task) + svc parks; comp record exists.
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewActionCompleted(at.Add(time.Second), chargeIA.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.RootCompensations, 1, "setup: compensation record must exist")
@@ -139,7 +139,7 @@ func TestFailureWithCompensationReconcilesOpenTasks(t *testing.T) {
 	require.NotEmpty(t, boomCmdID)
 
 	// Step 3: svc fails unhandled → compensation walk begins (StatusCompensating).
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionFailed(at.Add(2*time.Second), boomCmdID, "boom", false), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompensating, r2.State.Status)
@@ -153,7 +153,7 @@ func TestFailureWithCompensationReconcilesOpenTasks(t *testing.T) {
 	require.NotEmpty(t, refundCmdID, "compensation walk must emit refund")
 
 	// Step 4: refund completes → walk finishes as StatusFailed; task reconciled.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(3*time.Second), refundCmdID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -193,7 +193,7 @@ func TestSubInstanceFailureReconcilesOpenTasks(t *testing.T) {
 	}
 
 	// Start → fork splits: user task parks (task record), call parks awaiting a sub-instance.
-	r0, err := engine.Step(def, engine.InstanceState{InstanceID: "fs-1"},
+	r0, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "fs-1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r0.State.Tasks, 1, "setup: user task must be parked")
@@ -207,7 +207,7 @@ func TestSubInstanceFailureReconcilesOpenTasks(t *testing.T) {
 	require.NotEmpty(t, ssiCmdID, "setup: StartSubInstance must be emitted")
 
 	// The child fails → parent fails.
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewSubInstanceFailed(at.Add(time.Second), ssiCmdID, "child blew up"), engine.StepOptions{})
 	require.NoError(t, err)
 

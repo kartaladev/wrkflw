@@ -89,7 +89,7 @@ func driveToThrowEmitStep(t *testing.T) (def *model.ProcessDefinition, throwResu
 	def = throwDefWithCompensableSubProcess()
 
 	// Step 1: start instance — inner-svc invoked.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "throw-inst-1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "throw-inst-1"},
 		engine.NewStartInstance(at, map[string]any{"order": "123"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -99,7 +99,7 @@ func driveToThrowEmitStep(t *testing.T) (def *model.ProcessDefinition, throwResu
 	require.Equal(t, "book-inner", ia.Name)
 
 	// Step 2: complete inner-svc → sub exits (archived) → compThrow fires → STARTS walk.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), ia.CommandID, map[string]any{"ref": "R1"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -138,7 +138,7 @@ func TestCompensationThrowRunsCompensationAndResumes(t *testing.T) {
 
 	// ApplyTrigger ActionCompleted for the compensation action → walk finishes → RESUME.
 	resumeAt := at.Add(3 * time.Second)
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(resumeAt, cancelInnerCmd.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -181,7 +181,7 @@ func TestCompensationThrowRunsCompensationAndResumes(t *testing.T) {
 	}
 	if awaitHumanCmd != nil {
 		completeUserAt := at.Add(4 * time.Second)
-		r4, err := engine.Step(def, r3.State,
+		r4, err := engine.Step(t.Context(), def, r3.State,
 			engine.NewHumanCompleted(completeUserAt, awaitHumanCmd.TaskToken, nil, authz.Actor{}),
 			engine.StepOptions{})
 		require.NoError(t, err)
@@ -238,7 +238,7 @@ func TestSecondCompensationThrowToSameRefIsNoOp(t *testing.T) {
 	def := secondThrowDef()
 
 	// Step 1: start → inner-svc invoked.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "second-throw-inst"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "second-throw-inst"},
 		engine.NewStartInstance(at, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -248,7 +248,7 @@ func TestSecondCompensationThrowToSameRefIsNoOp(t *testing.T) {
 	require.Equal(t, "book-2", ia1.Name)
 
 	// Step 2: complete inner-svc → sub exits (archived) → compThrow1 fires → walk starts.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), ia1.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -268,7 +268,7 @@ func TestSecondCompensationThrowToSameRefIsNoOp(t *testing.T) {
 
 	// Step 3: complete cancel-2 → walk finishes → resume past compThrow1.
 	// Now token is at compThrow2 (which also has CompensateRef:"sub").
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), cancelCmd.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -337,7 +337,7 @@ func TestNoDoubleCompensationAfterThrowAndCancel(t *testing.T) {
 	def := throwThenCancelDef()
 
 	// Step 1: start → inner-svc invoked.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "ttc-inst"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "ttc-inst"},
 		engine.NewStartInstance(at, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -347,7 +347,7 @@ func TestNoDoubleCompensationAfterThrowAndCancel(t *testing.T) {
 	require.Equal(t, "book-ttc", ia1.Name)
 
 	// Step 2: complete inner-svc → sub exits → compThrow fires → walk starts.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), ia1.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -363,7 +363,7 @@ func TestNoDoubleCompensationAfterThrowAndCancel(t *testing.T) {
 	require.NotNil(t, throwCompCmd, "throw must emit InvokeAction for cancel-ttc")
 
 	// Step 3: complete cancel-ttc → walk finishes → resume at userTask.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), throwCompCmd.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -393,7 +393,7 @@ func TestNoDoubleCompensationAfterThrowAndCancel(t *testing.T) {
 	// Step 4: issue CancelRequested — archive["sub"] is already nil, so cancel walk
 	// must NOT emit cancel-ttc again.
 	cancelAt := at.Add(5 * time.Second)
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewCancelRequested(cancelAt),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -440,7 +440,7 @@ func TestCancelWithArchivedCompensationsStillConsolidates(t *testing.T) {
 	def := compensableSubThenRootDef()
 
 	// Start → inner-svc invoked.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "cancel-archive-inst"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "cancel-archive-inst"},
 		engine.NewStartInstance(at, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -449,7 +449,7 @@ func TestCancelWithArchivedCompensationsStillConsolidates(t *testing.T) {
 	require.True(t, ok)
 
 	// Complete inner-svc → sub exits (archived) → rootUserTask parked.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), ia1.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -458,7 +458,7 @@ func TestCancelWithArchivedCompensationsStillConsolidates(t *testing.T) {
 	require.Contains(t, r2.State.ArchivedCompensations, "sub", "archive must contain 'sub'")
 
 	// CancelRequested → consolidate archive → cancel walk emits cancel-inner.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewCancelRequested(at.Add(5*time.Second)),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -541,7 +541,7 @@ func TestCancelMidThrowWalkDoesNotDoubleCompensate(t *testing.T) {
 	def := cancelMidThrowDef()
 
 	// Step 1: start → rootSvc invoked.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "cmtw-inst"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "cmtw-inst"},
 		engine.NewStartInstance(at, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -551,7 +551,7 @@ func TestCancelMidThrowWalkDoesNotDoubleCompensate(t *testing.T) {
 	require.Equal(t, "book-root", ia1.Name)
 
 	// Step 2: complete rootSvc → drives to sub → inner-svc invoked.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), ia1.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -565,7 +565,7 @@ func TestCancelMidThrowWalkDoesNotDoubleCompensate(t *testing.T) {
 
 	// Step 3: complete inner-svc → sub exits (archived) → compThrow fires →
 	// STARTS throw walk (StatusCompensating, emits cancel-inner).
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), ia2.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -587,7 +587,7 @@ func TestCancelMidThrowWalkDoesNotDoubleCompensate(t *testing.T) {
 	// The B1 bug: without the fix, beginCompensation runs again, consolidates the
 	// archive (still containing "sub") into RootCompensations, and re-emits cancel-inner.
 	cancelAt := at.Add(3 * time.Second)
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewCancelRequested(cancelAt),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -598,7 +598,7 @@ func TestCancelMidThrowWalkDoesNotDoubleCompensate(t *testing.T) {
 	// Step 5: deliver cancel-inner's ActionCompleted (throw walk finishes).
 	// With the fix: deferred cancel fires over REMAINING records (cancel-root) and terminates.
 	finishAt := at.Add(4 * time.Second)
-	r5, err := engine.Step(def, r4.State,
+	r5, err := engine.Step(t.Context(), def, r4.State,
 		engine.NewActionCompleted(finishAt, throwCancelCmd.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -646,7 +646,7 @@ func TestCancelMidThrowWalkDoesNotDoubleCompensate(t *testing.T) {
 			}
 		}
 		require.NotNil(t, cancelRootCmd, "deferred cancel must emit cancel-root InvokeAction")
-		r6, err := engine.Step(def, r5.State,
+		r6, err := engine.Step(t.Context(), def, r5.State,
 			engine.NewActionCompleted(finishAt.Add(time.Second), cancelRootCmd.CommandID, nil),
 			engine.StepOptions{})
 		require.NoError(t, err)
@@ -707,14 +707,14 @@ func TestCompensationThrowWithNoOutgoingFlowDoesNotTerminate(t *testing.T) {
 		},
 	}
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "throw-noout-1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "throw-noout-1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	ia, ok := r1.Commands[0].(engine.InvokeAction)
 	require.True(t, ok)
 
 	// Complete inner-svc → sub exits (archived under "sub") → compThrow reached.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), ia.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)

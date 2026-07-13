@@ -113,7 +113,7 @@ func TestSignalCatchResumesOnSignal(t *testing.T) {
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 
 	// Step 1: StartInstance → parks at signal-catch
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.Commands, 0, "signal-catch emits no commands on entry")
@@ -125,7 +125,7 @@ func TestSignalCatchResumesOnSignal(t *testing.T) {
 	assert.Equal(t, "", tok.AwaitCommand)
 
 	// Step 2: A non-matching signal is a clean no-op
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSignalReceived(at, "other", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Nil(t, r2.Commands, "unmatched signal: no commands")
@@ -135,7 +135,7 @@ func TestSignalCatchResumesOnSignal(t *testing.T) {
 	assert.Equal(t, "approved", r2.State.Tokens[0].AwaitSignal)
 
 	// Step 3: The matching signal resumes the token → InvokeAction on "complete-action"
-	r3, err := engine.Step(def, r1.State,
+	r3, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSignalReceived(at, "approved", map[string]any{"result": "ok"}), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r3.Commands, 1)
@@ -156,7 +156,7 @@ func TestMessageCatchCorrelates(t *testing.T) {
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 
 	// Start the instance with orderId set in variables for correlation-key evaluation.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"orderId": "ORD-42"}), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.Commands, 0)
@@ -169,7 +169,7 @@ func TestMessageCatchCorrelates(t *testing.T) {
 	assert.Equal(t, "ORD-42", tok.AwaitMessageKey)
 
 	// Step 2: Non-matching correlation key is a clean no-op
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewMessageReceived(at, "order", "WRONG-KEY", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Nil(t, r2.Commands)
@@ -177,7 +177,7 @@ func TestMessageCatchCorrelates(t *testing.T) {
 	assert.Equal(t, "catch-order", r2.State.Tokens[0].NodeID)
 
 	// Step 3: Matching name+key resumes the token → InvokeAction on "process-order"
-	r3, err := engine.Step(def, r1.State,
+	r3, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewMessageReceived(at, "order", "ORD-42", map[string]any{"payload": "x"}), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r3.Commands, 1)
@@ -211,7 +211,7 @@ func TestMessageCatchNoCorrelationKeyMatchesOnNameOnly(t *testing.T) {
 	}
 
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	tok := r1.State.Tokens[0]
@@ -219,7 +219,7 @@ func TestMessageCatchNoCorrelationKeyMatchesOnNameOnly(t *testing.T) {
 	assert.Equal(t, "", tok.AwaitMessageKey)
 
 	// MessageReceived with empty CorrelationKey matches
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewMessageReceived(at, "ping", "", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r2.Commands, 1)
@@ -235,7 +235,7 @@ func TestSignalThrowEmitsCommand(t *testing.T) {
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 
 	// Start → parks at "setup" service task
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.Commands, 1)
@@ -244,7 +244,7 @@ func TestSignalThrowEmitsCommand(t *testing.T) {
 	assert.Equal(t, "setup-action", setupIA.Name)
 
 	// Complete the setup service task → drives through throw → parks at "after"
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at, setupIA.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -274,7 +274,7 @@ func TestBroadcastSignalResumesAllTokens(t *testing.T) {
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 
 	// StartInstance → parallel fork → two signal-catch tokens
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.Commands, 0)
@@ -285,7 +285,7 @@ func TestBroadcastSignalResumesAllTokens(t *testing.T) {
 	}
 
 	// SignalReceived("wake") resumes both tokens → both end events consumed
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSignalReceived(at, "wake", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	// Both end events should fire → instance completed
@@ -378,7 +378,7 @@ func TestEventGatewayFirstTimerWins(t *testing.T) {
 
 	// Step 1: Start → EventGateway arms both catch events.
 	// The timer arm must emit ScheduleTimer; the signal arm is just recorded.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -407,7 +407,7 @@ func TestEventGatewayFirstTimerWins(t *testing.T) {
 
 	// Step 2: TimerFired for the timer arm → timer branch proceeds.
 	tFired := t0.Add(time.Hour)
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewTimerFired(tFired, schedTimer.TimerID), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -430,7 +430,7 @@ func TestEventGatewayFirstTimerWins(t *testing.T) {
 	assert.Equal(t, "timer-branch", r2.State.Tokens[0].NodeID)
 
 	// Step 3: Late SignalReceived("approved") for the now-cancelled signal arm must be a clean no-op.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewSignalReceived(tFired, "approved", map[string]any{"x": 1}), engine.StepOptions{})
 	require.NoError(t, err)
 	// No commands: the signal arm was cancelled so no token is awaiting it.
@@ -452,7 +452,7 @@ func TestEventGatewayFirstSignalWins(t *testing.T) {
 	t0 := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 
 	// Step 1: Start → EventGateway arms both catch events.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -468,7 +468,7 @@ func TestEventGatewayFirstSignalWins(t *testing.T) {
 	require.Len(t, r1.State.ArmedEvents, 2)
 
 	// Step 2: SignalReceived("approved") → signal branch proceeds.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSignalReceived(t0, "approved", nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -501,7 +501,7 @@ func TestEventGatewayFirstSignalWins(t *testing.T) {
 
 	// Step 3: Late TimerFired for the cancelled timer arm must be a clean no-op.
 	tLate := t0.Add(time.Hour)
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewTimerFired(tLate, schedTimer.TimerID), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Nil(t, r3.Commands, "late TimerFired after gateway resolved must be no-op")
@@ -549,7 +549,7 @@ func TestEventGatewayFirstMessageWins(t *testing.T) {
 	t0 := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 
 	// Step 1: Start → EventGateway arms both catch events.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -565,7 +565,7 @@ func TestEventGatewayFirstMessageWins(t *testing.T) {
 	require.Len(t, r1.State.ArmedEvents, 2, "both arms must be recorded")
 
 	// Step 2: MessageReceived("order","") → message branch proceeds.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewMessageReceived(t0, "order", "", nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -592,7 +592,7 @@ func TestEventGatewayFirstMessageWins(t *testing.T) {
 
 	// Step 3: Late TimerFired for the cancelled timer arm is a clean no-op.
 	tLate := t0.Add(time.Hour)
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewTimerFired(tLate, schedTimer.TimerID), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Nil(t, r3.Commands, "late TimerFired after gateway resolved must be no-op")
@@ -682,7 +682,7 @@ func TestMessageArmedEventWaitersExposesGatewayMessageArms(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			r, err := engine.Step(tc.def, engine.InstanceState{InstanceID: "i1"},
+			r, err := engine.Step(t.Context(), tc.def, engine.InstanceState{InstanceID: "i1"},
 				engine.NewStartInstance(t0, tc.startVars), engine.StepOptions{})
 			require.NoError(t, err)
 
@@ -730,7 +730,7 @@ func TestInterruptingBoundaryTimerCancelsHost(t *testing.T) {
 	t0 := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 
 	// Step 1: Start → UserTask parked; boundary timer armed.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -763,7 +763,7 @@ func TestInterruptingBoundaryTimerCancelsHost(t *testing.T) {
 
 	// Step 2: Boundary timer fires → host cancelled, escalate path runs.
 	tFired := t0.Add(3 * time.Hour)
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewTimerFired(tFired, boundaryTimer.TimerID), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -786,7 +786,7 @@ func TestInterruptingBoundaryTimerCancelsHost(t *testing.T) {
 
 	// Step 3: Late HumanCompleted for the now-consumed host token is a no-op (error).
 	// The token is gone, so the engine returns ErrTokenNotFound.
-	_, err = engine.Step(def, r2.State,
+	_, err = engine.Step(t.Context(), def, r2.State,
 		engine.NewHumanCompleted(tFired, awaitHuman.TaskToken, nil, authz.Actor{ID: "user1"}), engine.StepOptions{})
 	assert.Error(t, err, "late HumanCompleted for consumed host must return error (token gone)")
 }
@@ -826,7 +826,7 @@ func TestNonInterruptingBoundarySpawnsParallelToken(t *testing.T) {
 	t0 := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 
 	// Step 1: Start → UserTask parked; signal boundary arm recorded.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -851,7 +851,7 @@ func TestNonInterruptingBoundarySpawnsParallelToken(t *testing.T) {
 	require.Len(t, r1.State.Boundaries, 1, "signal boundary arm must be recorded")
 
 	// Step 2: Signal fires → additional token on "notify-svc"; host still parked.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSignalReceived(t0, "notify", nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -878,7 +878,7 @@ func TestNonInterruptingBoundarySpawnsParallelToken(t *testing.T) {
 	require.Len(t, r2.State.Boundaries, 1, "non-interrupting boundary stays armed (repeatable)")
 
 	// Step 2b: a SECOND "notify" signal fires the still-armed boundary AGAIN.
-	r2b, err := engine.Step(def, r2.State,
+	r2b, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewSignalReceived(t0, "notify", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	notifyCount := 0
@@ -894,7 +894,7 @@ func TestNonInterruptingBoundarySpawnsParallelToken(t *testing.T) {
 	// Step 3: Complete the host normally — the host token advances, the instance
 	// keeps running because the notify-svc token (from the non-interrupting boundary)
 	// is still pending.
-	r3, err := engine.Step(def, r2b.State,
+	r3, err := engine.Step(t.Context(), def, r2b.State,
 		engine.NewHumanCompleted(t0, awaitHuman.TaskToken, nil, authz.Actor{ID: "user1"}), engine.StepOptions{})
 	require.NoError(t, err)
 	// Instance still running: notify-svc token is pending its action.
@@ -938,7 +938,7 @@ func TestHostCompletionCancelsArmedBoundary(t *testing.T) {
 	t0 := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 
 	// Step 1: Start → ServiceTask parked; boundary timer armed.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -959,7 +959,7 @@ func TestHostCompletionCancelsArmedBoundary(t *testing.T) {
 	require.Len(t, r1.State.Boundaries, 1, "boundary arm must be recorded")
 
 	// Step 2: Complete the host FIRST → CancelTimer for boundary emitted.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(t0, invokeWork.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -978,7 +978,7 @@ func TestHostCompletionCancelsArmedBoundary(t *testing.T) {
 
 	// Step 3: Late boundary TimerFired is a clean no-op.
 	tLate := t0.Add(time.Hour)
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewTimerFired(tLate, boundaryTimer.TimerID), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Nil(t, r3.Commands, "late boundary TimerFired after host completion must be no-op")
@@ -1020,7 +1020,7 @@ func TestBoundaryBadDurationErrors(t *testing.T) {
 
 	// Driving into the host (StartInstance → ServiceTask with bad boundary) must return
 	// a non-nil error mentioning the boundary node and/or the eval failure.
-	_, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	_, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.Error(t, err, "bad boundary TimerDuration must cause Step to return an error")
 	assert.Contains(t, err.Error(), "bnd-bad",
@@ -1064,7 +1064,7 @@ func TestActionFailedCancelsArmsAndBoundaries(t *testing.T) {
 	t0 := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 
 	// Step 1: Start → ServiceTask("work") parked with boundary timer arm.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -1092,7 +1092,7 @@ func TestActionFailedCancelsArmsAndBoundaries(t *testing.T) {
 	// EXPECTED (after fix): StatusFailed, CancelTimer{boundaryTimerID} emitted,
 	//                        s.Boundaries empty.
 	// ACTUAL (before fix):  StatusFailed, NO CancelTimer, s.Boundaries still has the arm.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionFailed(t0, workIA.CommandID, "simulated failure", false), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusFailed, r2.State.Status, "instance must be StatusFailed")
@@ -1159,7 +1159,7 @@ func TestNonInterruptingBoundarySignalNoSelfCascade(t *testing.T) {
 	t0 := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 
 	// Step 1: Start → UserTask("work") parked; signal boundary arm recorded.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.Tokens, 1)
@@ -1172,7 +1172,7 @@ func TestNonInterruptingBoundarySignalNoSelfCascade(t *testing.T) {
 	//   - The standalone broadcast loop (step 3 in SignalReceived dispatch) must NOT
 	//     re-consume this newly-spawned token — it was NOT in the snapshot at delivery.
 	//   - Expected: "work" token still parked, "inner-catch" token parked awaiting "pulse".
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSignalReceived(t0, "pulse", nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -1206,12 +1206,12 @@ func TestEventGatewayMergeVarsFix(t *testing.T) {
 	def := signalCatchDef()
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"existing": "value"}), engine.StepOptions{})
 	require.NoError(t, err)
 
 	// A non-matching signal must not mutate variables.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSignalReceived(at, "no-match", map[string]any{"injected": "bad"}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Nil(t, r2.Commands)

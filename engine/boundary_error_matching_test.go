@@ -147,7 +147,7 @@ func boundaryExprAndCodeDef(expr, code string) *model.ProcessDefinition {
 // command ID for the follow-up ActionFailed/ActionCompleted.
 func stepToParked(t *testing.T, def *model.ProcessDefinition) (engine.InstanceState, engine.InvokeAction) {
 	t.Helper()
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC), nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -173,11 +173,11 @@ func fireActionFailed(t *testing.T, def *model.ProcessDefinition, st engine.Inst
 	var r engine.StepResult
 	var err error
 	if cause != nil {
-		r, err = engine.Step(def, st,
+		r, err = engine.Step(t.Context(), def, st,
 			engine.NewActionFailed(at, ia.CommandID, errCode, false, engine.WithCause(cause)),
 			engine.StepOptions{})
 	} else {
-		r, err = engine.Step(def, st,
+		r, err = engine.Step(t.Context(), def, st,
 			engine.NewActionFailed(at, ia.CommandID, errCode, false),
 			engine.StepOptions{})
 	}
@@ -574,7 +574,7 @@ func TestBoundaryErrorCheckVarsMutationTrap(t *testing.T) {
 
 	at := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
 	// Seed a known variable so we can verify the map content.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -594,7 +594,7 @@ func TestBoundaryErrorCheckVarsMutationTrap(t *testing.T) {
 	}
 	require.NotEmpty(t, ia.CommandID)
 
-	r2, err := engine.Step(def, st,
+	r2, err := engine.Step(t.Context(), def, st,
 		engine.NewActionFailed(at.Add(time.Second), ia.CommandID, "ERR", false),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -658,7 +658,7 @@ func TestMalformedErrorExprNonFatal(t *testing.T) {
 	def := twoErrorBoundaryDef()
 
 	at := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -674,7 +674,7 @@ func TestMalformedErrorExprNonFatal(t *testing.T) {
 	// Fire with "REAL_CODE": bnd-bad-expr's ErrorExpr type-errors at runtime
 	// (string + int), so bnd-bad-expr is skipped. bnd-real has matching ErrorCode
 	// → it catches → recovery path.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionFailed(at.Add(time.Second), ia.CommandID, "REAL_CODE", false),
 		engine.StepOptions{})
 

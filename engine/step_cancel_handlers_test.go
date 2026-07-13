@@ -91,12 +91,12 @@ func TestCancelHandler_SingleActiveNode(t *testing.T) {
 
 	// Drive: start → user task parked.
 	st := engine.InstanceState{InstanceID: "ch-single-1"}
-	r0, err := engine.Step(def, st, engine.NewStartInstance(at, nil), engine.StepOptions{})
+	r0, err := engine.Step(t.Context(), def, st, engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, r0.State.Status)
 
 	// CancelRequested while user task is parked.
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewCancelRequested(at.Add(time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -143,12 +143,12 @@ func TestCancelHandler_TwoParallelTokens(t *testing.T) {
 
 	// Start — drives to fork → both svc-a and svc-b parked.
 	st := engine.InstanceState{InstanceID: "ch-par-1"}
-	r0, err := engine.Step(def, st, engine.NewStartInstance(at, nil), engine.StepOptions{})
+	r0, err := engine.Step(t.Context(), def, st, engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r0.State.Tokens, 2, "setup: both parallel service tasks must be parked before cancel")
 
 	// CancelRequested while both service tasks are parked.
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewCancelRequested(at.Add(time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -197,7 +197,7 @@ func TestCancelHandler_SubProcessScope(t *testing.T) {
 
 	// Start → drives into sub-process → inner-svc parked.
 	st := engine.InstanceState{InstanceID: "ch-sub-1"}
-	r0, err := engine.Step(def, st, engine.NewStartInstance(at, nil), engine.StepOptions{})
+	r0, err := engine.Step(t.Context(), def, st, engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, r0.State.Status)
 
@@ -212,7 +212,7 @@ func TestCancelHandler_SubProcessScope(t *testing.T) {
 	require.NotEmpty(t, innerCmdID, "inner-action InvokeAction must be emitted")
 
 	// CancelRequested while inner-svc is parked inside the sub-process scope.
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewCancelRequested(at.Add(time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -256,20 +256,20 @@ func TestCancelHandler_WithCompensateAction(t *testing.T) {
 
 	// Step 1: start → svc parked.
 	st := engine.InstanceState{InstanceID: "ch-comp-1"}
-	r0, err := engine.Step(def, st, engine.NewStartInstance(at, nil), engine.StepOptions{})
+	r0, err := engine.Step(t.Context(), def, st, engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	ia0, ok := r0.Commands[0].(engine.InvokeAction)
 	require.True(t, ok)
 	require.Equal(t, "charge", ia0.Name)
 
 	// Step 2: svc completes → user task parked (compensation record created).
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewActionCompleted(at.Add(time.Second), ia0.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.RootCompensations, 1)
 
 	// Step 3: CancelRequested while user task is parked.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewCancelRequested(at.Add(2*time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -313,10 +313,10 @@ func TestCancelHandler_NoneSet(t *testing.T) {
 	}
 
 	st := engine.InstanceState{InstanceID: "ch-none-1"}
-	r0, err := engine.Step(def, st, engine.NewStartInstance(at, nil), engine.StepOptions{})
+	r0, err := engine.Step(t.Context(), def, st, engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewCancelRequested(at.Add(time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -349,14 +349,14 @@ func TestCancelHandler_Determinism(t *testing.T) {
 	}
 
 	st := engine.InstanceState{InstanceID: "ch-det-1"}
-	r0, err := engine.Step(def, st, engine.NewStartInstance(at, nil), engine.StepOptions{})
+	r0, err := engine.Step(t.Context(), def, st, engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
 	cancelAt := at.Add(time.Second)
 
-	r1a, err := engine.Step(def, r0.State, engine.NewCancelRequested(cancelAt), engine.StepOptions{})
+	r1a, err := engine.Step(t.Context(), def, r0.State, engine.NewCancelRequested(cancelAt), engine.StepOptions{})
 	require.NoError(t, err)
-	r1b, err := engine.Step(def, r0.State, engine.NewCancelRequested(cancelAt), engine.StepOptions{})
+	r1b, err := engine.Step(t.Context(), def, r0.State, engine.NewCancelRequested(cancelAt), engine.StepOptions{})
 	require.NoError(t, err)
 
 	assert.True(t, reflect.DeepEqual(r1a.Commands, r1b.Commands),

@@ -43,7 +43,7 @@ func TestReceiveTaskReminderFiresAndCancelsOnMessage(t *testing.T) {
 	startAt := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
 
 	// ---- Step 1: Start → parked at receive, reminder armed ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(startAt, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -67,7 +67,7 @@ func TestReceiveTaskReminderFiresAndCancelsOnMessage(t *testing.T) {
 
 	// ---- Step 2: reminder fires while parked → nudge only, token stays ----
 	fireAt := startAt.Add(30 * time.Minute)
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewTimerFired(fireAt, reminderID), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -100,7 +100,7 @@ func TestReceiveTaskReminderFiresAndCancelsOnMessage(t *testing.T) {
 
 	// ---- Step 3: message arrives → token advances + reminder cancelled ----
 	msgAt := startAt.Add(45 * time.Minute)
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewMessageReceived(msgAt, "PaymentReceived", "", nil), engine.StepOptions{})
 	require.NoError(t, err)
 

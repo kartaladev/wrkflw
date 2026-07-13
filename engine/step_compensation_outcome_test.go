@@ -71,7 +71,7 @@ func TestBeginCompensationNonZeroOutcomeFailed(t *testing.T) {
 	}
 
 	// Call BeginCompensation with a NON-ZERO outcome: StatusFailed + "boom".
-	r1, err := engine.BeginCompensation(def, &state, "", engine.StatusFailed, "boom", at, engine.Macro)
+	r1, err := engine.BeginCompensation(t.Context(), def, &state, "", engine.StatusFailed, "boom", at, engine.Macro)
 	require.NoError(t, err)
 
 	// The cursor is now set; one InvokeAction for "refund" must be emitted.
@@ -82,7 +82,7 @@ func TestBeginCompensationNonZeroOutcomeFailed(t *testing.T) {
 	assert.Equal(t, "refund", ia.Name)
 
 	// ApplyTrigger ActionCompleted for the compensation action — this triggers stepCompensationFinish.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), ia.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)

@@ -465,7 +465,7 @@ func (driver *ProcessDriver) deliverLoop(
 			attribute.String("wrkflw.trigger", triggerName(t)),
 		))
 		start := driver.clk.Now()
-		res, err := engine.Step(def, st, t, engine.StepOptions{
+		res, err := engine.Step(stepCtx, def, st, t, engine.StepOptions{
 			DefaultRetryPolicy:  driver.defaultRetryPolicy,
 			OverrideRetryPolicy: driver.overrideRetryPolicy(def, st, t),
 			Evaluator:           driver.conditionEval,

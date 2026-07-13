@@ -52,7 +52,7 @@ func TestTimerIntermediateSchedulesAndResumes(t *testing.T) {
 	fireAt := startAt.Add(time.Hour)
 
 	// ---- Step 1: StartInstance ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(startAt, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -84,7 +84,7 @@ func TestTimerIntermediateSchedulesAndResumes(t *testing.T) {
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
 
 	// ---- Step 2: TimerFired ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewTimerFired(fireAt, "i1-tm1"), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -129,12 +129,12 @@ func TestTimerFiredStaleTokenIsNoop(t *testing.T) {
 	startAt := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 
 	// Bring the instance to the parked-at-timer state.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(startAt, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
 	// Advance past the timer (move the token) so the timer's AwaitCommand is gone.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewTimerFired(startAt.Add(time.Hour), "i1-tm1"), engine.StepOptions{})
 	require.NoError(t, err)
 	// At this point r2.State has the token at "notify" (parked on a command ID), not on the timer.
@@ -142,7 +142,7 @@ func TestTimerFiredStaleTokenIsNoop(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Feed a stale/unknown TimerFired.
-			r, err := engine.Step(def, r2.State,
+			r, err := engine.Step(t.Context(), def, r2.State,
 				engine.NewTimerFired(startAt.Add(2*time.Hour), tc.timerID), engine.StepOptions{})
 			// Must be a clean no-op: no error, no commands.
 			require.NoError(t, err, "stale TimerFired must not error")
@@ -192,7 +192,7 @@ func TestUserTaskDeadlineBreachTakesAlternativePath(t *testing.T) {
 	fireAt := startAt.Add(3 * time.Hour)
 
 	// ---- Step 1: Start → parked at userTask ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(startAt, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -249,7 +249,7 @@ func TestUserTaskDeadlineBreachTakesAlternativePath(t *testing.T) {
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
 
 	// ---- Step 2: deadline fires (task NOT completed) → breach ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewTimerFired(fireAt, deadlineTimerID), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -307,7 +307,7 @@ func TestUserTaskCompletedBeforeDeadlineIgnoresTimer(t *testing.T) {
 	fireAt := startAt.Add(3 * time.Hour)
 
 	// Bring the instance to the parked user-task state.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(startAt, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -323,7 +323,7 @@ func TestUserTaskCompletedBeforeDeadlineIgnoresTimer(t *testing.T) {
 	// Complete the task BEFORE the deadline fires.
 	actor := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	completeAt := startAt.Add(time.Hour) // well before the 3h deadline
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewHumanCompleted(completeAt, "i1-h1", nil, actor), engine.StepOptions{})
 	require.NoError(t, err)
 	// Instance must have completed via the normal end path.
@@ -340,7 +340,7 @@ func TestUserTaskCompletedBeforeDeadlineIgnoresTimer(t *testing.T) {
 	assert.True(t, foundCancel, "HumanCompleted must emit CancelTimer for the deadline timer (id=%s); got: %v", deadlineTimerID, r2.Commands)
 
 	// Now the deadline fires late.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewTimerFired(fireAt, deadlineTimerID), engine.StepOptions{})
 	require.NoError(t, err, "late deadline TimerFired must not error")
 	assert.Empty(t, r3.Commands, "late deadline TimerFired must emit no commands")
@@ -388,7 +388,7 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 	startAt := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 
 	// ---- Step 1: Start → parked at userTask ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(startAt, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -454,7 +454,7 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 
 	// ---- Step 2: first reminder fires ----
 	fire1At := startAt.Add(time.Hour)
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewTimerFired(fire1At, reminderID), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -486,7 +486,7 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 
 	// ---- Step 3: second reminder fires on the SAME id (proves native re-delivery) ----
 	fire2At := fire1At.Add(time.Hour)
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewTimerFired(fire2At, reminderID), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -506,7 +506,7 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 	// ---- Step 4: complete the task → CancelTimer for outstanding reminder ----
 	actor := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	completeAt := startAt.Add(3 * time.Hour / 2) // 1.5h into the process, before deadline
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewHumanCompleted(completeAt, "i1-h1", nil, actor), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r4.State.Status, "instance should complete on HumanCompleted")
@@ -527,7 +527,7 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 	assert.True(t, foundCancelDeadline, "HumanCompleted must cancel the deadline timer (id=%s); got: %v", deadlineTimerID, r4.Commands)
 
 	// ---- Step 5: late reminder fires after task completed → clean no-op ----
-	r5, err := engine.Step(def, r4.State,
+	r5, err := engine.Step(t.Context(), def, r4.State,
 		engine.NewTimerFired(startAt.Add(3*time.Hour), reminderID), engine.StepOptions{})
 	require.NoError(t, err, "late reminder TimerFired must not error")
 	assert.Empty(t, r5.Commands, "late reminder TimerFired must emit no commands; got: %v", r5.Commands)
@@ -559,7 +559,7 @@ func TestInWaitReminderNoActionEmitsNothingOnFire(t *testing.T) {
 	startAt := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 
 	// Start → parked at userTask.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(startAt, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -575,7 +575,7 @@ func TestInWaitReminderNoActionEmitsNothingOnFire(t *testing.T) {
 
 	// Fire the reminder.
 	fire1At := startAt.Add(time.Hour)
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewTimerFired(fire1At, reminderID), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -592,7 +592,7 @@ func TestInWaitReminderCancelledByDeadline(t *testing.T) {
 	startAt := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 
 	// Start → parked at userTask.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(startAt, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -615,7 +615,7 @@ func TestInWaitReminderCancelledByDeadline(t *testing.T) {
 	// stays outstanding (the engine does not re-schedule a new one). Fire the
 	// deadline next to confirm it cancels that outstanding reminder timer.
 	fire1At := startAt.Add(time.Hour)
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewTimerFired(fire1At, reminderTimerID), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -628,7 +628,7 @@ func TestInWaitReminderCancelledByDeadline(t *testing.T) {
 
 	// deadline fires while the (single) reminder is still outstanding.
 	deadlineFireAt := startAt.Add(3 * time.Hour)
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewTimerFired(deadlineFireAt, deadlineTimerID), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -690,7 +690,7 @@ func TestActionFailedCancelsOutstandingTimers(t *testing.T) {
 	// Start: drives into parallelFork → both branches resolve.
 	// userTask parks with AwaitHuman + ScheduleTimer(Deadline).
 	// svcTask parks with InvokeAction.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(startAt, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -717,7 +717,7 @@ func TestActionFailedCancelsOutstandingTimers(t *testing.T) {
 
 	// Now feed ActionFailed for the service-task command.
 	failAt := startAt.Add(30 * time.Minute)
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionFailed(failAt, svcCmdID, "work exploded", false), engine.StepOptions{})
 	require.NoError(t, err)
 

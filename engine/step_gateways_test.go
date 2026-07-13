@@ -38,7 +38,7 @@ func exclusiveDef() *model.ProcessDefinition {
 
 func TestExclusiveGatewayTakesConditionalBranch(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
-	res, err := engine.Step(exclusiveDef(), engine.InstanceState{InstanceID: "i1"},
+	res, err := engine.Step(t.Context(), exclusiveDef(), engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"amount": 150}), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -51,7 +51,7 @@ func TestExclusiveGatewayTakesConditionalBranch(t *testing.T) {
 
 func TestExclusiveGatewayTakesDefaultBranch(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
-	res, err := engine.Step(exclusiveDef(), engine.InstanceState{InstanceID: "i1"},
+	res, err := engine.Step(t.Context(), exclusiveDef(), engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"amount": 5}), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -85,7 +85,7 @@ func parallelForkDef() *model.ProcessDefinition {
 
 func TestParallelGatewayForksAllBranches(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
-	res, err := engine.Step(parallelForkDef(), engine.InstanceState{InstanceID: "i1"},
+	res, err := engine.Step(t.Context(), parallelForkDef(), engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -133,7 +133,7 @@ func TestParallelJoinWaitsForAllBranches(t *testing.T) {
 	at := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	def := diamondDef()
 
-	r0, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r0, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r0.Commands, 2) // a and b invoked
@@ -141,7 +141,7 @@ func TestParallelJoinWaitsForAllBranches(t *testing.T) {
 	cmdB := r0.Commands[1].(engine.InvokeAction)
 
 	// Complete the first branch: token parks at the join, instance not done.
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewActionCompleted(at.Add(time.Second), cmdA.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Empty(t, r1.Commands)
@@ -149,7 +149,7 @@ func TestParallelJoinWaitsForAllBranches(t *testing.T) {
 	require.Len(t, r1.State.Tokens, 2)
 
 	// Complete the second branch: join fires, reaches end, instance completes.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), cmdB.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r2.Commands, 1)
@@ -225,7 +225,7 @@ func TestParallelJoinIsScopeLocal(t *testing.T) {
 	def := dualSubProcessParallelDef()
 
 	// ---- Step 1: StartInstance — outer-start → pfork → subA + subB enter scopes ----
-	r0, err := engine.Step(def, engine.InstanceState{InstanceID: "scope-local-i1"},
+	r0, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "scope-local-i1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r0.State.Status)
@@ -264,7 +264,7 @@ func TestParallelJoinIsScopeLocal(t *testing.T) {
 	// "ijoin" first or after, they'd be cross-counted. But at this step, only scopeA's
 	// inner-a arrives at ijoin. The count is 1, incoming is 2, so it should still wait.
 	// The premature fire happens when BOTH scopes each have 1 token at ijoin → count=2 == incoming.
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewActionCompleted(at.Add(time.Second), cmdA_scopeA, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -278,7 +278,7 @@ func TestParallelJoinIsScopeLocal(t *testing.T) {
 	// After this step, both scopes each have 1 token at "ijoin".
 	// Buggy code: counts all "ijoin" tokens regardless of scope → arrived=2 == incoming(2) → fires BOTH joins prematurely.
 	// Fixed code: each scope's join only counts its own "ijoin" tokens → arrived=1 < 2 → both joins wait.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), cmdA_scopeB, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r2.State.Status,
@@ -302,7 +302,7 @@ func TestParallelJoinIsScopeLocal(t *testing.T) {
 	assert.True(t, scopeBHasInnerB, "scopeB must still have inner-b pending (join not fired prematurely)")
 
 	// ---- Step 4: Complete inner-b for scopeA — scopeA join fires, scope closes ----
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(3*time.Second), cmdB_scopeA, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r3.State.Status, "instance still running (scopeB not done)")
@@ -323,7 +323,7 @@ func TestParallelJoinIsScopeLocal(t *testing.T) {
 	assert.True(t, scopeBOpen, "scopeB must still be open")
 
 	// ---- Step 5: Complete inner-b for scopeB — scopeB join fires, outer join fires, instance completes ----
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewActionCompleted(at.Add(4*time.Second), cmdB_scopeB, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r4.State.Status, "instance must complete after both scopes drain")
@@ -352,7 +352,7 @@ func TestExclusiveGatewayNoMatchNoDefaultErrors(t *testing.T) {
 			{ID: "f3", Source: "big", Target: "end"},
 		},
 	}
-	_, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	_, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(at, map[string]any{"amount": 5}), engine.StepOptions{})
 	require.ErrorIs(t, err, engine.ErrNoMatchingFlow)
 }

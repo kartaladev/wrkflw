@@ -23,7 +23,7 @@ import (
 func TestBoundaryEmitsTriggerNotFireAt(t *testing.T) {
 	def := receiveTaskBoundaryDef(event.NewBoundary("bnd", "recv", event.WithBoundaryTimer(schedule.Cron(`0 9 * * *`))))
 	t0 := time.Date(2026, 7, 7, 9, 0, 0, 0, time.UTC)
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -76,7 +76,7 @@ func TestInterruptingMessageBoundaryInterruptsHost(t *testing.T) {
 	t0 := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
 
 	// Step 1: Start → UserTask parked; message boundary arm recorded.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -100,7 +100,7 @@ func TestInterruptingMessageBoundaryInterruptsHost(t *testing.T) {
 	require.Len(t, r1.State.Boundaries, 1, "message boundary arm must be recorded")
 
 	// Step 2: Matching message fires → host interrupted, token on "escalate".
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewMessageReceived(t0, "cancel", "", map[string]any{"reason": "x"}), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -128,7 +128,7 @@ func TestMessageBoundaryWaitersExposesArmedMessageBoundaries(t *testing.T) {
 	def := interruptingMessageBoundaryDef()
 	t0 := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -139,7 +139,7 @@ func TestMessageBoundaryWaitersExposesArmedMessageBoundaries(t *testing.T) {
 
 	// A timer/signal boundary contributes no message waiter.
 	sigDef := nonInterruptingBoundaryDef()
-	r2, err := engine.Step(sigDef, engine.InstanceState{InstanceID: "i2"},
+	r2, err := engine.Step(t.Context(), sigDef, engine.InstanceState{InstanceID: "i2"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Empty(t, r2.State.MessageBoundaryWaiters(),
@@ -214,14 +214,14 @@ func TestMessageBoundaryCorrelationKey(t *testing.T) {
 			t.Parallel()
 
 			def := newDef()
-			r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+			r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 				engine.NewStartInstance(t0, map[string]any{"orderId": 42}), engine.StepOptions{})
 			require.NoError(t, err)
 			require.Len(t, r1.State.Boundaries, 1, "message boundary arm must be recorded")
 			assert.Equal(t, "42", r1.State.Boundaries[0].MessageKey,
 				"resolved correlation key must be evaluated at arm time")
 
-			r2, err := engine.Step(def, r1.State,
+			r2, err := engine.Step(t.Context(), def, r1.State,
 				engine.NewMessageReceived(t0, "cancel", tc.correlationKey, nil), engine.StepOptions{})
 			tc.assert(t, r2, err)
 		})
@@ -260,7 +260,7 @@ func TestNonInterruptingMessageBoundarySpawnsParallelToken(t *testing.T) {
 	def := nonInterruptingMessageBoundaryDef()
 	t0 := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -275,7 +275,7 @@ func TestNonInterruptingMessageBoundarySpawnsParallelToken(t *testing.T) {
 	require.Len(t, r1.State.Boundaries, 1, "message boundary arm must be recorded")
 
 	// Step 2: Message fires → additional token on "notify-svc"; host still parked.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewMessageReceived(t0, "notify", "", nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -301,7 +301,7 @@ func TestNonInterruptingMessageBoundarySpawnsParallelToken(t *testing.T) {
 
 	// Step 2b: a SECOND "notify" delivery fires the still-armed boundary AGAIN,
 	// spawning another parallel token (BPMN non-interrupting is repeatable).
-	r2b, err := engine.Step(def, r2.State,
+	r2b, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewMessageReceived(t0, "notify", "", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	notifyCount := 0
@@ -315,7 +315,7 @@ func TestNonInterruptingMessageBoundarySpawnsParallelToken(t *testing.T) {
 	require.Len(t, r2b.State.Boundaries, 1, "boundary stays armed across repeated fires")
 
 	// Step 3: Host can still be completed normally.
-	r3, err := engine.Step(def, r2b.State,
+	r3, err := engine.Step(t.Context(), def, r2b.State,
 		engine.NewHumanCompleted(t0, awaitHuman.TaskToken, nil, authz.Actor{ID: "user1"}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r3.State.Status)
@@ -356,7 +356,7 @@ func TestNonInterruptingRecurringTimerBoundaryRepeatsAndCancelsOnHostEnd(t *test
 	def := nonInterruptingRecurringTimerBoundaryDef()
 	t0 := time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -376,12 +376,12 @@ func TestNonInterruptingRecurringTimerBoundaryRepeatsAndCancelsOnHostEnd(t *test
 	require.Len(t, r1.State.Boundaries, 1)
 
 	// First tick → spawns a notify-svc token; arm survives.
-	r2, err := engine.Step(def, r1.State, engine.NewTimerFired(t0, timerID), engine.StepOptions{})
+	r2, err := engine.Step(t.Context(), def, r1.State, engine.NewTimerFired(t0, timerID), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r2.State.Boundaries, 1, "recurring timer boundary stays armed after first tick")
 
 	// Second tick (same TimerID) → fires AGAIN; second token; arm still survives.
-	r3, err := engine.Step(def, r2.State, engine.NewTimerFired(t0, timerID), engine.StepOptions{})
+	r3, err := engine.Step(t.Context(), def, r2.State, engine.NewTimerFired(t0, timerID), engine.StepOptions{})
 	require.NoError(t, err)
 	notifyCount := 0
 	for _, tok := range r3.State.Tokens {
@@ -393,7 +393,7 @@ func TestNonInterruptingRecurringTimerBoundaryRepeatsAndCancelsOnHostEnd(t *test
 	require.Len(t, r3.State.Boundaries, 1, "arm survives repeated ticks")
 
 	// Host completes → the surviving recurring-timer arm is cancelled (leak fix).
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewHumanCompleted(t0, awaitHuman.TaskToken, nil, authz.Actor{ID: "u1"}), engine.StepOptions{})
 	require.NoError(t, err)
 	cancelled := false

@@ -97,13 +97,13 @@ func TestFireOnceLifecycleActionsAreFireAndForget(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r1, err := Step(tc.def, InstanceState{InstanceID: "i1"},
+			r1, err := Step(t.Context(), tc.def, InstanceState{InstanceID: "i1"},
 				NewStartInstance(startAt, nil), StepOptions{})
 			require.NoError(t, err)
 
 			timerID := scheduledTimerID(t, r1, tc.timerKind)
 
-			r2, err := Step(tc.def, r1.State,
+			r2, err := Step(t.Context(), tc.def, r1.State,
 				NewTimerFired(tc.fireAt, timerID), StepOptions{})
 			require.NoError(t, err)
 

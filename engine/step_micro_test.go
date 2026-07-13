@@ -81,7 +81,7 @@ func TestMicroStepAdvancesOneNode(t *testing.T) {
 	st := engine.InstanceState{InstanceID: "mi1"}
 
 	t.Run("micro emits exactly one InvokeAction", func(t *testing.T) {
-		res, err := engine.Step(def, st,
+		res, err := engine.Step(t.Context(), def, st,
 			engine.NewStartInstance(at, nil),
 			engine.StepOptions{Mode: engine.Micro})
 		require.NoError(t, err)
@@ -113,7 +113,7 @@ func TestMicroStepAdvancesOneNode(t *testing.T) {
 	})
 
 	t.Run("macro emits both InvokeActions in one step", func(t *testing.T) {
-		res, err := engine.Step(def, st,
+		res, err := engine.Step(t.Context(), def, st,
 			engine.NewStartInstance(at, nil),
 			engine.StepOptions{Mode: engine.Macro})
 		require.NoError(t, err)
@@ -137,7 +137,7 @@ func TestMicroStepAdvancesOneNode(t *testing.T) {
 
 	t.Run("second micro step processes the remaining active token", func(t *testing.T) {
 		// Get the state after the first micro step (svc-a parked, svc-b active).
-		res1, err := engine.Step(def, st,
+		res1, err := engine.Step(t.Context(), def, st,
 			engine.NewStartInstance(at, nil),
 			engine.StepOptions{Mode: engine.Micro})
 		require.NoError(t, err)
@@ -148,7 +148,7 @@ func TestMicroStepAdvancesOneNode(t *testing.T) {
 		// forward (no outgoing flow in microForkDef, so it parks defensively), then
 		// drive(Micro) picks up the still-active svc-b token and parks it, emitting
 		// InvokeAction(do-b).
-		res2, err := engine.Step(def, res1.State,
+		res2, err := engine.Step(t.Context(), def, res1.State,
 			engine.NewActionCompleted(at, ia1.CommandID, nil),
 			engine.StepOptions{Mode: engine.Micro})
 		require.NoError(t, err)
@@ -185,7 +185,7 @@ func TestMicroStepEventuallyCompletesLikeMacro(t *testing.T) {
 		st := engine.InstanceState{InstanceID: "conv-micro"}
 
 		// Step 1 (Micro): StartInstance → parks at svc, emits InvokeAction.
-		res1, err := engine.Step(def, st,
+		res1, err := engine.Step(t.Context(), def, st,
 			engine.NewStartInstance(at, nil),
 			engine.StepOptions{Mode: engine.Micro})
 		require.NoError(t, err)
@@ -197,7 +197,7 @@ func TestMicroStepEventuallyCompletesLikeMacro(t *testing.T) {
 
 		// Step 2 (Micro): ActionCompleted → svc token advances to end event,
 		// end event fires → StatusCompleted + CompleteInstance.
-		res2, err := engine.Step(def, res1.State,
+		res2, err := engine.Step(t.Context(), def, res1.State,
 			engine.NewActionCompleted(at, ia.CommandID, map[string]any{"result": "ok"}),
 			engine.StepOptions{Mode: engine.Micro})
 		require.NoError(t, err)
@@ -214,7 +214,7 @@ func TestMicroStepEventuallyCompletesLikeMacro(t *testing.T) {
 		st := engine.InstanceState{InstanceID: "conv-macro"}
 
 		// Macro StartInstance: also parks at svc (same as Micro for linear process).
-		res1, err := engine.Step(def, st,
+		res1, err := engine.Step(t.Context(), def, st,
 			engine.NewStartInstance(at, nil),
 			engine.StepOptions{Mode: engine.Macro})
 		require.NoError(t, err)
@@ -224,7 +224,7 @@ func TestMicroStepEventuallyCompletesLikeMacro(t *testing.T) {
 		assert.Equal(t, "work", ia.Name)
 
 		// Macro ActionCompleted: same result.
-		res2, err := engine.Step(def, res1.State,
+		res2, err := engine.Step(t.Context(), def, res1.State,
 			engine.NewActionCompleted(at, ia.CommandID, map[string]any{"result": "ok"}),
 			engine.StepOptions{Mode: engine.Macro})
 		require.NoError(t, err)

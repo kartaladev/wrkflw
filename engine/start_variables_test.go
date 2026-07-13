@@ -24,7 +24,7 @@ func TestStartInstance_CapturesStartVariables(t *testing.T) {
 		Flows: []flow.SequenceFlow{{ID: "f1", Source: "start", Target: "end"}},
 	}
 	t0 := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC)
-	r, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, map[string]any{"amount": 100}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, map[string]any{"amount": 100}, r.State.StartVariables)

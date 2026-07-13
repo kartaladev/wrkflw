@@ -72,7 +72,7 @@ func TestEventSubprocessArmsFromEventStartNotIndexZero(t *testing.T) {
 	def := espManualBeforeEventStartDef()
 
 	// ---- Step 1: StartInstance → root-user parks; ESP arm recorded. ----
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i-esp-multistart"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-esp-multistart"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
@@ -84,7 +84,7 @@ func TestEventSubprocessArmsFromEventStartNotIndexZero(t *testing.T) {
 		"ESP arm must carry the event-start's signal, not an empty (dead) trigger")
 
 	// ---- Step 2: SignalReceived{"cancel"} → interrupting ESP fires. ----
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewSignalReceived(at.Add(time.Second), "cancel", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r2.State.Status)

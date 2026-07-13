@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/event"
@@ -52,169 +54,65 @@ func boundaryErrorMatches(n event.BoundaryEvent, vars map[string]any, cause erro
 	return n.ErrorCode == "" || n.ErrorCode == errorCode, nil
 }
 
-// propagateError propagates a thrown errorCode to the nearest matching boundary error handler (BPMN-style error propagation).
+// isErrorBoundary reports whether a KindBoundaryEvent node n represents a BPMN
+// error boundary event, as opposed to a timer/signal/message boundary. An error
+// boundary has none of the timer/signal/message trigger fields set; the presence
+// of ErrorCode (specific or empty catch-all) is what actually selects it, but any
+// trigger field being set means the node belongs to a different boundary flavor
+// and must be skipped during error-boundary scans.
+func isErrorBoundary(n event.BoundaryEvent) bool {
+	return n.Timer.IsZero() && n.SignalName == "" && n.MessageName == ""
+}
+
+// findDirectBoundary scans hostDef for a KindBoundaryEvent error boundary attached
+// to hostNodeID (bnd.AttachedTo == hostNodeID) that matches errorCode against vars
+// and cause, using the three-tier boundaryErrorMatches precedence (Check → Expr →
+// Code). Returns the matched boundary and true when found.
 //
-// It performs two checks in order, stopping at the first match:
+// A malformed ErrorExpr (a runtime eval error) is treated as non-match for that
+// candidate — this is the error-recovery path, and one malformed predicate must
+// not brick routing for all boundaries — so scanning continues to the next node.
 //
-//  1. Direct-attachment check (only when originatingNodeID != ""):
-//     Inspect the token's OWN scope definition (defForScope(top, s, scopeID)) for
-//     a KindBoundaryEvent error event with AttachedTo == originatingNodeID and
-//     (ErrorCode == errorCode || ErrorCode == ""). This covers the case where a
-//     boundary error event is attached directly to the failing activity itself —
-//     e.g. a root-level ServiceTask "svc" with a KindBoundaryEvent{AttachedTo:"svc"}
-//     in the root definition. When found: consume ONLY the originating activity's
-//     token (already done by the caller), cancel its arms, and route a token to the
-//     boundary's outgoing flow TARGET in the SAME scope (scopeID). The scope is NOT
-//     closed — only the individual activity's token is consumed (interrupting
-//     boundary on a single node, contrast with enclosing-scope case below).
-//
-//  2. Enclosing-scope walk (unchanged from original behavior):
-//     Walk outward from scopeID to root. At each level, inspect the scope's activity
-//     node in the PARENT definition for a matching boundary error event with
-//     AttachedTo == scope.NodeID (the sub-process that owns the scope). When found:
-//     cancel ALL tokens in currentScopeID, close the scope, and route a token to the
-//     boundary's outgoing flow in the PARENT scope. This is the interrupting-boundary
-//     behavior for a sub-process error escape.
-//
-// Matching rule for a KindBoundaryEvent node bnd (both checks):
-//   - bnd.AttachedTo == <activity-node-id>
-//   - bnd.ErrorCode == errorCode (specific-code match) OR bnd.ErrorCode == "" (catch-all)
-//   - No timer/signal/message fields set (it is an error boundary, not a timer/signal boundary)
-//
-// When NO handler is found (neither direct nor enclosing):
-//   - Set s.Status = StatusFailed, s.EndedAt = &at.
-//   - Emit FailInstance{Err: errorCode}.
-//   - Emit CancelTimer for all outstanding timers, armed events, and boundaries.
-//
-// originatingNodeID should be set to the failing activity's NodeID (tok.NodeID) when
-// called from ActionFailed. For an error-behavior end event, pass "" (an error end
-// event is not an activity with a direct-attaching boundary).
-//
-// failingTokenID is the ID of the specific token that failed. When originatingNodeID
-// is non-empty (ActionFailed path), the direct-attachment branch consumes THIS token
-// by ID rather than by NodeID+ScopeID. This is correct when two active tokens occupy
-// the same node in the same scope (e.g. in a parallel/loop topology) — consuming by
-// ID ensures only the exact failing token is removed. For the error-behavior end
-// event path (originatingNodeID == ""), the error-end token is already consumed by
-// drive before propagateError is called, so failingTokenID is unused.
-// raiseIncidentOnUnhandled controls the no-handler fallback: when true, an
-// unhandled error parks the failing token as a [TokenIncident] and keeps the
-// instance running (admin-resumable) instead of setting StatusFailed.
-//
-// cause is the original Go error from the live action invocation; pass nil for
-// bare-code sources (an error-behavior end event, sub-instance failures). When
-// nil, a synthesized errors.New(errorCode) is created so ErrorCheck closures
-// always receive a non-nil error.
-func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, cause error, at time.Time, mode StepMode, eval ConditionEvaluator, raiseIncidentOnUnhandled bool) ([]Command, error) {
-	// Guarantee that ErrorCheck closures always receive a non-nil error.
-	// For bare-code sources (an error-behavior end event, sub-instance) the
-	// caller passes nil; synthesize errors.New(errorCode) so the closure can
-	// inspect the code via err.Error() without requiring a nil-check.
-	if cause == nil {
-		cause = errors.New(errorCode)
-	}
-	// ── Step 1: Direct-attachment check ──────────────────────────────────────
-	// Only when the caller provides an originating node (ActionFailed path).
-	// Inspect the failing token's OWN scope definition for a boundary error event
-	// with AttachedTo == originatingNodeID. If found, consume only the failing
-	// activity's token and route a recovery token in the SAME scope.
-	if originatingNodeID != "" {
-		ownDef, err := defForScope(top, s, scopeID)
-		if err != nil {
-			return nil, fmt.Errorf("workflow-engine: propagateError: resolving own scope def for direct-attachment check: %w", err)
+// hostNodeID/hostDef are deliberately generic (not "the failing token's node"): a
+// call-activity host and its own containing definition satisfy the same shape,
+// which is what lets findDirectBoundary be reused outside a token-failure context.
+func findDirectBoundary(ctx context.Context, hostDef *model.ProcessDefinition, hostNodeID, errorCode string, vars map[string]any, cause error, eval ConditionEvaluator) (event.BoundaryEvent, bool) {
+	for _, raw := range hostDef.Nodes {
+		n, isBnd := raw.(event.BoundaryEvent)
+		if !isBnd || n.AttachedTo != hostNodeID || !isErrorBoundary(n) {
+			continue
 		}
-
-		var directHandler *event.BoundaryEvent
-		for _, raw := range ownDef.Nodes {
-			n, isBnd := raw.(event.BoundaryEvent)
-			if !isBnd {
-				continue
-			}
-			if n.AttachedTo != originatingNodeID {
-				continue
-			}
-			// Must be an error boundary (no timer/signal/message fields).
-			if !n.Timer.IsZero() || n.SignalName != "" || n.MessageName != "" {
-				continue
-			}
-			// Three-tier match: Check → Expr → Code.
-			// An ErrorExpr eval error (e.g. runtime type mismatch) is non-fatal
-			// for matching — this is the error-recovery path and one malformed predicate
-			// must not brick routing for all boundaries. Treat the boundary as non-matching
-			// and continue to the next boundary rather than aborting the Step.
-			matched, matchErr := boundaryErrorMatches(n, s.Variables, cause, errorCode, eval)
-			if matchErr != nil {
-				// Treat as non-match; continue scanning remaining boundaries.
-				continue
-			}
-			if matched {
-				bnd := n
-				directHandler = &bnd
-				break
-			}
+		matched, matchErr := boundaryErrorMatches(n, vars, cause, errorCode, eval)
+		if matchErr != nil {
+			// Treat as non-match; continue scanning remaining boundaries.
+			slog.DebugContext(ctx, "boundary ErrorExpr eval error",
+				"host_node_id", hostNodeID,
+				"boundary_node_id", n.ID(),
+				"error_code", errorCode,
+				"error", matchErr,
+			)
+			continue
 		}
-
-		if directHandler != nil {
-			// Direct boundary found. The failing activity's token was already cleaned
-			// up by the ActionFailed handler (preCmds cancelled its arms; the token
-			// itself is still present but parked — we need to consume it now).
-			var cmds []Command
-
-			// Emit the fire-once boundary action before routing, mirroring
-			// fireBoundaryArm and handleDeadlineFired. FireAndForget means a catalog
-			// action failure does not block routing.
-			cmds = append(cmds, emitFireOnceAction(s, directHandler.Action)...)
-
-			// Consume the failing activity's token by its specific ID (failingTokenID).
-			// Using the ID rather than NodeID+ScopeID ensures correctness when two
-			// active tokens share the same node in the same scope (e.g. a parallel or
-			// loop topology) — we remove only the exact failing token, not the first
-			// one found by position.
-			var failingTok *Token
-			if failingTokenID != "" {
-				failingTok = s.tokenByID(failingTokenID)
-			}
-			if failingTok == nil {
-				// Fallback: locate by NodeID+ScopeID (defensive; should not occur when
-				// the caller passes a valid failingTokenID).
-				for i := range s.Tokens {
-					if s.Tokens[i].NodeID == originatingNodeID && s.Tokens[i].ScopeID == scopeID {
-						failingTok = &s.Tokens[i]
-						break
-					}
-				}
-			}
-			if failingTok != nil {
-				s.consumeToken(failingTok, at)
-			}
-
-			// Find the boundary's outgoing flow target in the own scope definition.
-			outs := ownDef.Outgoing(directHandler.ID())
-			if len(outs) == 0 {
-				return cmds, fmt.Errorf("workflow-engine: propagateError: direct boundary %q has no outgoing flow", directHandler.ID())
-			}
-			flowTarget := outs[0].Target
-
-			// Place a recovery token in the SAME scope (the failing token's scope).
-			// This is the key distinction from the enclosing-scope case: only the
-			// failing activity's token is consumed; the scope itself stays open.
-			s.placeTokenInScope(flowTarget, scopeID, at)
-
-			// Drive forward from the recovery token.
-			driveCmds, err := drive(top, s, at, mode, eval)
-			if err != nil {
-				return cmds, err
-			}
-			cmds = append(cmds, driveCmds...)
-			return cmds, nil
+		if matched {
+			return n, true
 		}
 	}
+	return event.BoundaryEvent{}, false
+}
 
-	// ── Step 2: Enclosing-scope walk ─────────────────────────────────────────
-	// Walk the scope chain from scopeID outward to root ("").
-	// At each step, inspect the scope's activity node in the PARENT definition
-	// for a matching boundary error event. The loop terminates when currentScopeID
-	// reaches "" (root — no scope to inspect) or when a handler is found (early return).
+// findEnclosingBoundary walks the scope chain from scopeID outward to root (""),
+// looking for a matching error boundary attached to each ancestor scope's owning
+// activity node in that ancestor's PARENT definition (scope.NodeID is the
+// sub-process activity; the boundary itself is defined alongside it, one level up).
+//
+// Returns, when found: the matched boundary, errScopeID (the scope whose tokens
+// must be cancelled — the level where the walk stopped), targetScopeID (the parent
+// scope to route the recovery token into), and lookupDef (the parent definition,
+// for resolving the boundary's outgoing flow). found is false, err is nil when no
+// ancestor scope has a matching boundary (walk exhausted to root). err is non-nil
+// only for a definition-resolution failure, mirroring the original inline walk's
+// error contract (no partial commands — the caller has not started building any).
+func findEnclosingBoundary(ctx context.Context, top *model.ProcessDefinition, s *InstanceState, scopeID, errorCode string, cause error, eval ConditionEvaluator) (boundary event.BoundaryEvent, errScopeID, targetScopeID string, lookupDef *model.ProcessDefinition, found bool, err error) {
 	for currentScopeID := scopeID; currentScopeID != ""; {
 		scope := s.scopeByID(currentScopeID)
 		if scope == nil {
@@ -225,114 +123,91 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 		parentScopeID := scope.ParentID
 		activityNodeID := scope.NodeID // the sub-process activity in the parent def
 
-		// Resolve the parent definition.
-		parentDef, err := defForScope(top, s, parentScopeID)
-		if err != nil {
-			return nil, fmt.Errorf("workflow-engine: propagateError: resolving parent def for scope %q: %w", currentScopeID, err)
+		parentDef, defErr := defForScope(top, s, parentScopeID)
+		if defErr != nil {
+			return event.BoundaryEvent{}, "", "", nil, false, fmt.Errorf("workflow-engine: propagateError: resolving parent def for scope %q: %w", currentScopeID, defErr)
 		}
 
-		// Scan the parent def for a boundary error event attached to activityNodeID
-		// that matches errorCode (specific or catch-all).
-		var handler *event.BoundaryEvent
-		for _, raw := range parentDef.Nodes {
-			n, isBnd := raw.(event.BoundaryEvent)
-			if !isBnd {
-				continue
-			}
-			if n.AttachedTo != activityNodeID {
-				continue
-			}
-			// Only boundary error events have a non-zero ErrorCode or catch-all
-			// behavior. We identify a "boundary error event" as a KindBoundaryEvent
-			// that has NO Timer trigger and NO SignalName and NO MessageName set
-			// (i.e. it is not a timer/signal/message boundary but an error boundary).
-			// The presence of ErrorCode (specific or empty catch-all) is the marker.
-			//
-			// Design note: we check !n.SignalName && n.Timer.IsZero() && !n.MessageName
-			// so timer/signal boundary events on the same host are skipped. A boundary
-			// event with no trigger fields at all defaults to error boundary semantics.
-			if !n.Timer.IsZero() || n.SignalName != "" || n.MessageName != "" {
-				continue // not an error boundary
-			}
-			// Three-tier match: Check → Expr → Code.
-			// An ErrorExpr eval error (e.g. runtime type mismatch) is non-fatal
-			// for matching — this is the error-recovery path and one malformed predicate
-			// must not brick routing for all boundaries. Treat the boundary as non-matching
-			// and continue to the next boundary rather than aborting the Step.
-			matched, matchErr := boundaryErrorMatches(n, s.Variables, cause, errorCode, eval)
-			if matchErr != nil {
-				// Treat as non-match; continue scanning remaining boundaries.
-				continue
-			}
-			if matched {
-				bnd := n
-				handler = &bnd
-				break
-			}
+		if handler, ok := findDirectBoundary(ctx, parentDef, activityNodeID, errorCode, s.Variables, cause, eval); ok {
+			return handler, currentScopeID, parentScopeID, parentDef, true, nil
 		}
 
-		if handler != nil {
-			// Handler found in the PARENT scope. Cancel all tokens in currentScopeID,
-			// close the scope, then route a token along the boundary's outgoing flow
-			// in the parent scope.
-
-			// 1. Cancel all tokens in the erroring scope.
-			var cmds []Command
-
-			// Emit the fire-once boundary action before routing, mirroring
-			// fireBoundaryArm and handleDeadlineFired. FireAndForget means a catalog
-			// action failure does not block routing.
-			cmds = append(cmds, emitFireOnceAction(s, handler.Action)...)
-
-			tokensToCancel := make([]Token, 0, len(s.Tokens))
-			for _, tok := range s.Tokens {
-				if tok.ScopeID == currentScopeID {
-					tokensToCancel = append(tokensToCancel, tok)
-				}
-			}
-			for _, tok := range tokensToCancel {
-				// Cancel deadline/reminder timers, in-wait reminder, boundary arms,
-				// and (for an event-based-gateway token) armed events, then consume
-				// the token.
-				cmds = append(cmds, cancelTokenWaits(s, &tok, at)...)
-			}
-			// Cancel ESP arms for the scope.
-			for _, timerID := range s.removeEventTriggeredSubprocessArmsForScope(currentScopeID) {
-				cmds = append(cmds, CancelTimer{TimerID: timerID})
-			}
-
-			// 2. Close the erroring scope.
-			s.closeScope(currentScopeID)
-
-			// 3. Find the boundary's outgoing flow target in the parent definition.
-			outs := parentDef.Outgoing(handler.ID())
-			if len(outs) == 0 {
-				return cmds, fmt.Errorf("workflow-engine: propagateError: boundary error %q has no outgoing flow", handler.ID())
-			}
-			flowTarget := outs[0].Target
-
-			// 4. Place a token on the recovery path in the parent scope.
-			s.placeTokenInScope(flowTarget, parentScopeID, at)
-
-			// 5. Drive forward from the recovery token.
-			driveCmds, err := drive(top, s, at, mode, eval)
-			if err != nil {
-				return cmds, err
-			}
-			cmds = append(cmds, driveCmds...)
-			return cmds, nil
-		}
-
-		// No handler at this scope level — walk up to the parent.
 		currentScopeID = parentScopeID
 	}
+	return event.BoundaryEvent{}, "", "", nil, false, nil
+}
 
-	// No handler found anywhere in the scope chain → unhandled error.
-	if raiseIncidentOnUnhandled {
+// routeToBoundary is the shared route tail for a matched error boundary: fire its
+// fire-once action, run the caller-supplied consume step (phase-specific token
+// cleanup — a single failing token by ID, or a whole scope's tokens plus scope
+// closure), resolve the boundary's outgoing flow within lookupDef, place a
+// recovery token in targetScopeID, and drive forward.
+//
+// Command order matches the original inline implementations exactly: [fire-once
+// action, consume's commands, drive's commands]. On any error, the commands
+// accumulated so far are returned alongside the error (partial-command contract).
+//
+// kind labels the "no outgoing flow" error ("direct boundary" vs "boundary error")
+// to preserve the exact original error text for each call site.
+//
+// lookupDef/boundary/targetScopeID/consume are deliberately generic (not
+// hard-wired to "the failing token's" scope): a call-activity host routes into its
+// OWN parent scope via the same shape, which is what lets routeToBoundary be
+// reused outside a token-failure context.
+func routeToBoundary(ctx context.Context, top *model.ProcessDefinition, s *InstanceState, lookupDef *model.ProcessDefinition, boundary event.BoundaryEvent, kind, targetScopeID string, at time.Time, mode StepMode, eval ConditionEvaluator, consume func([]Command) []Command) ([]Command, error) {
+	cmds := emitFireOnceAction(s, boundary.Action)
+	cmds = consume(cmds)
+
+	outs := lookupDef.Outgoing(boundary.ID())
+	if len(outs) == 0 {
+		return cmds, fmt.Errorf("workflow-engine: propagateError: %s %q has no outgoing flow", kind, boundary.ID())
+	}
+	flowTarget := outs[0].Target
+
+	s.placeTokenInScope(flowTarget, targetScopeID, at)
+
+	driveCmds, err := drive(ctx, top, s, at, mode, eval)
+	if err != nil {
+		return cmds, err
+	}
+	cmds = append(cmds, driveCmds...)
+	return cmds, nil
+}
+
+// unhandledErrorPolicy is propagateError's (and handleUnhandledError's)
+// no-handler fallback policy: whether an error with no matching boundary
+// handler fails the instance immediately or is parked as an admin-resumable
+// incident. Named to make call sites self-documenting in place of a bare
+// trailing bool (e.g. propagateError(..., raiseIncident) vs (..., failFast)).
+type unhandledErrorPolicy bool
+
+const (
+	// failFast is the default no-handler outcome: StatusFailed via
+	// FailInstance (after an ADR-0034 compensation walk if records exist).
+	failFast unhandledErrorPolicy = false
+	// raiseIncident parks the failing token as a [TokenIncident] and keeps
+	// the instance running (admin-resumable) instead of failing it. Used by
+	// the retry-exhaustion path when an effective policy exists but neither a
+	// catch flow nor a boundary handled the terminal failure.
+	raiseIncident unhandledErrorPolicy = true
+)
+
+// handleUnhandledError is the no-handler fallback for propagateError: neither a
+// direct-attachment boundary nor an enclosing-scope boundary matched errorCode.
+// Precedence:
+//
+//  1. policy == raiseIncident: park the failing token as a [TokenIncident] and
+//     keep the instance running (admin-resumable), instead of failing it. Used by
+//     the retry-exhaustion path when an effective policy exists but neither a
+//     catch flow nor a boundary handled the terminal failure.
+//  2. Compensation records exist (RootCompensations or ArchivedCompensations,
+//     ADR-0039): run the compensation walk before terminating (ADR-0034).
+//  3. Otherwise: immediate s.Status = StatusFailed, cancel open tasks/timers/arms,
+//     and emit FailInstance{Err: errorCode}.
+func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode, eval ConditionEvaluator, policy unhandledErrorPolicy) ([]Command, error) {
+	if policy == raiseIncident {
 		// Do NOT fail the instance. Raise an incident on the failing token and
-		// keep the instance running (admin-resumable). Used by the retry-
-		// exhaustion path when an effective policy exists but neither a catch
-		// flow nor a boundary handled the terminal failure.
+		// keep the instance running (admin-resumable).
 		failingTok := s.tokenByID(failingTokenID)
 		attempts, cmdID := 1, ""
 		if failingTok != nil {
@@ -360,7 +235,7 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 	// happens inside beginCompensation.
 	if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
 		s.Status = StatusCompensating
-		res, err := beginCompensation(top, s, "", StatusFailed, errorCode, at, mode, eval, "", false, false)
+		res, err := beginCompensation(ctx, top, s, at, mode, eval, compensationOutcome{FinalStatus: StatusFailed, FinalErr: errorCode})
 		if err != nil {
 			return nil, err
 		}
@@ -382,4 +257,152 @@ func propagateError(top *model.ProcessDefinition, s *InstanceState, scopeID, ori
 		cmds = append(cmds, CancelTimer{TimerID: timerID})
 	}
 	return cmds, nil
+}
+
+// propagateError propagates a thrown errorCode to the nearest matching boundary error handler (BPMN-style error propagation).
+//
+// It performs two checks in order, stopping at the first match:
+//
+//  1. Direct-attachment check (only when originatingNodeID != ""), via
+//     findDirectBoundary: Inspect the token's OWN scope definition
+//     (defForScope(top, s, scopeID)) for a KindBoundaryEvent error event with
+//     AttachedTo == originatingNodeID and (ErrorCode == errorCode || ErrorCode ==
+//     ""). This covers the case where a boundary error event is attached directly
+//     to the failing activity itself — e.g. a root-level ServiceTask "svc" with a
+//     KindBoundaryEvent{AttachedTo:"svc"} in the root definition. When found:
+//     consume ONLY the originating activity's token (already done by the caller),
+//     cancel its arms, and route a token to the boundary's outgoing flow TARGET in
+//     the SAME scope (scopeID). The scope is NOT closed — only the individual
+//     activity's token is consumed (interrupting boundary on a single node,
+//     contrast with enclosing-scope case below).
+//
+//  2. Enclosing-scope walk (unchanged from original behavior), via
+//     findEnclosingBoundary: Walk outward from scopeID to root. At each level,
+//     inspect the scope's activity node in the PARENT definition for a matching
+//     boundary error event with AttachedTo == scope.NodeID (the sub-process that
+//     owns the scope). When found: cancel ALL tokens in currentScopeID, close the
+//     scope, and route a token to the boundary's outgoing flow in the PARENT
+//     scope. This is the interrupting-boundary behavior for a sub-process error
+//     escape.
+//
+// Both checks share the routeToBoundary tail (fire-once action, outgoing-flow
+// resolve, placeToken, drive) and the isErrorBoundary marker predicate.
+//
+// Matching rule for a KindBoundaryEvent node bnd (both checks):
+//   - bnd.AttachedTo == <activity-node-id>
+//   - bnd.ErrorCode == errorCode (specific-code match) OR bnd.ErrorCode == "" (catch-all)
+//   - No timer/signal/message fields set (it is an error boundary, not a timer/signal boundary)
+//
+// When NO handler is found (neither direct nor enclosing), see
+// handleUnhandledError:
+//   - Set s.Status = StatusFailed, s.EndedAt = &at.
+//   - Emit FailInstance{Err: errorCode}.
+//   - Emit CancelTimer for all outstanding timers, armed events, and boundaries.
+//
+// originatingNodeID should be set to the failing activity's NodeID (tok.NodeID) when
+// called from ActionFailed. For an error-behavior end event, pass "" (an error end
+// event is not an activity with a direct-attaching boundary).
+//
+// failingTokenID is the ID of the specific token that failed. When originatingNodeID
+// is non-empty (ActionFailed path), the direct-attachment branch consumes THIS token
+// by ID rather than by NodeID+ScopeID. This is correct when two active tokens occupy
+// the same node in the same scope (e.g. in a parallel/loop topology) — consuming by
+// ID ensures only the exact failing token is removed. For the error-behavior end
+// event path (originatingNodeID == ""), the error-end token is already consumed by
+// drive before propagateError is called, so failingTokenID is unused.
+// policy controls the no-handler fallback (see unhandledErrorPolicy): when
+// raiseIncident, an unhandled error parks the failing token as a
+// [TokenIncident] and keeps the instance running (admin-resumable) instead of
+// setting StatusFailed.
+//
+// cause is the original Go error from the live action invocation; pass nil for
+// bare-code sources (an error-behavior end event, sub-instance failures). When
+// nil, a synthesized errors.New(errorCode) is created so ErrorCheck closures
+// always receive a non-nil error.
+func propagateError(ctx context.Context, top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, cause error, at time.Time, mode StepMode, eval ConditionEvaluator, policy unhandledErrorPolicy) ([]Command, error) {
+	// Guarantee that ErrorCheck closures always receive a non-nil error.
+	// For bare-code sources (an error-behavior end event, sub-instance) the
+	// caller passes nil; synthesize errors.New(errorCode) so the closure can
+	// inspect the code via err.Error() without requiring a nil-check.
+	if cause == nil {
+		cause = errors.New(errorCode)
+	}
+
+	// ── Step 1: Direct-attachment check ──────────────────────────────────────
+	// Only when the caller provides an originating node (ActionFailed path).
+	if originatingNodeID != "" {
+		ownDef, err := defForScope(top, s, scopeID)
+		if err != nil {
+			return nil, fmt.Errorf("workflow-engine: propagateError: resolving own scope def for direct-attachment check: %w", err)
+		}
+
+		if handler, ok := findDirectBoundary(ctx, ownDef, originatingNodeID, errorCode, s.Variables, cause, eval); ok {
+			// Direct boundary found. The failing activity's token was already cleaned
+			// up by the ActionFailed handler (preCmds cancelled its arms; the token
+			// itself is still present but parked — we need to consume it now).
+			consume := func(cmds []Command) []Command {
+				// Consume the failing activity's token by its specific ID
+				// (failingTokenID). Using the ID rather than NodeID+ScopeID
+				// ensures correctness when two active tokens share the same
+				// node in the same scope (e.g. a parallel or loop topology) —
+				// we remove only the exact failing token, not the first one
+				// found by position.
+				var failingTok *Token
+				if failingTokenID != "" {
+					failingTok = s.tokenByID(failingTokenID)
+				}
+				if failingTok == nil {
+					// Fallback: locate by NodeID+ScopeID (defensive; should not
+					// occur when the caller passes a valid failingTokenID).
+					for i := range s.Tokens {
+						if s.Tokens[i].NodeID == originatingNodeID && s.Tokens[i].ScopeID == scopeID {
+							failingTok = &s.Tokens[i]
+							break
+						}
+					}
+				}
+				if failingTok != nil {
+					s.consumeToken(failingTok, at)
+				}
+				return cmds
+			}
+			// Route in the SAME scope: only the failing activity's token is
+			// consumed; the scope itself stays open.
+			return routeToBoundary(ctx, top, s, ownDef, handler, "direct boundary", scopeID, at, mode, eval, consume)
+		}
+	}
+
+	// ── Step 2: Enclosing-scope walk ─────────────────────────────────────────
+	handler, errScopeID, targetScopeID, lookupDef, found, err := findEnclosingBoundary(ctx, top, s, scopeID, errorCode, cause, eval)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		consume := func(cmds []Command) []Command {
+			// Cancel all tokens in the erroring scope, then close it.
+			tokensToCancel := make([]Token, 0, len(s.Tokens))
+			for _, tok := range s.Tokens {
+				if tok.ScopeID == errScopeID {
+					tokensToCancel = append(tokensToCancel, tok)
+				}
+			}
+			for _, tok := range tokensToCancel {
+				// Cancel deadline/reminder timers, in-wait reminder, boundary arms,
+				// and (for an event-based-gateway token) armed events, then consume
+				// the token.
+				cmds = append(cmds, cancelTokenWaits(s, &tok, at)...)
+			}
+			// Cancel ESP arms for the scope.
+			for _, timerID := range s.removeEventTriggeredSubprocessArmsForScope(errScopeID) {
+				cmds = append(cmds, CancelTimer{TimerID: timerID})
+			}
+			s.closeScope(errScopeID)
+			return cmds
+		}
+		// Route in the PARENT scope: the erroring scope is fully torn down.
+		return routeToBoundary(ctx, top, s, lookupDef, handler, "boundary error", targetScopeID, at, mode, eval, consume)
+	}
+
+	// No handler found anywhere in the scope chain → unhandled error.
+	return handleUnhandledError(ctx, top, s, scopeID, originatingNodeID, failingTokenID, errorCode, at, mode, eval, policy)
 }

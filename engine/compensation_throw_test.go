@@ -102,20 +102,20 @@ func rootSagaWithScopeWideThrow() *model.ProcessDefinition {
 func driveToScopeWideThrow(t *testing.T, def *model.ProcessDefinition, instID string, at time.Time) engine.StepResult {
 	t.Helper()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: instID},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: instID},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	doA := invokeActionNamed(r1.Commands, "doA")
 	require.NotNil(t, doA, "expected InvokeAction for doA")
 
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), doA.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
 	doB := invokeActionNamed(r2.Commands, "doB")
 	require.NotNil(t, doB, "expected InvokeAction for doB")
 
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), doB.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -143,7 +143,7 @@ func TestCompensationThrowScopeWideReverseAndResume(t *testing.T) {
 		"undoA must not be emitted before undoB (reverse order)")
 
 	// Complete undoB → walk advances to undoA.
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewActionCompleted(at.Add(3*time.Second), undoB.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -151,7 +151,7 @@ func TestCompensationThrowScopeWideReverseAndResume(t *testing.T) {
 	require.NotNil(t, undoA, "reverse walk must emit undoA after undoB")
 
 	// Complete undoA → walk finishes → RESUME at afterThrow (UserTask parks).
-	r5, err := engine.Step(def, r4.State,
+	r5, err := engine.Step(t.Context(), def, r4.State,
 		engine.NewActionCompleted(at.Add(4*time.Second), undoA.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -216,7 +216,7 @@ func TestSecondScopeWideThrowIsNoOp(t *testing.T) {
 
 	undoB := invokeActionNamed(r3.Commands, "undoB")
 	require.NotNil(t, undoB)
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewActionCompleted(at.Add(3*time.Second), undoB.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -226,7 +226,7 @@ func TestSecondScopeWideThrowIsNoOp(t *testing.T) {
 	require.NotNil(t, undoA)
 	// Completing undoA finishes rb1's walk, resumes at rb2 which — finding zero
 	// records — auto-advances to end.
-	r5, err := engine.Step(def, r4.State,
+	r5, err := engine.Step(t.Context(), def, r4.State,
 		engine.NewActionCompleted(at.Add(4*time.Second), undoA.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -284,14 +284,14 @@ func TestCompensationThrowTargetedParity(t *testing.T) {
 	at := time.Date(2026, 7, 10, 11, 0, 0, 0, time.UTC)
 	def := targetedNewKindDef()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "tgt-1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "tgt-1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	book := invokeActionNamed(r1.Commands, "book-inner")
 	require.NotNil(t, book)
 
 	// Complete inner-svc → sub exits (archived under "sub") → tgt fires → walk.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), book.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -301,7 +301,7 @@ func TestCompensationThrowTargetedParity(t *testing.T) {
 	require.NotNil(t, cancelInner, "targeted throw must emit cancel-inner")
 
 	// Complete cancel-inner → walk finishes → resume, archive consumed.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), cancelInner.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -315,7 +315,7 @@ func TestCompensationThrowTargetedParity(t *testing.T) {
 	// there are none, so it stays empty — the point is it must not have consumed
 	// beyond the archive. Complete afterThrow → StatusCompleted.
 	ah := firstAwaitHuman(r3.Commands)
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewHumanCompleted(at.Add(3*time.Second), ah.TaskToken, nil, authz.Actor{}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -406,14 +406,14 @@ func TestCompensationThrowScopeWideBreadth(t *testing.T) {
 			def := breadthDef(tc.rb)
 
 			// start → rootSvc invoked.
-			r1, err := engine.Step(def, engine.InstanceState{InstanceID: "breadth-" + tc.name},
+			r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "breadth-" + tc.name},
 				engine.NewStartInstance(at, nil), engine.StepOptions{})
 			require.NoError(t, err)
 			doRoot := invokeActionNamed(r1.Commands, "do-root")
 			require.NotNil(t, doRoot)
 
 			// complete rootSvc → sub → inner-svc invoked.
-			r2, err := engine.Step(def, r1.State,
+			r2, err := engine.Step(t.Context(), def, r1.State,
 				engine.NewActionCompleted(at.Add(1*time.Second), doRoot.CommandID, nil),
 				engine.StepOptions{})
 			require.NoError(t, err)
@@ -421,7 +421,7 @@ func TestCompensationThrowScopeWideBreadth(t *testing.T) {
 			require.NotNil(t, bookInner)
 
 			// complete inner-svc → sub exits (archived) → rb fires → walk starts.
-			r3, err := engine.Step(def, r2.State,
+			r3, err := engine.Step(t.Context(), def, r2.State,
 				engine.NewActionCompleted(at.Add(2*time.Second), bookInner.CommandID, nil),
 				engine.StepOptions{})
 			require.NoError(t, err)
@@ -441,7 +441,7 @@ func TestCompensationThrowScopeWideBreadth(t *testing.T) {
 					break
 				}
 				require.NotNil(t, ia, "a compensating step must carry a compensation InvokeAction")
-				next, err := engine.Step(def, cur.State,
+				next, err := engine.Step(t.Context(), def, cur.State,
 					engine.NewActionCompleted(at.Add(time.Duration(3+step)*time.Second), ia.CommandID, nil),
 					engine.StepOptions{})
 				require.NoError(t, err)
@@ -511,7 +511,7 @@ func TestScopeWideThrowRetainsSiblingRecordAppendedMidWalk(t *testing.T) {
 	}
 
 	// start → fork splits: branch1 invokes doA, branch2 invokes doC.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "a1-1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "a1-1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	doA := invokeActionNamed(r1.Commands, "doA")
@@ -520,7 +520,7 @@ func TestScopeWideThrowRetainsSiblingRecordAppendedMidWalk(t *testing.T) {
 	require.NotNil(t, doC, "branch2 must invoke doC")
 
 	// Complete doA → undoA recorded, branch1 advances to svcB (doB).
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), doA.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -529,7 +529,7 @@ func TestScopeWideThrowRetainsSiblingRecordAppendedMidWalk(t *testing.T) {
 
 	// Complete doB → undoB recorded, branch1 reaches rb → scope-wide throw walk
 	// starts (drains [undoA, undoB]); branch2 still parked awaiting doC.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), doB.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -541,7 +541,7 @@ func TestScopeWideThrowRetainsSiblingRecordAppendedMidWalk(t *testing.T) {
 
 	// INTERLEAVE: complete doC WHILE the walk is in flight → undoC appended to
 	// RootCompensations above the walk's drained prefix; branch2 parks at ut2.
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewActionCompleted(at.Add(3*time.Second), doC.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -549,7 +549,7 @@ func TestScopeWideThrowRetainsSiblingRecordAppendedMidWalk(t *testing.T) {
 		"a sibling completion mid-walk must not derail the compensation walk")
 
 	// Complete undoB → walk advances to undoA.
-	r5, err := engine.Step(def, r4.State,
+	r5, err := engine.Step(t.Context(), def, r4.State,
 		engine.NewActionCompleted(at.Add(4*time.Second), undoB.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -558,7 +558,7 @@ func TestScopeWideThrowRetainsSiblingRecordAppendedMidWalk(t *testing.T) {
 	countUndos(r5.Commands)
 
 	// Complete undoA → walk finishes → resume at afterThrow.
-	r6, err := engine.Step(def, r5.State,
+	r6, err := engine.Step(t.Context(), def, r5.State,
 		engine.NewActionCompleted(at.Add(5*time.Second), undoA.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -575,7 +575,7 @@ func TestScopeWideThrowRetainsSiblingRecordAppendedMidWalk(t *testing.T) {
 	}
 
 	// Cancel the instance — a still-live undoC record must fire its compensation.
-	r7, err := engine.Step(def, r6.State,
+	r7, err := engine.Step(t.Context(), def, r6.State,
 		engine.NewCancelRequested(at.Add(10*time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 	countUndos(r7.Commands)
@@ -586,7 +586,7 @@ func TestScopeWideThrowRetainsSiblingRecordAppendedMidWalk(t *testing.T) {
 		if ia == nil {
 			break
 		}
-		next, nerr := engine.Step(def, cur.State,
+		next, nerr := engine.Step(t.Context(), def, cur.State,
 			engine.NewActionCompleted(at.Add(time.Duration(11+step)*time.Second), ia.CommandID, nil),
 			engine.StepOptions{})
 		require.NoError(t, nerr)
@@ -647,14 +647,14 @@ func TestScopeWideDeadEndThrowDoesNotConsumeArchive(t *testing.T) {
 	at := time.Date(2026, 7, 10, 14, 0, 0, 0, time.UTC)
 	def := deadEndScopeWideAfterSubProcessDef()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "c1-1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "c1-1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	book := invokeActionNamed(r1.Commands, "book-inner")
 	require.NotNil(t, book)
 
 	// Complete inner-svc → sub exits (archived under "sub") → rb fires (dead-end).
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), book.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -740,14 +740,14 @@ func TestScopeWideThrowFromSubProcessScopeStaysInScope(t *testing.T) {
 	}
 
 	// start → rootSvc invoked.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "subscope-1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "subscope-1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	doRoot := invokeActionNamed(r1.Commands, "do-root")
 	require.NotNil(t, doRoot)
 
 	// Complete rootSvc → undo-root recorded at ROOT scope → sub enters → innerSvc.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), doRoot.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -756,7 +756,7 @@ func TestScopeWideThrowFromSubProcessScopeStaysInScope(t *testing.T) {
 
 	// Complete innerSvc → undo-inner recorded at SUB scope → rb fires (scope-wide,
 	// sub scope) → walk starts, emitting undo-inner.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), doInner.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -770,7 +770,7 @@ func TestScopeWideThrowFromSubProcessScopeStaysInScope(t *testing.T) {
 
 	// Complete undo-inner → walk finishes → resume within the sub-scope at
 	// inner-user (parks AwaitHuman); instance Running again.
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewActionCompleted(at.Add(3*time.Second), undoInner.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -846,7 +846,7 @@ func TestScopeWideThrowCompensateOnceAcrossCancel(t *testing.T) {
 
 	undoB := invokeActionNamed(r3.Commands, "undoB")
 	require.NotNil(t, undoB)
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewActionCompleted(at.Add(3*time.Second), undoB.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -854,7 +854,7 @@ func TestScopeWideThrowCompensateOnceAcrossCancel(t *testing.T) {
 
 	undoA := invokeActionNamed(r4.Commands, "undoA")
 	require.NotNil(t, undoA)
-	r5, err := engine.Step(def, r4.State,
+	r5, err := engine.Step(t.Context(), def, r4.State,
 		engine.NewActionCompleted(at.Add(4*time.Second), undoA.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -863,7 +863,7 @@ func TestScopeWideThrowCompensateOnceAcrossCancel(t *testing.T) {
 	require.Nil(t, r5.State.RootCompensations, "records cleared on scope-wide finish")
 
 	// Cancel after the throw — must NOT re-run undoA/undoB.
-	r6, err := engine.Step(def, r5.State,
+	r6, err := engine.Step(t.Context(), def, r5.State,
 		engine.NewCancelRequested(at.Add(10*time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 	countUndos(r6.Commands)

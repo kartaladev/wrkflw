@@ -120,7 +120,7 @@ func TestCancelWithCompensateAction(t *testing.T) {
 	def := cancelWithCompDef()
 
 	// Step 1: start instance.
-	r0, err := engine.Step(def, engine.InstanceState{InstanceID: "c-comp-1"},
+	r0, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "c-comp-1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	ia0, ok := r0.Commands[0].(engine.InvokeAction)
@@ -128,13 +128,13 @@ func TestCancelWithCompensateAction(t *testing.T) {
 	assert.Equal(t, "charge", ia0.Name)
 
 	// Step 2: svc completes → drives to user task (parked).
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), ia0.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.RootCompensations, 1, "svc completion must record a compensation entry")
 
 	// Step 3: CancelRequested while user task is parked.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewCancelRequested(at.Add(2*time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -151,7 +151,7 @@ func TestCancelWithCompensateAction(t *testing.T) {
 	assert.False(t, hasFail, "FailInstance must NOT be emitted until the walk completes")
 
 	// Step 4: deliver ActionCompleted for the compensation action.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(3*time.Second), ia.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -178,7 +178,7 @@ func TestErrorWithCompensateAction(t *testing.T) {
 	def := errorWithCompDef()
 
 	// Step 1: start → svc1.
-	r0, err := engine.Step(def, engine.InstanceState{InstanceID: "e-comp-1"},
+	r0, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "e-comp-1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	ia0, ok := r0.Commands[0].(engine.InvokeAction)
@@ -186,7 +186,7 @@ func TestErrorWithCompensateAction(t *testing.T) {
 	assert.Equal(t, "charge", ia0.Name)
 
 	// Step 2: svc1 completes → drives to svc2.
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), ia0.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.RootCompensations, 1, "svc1 must record a compensation entry")
@@ -195,7 +195,7 @@ func TestErrorWithCompensateAction(t *testing.T) {
 	assert.Equal(t, "notify", ia1.Name)
 
 	// Step 3: svc2 fails unhandled.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionFailed(at.Add(2*time.Second), ia1.CommandID, "notify-err", false), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -212,7 +212,7 @@ func TestErrorWithCompensateAction(t *testing.T) {
 	assert.False(t, hasFail, "FailInstance must NOT be emitted until walk completes")
 
 	// Step 4: compensation action completes.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(3*time.Second), ia.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -246,18 +246,18 @@ func TestEmptyRecordsCancelImmediate(t *testing.T) {
 		},
 	}
 
-	r0, err := engine.Step(def, engine.InstanceState{InstanceID: "no-comp-cancel"},
+	r0, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "no-comp-cancel"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	ia, _ := r0.Commands[0].(engine.InvokeAction)
 
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), ia.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Empty(t, r1.State.RootCompensations, "non-compensable svc must not create records")
 
 	// CancelRequested with no compensation records: immediate termination.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewCancelRequested(at.Add(2*time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -284,13 +284,13 @@ func TestEmptyRecordsErrorImmediate(t *testing.T) {
 		},
 	}
 
-	r0, err := engine.Step(def, engine.InstanceState{InstanceID: "no-comp-err"},
+	r0, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "no-comp-err"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	ia, _ := r0.Commands[0].(engine.InvokeAction)
 
 	// Fail unhandled with no compensation records.
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewActionFailed(at.Add(1*time.Second), ia.CommandID, "boom", false), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -314,14 +314,14 @@ func TestBestEffortCompActionFailure(t *testing.T) {
 	def := twoCompNodesDef()
 
 	// Step 1: start → svc1.
-	r0, err := engine.Step(def, engine.InstanceState{InstanceID: "be-comp-1"},
+	r0, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "be-comp-1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	ia0, _ := r0.Commands[0].(engine.InvokeAction)
 	require.Equal(t, "step1", ia0.Name)
 
 	// Step 2: svc1 completes → svc2 invoked.
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), ia0.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.RootCompensations, 1)
@@ -329,13 +329,13 @@ func TestBestEffortCompActionFailure(t *testing.T) {
 	require.Equal(t, "step2", ia1.Name)
 
 	// Step 3: svc2 completes → user task parked.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), ia1.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r2.State.RootCompensations, 2)
 
 	// Step 4: CancelRequested → compensation walk starts with "undo2" (most recent).
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewCancelRequested(at.Add(3*time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompensating, r3.State.Status)
@@ -343,7 +343,7 @@ func TestBestEffortCompActionFailure(t *testing.T) {
 	require.True(t, found, "first compensation action in reverse order must be undo2")
 
 	// Step 5: "undo2" compensation action FAILS → best-effort: skip and emit "undo1".
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewActionFailed(at.Add(4*time.Second), undo2.CommandID, "comp-fail", false), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -360,7 +360,7 @@ func TestBestEffortCompActionFailure(t *testing.T) {
 	assert.False(t, hasFail, "FailInstance must NOT be emitted until walk fully completes")
 
 	// Step 6: "undo1" completes → StatusTerminated + FailInstance{cancelled}.
-	r5, err := engine.Step(def, r4.State,
+	r5, err := engine.Step(t.Context(), def, r4.State,
 		engine.NewActionCompleted(at.Add(5*time.Second), undo1.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -390,7 +390,7 @@ func TestRedeliveredCancelIdempotent(t *testing.T) {
 	def := cancelWithCompDef()
 
 	// Step 1: start instance — drives to svc (InvokeAction emitted).
-	r0, err := engine.Step(def, engine.InstanceState{InstanceID: "re-cancel-1"},
+	r0, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "re-cancel-1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	ia0, ok := r0.Commands[0].(engine.InvokeAction)
@@ -398,13 +398,13 @@ func TestRedeliveredCancelIdempotent(t *testing.T) {
 	require.Equal(t, "charge", ia0.Name)
 
 	// Step 2: svc completes → user task parked (compensation record added).
-	r1, err := engine.Step(def, r0.State,
+	r1, err := engine.Step(t.Context(), def, r0.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), ia0.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.RootCompensations, 1, "svc completion must record a compensation entry")
 
 	// Step 3: CancelRequested → StatusCompensating, "refund" InvokeAction emitted.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewCancelRequested(at.Add(2*time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompensating, r2.State.Status)
@@ -412,7 +412,7 @@ func TestRedeliveredCancelIdempotent(t *testing.T) {
 	require.True(t, found, "CancelRequested must emit InvokeAction{Name:\"refund\"}")
 
 	// Step 4: deliver ActionCompleted for the compensation action → StatusTerminated.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(3*time.Second), ia.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusTerminated, r3.State.Status,
@@ -427,7 +427,7 @@ func TestRedeliveredCancelIdempotent(t *testing.T) {
 
 	// Step 5 (THE IDEMPOTENCY CHECK): deliver a SECOND CancelRequested on the
 	// already-terminal state.
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewCancelRequested(at.Add(4*time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -488,14 +488,14 @@ func TestNoDoubleCompensationAfterArchiveConsolidate(t *testing.T) {
 	}()
 
 	// Step 1: start → inner-svc invoked.
-	r1, err := engine.Step(nested, engine.InstanceState{InstanceID: "no-double-1"},
+	r1, err := engine.Step(t.Context(), nested, engine.InstanceState{InstanceID: "no-double-1"},
 		engine.NewStartInstance(at, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	ia0 := r1.Commands[0].(engine.InvokeAction)
 	require.Equal(t, "book-inner", ia0.Name)
 
 	// Step 2: complete inner-svc → sub closes → record archived → parked at rootUserTask.
-	r2, err := engine.Step(nested, r1.State,
+	r2, err := engine.Step(t.Context(), nested, r1.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), ia0.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, r2.State.Status)
@@ -503,7 +503,7 @@ func TestNoDoubleCompensationAfterArchiveConsolidate(t *testing.T) {
 		"archive must be populated after sub-process closes")
 
 	// Step 3: CancelRequested → consolidate + walk begins → "cancel-inner" emitted.
-	r3, err := engine.Step(nested, r2.State,
+	r3, err := engine.Step(t.Context(), nested, r2.State,
 		engine.NewCancelRequested(at.Add(2*time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompensating, r3.State.Status)
@@ -511,7 +511,7 @@ func TestNoDoubleCompensationAfterArchiveConsolidate(t *testing.T) {
 	require.True(t, found, "CancelRequested must emit InvokeAction{Name:\"cancel-inner\"} via consolidation")
 
 	// Step 4: ActionCompleted for cancel-inner → walk finishes → StatusTerminated.
-	r4, err := engine.Step(nested, r3.State,
+	r4, err := engine.Step(t.Context(), nested, r3.State,
 		engine.NewActionCompleted(at.Add(3*time.Second), ia1.CommandID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusTerminated, r4.State.Status)
@@ -523,7 +523,7 @@ func TestNoDoubleCompensationAfterArchiveConsolidate(t *testing.T) {
 		"RootCompensations must be cleared after walk completes")
 
 	// Step 5 (no-double-compensation): second CancelRequested on Terminated instance.
-	r5, err := engine.Step(nested, r4.State,
+	r5, err := engine.Step(t.Context(), nested, r4.State,
 		engine.NewCancelRequested(at.Add(4*time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 

@@ -74,7 +74,7 @@ func TestCatchReminderCancelledOnErrorInterrupt(t *testing.T) {
 
 	// Start: forks inside sp → one branch parks at catch (arming the reminder),
 	// the other throws E1 which the boundary catches, interrupting the scope.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(startAt, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
@@ -102,7 +102,7 @@ func TestCatchReminderCancelledOnErrorInterrupt(t *testing.T) {
 	}
 
 	// A late reminder fire is a clean no-op (record gone, token consumed).
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewTimerFired(startAt.Add(30*time.Minute), reminderID), engine.StepOptions{})
 	require.NoError(t, err)
 	for _, c := range r2.Commands {

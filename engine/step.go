@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/model"
@@ -55,43 +57,50 @@ type StepResult struct {
 // Step applies one trigger to the instance state and returns the new state plus
 // the commands the runtime must perform. It is pure: it does not mutate st.
 //
+// ctx is used ONLY for trace-correlated, context-aware logging (slog.*Context
+// calls at the engine's deliberate silent no-op sites, ADR-0129) — it carries
+// no cancellation semantics and is never inspected for control flow. Passing a
+// context that is already Done, or a nil-adjacent context.TODO(), does not
+// change the (state, commands) result: Step remains deterministic and safe to
+// replay for identical (def, st, trg, opt) regardless of ctx.
+//
 // The engine assumes the definition has passed [model.Validate]; in particular,
 // an exclusive gateway is assumed to have at most one unconditional non-default
 // outgoing flow — the engine takes the first matching flow in definition order
 // and does not detect ambiguous multi-unconditional configurations.
-func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error) {
+func Step(ctx context.Context, def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error) {
 	s := cloneState(st)
 	sp := &s
 
 	switch t := trg.(type) {
 	case StartInstance:
-		return handleStartInstance(def, sp, t, opt)
+		return handleStartInstance(ctx, def, sp, t, opt)
 	case ActionCompleted:
-		return handleActionCompleted(def, sp, t, opt)
+		return handleActionCompleted(ctx, def, sp, t, opt)
 	case CancelRequested:
-		return handleCancelRequested(def, sp, t, opt)
+		return handleCancelRequested(ctx, def, sp, t, opt)
 	case CompensateRequested:
-		return handleCompensateRequested(def, sp, t, opt)
+		return handleCompensateRequested(ctx, def, sp, t, opt)
 	case ActionFailed:
-		return handleActionFailed(def, sp, t, opt)
+		return handleActionFailed(ctx, def, sp, t, opt)
 	case HumanClaimed:
 		return handleHumanClaimed(sp, t)
 	case HumanReassigned:
 		return handleHumanReassigned(sp, t)
 	case TimerFired:
-		return handleTimerFired(def, sp, t, opt)
+		return handleTimerFired(ctx, def, sp, t, opt)
 	case HumanCompleted:
-		return handleHumanCompleted(def, sp, t, opt)
+		return handleHumanCompleted(ctx, def, sp, t, opt)
 	case SignalReceived:
-		return handleSignalReceived(def, sp, t, opt)
+		return handleSignalReceived(ctx, def, sp, t, opt)
 	case SubInstanceCompleted:
-		return handleSubInstanceCompleted(def, sp, t, opt)
+		return handleSubInstanceCompleted(ctx, def, sp, t, opt)
 	case SubInstanceFailed:
-		return handleSubInstanceFailed(sp, t)
+		return handleSubInstanceFailed(ctx, def, sp, t, opt)
 	case MessageReceived:
-		return handleMessageReceived(def, sp, t, opt)
+		return handleMessageReceived(ctx, def, sp, t, opt)
 	case ResolveIncident:
-		return handleResolveIncident(def, sp, t, opt)
+		return handleResolveIncident(ctx, def, sp, t, opt)
 	default:
 		return StepResult{}, fmt.Errorf("%w: %T", ErrUnknownTrigger, trg)
 	}
@@ -110,7 +119,7 @@ func Step(def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepO
 // definition (tdef) is resolved via defForScope against the token's ScopeID so
 // that tokens inside a sub-process scope resolve nodes/flows against the nested
 // definition rather than the top-level one.
-func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
+func drive(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
 	var cmds []Command
 	for {
 		tok := s.firstActive()
@@ -127,6 +136,11 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 		node, ok := tdef.Node(tok.NodeID)
 		if !ok {
 			// Defensive: a token on a missing node cannot advance.
+			slog.WarnContext(ctx, "token routed to a missing node",
+				"instance_id", s.InstanceID,
+				"token_id", tok.ID,
+				"node_id", tok.NodeID,
+			)
 			tok.State = TokenWaitingCommand
 			continue
 		}
@@ -141,7 +155,7 @@ func drive(def *model.ProcessDefinition, s *InstanceState, at time.Time, mode St
 		// Dispatch node entry through the nodeStrategy registry. Kinds absent from
 		// the registry fall through to the else branch below, which parks the token.
 		if strat, ok := nodeStrategies[node.Kind()]; ok {
-			c := &stepCtx{def: def, tdef: tdef, s: s, at: at, mode: mode, eval: eval}
+			c := &stepCtx{ctx: ctx, def: def, tdef: tdef, s: s, at: at, mode: mode, eval: eval}
 			produced, halt, stratErr := strat.enter(c, tok, node)
 			if stratErr != nil {
 				return nil, stratErr

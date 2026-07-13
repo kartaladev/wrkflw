@@ -59,13 +59,13 @@ func TestReceiveTaskResumesOnMessage(t *testing.T) {
 	def := receiveTaskDef()
 	t0 := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.Tokens, 1)
 	assert.Equal(t, "recv", r1.State.Tokens[0].NodeID)
 
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewMessageReceived(t0, "m", "", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r2.State.Status,
@@ -90,7 +90,7 @@ func TestReceiveTaskBadCorrelationKey(t *testing.T) {
 		},
 	}
 
-	_, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	_, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "correlation key")
@@ -132,14 +132,14 @@ func TestReceiveTaskBoundaryInterruptsHost(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			def := receiveTaskBoundaryDef(tc.boundary)
-			r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+			r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 				engine.NewStartInstance(t0, nil), engine.StepOptions{})
 			require.NoError(t, err)
 			require.Len(t, r1.State.Boundaries, 1, "boundary must be armed on the ReceiveTask host")
 
 			trg := tc.fire(r1)
 			require.NotNil(t, trg, "fire trigger must be derivable (boundary armed)")
-			r2, err := engine.Step(def, r1.State, trg, engine.StepOptions{})
+			r2, err := engine.Step(t.Context(), def, r1.State, trg, engine.StepOptions{})
 			require.NoError(t, err)
 
 			require.Len(t, r2.State.Tokens, 1, "interrupting boundary: host consumed, one token at escalate")
@@ -156,7 +156,7 @@ func TestReceiveTaskMessageResumeDisarmsBoundary(t *testing.T) {
 	t0 := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
 	def := receiveTaskBoundaryDef(event.NewBoundary("bnd", "recv", event.WithBoundaryTimer(schedule.AfterExpr(`"60s"`))))
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "i1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
 		engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.Boundaries, 1)
@@ -168,7 +168,7 @@ func TestReceiveTaskMessageResumeDisarmsBoundary(t *testing.T) {
 	}
 	require.NotEmpty(t, timerID, "ReceiveTask timer boundary must arm a timer")
 
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewMessageReceived(t0, "m", "", nil), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Empty(t, r2.State.Boundaries, "boundary arm must be removed when the ReceiveTask resumes")

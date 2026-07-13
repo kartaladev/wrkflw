@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -177,10 +178,10 @@ func (s *InstanceState) moveAlongSingleFlow(def *model.ProcessDefinition, tok *T
 // flow within tdef, and drives the instance forward, returning preCmds
 // followed by the driven commands (preserving each call site's existing
 // command order) and any drive error.
-func resumeAndDrive(def *model.ProcessDefinition, tdef *model.ProcessDefinition, s *InstanceState, tok *Token, at time.Time, opt StepOptions, preCmds []Command) ([]Command, error) {
+func resumeAndDrive(ctx context.Context, def *model.ProcessDefinition, tdef *model.ProcessDefinition, s *InstanceState, tok *Token, at time.Time, opt StepOptions, preCmds []Command) ([]Command, error) {
 	tok.State = TokenActive
 	s.moveAlongSingleFlow(tdef, tok, at)
-	driveCmds, err := drive(def, s, at, opt.Mode, resolveEvaluator(opt))
+	driveCmds, err := drive(ctx, def, s, at, opt.Mode, resolveEvaluator(opt))
 	if err != nil {
 		return nil, err
 	}

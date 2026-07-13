@@ -99,7 +99,7 @@ func TestCompletedActivityRecordsCompensation(t *testing.T) {
 	def := compensableDef()
 
 	// Step 1: start the instance (vars carry the activity's input).
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "comp-inst-1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "comp-inst-1"},
 		engine.NewStartInstance(at, map[string]any{"amount": 100, "currency": "USD"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -107,7 +107,7 @@ func TestCompletedActivityRecordsCompensation(t *testing.T) {
 	cmdID := r1.Commands[0].(engine.InvokeAction).CommandID
 
 	// Step 2: complete the service task. Output is merged into variables.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(completedAt, cmdID, map[string]any{"txID": "tx-42"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -139,13 +139,13 @@ func TestNonCompensableActivityDoesNotRecord(t *testing.T) {
 
 	def := nonCompensableDef()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "plain-inst-1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "plain-inst-1"},
 		engine.NewStartInstance(at, map[string]any{"x": 1}),
 		engine.StepOptions{})
 	require.NoError(t, err)
 	cmdID := r1.Commands[0].(engine.InvokeAction).CommandID
 
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(completedAt, cmdID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -170,7 +170,7 @@ func TestCompensableActivityInsideSubProcessIsArchivedOnClose(t *testing.T) {
 	def := compensableSubProcessDef()
 
 	// Start the instance.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "sub-comp-inst-1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "sub-comp-inst-1"},
 		engine.NewStartInstance(at, map[string]any{"seat": "12A"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -189,7 +189,7 @@ func TestCompensableActivityInsideSubProcessIsArchivedOnClose(t *testing.T) {
 
 	// Complete the inner service task. After this, inner-svc → inner-end → scope
 	// drains → archiveCompensations called → scope closes → outer-end → instance completes.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(completedAt, ia.CommandID, map[string]any{"confirmationCode": "ABC"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -225,13 +225,13 @@ func TestCompensationRecordInputIsSnapshotNotReference(t *testing.T) {
 
 	def := compensableDef()
 
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "snap-inst-1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "snap-inst-1"},
 		engine.NewStartInstance(at, map[string]any{"val": "original"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
 	cmdID := r1.Commands[0].(engine.InvokeAction).CommandID
 
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(completedAt, cmdID, map[string]any{"val": "mutated"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -293,7 +293,7 @@ func TestArchiveSubProcessCompensationAndReachViaWalk(t *testing.T) {
 	def := compensableSubThenRootDef()
 
 	// Step 1: start the instance — drives to inner-svc (InvokeAction).
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "hoist-inst-1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "hoist-inst-1"},
 		engine.NewStartInstance(at, map[string]any{"x": 1}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -304,7 +304,7 @@ func TestArchiveSubProcessCompensationAndReachViaWalk(t *testing.T) {
 
 	// Step 2: complete inner-svc — drives inner-svc → inner-end → scope closes
 	// → archiveCompensations called → token placed at rootUserTask. Instance Running.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), ia.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -327,7 +327,7 @@ func TestArchiveSubProcessCompensationAndReachViaWalk(t *testing.T) {
 
 	// Step 3: issue full CompensateRequested — consolidation runs then walk emits cancel-inner.
 	compensateAt := at.Add(5 * time.Second)
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewCompensateRequested(compensateAt, ""),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -389,7 +389,7 @@ func TestCompensableActivityInsideOpenSubProcessScopeRecords(t *testing.T) {
 	def := openSubProcessWithParkDef()
 
 	// Start the instance: outer start → sub → inner start → svc (parked).
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "open-sub-inst-1"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "open-sub-inst-1"},
 		engine.NewStartInstance(at, map[string]any{"seat": "3B"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -404,7 +404,7 @@ func TestCompensableActivityInsideOpenSubProcessScopeRecords(t *testing.T) {
 
 	// Complete svc → should drive to userTask (parked AwaitHuman), scope stays OPEN.
 	completedAt := at.Add(3 * time.Second)
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(completedAt, ia.CommandID, map[string]any{"code": "OK"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -469,7 +469,7 @@ func runThreeCompensableActivities(t *testing.T) engine.InstanceState {
 	def := threeCompensableDef()
 
 	// Start.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "three-comp-inst"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "three-comp-inst"},
 		engine.NewStartInstance(at, map[string]any{"x": 1}),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -477,7 +477,7 @@ func runThreeCompensableActivities(t *testing.T) engine.InstanceState {
 	step1ID := r1.Commands[0].(engine.InvokeAction).CommandID
 
 	// Complete step1.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), step1ID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -485,7 +485,7 @@ func runThreeCompensableActivities(t *testing.T) engine.InstanceState {
 	step2ID := r2.Commands[0].(engine.InvokeAction).CommandID
 
 	// Complete step2.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), step2ID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -493,7 +493,7 @@ func runThreeCompensableActivities(t *testing.T) engine.InstanceState {
 	step3ID := r3.Commands[0].(engine.InvokeAction).CommandID
 
 	// Complete step3 → parks at userTask.
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewActionCompleted(at.Add(3*time.Second), step3ID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -520,7 +520,7 @@ func TestCompensateRequestedRollsBackInReverseOrder(t *testing.T) {
 
 	// Issue CompensateRequested with ToNode = "step1" (rollback everything AFTER step1).
 	compensateAt := at.Add(10 * time.Second)
-	r5, err := engine.Step(def, state,
+	r5, err := engine.Step(t.Context(), def, state,
 		engine.NewCompensateRequested(compensateAt, "step1"),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -535,7 +535,7 @@ func TestCompensateRequestedRollsBackInReverseOrder(t *testing.T) {
 	assert.Equal(t, "c3", ia3.Name, "first compensation must be for step3 (c3)")
 
 	// Advance: complete compensation for step3 → next in reverse is step2.
-	r6, err := engine.Step(def, r5.State,
+	r6, err := engine.Step(t.Context(), def, r5.State,
 		engine.NewActionCompleted(compensateAt.Add(1*time.Second), ia3.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -548,7 +548,7 @@ func TestCompensateRequestedRollsBackInReverseOrder(t *testing.T) {
 	assert.Equal(t, "c2", ia2.Name, "second compensation must be for step2 (c2)")
 
 	// Advance: complete compensation for step2 → ToNode="step1", so walk is done.
-	r7, err := engine.Step(def, r6.State,
+	r7, err := engine.Step(t.Context(), def, r6.State,
 		engine.NewActionCompleted(compensateAt.Add(2*time.Second), ia2.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -581,7 +581,7 @@ func TestCompensateRequestedFullRollback(t *testing.T) {
 	compensateAt := at.Add(10 * time.Second)
 
 	// Full rollback: ToNode == "".
-	r5, err := engine.Step(def, state,
+	r5, err := engine.Step(t.Context(), def, state,
 		engine.NewCompensateRequested(compensateAt, ""),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -591,7 +591,7 @@ func TestCompensateRequestedFullRollback(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "c3", ia3.Name)
 
-	r6, err := engine.Step(def, r5.State,
+	r6, err := engine.Step(t.Context(), def, r5.State,
 		engine.NewActionCompleted(compensateAt.Add(1*time.Second), ia3.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -601,7 +601,7 @@ func TestCompensateRequestedFullRollback(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "c2", ia2.Name)
 
-	r7, err := engine.Step(def, r6.State,
+	r7, err := engine.Step(t.Context(), def, r6.State,
 		engine.NewActionCompleted(compensateAt.Add(2*time.Second), ia2.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -612,7 +612,7 @@ func TestCompensateRequestedFullRollback(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "c1", ia1.Name)
 
-	r8, err := engine.Step(def, r7.State,
+	r8, err := engine.Step(t.Context(), def, r7.State,
 		engine.NewActionCompleted(compensateAt.Add(3*time.Second), ia1.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -676,7 +676,7 @@ func TestArchiveCompensationOrderingReversed(t *testing.T) {
 	def := rootThenSubProcessCompensableDef()
 
 	// Step 1: start → rootSvc invoked.
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "order-inst"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "order-inst"},
 		engine.NewStartInstance(at, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -685,7 +685,7 @@ func TestArchiveCompensationOrderingReversed(t *testing.T) {
 	require.Equal(t, "root-book", rootSvcCmd.Name)
 
 	// Step 2: complete rootSvc → inner-svc invoked.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), rootSvcCmd.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -698,7 +698,7 @@ func TestArchiveCompensationOrderingReversed(t *testing.T) {
 	assert.Equal(t, "rootSvc", r2.State.RootCompensations[0].NodeID)
 
 	// Step 3: complete inner-svc → sub exits (inner record archived) → parks at rootUserTask.
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(2*time.Second), innerSvcCmd.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -720,7 +720,7 @@ func TestArchiveCompensationOrderingReversed(t *testing.T) {
 	// Step 4: full CompensateRequested → consolidate (root+archive→sorted root) →
 	// reverse walk: inner-comp (most recent, T+2s) first, root-comp (T+1s) second.
 	compensateAt := at.Add(10 * time.Second)
-	r4, err := engine.Step(def, r3.State,
+	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewCompensateRequested(compensateAt, ""),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -731,7 +731,7 @@ func TestArchiveCompensationOrderingReversed(t *testing.T) {
 		"first emitted compensation must be inner-comp (most recently completed)")
 
 	// Step 5: complete inner-comp → root-comp.
-	r5, err := engine.Step(def, r4.State,
+	r5, err := engine.Step(t.Context(), def, r4.State,
 		engine.NewActionCompleted(compensateAt.Add(1*time.Second), ia1.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -742,7 +742,7 @@ func TestArchiveCompensationOrderingReversed(t *testing.T) {
 		"second emitted compensation must be root-comp (earliest completed)")
 
 	// Step 6: complete root-comp → full rollback done → StatusTerminated.
-	r6, err := engine.Step(def, r5.State,
+	r6, err := engine.Step(t.Context(), def, r5.State,
 		engine.NewActionCompleted(compensateAt.Add(2*time.Second), ia2.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -809,7 +809,7 @@ func TestArchiveTwoLevelNestedCompensation(t *testing.T) {
 	def := twoLevelNestedCompensableDef()
 
 	// Step 1: start → grandchildSvc invoked (two sub-process scopes opened).
-	r1, err := engine.Step(def, engine.InstanceState{InstanceID: "two-level-inst"},
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "two-level-inst"},
 		engine.NewStartInstance(at, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -824,7 +824,7 @@ func TestArchiveTwoLevelNestedCompensation(t *testing.T) {
 	// archiveCompensations called for innerSub (grandchild record → archive["innerSub"]),
 	// then for outerSub (no inner-scope records at outerSub level → archive may be empty).
 	// Parks at rootUserTask.
-	r2, err := engine.Step(def, r1.State,
+	r2, err := engine.Step(t.Context(), def, r1.State,
 		engine.NewActionCompleted(at.Add(1*time.Second), gcCmd.CommandID, nil),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -839,7 +839,7 @@ func TestArchiveTwoLevelNestedCompensation(t *testing.T) {
 
 	// Step 3: full CompensateRequested → consolidation merges archive into root → walk emits gc-comp.
 	compensateAt := at.Add(5 * time.Second)
-	r3, err := engine.Step(def, r2.State,
+	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewCompensateRequested(compensateAt, ""),
 		engine.StepOptions{})
 	require.NoError(t, err)
@@ -875,7 +875,7 @@ func TestSecondCancelMidCompensationWalkDoesNotDoubleCompensate(t *testing.T) {
 	}
 
 	// Cancel #1 → starts the terminal compensation walk; emits c3 (most recent).
-	rA, err := engine.Step(def, state,
+	rA, err := engine.Step(t.Context(), def, state,
 		engine.NewCancelRequested(at.Add(10*time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompensating, rA.State.Status)
@@ -890,7 +890,7 @@ func TestSecondCancelMidCompensationWalkDoesNotDoubleCompensate(t *testing.T) {
 
 	// Cancel #2 mid-walk (BEFORE c3's ActionCompleted). It must NOT start a second
 	// compensation walk: no new compensation InvokeAction.
-	rB, err := engine.Step(def, rA.State,
+	rB, err := engine.Step(t.Context(), def, rA.State,
 		engine.NewCancelRequested(at.Add(11*time.Second)), engine.StepOptions{})
 	require.NoError(t, err)
 	for _, c := range rB.Commands {
@@ -902,21 +902,21 @@ func TestSecondCancelMidCompensationWalkDoesNotDoubleCompensate(t *testing.T) {
 	// Complete the walk on the ORIGINAL cursor (c3 → c2 → c1 → terminate). If the
 	// redundant cancel had restarted the walk, c3cmd would no longer be in flight
 	// and this would error / mis-route.
-	rC, err := engine.Step(def, rB.State,
+	rC, err := engine.Step(t.Context(), def, rB.State,
 		engine.NewActionCompleted(at.Add(12*time.Second), c3cmd, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	record(rC.Commands)
 	c2cmd := firstInvokeCmd(rC.Commands, "c2")
 	require.NotEmpty(t, c2cmd, "walk must continue to c2 on the original cursor")
 
-	rD, err := engine.Step(def, rC.State,
+	rD, err := engine.Step(t.Context(), def, rC.State,
 		engine.NewActionCompleted(at.Add(13*time.Second), c2cmd, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	record(rD.Commands)
 	c1cmd := firstInvokeCmd(rD.Commands, "c1")
 	require.NotEmpty(t, c1cmd, "walk must continue to c1")
 
-	rE, err := engine.Step(def, rD.State,
+	rE, err := engine.Step(t.Context(), def, rD.State,
 		engine.NewActionCompleted(at.Add(14*time.Second), c1cmd, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	record(rE.Commands)
@@ -949,7 +949,7 @@ func TestSecondCompensateRequestedMidWalkDoesNotDoubleCompensate(t *testing.T) {
 	}
 
 	// Admin CompensateRequested (full rollback) → walk starts, emits c3.
-	rA, err := engine.Step(def, state,
+	rA, err := engine.Step(t.Context(), def, state,
 		engine.NewCompensateRequested(at.Add(10*time.Second), ""), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompensating, rA.State.Status)
@@ -958,7 +958,7 @@ func TestSecondCompensateRequestedMidWalkDoesNotDoubleCompensate(t *testing.T) {
 	require.NotEmpty(t, c3cmd)
 
 	// A SECOND CompensateRequested mid-walk must NOT emit a second InvokeAction.
-	rB, err := engine.Step(def, rA.State,
+	rB, err := engine.Step(t.Context(), def, rA.State,
 		engine.NewCompensateRequested(at.Add(11*time.Second), ""), engine.StepOptions{})
 	require.NoError(t, err)
 	for _, c := range rB.Commands {
@@ -968,19 +968,19 @@ func TestSecondCompensateRequestedMidWalkDoesNotDoubleCompensate(t *testing.T) {
 	}
 
 	// The walk continues on the original cursor: c3 → c2 → c1 → terminate.
-	rC, err := engine.Step(def, rB.State,
+	rC, err := engine.Step(t.Context(), def, rB.State,
 		engine.NewActionCompleted(at.Add(12*time.Second), c3cmd, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	record(rC.Commands)
 	c2cmd := firstInvokeCmd(rC.Commands, "c2")
 	require.NotEmpty(t, c2cmd)
-	rD, err := engine.Step(def, rC.State,
+	rD, err := engine.Step(t.Context(), def, rC.State,
 		engine.NewActionCompleted(at.Add(13*time.Second), c2cmd, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	record(rD.Commands)
 	c1cmd := firstInvokeCmd(rD.Commands, "c1")
 	require.NotEmpty(t, c1cmd)
-	rE, err := engine.Step(def, rD.State,
+	rE, err := engine.Step(t.Context(), def, rD.State,
 		engine.NewActionCompleted(at.Add(14*time.Second), c1cmd, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	record(rE.Commands)

@@ -43,13 +43,13 @@ func TestCompensationFinish_ClearsEndedAtOnResume(t *testing.T) {
 				base := driveReverseLoopToCompletion(t, def, t0)
 				// Partial rollback to "prep" walks the 3 svc "undo" records; the walk
 				// finishes on completing the 3rd undo, resuming Running at "prep".
-				p1, err := engine.Step(def, base.State, engine.NewCompensateRequested(t0, "prep"), engine.StepOptions{})
+				p1, err := engine.Step(t.Context(), def, base.State, engine.NewCompensateRequested(t0, "prep"), engine.StepOptions{})
 				require.NoError(t, err)
 				undo1 := findInvokeActionID(t, p1.Commands, "undo")
-				p2, err := engine.Step(def, p1.State, engine.NewActionCompleted(t0, undo1, nil), engine.StepOptions{})
+				p2, err := engine.Step(t.Context(), def, p1.State, engine.NewActionCompleted(t0, undo1, nil), engine.StepOptions{})
 				require.NoError(t, err)
 				undo2 := findInvokeActionID(t, p2.Commands, "undo")
-				p3, err := engine.Step(def, p2.State, engine.NewActionCompleted(t0, undo2, nil), engine.StepOptions{})
+				p3, err := engine.Step(t.Context(), def, p2.State, engine.NewActionCompleted(t0, undo2, nil), engine.StepOptions{})
 				require.NoError(t, err)
 				undo3 := findInvokeActionID(t, p3.Commands, "undo")
 				// p3.State is mid-walk (undo3 in flight); completing undo3 finishes.
@@ -80,7 +80,7 @@ func TestCompensationFinish_ClearsEndedAtOnResume(t *testing.T) {
 			ended := t0
 			midWalk.EndedAt = &ended
 
-			r, err := engine.Step(def, midWalk, finish, engine.StepOptions{})
+			r, err := engine.Step(t.Context(), def, midWalk, finish, engine.StepOptions{})
 			require.NoError(t, err)
 			require.Equal(t, engine.StatusRunning, r.State.Status, "walk must finish on a RESUME (Running) outcome")
 			assert.Nil(t, r.State.EndedAt, "resume must clear the stale EndedAt (Running instance carries no end timestamp)")

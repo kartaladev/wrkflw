@@ -122,7 +122,7 @@ func TestForceTerminationOutcome(t *testing.T) {
 
 			// One Step in Macro mode drives the whole fork: branch A parks (creates
 			// an open task), branch B force-terminates and sweeps it.
-			res, err := engine.Step(def, engine.InstanceState{InstanceID: "i-force"},
+			res, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i-force"},
 				engine.NewStartInstance(at, map[string]any{"amount": 100}), engine.StepOptions{})
 			require.NoError(t, err)
 

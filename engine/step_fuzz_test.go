@@ -57,7 +57,7 @@ func FuzzStep(f *testing.F) {
 		// Each Step call must uphold the invariants above.
 		triggers := driveTriggers(data, at)
 		for _, trg := range triggers {
-			res, err := engine.Step(def, st, trg, engine.StepOptions{})
+			res, err := engine.Step(t.Context(), def, st, trg, engine.StepOptions{})
 
 			// Invariant 2: any error must be a wrapped engine sentinel.
 			if err != nil {
