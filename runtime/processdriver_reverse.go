@@ -75,6 +75,12 @@ func WithTargetNode(nodeID string) ReverseOption {
 //
 // It returns the reversed [engine.InstanceState].
 func (driver *ProcessDriver) ReverseInstance(ctx context.Context, def *model.ProcessDefinition, instanceID string, opts ...ReverseOption) (engine.InstanceState, error) {
+	release, ok := driver.admit()
+	if !ok {
+		return engine.InstanceState{}, ErrDriverShuttingDown
+	}
+	defer release()
+
 	var cfg reverseConfig
 	for _, opt := range opts {
 		opt(&cfg)

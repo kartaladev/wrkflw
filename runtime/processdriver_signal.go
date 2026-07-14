@@ -30,6 +30,14 @@ import (
 // waiters or creating signal-start instances are joined via [errors.Join] rather
 // than aborting the rest of the fan-out.
 func (driver *ProcessDriver) BroadcastSignal(ctx context.Context, name string, payload map[string]any) error {
+	// Reject once draining, before the empty-name no-op, so a drained driver refuses
+	// even a would-be no-op (strict quiescence, D1).
+	release, ok := driver.admit()
+	if !ok {
+		return ErrDriverShuttingDown
+	}
+	defer release()
+
 	// An empty signal name is meaningless and must never match a manual
 	// (trigger-less) start, whose SignalName is also "" — a clean no-op.
 	if name == "" {

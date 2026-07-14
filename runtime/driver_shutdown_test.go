@@ -107,3 +107,40 @@ func TestApplyTriggerRejectedWhenDraining(t *testing.T) {
 		engine.NewCancelRequested(time.Now()))
 	assert.ErrorIs(t, err, runtime.ErrDriverShuttingDown)
 }
+
+func TestExternalEntryPointsRejectedWhenDraining(t *testing.T) {
+	// Each case funnels through a distinct exported entry point; all must reject
+	// with ErrDriverShuttingDown once the driver is draining (strict quiescence, D1).
+	tests := map[string]func(d *runtime.ProcessDriver) error{
+		"Drive": func(d *runtime.ProcessDriver) error {
+			_, err := d.Drive(context.Background(), linearDef(), "i-1", nil)
+			return err
+		},
+		"DeliverMessage": func(d *runtime.ProcessDriver) error {
+			return d.DeliverMessage(context.Background(), "m", "k", nil)
+		},
+		"BroadcastSignal": func(d *runtime.ProcessDriver) error {
+			return d.BroadcastSignal(context.Background(), "s", nil)
+		},
+		"CancelInstance": func(d *runtime.ProcessDriver) error {
+			_, err := d.CancelInstance(context.Background(), linearDef(), "i-1")
+			return err
+		},
+		"ResolveIncident": func(d *runtime.ProcessDriver) error {
+			_, err := d.ResolveIncident(context.Background(), linearDef(), "i-1", "inc", 1)
+			return err
+		},
+		"ReverseInstance": func(d *runtime.ProcessDriver) error {
+			_, err := d.ReverseInstance(context.Background(), linearDef(), "i-1")
+			return err
+		},
+	}
+	for name, call := range tests {
+		t.Run(name, func(t *testing.T) {
+			driver, err := runtime.NewProcessDriver()
+			require.NoError(t, err)
+			require.NoError(t, driver.Shutdown(context.Background()))
+			assert.ErrorIs(t, call(driver), runtime.ErrDriverShuttingDown)
+		})
+	}
+}

@@ -46,6 +46,14 @@ var ErrAmbiguousMessageStart = errors.New("workflow-runtime: ambiguous message s
 // ErrAmbiguousMessageStart when the name matches a message-start on more than one
 // (latest-version) definition.
 func (driver *ProcessDriver) DeliverMessage(ctx context.Context, name, correlationKey string, payload map[string]any) error {
+	// Reject once draining, before the empty-name no-op, so a drained driver refuses
+	// even a would-be no-op (strict quiescence, D1).
+	release, ok := driver.admit()
+	if !ok {
+		return ErrDriverShuttingDown
+	}
+	defer release()
+
 	// An empty message name is meaningless and must never match a manual
 	// (trigger-less) start, whose MessageName is also "" — a clean no-op.
 	if name == "" {

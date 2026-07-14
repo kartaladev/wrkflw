@@ -15,6 +15,12 @@ import (
 // cancelled recursively (best-effort: errors are logged, never returned). Returns
 // the terminated parent InstanceState. See ADR-0028, ADR-0032.
 func (driver *ProcessDriver) CancelInstance(ctx context.Context, def *model.ProcessDefinition, instanceID string) (engine.InstanceState, error) {
+	release, ok := driver.admit()
+	if !ok {
+		return engine.InstanceState{}, ErrDriverShuttingDown
+	}
+	defer release()
+
 	// Parent-first: terminate the parent before propagating to children so that
 	// no CallNotifier can resume a child-completed parent during propagation.
 	st, err := driver.applyTrigger(ctx, def, instanceID, engine.NewCancelRequested(driver.clk.Now()))
