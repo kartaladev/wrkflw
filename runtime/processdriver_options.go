@@ -234,3 +234,16 @@ func WithTracerProvider(tp trace.TracerProvider) Option {
 func WithMeterProvider(mp metric.MeterProvider) Option {
 	return func(driver *ProcessDriver) { driver.mpOpt = observability.WithMeterProvider(mp) }
 }
+
+// WithShutdownTimeout sets a FALLBACK drain deadline applied by [ProcessDriver.Shutdown]
+// only when the ctx passed to Shutdown carries no deadline of its own. A ctx deadline
+// always wins (the caller was explicit). Zero or unset means no fallback — Shutdown then
+// respects ctx as-is, waiting unbounded if ctx has no deadline. A non-positive d is ignored
+// (treated as unset), consistent with [WithActionTimeout].
+func WithShutdownTimeout(d time.Duration) Option {
+	return func(driver *ProcessDriver) {
+		if d > 0 {
+			driver.shutdownTimeout = d
+		}
+	}
+}
