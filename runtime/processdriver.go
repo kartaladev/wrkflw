@@ -199,20 +199,13 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 		}
 		driver.sched = sched
 		driver.ownedScheduler = sched
-		// Register a deadline-raced closer instead of AddCloser so Shutdown's ctx actually
-		// bounds the scheduler drain (audit Finding 3). sched.Close() blocks on gocron's
-		// own stop timeout; racing it against ctx.Done() lets a caller-supplied deadline win.
-		// If ctx wins, Close keeps running in its goroutine and finishes shortly after
-		// (bounded by gocron's stop timeout) — not leaked indefinitely.
+		// Close the owned scheduler through its context-aware shutdown so Shutdown's ctx
+		// actually bounds the scheduler drain (audit Finding 3): CloseWithContext delegates
+		// to gocron's ShutdownWithContext, which stops dispatch immediately and waits for
+		// running jobs bounded by ctx (returning ctx.Err() on expiry) — no manual close-race
+		// goroutine, so nothing is left running on the timeout path.
 		driver.shutdown.Add(func(ctx context.Context) error {
-			done := make(chan error, 1)
-			go func() { done <- sched.Close() }()
-			select {
-			case err := <-done:
-				return err
-			case <-ctx.Done():
-				return ctx.Err()
-			}
+			return sched.CloseWithContext(ctx)
 		})
 	}
 

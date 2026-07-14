@@ -270,11 +270,16 @@ deterministic-replay surface.
 
 ## 8. Bugs Fixed in the Same Change
 
-1. **Finding 3 — honour `ctx` in the scheduler close.** Re-register the owned scheduler
-   with `shutdown.Add(func(ctx) error { ... })` that races `sched.Close()` (run in a
-   goroutine) against `ctx.Done()`, returning `ctx.Err()` if the deadline wins. This makes
-   the documented "bounded drain" contract true. (`gocron.WithStopTimeout` may also be
-   plumbed from the deadline as defence-in-depth, but the race is the reliable bound.)
+1. **Finding 3 — honour `ctx` in the scheduler close.** Register the owned scheduler's
+   close as `shutdown.Add(func(ctx) error { return sched.CloseWithContext(ctx) })`.
+   `scheduling.Scheduler.CloseWithContext` delegates to gocron's native
+   `ShutdownWithContext(ctx)` (gocron v2.21.2), which fires its `shutdownCancel()` first to
+   stop dispatch immediately, then waits for running jobs bounded by `ctx`, returning
+   `ctx.Err()` on expiry. This makes the documented "bounded drain" contract true using
+   gocron's own context-aware path — no manual "race `Close()` against `ctx.Done()`"
+   goroutine, so nothing is left running (and no goroutine leaks) on the timeout path. The
+   context-LESS `sched.Close()` (which uses gocron's internal ~10s stop timeout) remains for
+   no-ctx callers.
 2. **Finding 4 — clarify the timer-arm-after-close WARN.** With the gate in place, a
    timer-arm-after-close can only occur for genuinely in-flight work during the drain window.
    `armTimer` keeps its WARN-and-skip, but gains a note tying the skip to shutdown so it is

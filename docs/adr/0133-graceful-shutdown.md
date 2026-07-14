@@ -72,11 +72,13 @@ derives `now + d`; if neither, the drain is unbounded (respect `ctx` as-is). No 
 non-zero default, so an intentional long-lived-context caller is never silently truncated.
 
 **Shutdown sequence (ordering is load-bearing).** `Shutdown` (1) sets `draining`, (2) applies
-the D3 fallback, (3) closes the owned scheduler — via a **deadline-raced closer** that runs
-`sched.Close()` in a goroutine and `select`s it against `ctx.Done()` (Finding 3 fix), so ctx
-bounds the scheduler drain and gocron also waits for in-flight timer fires — then (4) waits
-on `inflight` bounded by ctx. Step 3 precedes step 4 so the only post-draining source of a
-new `inflight.Add` (an in-flight timer continuation) is fully drained before `WaitGroup.Wait`
+the D3 fallback, (3) closes the owned scheduler via gocron's native context-aware shutdown —
+`scheduling.Scheduler.CloseWithContext(ctx)` → gocron `ShutdownWithContext(ctx)` (Finding 3
+fix), which stops dispatch immediately and waits for running jobs bounded by ctx (returning
+`ctx.Err()` on expiry), so ctx bounds the scheduler drain and gocron also waits for in-flight
+timer fires — then (4) waits on `inflight` bounded by ctx. Step 3 precedes step 4 so the only
+post-draining source of a new `inflight.Add` (an in-flight timer continuation) is fully
+drained before `WaitGroup.Wait`
 runs, ruling out an `Add`-after-`Wait` panic. Errors from the two steps are `errors.Join`ed.
 `Shutdown` remains idempotent.
 
@@ -101,10 +103,14 @@ task-store side effect.
 - On timeout, in-flight work is **not** cancelled — it keeps running against the live store.
   Callers who need a hard stop must cancel their own operation contexts; the library does not
   force-abort a `deliverLoop` mid-flight (D2).
-- The deadline-raced closer means that if `ctx` wins, `sched.Close()` keeps running briefly in
-  its goroutine and finishes shortly after (bounded by gocron's stop timeout) — not leaked
-  indefinitely. An empty owned scheduler closes fast, so the ctx-bounding benefit is only
-  observable under contention; the behaviour is a contract guarantee, not a hot path.
+- The owned scheduler is closed via gocron's native `ShutdownWithContext(ctx)` (through
+  `scheduling.Scheduler.CloseWithContext`), which stops dispatch immediately and bounds the
+  wait for running jobs by `ctx` — so if `ctx` expires first, `Shutdown` returns `ctx.Err()`
+  promptly with no detached close goroutine left running (an earlier draft raced a manual
+  `sched.Close()` goroutine against `ctx.Done()`, which leaked that goroutine on the timeout
+  path; that workaround is removed). An empty owned scheduler closes fast, so the ctx-bounding
+  benefit is only observable under contention; the behaviour is a contract guarantee, not a
+  hot path.
 - Concurrency correctness of the WaitGroup drain rests on two rules, both under `-race`:
   (a) `admit`'s draining-check and `inflight.Add` hold `gateMu.RLock` while `Shutdown` sets
   `draining` under `gateMu.Lock`, so every external `Add` happens-before `waitInflight`'s

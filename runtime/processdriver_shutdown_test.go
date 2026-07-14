@@ -120,16 +120,16 @@ func TestProcessDriverShutdown(t *testing.T) {
 // TestShutdownHonoursCtxDeadline guards the Finding-3 contract: with the owned gocron
 // scheduler started, Shutdown given an already-expired ctx returns PROMPTLY and surfaces
 // the ctx deadline error (joined), rather than blocking on gocron's internal stop
-// timeout. The deadline-raced scheduler closer (shutdown.Add in NewProcessDriver) is what
-// makes the scheduler drain ctx-bounded.
+// timeout. The scheduler is closed via gocron's native ShutdownWithContext (through
+// scheduling.Scheduler.CloseWithContext), which honors ctx directly — no manual
+// close-race goroutine.
 //
-// Caveat on isolation: an empty owned gocron scheduler closes in well under 500ms even
-// via the old AddCloser path, and the drain wait also surfaces the deadline, so this test
-// asserts the observable Shutdown contract (prompt return + ctx error) rather than
-// isolating the closer mechanism — a slow-closing OWNED scheduler cannot be constructed in
-// a unit test (a consumer-injected slow scheduler is never registered in the
-// ShutdownGroup, ADR-0054). Stable across repeated runs: the already-expired ctx wins the
-// closer/drain selects deterministically in practice.
+// Caveat on isolation: an empty owned gocron scheduler closes in well under 500ms, and
+// the drain wait also surfaces the deadline, so this test asserts the observable Shutdown
+// contract (prompt return + ctx error) rather than isolating the scheduler-close path — a
+// slow-closing OWNED scheduler cannot be constructed in a unit test (a consumer-injected
+// slow scheduler is never registered in the ShutdownGroup, ADR-0054). Stable across
+// repeated runs: the already-expired ctx wins the close/drain selects in practice.
 func TestShutdownHonoursCtxDeadline(t *testing.T) {
 	driver, err := runtime.NewProcessDriver()
 	require.NoError(t, err)

@@ -473,6 +473,23 @@ func (s *Scheduler) NextRun(timerID string) (time.Time, bool) {
 // joined with the scheduler's. Close is idempotent and safe to call on a
 // never-started scheduler; the scheduler cannot be reused after this call.
 func (s *Scheduler) Close() error {
+	return s.closeWith(func(impl *gocronsched.GocronScheduler) error { return impl.Close() })
+}
+
+// CloseWithContext behaves like [Scheduler.Close] but bounds the underlying gocron
+// shutdown by ctx (via gocron's ShutdownWithContext): dispatch stops immediately and
+// the wait for running jobs honors ctx's deadline, returning ctx.Err() if it expires
+// first. Idempotent and safe on a never-started scheduler; the scheduler cannot be
+// reused afterward.
+func (s *Scheduler) CloseWithContext(ctx context.Context) error {
+	return s.closeWith(func(impl *gocronsched.GocronScheduler) error { return impl.CloseWithContext(ctx) })
+}
+
+// closeWith performs the idempotent teardown bookkeeping shared by Close and
+// CloseWithContext — flip the closed flag, detach impl/stopCh under the lock, wake the
+// Start watcher, and join an io.Closer elector — invoking closeImpl to release the
+// underlying gocron scheduler (context-aware or not). A second call is a no-op (nil).
+func (s *Scheduler) closeWith(closeImpl func(*gocronsched.GocronScheduler) error) error {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -491,7 +508,7 @@ func (s *Scheduler) Close() error {
 	}
 	var err error
 	if impl != nil {
-		err = impl.Close()
+		err = closeImpl(impl)
 	}
 	if closer, ok := elector.(io.Closer); ok {
 		err = errors.Join(err, closer.Close())
