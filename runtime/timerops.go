@@ -160,11 +160,11 @@ func (driver *ProcessDriver) armTimer(ctx context.Context, def *model.ProcessDef
 func (driver *ProcessDriver) timerFireFunc(def *model.ProcessDefinition, instanceID, timerID string) func() {
 	return func() {
 		// A timer fire advances an ALREADY-running instance: it is a continuation, not
-		// new external work. Reserve an inflight slot (counted by the drain wait) without
-		// the draining check, and drive via the ungated applyTrigger so an in-flight fire
-		// completes during shutdown rather than being rejected mid-fire.
-		release := driver.reserveInternal()
-		defer release()
+		// new external work, so it drives via the ungated applyTrigger (never rejected
+		// mid-fire during drain). It takes NO inflight slot: an in-flight owned-scheduler
+		// fire is drained by the scheduler Close (Shutdown step 2), which blocks until
+		// gocron joins its running fire jobs — so Shutdown still waits for a mid-flight
+		// fire to finish, and no timer-fire Add can race waitInflight's Wait (closes F2).
 		fireCtx := context.Background()
 		trg := engine.NewTimerFired(driver.clk.Now(), timerID)
 		driver.obs.timerFired.Add(fireCtx, 1)

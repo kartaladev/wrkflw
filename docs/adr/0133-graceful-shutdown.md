@@ -54,8 +54,10 @@ driver rejects even a would-be no-op.
 in-driver continuation that is already inside a gated method (cancel cascade, message
 correlate, incident resolve, reverse, and the timer-fire continuation) calls the ungated
 `applyTrigger` so there is no nested re-admit or spurious mid-cascade rejection. A timer-fire
-continuation advances an already-running instance, so it reserves an inflight slot via
-`reserveInternal()` (counted by the drain wait, but never rejected). The one intentional
+continuation advances an already-running instance and is never rejected; it takes **no**
+inflight slot — an in-flight owned-scheduler fire is drained by the scheduler `Close`
+(shutdown step 2, which joins gocron's running jobs), so `Shutdown` still waits for it while
+avoiding any timer-fire `Add` racing the drain `Wait` (see Consequences). The one intentional
 nesting — the consumer-wired SignalBus `DeliverFunc` → public `ApplyTrigger` — is harmless
 for the WaitGroup and consistent with strict quiescence.
 
@@ -103,6 +105,14 @@ task-store side effect.
   its goroutine and finishes shortly after (bounded by gocron's stop timeout) — not leaked
   indefinitely. An empty owned scheduler closes fast, so the ctx-bounding benefit is only
   observable under contention; the behaviour is a contract guarantee, not a hot path.
+- Concurrency correctness of the WaitGroup drain rests on two rules, both under `-race`:
+  (a) `admit`'s draining-check and `inflight.Add` hold `gateMu.RLock` while `Shutdown` sets
+  `draining` under `gateMu.Lock`, so every external `Add` happens-before `waitInflight`'s
+  `Wait` — no "Add called concurrently with Wait" panic; (b) timer-fire continuations take
+  **no** WaitGroup slot at all — they are drained by the scheduler `Close` (step 2, gocron
+  joins running jobs), which removes the timeout-path window where a `reserveInternal` `Add`
+  could have raced `Wait` had the deadline-raced closer returned early. An earlier draft
+  counted timer fires via `reserveInternal`; it was removed as redundant and race-prone.
 - The engine core is untouched: no shutdown context threads through `engine.Step`, preserving
   deterministic replay.
 - A follow-up (out of scope) may expose `IsShuttingDown()` on `service.Engine` and map

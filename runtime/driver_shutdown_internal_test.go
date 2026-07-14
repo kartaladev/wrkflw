@@ -25,10 +25,6 @@ func TestAdmitGate(t *testing.T) {
 
 	_, ok = driver.admit()
 	assert.False(t, ok, "admit must fail once draining")
-
-	// reserveInternal ignores the draining flag (continuations must proceed).
-	rel := driver.reserveInternal()
-	rel()
 }
 
 // TestAdmitConcurrentWithShutdown exercises many admit() calls racing a Shutdown to

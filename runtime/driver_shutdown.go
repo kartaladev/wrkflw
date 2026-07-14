@@ -30,23 +30,6 @@ func (driver *ProcessDriver) admit() (release func(), ok bool) {
 	return driver.inflight.Done, true
 }
 
-// reserveInternal joins an in-flight continuation to the drain WaitGroup WITHOUT the
-// draining check (or gateMu), so a continuation of already-scheduled work (a timer fire)
-// completes even while draining.
-//
-// It needs no gateMu because its Add is already ordered before waitInflight's Wait by the
-// Shutdown sequence: the sole post-draining source of such reservations — in-flight
-// owned-scheduler timer fires — is joined by the scheduler Close (Shutdown step 2) before
-// waitInflight runs (step 3), so those Adds happen-before Wait via the close.
-//
-// Caveat: a consumer-injected scheduler is consumer-owned and is NOT closed by the driver,
-// so the consumer must stop it around Shutdown; the driver only guarantees this ordering
-// for its own owned default scheduler.
-func (driver *ProcessDriver) reserveInternal() (release func()) {
-	driver.inflight.Add(1)
-	return driver.inflight.Done
-}
-
 // IsShuttingDown reports whether Shutdown has begun draining. It lets a higher layer
 // (e.g. service.Engine's human-task handlers) reject before performing side effects.
 func (driver *ProcessDriver) IsShuttingDown() bool {

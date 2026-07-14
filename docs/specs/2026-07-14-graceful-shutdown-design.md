@@ -104,18 +104,14 @@ func (driver *ProcessDriver) admit() (release func(), ok bool) {
 }
 ```
 
-A distinct internal reservation is used by continuations that must complete even while
-draining (timer fires — see § 5):
-
-```go
-// reserveInternal joins an in-flight continuation to the WaitGroup WITHOUT the
-// draining check. Safe only for work whose only post-draining source is drained by
-// the scheduler close before waitInflight runs (see § 6 ordering invariant).
-func (driver *ProcessDriver) reserveInternal() (release func()) {
-	driver.inflight.Add(1)
-	return driver.inflight.Done
-}
-```
+Continuations that must complete even while draining (timer fires — see § 5) take **no**
+WaitGroup slot. An in-flight owned-scheduler timer fire is drained by the scheduler `Close`
+(§ 6 step 2), which blocks until gocron joins its running fire jobs — so `Shutdown` still
+waits for a mid-flight fire to finish, and because those fires never touch `inflight`, no
+timer-fire `Add` can race `waitInflight`'s `Wait` (this removes the timeout-path
+Add-vs-Wait window that a WaitGroup reservation would otherwise create). An earlier draft
+used a `reserveInternal()` WaitGroup slot for this; it was removed as redundant with the
+scheduler-close join and unsafe on the deadline-timeout path.
 
 ## 5. Admission Gate
 
@@ -182,8 +178,10 @@ func (driver *ProcessDriver) ApplyTrigger(...) (engine.InstanceState, error) {
   recursion, and `perform` — all part of an already-admitted call, holding the same slot;
   no second reservation.
 - **`timerFireFunc`** advances an *already-running* instance (delivers `TimerFired` via the
-  internal `applyTrigger`). It is a continuation, so it takes a `reserveInternal()` slot —
-  counted by the drain wait, but never rejected mid-fire.
+  internal `applyTrigger`). It is a continuation, so it is never rejected mid-fire. It takes
+  **no** WaitGroup slot: an in-flight owned-scheduler fire is drained by the scheduler `Close`
+  (§ 6 step 2, gocron joins running jobs), so `Shutdown` still waits for it to finish, and no
+  timer-fire `Add` can race `waitInflight`'s `Wait` (closes the F2 timeout-path window).
 
 **Gated — timer-start is new work:** `startTimerFireFunc` creates a *new* instance and
 routes through the **gated** `createAtNode`. So a timer-start that fires during drain is
@@ -212,13 +210,15 @@ func (driver *ProcessDriver) Shutdown(ctx context.Context) error {
 }
 ```
 
-**Ordering invariant (why step 2 precedes step 3):** after `draining` is set, the only
-source of a new `inflight.Add` is an in-flight `timerFireFunc` continuation (via
-`reserveInternal`); every gated path — including a timer-start's `createAtNode` — rejects
-without adding. Those `timerFireFunc` continuations all finish during step 2, because gocron
-`Shutdown()` waits for running jobs and refuses to start pending ones. So by the time step 3's
-`Wait` runs, no new `Add` can occur, ruling out an `Add`-after-`Wait` panic. This ordering is
-a documented, test-locked invariant.
+**Ordering invariant (why step 2 precedes step 3):** after `draining` is set (under
+`gateMu`), no path Adds to `inflight`: every gated entry point — including a timer-start's
+`createAtNode` — rejects via `admit` without adding, and timer-fire continuations take no
+slot at all. In-flight `timerFireFunc` continuations still finish during step 2, because
+gocron `Shutdown()` joins running jobs and refuses to start pending ones — so `Shutdown`
+waits for a mid-flight fire regardless of the WaitGroup. By the time step 3's `Wait` runs,
+no `Add` can occur, ruling out an `Add`-vs-`Wait` panic. `admit`'s check-and-Add is
+serialized with the `draining` set via `gateMu`, so no *external* `Add` can race the `Wait`
+either. This ordering is a documented, test-locked invariant.
 
 `waitInflight(ctx)` waits on `inflight` in a goroutine and `select`s against `ctx.Done()`:
 

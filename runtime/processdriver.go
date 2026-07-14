@@ -289,15 +289,16 @@ func (driver *ProcessDriver) Shutdown(ctx context.Context) error {
 	ctx, cancel := driver.effectiveShutdownCtx(ctx)
 	defer cancel()
 
-	// 2. Close the owned scheduler: gocron stops dispatching and waits for in-flight
-	//    timer fires (which hold reserveInternal slots) to finish. Bounded by ctx via
-	//    the deadline-raced closer registered in NewProcessDriver. A consumer-injected
-	//    scheduler is not registered, so this is a no-op for it.
+	// 2. Close the owned scheduler: gocron stops dispatching and joins its running
+	//    fire jobs (so a mid-flight timer fire finishes before this returns). Bounded by
+	//    ctx via the deadline-raced closer registered in NewProcessDriver. A consumer-
+	//    injected scheduler is not registered, so this is a no-op for it.
 	schedErr := driver.shutdown.Shutdown(ctx)
 
 	// 3. Wait for consumer-initiated deliverLoops still running. By now no new inflight
-	//    Add can occur: draining rejects external work, and the only internal source
-	//    (timer fires) drained in step 2. This ordering rules out Add-after-Wait.
+	//    Add can occur: draining (set under gateMu) rejects external work via admit, and
+	//    timer fires take no inflight slot (drained by the scheduler Close in step 2), so
+	//    nothing Adds after this point — ruling out an Add-vs-Wait race.
 	drainErr := driver.waitInflight(ctx)
 
 	return errors.Join(schedErr, drainErr)
