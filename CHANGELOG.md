@@ -164,6 +164,20 @@ release.
 
 ### Added
 
+- **Graceful shutdown for `runtime.ProcessDriver` (ADR-0133).** `ProcessDriver.Shutdown`
+  now performs real admission control and in-flight drain: it rejects new externally-initiated
+  work with `runtime.ErrDriverShuttingDown` (every exported entry point — `Drive`,
+  `ApplyTrigger`, `DeliverMessage`, `BroadcastSignal`, `CancelInstance`, `ResolveIncident`,
+  `ReverseInstance`, and timer-start fires) and waits for in-flight instance execution to
+  complete before returning, bounded by the `ctx` deadline (or the new `WithShutdownTimeout`
+  fallback when `ctx` carries none). On drain-deadline expiry it returns
+  `runtime.ErrDrainTimeout` WITHOUT force-cancelling in-flight work. Added
+  `runtime.WithShutdownTimeout(d)` and `ProcessDriver.IsShuttingDown()`. `service.Engine`
+  inherits rejection automatically; its human-task ops (`ClaimTask`/`CompleteTask`/`ReassignTask`)
+  reject before any task-store write. The owned scheduler is now closed via a deadline-raced
+  closer so `Shutdown(ctx)` honours the `ctx` deadline when closing it (previously the close
+  used gocron's internal stop timeout and ignored `ctx` — audit Finding 3).
+
 - **Event-based start events: message, signal, and timer starts (ADR-0121).**
   A process definition may now declare multiple start events — up to one trigger-less
   **manual start** (BPMN's "none start", `ErrMultipleManualStarts` if more than one) plus any

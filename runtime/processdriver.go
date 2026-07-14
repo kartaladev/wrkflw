@@ -225,6 +225,10 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 // to their application context and fail fast if it cannot start. When the driver
 // uses a consumer-injected scheduler (via [WithScheduler]), that scheduler is
 // consumer-owned and Start is a no-op; the consumer starts it themselves.
+//
+// After [ProcessDriver.Shutdown] has begun draining, the driver rejects new
+// externally-initiated work with [ErrDriverShuttingDown]; Start does not un-drain a
+// driver (the owned scheduler is already closed and Start surfaces its terminal error).
 func (driver *ProcessDriver) Start(ctx context.Context) error {
 	if driver.ownedScheduler == nil {
 		return nil
@@ -471,6 +475,11 @@ func (driver *ProcessDriver) listDefinitions(ctx context.Context) []*model.Proce
 // bypasses authorization entirely — the engine core is authorization-unaware by
 // design. It is the caller's responsibility to ensure human-task triggers pass
 // through TaskService.
+//
+// ApplyTrigger is a gated external entry point: once [ProcessDriver.Shutdown] has begun
+// draining it rejects with [ErrDriverShuttingDown] before touching the store. Internal
+// continuations (timer fires, cancel cascades, message correlate, reverse, incident
+// resolve) call the ungated applyTrigger so an already-admitted unit of work completes.
 func (driver *ProcessDriver) ApplyTrigger(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
 	release, ok := driver.admit()
 	if !ok {
