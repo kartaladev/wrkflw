@@ -13,6 +13,7 @@ import (
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/flow"
 	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/runtime"
 )
 
@@ -94,4 +95,15 @@ func TestShutdownDrainTimeout(t *testing.T) {
 	// before the test (and TestMain's leak check) finishes.
 	close(release)
 	<-driveDone
+}
+
+func TestApplyTriggerRejectedWhenDraining(t *testing.T) {
+	driver, err := runtime.NewProcessDriver()
+	require.NoError(t, err)
+	require.NoError(t, driver.Shutdown(context.Background()))
+
+	// Any def/id: the gate rejects before touching the store.
+	_, err = driver.ApplyTrigger(context.Background(), linearDef(), "i-x",
+		engine.NewCancelRequested(time.Now()))
+	assert.ErrorIs(t, err, runtime.ErrDriverShuttingDown)
 }

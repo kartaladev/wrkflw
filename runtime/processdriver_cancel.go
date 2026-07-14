@@ -17,7 +17,7 @@ import (
 func (driver *ProcessDriver) CancelInstance(ctx context.Context, def *model.ProcessDefinition, instanceID string) (engine.InstanceState, error) {
 	// Parent-first: terminate the parent before propagating to children so that
 	// no CallNotifier can resume a child-completed parent during propagation.
-	st, err := driver.ApplyTrigger(ctx, def, instanceID, engine.NewCancelRequested(driver.clk.Now()))
+	st, err := driver.applyTrigger(ctx, def, instanceID, engine.NewCancelRequested(driver.clk.Now()))
 	if err != nil {
 		return st, err
 	}
@@ -74,7 +74,7 @@ func (driver *ProcessDriver) propagateCancel(ctx context.Context, parentID strin
 		// ApplyTrigger CancelRequested directly (parent-first) then recurse into
 		// propagateCancel with the SAME shared visited map. Re-entering CancelInstance
 		// would allocate a fresh visited map per child, breaking the diamond guard.
-		if _, cancelErr := driver.ApplyTrigger(ctx, childDef, child.ChildInstanceID, engine.NewCancelRequested(driver.clk.Now())); cancelErr != nil {
+		if _, cancelErr := driver.applyTrigger(ctx, childDef, child.ChildInstanceID, engine.NewCancelRequested(driver.clk.Now())); cancelErr != nil {
 			driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn,
 				"runtime: propagateCancel: cancel child instance failed",
 				slog.String("child_id", child.ChildInstanceID),

@@ -60,7 +60,7 @@ func (driver *ProcessDriver) DeliverMessage(ctx context.Context, name, correlati
 			return err
 		}
 		trg := engine.NewMessageReceived(driver.clk.Now(), name, correlationKey, payload)
-		_, err = driver.ApplyTrigger(ctx, def, instanceID, trg)
+		_, err = driver.applyTrigger(ctx, def, instanceID, trg)
 		return err
 	}
 

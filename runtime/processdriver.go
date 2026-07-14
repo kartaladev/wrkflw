@@ -472,6 +472,19 @@ func (driver *ProcessDriver) listDefinitions(ctx context.Context) []*model.Proce
 // design. It is the caller's responsibility to ensure human-task triggers pass
 // through TaskService.
 func (driver *ProcessDriver) ApplyTrigger(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
+	release, ok := driver.admit()
+	if !ok {
+		return engine.InstanceState{}, ErrDriverShuttingDown
+	}
+	defer release()
+	return driver.applyTrigger(ctx, def, instanceID, trg)
+}
+
+// applyTrigger is the ungated worker behind [ProcessDriver.ApplyTrigger]: load →
+// deliverLoop → save. Callers that are already inside a gated method (or a counted
+// timer continuation) call this directly to avoid a nested re-admit or a spurious
+// mid-cascade rejection during shutdown.
+func (driver *ProcessDriver) applyTrigger(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
 	ctx, span := driver.obs.tracer().Start(ctx, "wrkflw.runner.ApplyTrigger", trace.WithAttributes(
 		attribute.String("wrkflw.instance_id", instanceID),
 		attribute.String("wrkflw.trigger", triggerName(trg)),
