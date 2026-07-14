@@ -15,7 +15,13 @@ import (
 // point for recovering a retry-exhausted activity. Delegates through ApplyTrigger so
 // the trigger is journalled and persisted.
 func (driver *ProcessDriver) ResolveIncident(ctx context.Context, def *model.ProcessDefinition, instanceID, incidentID string, addAttempts int) (engine.InstanceState, error) {
-	st, err := driver.ApplyTrigger(ctx, def, instanceID, engine.NewResolveIncident(driver.clk.Now(), incidentID, addAttempts))
+	release, ok := driver.admit()
+	if !ok {
+		return engine.InstanceState{}, ErrDriverShuttingDown
+	}
+	defer release()
+
+	st, err := driver.applyTrigger(ctx, def, instanceID, engine.NewResolveIncident(driver.clk.Now(), incidentID, addAttempts))
 	if err == nil {
 		driver.obs.incidentsResolved.Add(ctx, 1, metric.WithAttributes(attribute.String("def", def.ID)))
 	}

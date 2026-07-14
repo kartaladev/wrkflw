@@ -75,6 +75,12 @@ func WithTargetNode(nodeID string) ReverseOption {
 //
 // It returns the reversed [engine.InstanceState].
 func (driver *ProcessDriver) ReverseInstance(ctx context.Context, def *model.ProcessDefinition, instanceID string, opts ...ReverseOption) (engine.InstanceState, error) {
+	release, ok := driver.admit()
+	if !ok {
+		return engine.InstanceState{}, ErrDriverShuttingDown
+	}
+	defer release()
+
 	var cfg reverseConfig
 	for _, opt := range opts {
 		opt(&cfg)
@@ -95,12 +101,12 @@ func (driver *ProcessDriver) ReverseInstance(ctx context.Context, def *model.Pro
 	}
 
 	if cfg.targeted {
-		return driver.ApplyTrigger(ctx, def, instanceID, engine.NewReverseToNode(driver.clk.Now(), cfg.target))
+		return driver.applyTrigger(ctx, def, instanceID, engine.NewReverseToNode(driver.clk.Now(), cfg.target))
 	}
 
 	starts := def.StartNodes()
 	if len(starts) != 1 {
 		return engine.InstanceState{}, fmt.Errorf("workflow-runtime: ReverseInstance %q: definition %q must have exactly one start event to resolve a full reverse, found %d", instanceID, def.ID, len(starts))
 	}
-	return driver.ApplyTrigger(ctx, def, instanceID, engine.NewReverseToStart(driver.clk.Now(), starts[0].ID()))
+	return driver.applyTrigger(ctx, def, instanceID, engine.NewReverseToStart(driver.clk.Now(), starts[0].ID()))
 }

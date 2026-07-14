@@ -1,6 +1,7 @@
 package scheduling_test
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"sync"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jonboulle/clockwork"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -178,4 +180,46 @@ func TestNewScheduler_ObservabilityOptions(t *testing.T) {
 			c.assert(t)
 		})
 	}
+}
+
+// TestScheduler_CloseWithContext verifies the façade's context-aware shutdown:
+// it bounds the underlying gocron shutdown by ctx (returning its error while a
+// job is still running) and is idempotent like Close.
+func TestScheduler_CloseWithContext(t *testing.T) {
+	t.Run("honors an expired ctx while a job is running", func(t *testing.T) {
+		s, err := scheduling.NewScheduler() // real clock: an At(now) job fires immediately
+		require.NoError(t, err)
+
+		enter := make(chan struct{})
+		release := make(chan struct{})
+		var once sync.Once
+		_, err = s.Schedule(t.Context(), "blocker", schedule.At(time.Now()), func() {
+			once.Do(func() { close(enter) })
+			<-release
+		})
+		require.NoError(t, err)
+		select {
+		case <-enter:
+		case <-time.After(2 * time.Second):
+			t.Fatal("blocking job did not start")
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		start := time.Now()
+		err = s.CloseWithContext(ctx)
+		assert.Less(t, time.Since(start), 2*time.Second,
+			"CloseWithContext must honor ctx, not block on gocron's stop timeout")
+		assert.ErrorIs(t, err, context.Canceled)
+
+		close(release) // let the job finish so gocron fully shuts down (goleak)
+	})
+
+	t.Run("is idempotent", func(t *testing.T) {
+		s, err := scheduling.NewScheduler(scheduling.WithClock(clockwork.NewFakeClock()))
+		require.NoError(t, err)
+		require.NoError(t, s.CloseWithContext(context.Background()))
+		require.NoError(t, s.CloseWithContext(context.Background()), "second CloseWithContext must no-op")
+		require.NoError(t, s.Close(), "Close after CloseWithContext must also no-op")
+	})
 }

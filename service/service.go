@@ -372,6 +372,11 @@ func (e *Engine) DeliverMessage(ctx context.Context, req DeliverMessageRequest) 
 
 // ClaimTask authorizes the actor, issues a HumanClaimed trigger, and advances the instance.
 func (e *Engine) ClaimTask(ctx context.Context, req ClaimTaskRequest) (ProcessInstance, error) {
+	// Reject before the task-store write so a shutdown race cannot leave a claimed
+	// task behind that the draining driver then refuses to advance.
+	if e.driver.IsShuttingDown() {
+		return nil, fmt.Errorf("workflow-service: claim task: %w", runtime.ErrDriverShuttingDown)
+	}
 	trg, err := e.tasks.Claim(ctx, req.TaskToken, req.Actor)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: claim task: %w", err)
@@ -381,6 +386,11 @@ func (e *Engine) ClaimTask(ctx context.Context, req ClaimTaskRequest) (ProcessIn
 
 // CompleteTask authorizes the actor, issues a HumanCompleted trigger, and advances the instance.
 func (e *Engine) CompleteTask(ctx context.Context, req CompleteTaskRequest) (ProcessInstance, error) {
+	// Reject before the task-store write so a shutdown race cannot leave a completed
+	// task behind that the draining driver then refuses to advance.
+	if e.driver.IsShuttingDown() {
+		return nil, fmt.Errorf("workflow-service: complete task: %w", runtime.ErrDriverShuttingDown)
+	}
 	trg, err := e.tasks.Complete(ctx, req.TaskToken, req.Actor, req.Output)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: complete task: %w", err)
@@ -390,6 +400,11 @@ func (e *Engine) CompleteTask(ctx context.Context, req CompleteTaskRequest) (Pro
 
 // ReassignTask authorizes the reassigner, issues a HumanReassigned trigger, and advances the instance.
 func (e *Engine) ReassignTask(ctx context.Context, req ReassignTaskRequest) (ProcessInstance, error) {
+	// Reject before the task-store write so a shutdown race cannot leave a reassigned
+	// task behind that the draining driver then refuses to advance.
+	if e.driver.IsShuttingDown() {
+		return nil, fmt.Errorf("workflow-service: reassign task: %w", runtime.ErrDriverShuttingDown)
+	}
 	trg, err := e.tasks.Reassign(ctx, req.TaskToken, req.From, req.To, req.By)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: reassign task: %w", err)

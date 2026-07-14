@@ -3,6 +3,7 @@ package eventing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -13,6 +14,14 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/chain"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
+
+// isBenignDriverShutdown reports whether err is (or wraps) [kernel.ErrDriverShuttingDown]
+// — the ProcessDriver refusing new work during graceful shutdown. Such a chain handler
+// failure is benign: the nack correctly redelivers the terminal event so the successor
+// starts once the driver is back, so it is logged at DEBUG rather than ERROR.
+func isBenignDriverShutdown(err error) bool {
+	return errors.Is(err, kernel.ErrDriverShuttingDown)
+}
 
 // chainTopics are the three status-accurate terminal topics a chaining consumer
 // subscribes (ADR-0046). The map also drives topic→Outcome projection.
@@ -117,9 +126,17 @@ func (c *Chainer) Run(ctx context.Context, sub message.Subscriber) error {
 			defer wg.Done()
 			for msg := range ch {
 				if err := c.handler(msg); err != nil {
-					c.logger.ErrorContext(msg.Context(), "chain: handler failed; nacking",
-						slog.String("instance_id", msg.Metadata.Get("instance_id")),
-						slog.Any("error", err))
+					if isBenignDriverShutdown(err) {
+						// Driver is draining (graceful shutdown): the nack correctly
+						// redelivers the terminal event so the successor starts once the
+						// driver is back. Not an error — log at DEBUG to avoid alarm spam.
+						c.logger.DebugContext(msg.Context(), "chain: driver shutting down; nacking successor start for retry",
+							slog.String("instance_id", msg.Metadata.Get("instance_id")))
+					} else {
+						c.logger.ErrorContext(msg.Context(), "chain: handler failed; nacking",
+							slog.String("instance_id", msg.Metadata.Get("instance_id")),
+							slog.Any("error", err))
+					}
 					msg.Nack()
 					continue
 				}

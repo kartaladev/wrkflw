@@ -327,3 +327,45 @@ func TestSchedulePastFireAtFiresImmediately(t *testing.T) {
 		}
 	}, 2*time.Second, 10*time.Millisecond, "callback should fire immediately for past fireAt")
 }
+
+// TestGocronScheduler_CloseWithContext verifies the context-aware shutdown: it
+// honors the caller's ctx deadline (returning its error while a job is still
+// running, rather than blocking on gocron's internal stop timeout) and returns
+// nil on a clean shutdown.
+func TestGocronScheduler_CloseWithContext(t *testing.T) {
+	t.Run("honors an expired ctx while a job is running", func(t *testing.T) {
+		s, err := sched.NewGocronScheduler() // real clock: an At(now) job fires immediately
+		require.NoError(t, err)
+
+		enter := make(chan struct{})
+		release := make(chan struct{})
+		var once sync.Once
+		_, err = s.Schedule(t.Context(), "blocker", schedule.At(time.Now()), func() {
+			once.Do(func() { close(enter) })
+			<-release
+		})
+		require.NoError(t, err)
+		select {
+		case <-enter:
+		case <-time.After(2 * time.Second):
+			t.Fatal("blocking job did not start")
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // already cancelled: CloseWithContext must return promptly with its error
+		start := time.Now()
+		err = s.CloseWithContext(ctx)
+		assert.Less(t, time.Since(start), 2*time.Second,
+			"CloseWithContext must honor ctx, not block on gocron's stop timeout")
+		assert.ErrorIs(t, err, context.Canceled)
+
+		// Release the job so gocron finishes shutting down (goleak).
+		close(release)
+	})
+
+	t.Run("returns nil on a clean shutdown", func(t *testing.T) {
+		s, err := sched.NewGocronScheduler()
+		require.NoError(t, err)
+		assert.NoError(t, s.CloseWithContext(context.Background()))
+	})
+}

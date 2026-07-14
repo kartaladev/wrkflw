@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -93,6 +94,22 @@ type ProcessDriver struct {
 	// consumer-owned and is deliberately NOT registered here. [ProcessDriver.Shutdown]
 	// delegates to this group. The zero value is ready to use.
 	shutdown ShutdownGroup
+
+	// draining is set true at the start of Shutdown; once set, admit() refuses new
+	// externally-initiated work so it is rejected with ErrDriverShuttingDown.
+	draining atomic.Bool
+	// gateMu serializes admit's draining-check+inflight.Add against Shutdown's
+	// draining-set, so no Add races waitInflight's Wait. Shutdown's Lock waits for
+	// every in-flight admit RLock to release, after which every subsequent admit
+	// observes draining and never Adds — ordering all admit Adds before Wait.
+	gateMu sync.RWMutex
+	// inflight counts admitted, currently-executing units of work (each deliverLoop-
+	// driving call and each in-flight timer continuation). Shutdown waits on it to drain.
+	inflight sync.WaitGroup
+	// shutdownTimeout is the fallback drain deadline applied by Shutdown ONLY when the
+	// ctx passed to Shutdown carries no deadline of its own. Zero = no fallback. Set via
+	// WithShutdownTimeout.
+	shutdownTimeout time.Duration
 
 	// ownedScheduler is the in-process default scheduler the driver created when
 	// no [WithScheduler] was supplied. It is non-nil only for the owned default;
@@ -182,7 +199,14 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 		}
 		driver.sched = sched
 		driver.ownedScheduler = sched
-		driver.shutdown.AddCloser(sched)
+		// Close the owned scheduler through its context-aware shutdown so Shutdown's ctx
+		// actually bounds the scheduler drain (audit Finding 3): CloseWithContext delegates
+		// to gocron's ShutdownWithContext, which stops dispatch immediately and waits for
+		// running jobs bounded by ctx (returning ctx.Err() on expiry) — no manual close-race
+		// goroutine, so nothing is left running on the timeout path.
+		driver.shutdown.Add(func(ctx context.Context) error {
+			return sched.CloseWithContext(ctx)
+		})
 	}
 
 	driver.obs = newDriverObs(driver.logOpt, driver.tpOpt, driver.mpOpt)
@@ -199,6 +223,10 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 // to their application context and fail fast if it cannot start. When the driver
 // uses a consumer-injected scheduler (via [WithScheduler]), that scheduler is
 // consumer-owned and Start is a no-op; the consumer starts it themselves.
+//
+// After [ProcessDriver.Shutdown] has begun draining, the driver rejects new
+// externally-initiated work with [ErrDriverShuttingDown]; Start does not un-drain a
+// driver (the owned scheduler is already closed and Start surfaces its terminal error).
 func (driver *ProcessDriver) Start(ctx context.Context) error {
 	if driver.ownedScheduler == nil {
 		return nil
@@ -215,12 +243,58 @@ func (driver *ProcessDriver) Start(ctx context.Context) error {
 // scheduler, a [WithInstanceStore]-provided store, …) are consumer-owned and are
 // NOT torn down here.
 //
-// Shutdown honours ctx for a bounded drain, aggregates every closer's error with
-// [errors.Join], and is idempotent (a second call returns nil). Its signature
-// matches samber/do's ShutdownerWithContextAndError, so a do.Provide(driver) is
-// released by inj.ShutdownWithContext(ctx).
+// Shutdown performs a graceful shutdown of the driver's own execution paths:
+//
+//  1. It sets the draining flag so every externally-initiated entry point
+//     (Drive, ApplyTrigger, DeliverMessage, BroadcastSignal, CancelInstance,
+//     ResolveIncident, ReverseInstance, and timer-start fires) rejects new work
+//     with [ErrDriverShuttingDown].
+//  2. It closes the owned scheduler (deadline-raced so ctx bounds the drain),
+//     which stops dispatching and waits for in-flight timer fires to finish.
+//  3. It waits for consumer-initiated deliverLoops (Drive/ApplyTrigger calls) still
+//     running to complete, bounded by ctx. On ctx expiry it returns
+//     [ErrDrainTimeout] (joined) WITHOUT force-cancelling in-flight work — that
+//     work keeps running to completion on its own goroutine.
+//
+// Ordering invariant: step 2 precedes step 3 so that the only post-draining source
+// of a new inflight reservation (an in-flight timer continuation) is fully drained
+// before waitInflight's WaitGroup.Wait runs, ruling out an Add-after-Wait panic.
+//
+// Consumer-injected collaborators (a [WithScheduler]-provided scheduler, a
+// [WithInstanceStore]-provided store, …) are consumer-owned and are NOT torn down
+// here. Shutdown honours ctx for a bounded drain (or the [WithShutdownTimeout]
+// fallback when ctx carries no deadline), aggregates errors with [errors.Join],
+// and is idempotent (a second call returns nil). Its signature matches samber/do's
+// ShutdownerWithContextAndError, so a do.Provide(driver) is released by
+// inj.ShutdownWithContext(ctx).
 func (driver *ProcessDriver) Shutdown(ctx context.Context) error {
-	return driver.shutdown.Shutdown(ctx)
+	// 1. Stop admitting new external work. Set under gateMu so it excludes any
+	//    in-flight admit's draining-check+Add: the Lock waits for every concurrent
+	//    admit RLock to release, after which every subsequent admit observes draining
+	//    and never Adds — so no admit Add can race waitInflight's Wait below. Set
+	//    before anything else so a command racing Shutdown is rejected rather than
+	//    admitted mid-teardown.
+	driver.gateMu.Lock()
+	driver.draining.Store(true)
+	driver.gateMu.Unlock()
+
+	// Apply the WithShutdownTimeout fallback iff ctx carries no deadline (ADR-0133).
+	ctx, cancel := driver.effectiveShutdownCtx(ctx)
+	defer cancel()
+
+	// 2. Close the owned scheduler: gocron stops dispatching and joins its running
+	//    fire jobs (so a mid-flight timer fire finishes before this returns). Bounded by
+	//    ctx via the deadline-raced closer registered in NewProcessDriver. A consumer-
+	//    injected scheduler is not registered, so this is a no-op for it.
+	schedErr := driver.shutdown.Shutdown(ctx)
+
+	// 3. Wait for consumer-initiated deliverLoops still running. By now no new inflight
+	//    Add can occur: draining (set under gateMu) rejects external work via admit, and
+	//    timer fires take no inflight slot (drained by the scheduler Close in step 2), so
+	//    nothing Adds after this point — ruling out an Add-vs-Wait race.
+	drainErr := driver.waitInflight(ctx)
+
+	return errors.Join(schedErr, drainErr)
 }
 
 // isNilScheduler reports whether s is unusable as a scheduler: either an untyped
@@ -303,6 +377,11 @@ func (driver *ProcessDriver) logConstructionSummary(defaultStore kernel.Instance
 // Drive starts an instance and drives it to a terminal state or until the engine
 // parks (e.g. awaiting a human task). It returns the state at the point it stopped.
 func (driver *ProcessDriver) Drive(ctx context.Context, def *model.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error) {
+	release, ok := driver.admit()
+	if !ok {
+		return engine.InstanceState{}, ErrDriverShuttingDown
+	}
+	defer release()
 	ctx, span := driver.obs.tracer().Start(ctx, "wrkflw.runner.Run", trace.WithAttributes(
 		attribute.String("wrkflw.instance_id", instanceID),
 		attribute.String("wrkflw.def_id", def.ID),
@@ -401,7 +480,25 @@ func (driver *ProcessDriver) listDefinitions(ctx context.Context) []*model.Proce
 // bypasses authorization entirely — the engine core is authorization-unaware by
 // design. It is the caller's responsibility to ensure human-task triggers pass
 // through TaskService.
+//
+// ApplyTrigger is a gated external entry point: once [ProcessDriver.Shutdown] has begun
+// draining it rejects with [ErrDriverShuttingDown] before touching the store. Internal
+// continuations (timer fires, cancel cascades, message correlate, reverse, incident
+// resolve) call the ungated applyTrigger so an already-admitted unit of work completes.
 func (driver *ProcessDriver) ApplyTrigger(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
+	release, ok := driver.admit()
+	if !ok {
+		return engine.InstanceState{}, ErrDriverShuttingDown
+	}
+	defer release()
+	return driver.applyTrigger(ctx, def, instanceID, trg)
+}
+
+// applyTrigger is the ungated worker behind [ProcessDriver.ApplyTrigger]: load →
+// deliverLoop → save. Callers that are already inside a gated method (or a counted
+// timer continuation) call this directly to avoid a nested re-admit or a spurious
+// mid-cascade rejection during shutdown.
+func (driver *ProcessDriver) applyTrigger(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
 	ctx, span := driver.obs.tracer().Start(ctx, "wrkflw.runner.ApplyTrigger", trace.WithAttributes(
 		attribute.String("wrkflw.instance_id", instanceID),
 		attribute.String("wrkflw.trigger", triggerName(trg)),

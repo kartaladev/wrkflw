@@ -133,10 +133,13 @@ func (driver *ProcessDriver) armTimer(ctx context.Context, def *model.ProcessDef
 		// The trigger could not be scheduled (unsupported kind or a mapping
 		// error). Skip it — an unschedulable timer must never crash the driver.
 		// (Durable descriptor persistence + NextRun recording is Plan 3.)
-		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: armTimer: trigger not schedulable, skipping timer",
+		// A skip during shutdown (scheduler closed) is expected, not a lost timer: the
+		// durable arm survives in the timer store and rehydrates on next boot (Finding 4).
+		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: armTimer: trigger not schedulable, skipping timer (durable arm rehydrates on next boot)",
 			append(driver.obs.tel.LogAttrs(ctx),
 				slog.String("timer_id", timerID),
 				slog.String("instance_id", instanceID),
+				slog.Bool("driver_shutting_down", driver.IsShuttingDown()),
 				slog.Any("error", err))...)
 		return
 	}
@@ -156,13 +159,19 @@ func (driver *ProcessDriver) armTimer(ctx context.Context, def *model.ProcessDef
 // rehydration path so both build byte-identical fire behaviour.
 func (driver *ProcessDriver) timerFireFunc(def *model.ProcessDefinition, instanceID, timerID string) func() {
 	return func() {
+		// A timer fire advances an ALREADY-running instance: it is a continuation, not
+		// new external work, so it drives via the ungated applyTrigger (never rejected
+		// mid-fire during drain). It takes NO inflight slot: an in-flight owned-scheduler
+		// fire is drained by the scheduler Close (Shutdown step 2), which blocks until
+		// gocron joins its running fire jobs — so Shutdown still waits for a mid-flight
+		// fire to finish, and no timer-fire Add can race waitInflight's Wait (closes F2).
 		fireCtx := context.Background()
 		trg := engine.NewTimerFired(driver.clk.Now(), timerID)
 		driver.obs.timerFired.Add(fireCtx, 1)
 		const maxAttempts = 5
 		var err error
 		for range maxAttempts {
-			if _, err = driver.ApplyTrigger(fireCtx, def, instanceID, trg); err == nil {
+			if _, err = driver.applyTrigger(fireCtx, def, instanceID, trg); err == nil {
 				return
 			}
 			if !errors.Is(err, kernel.ErrConcurrentUpdate) {
@@ -261,6 +270,19 @@ func startTimerID(defID string, version int, nodeID string) string {
 // never crash the scheduler's fire goroutine.
 func (driver *ProcessDriver) startTimerFireFunc(def *model.ProcessDefinition, nodeID, timerID string) func() {
 	return func() {
+		// A timer-start creates NEW work, so it goes through the admission gate. Once
+		// draining, drop the fire (benign: the durable arm rehydrates on next boot).
+		release, ok := driver.admit()
+		if !ok {
+			driver.obs.tel.Logger.LogAttrs(context.Background(), slog.LevelDebug,
+				"runtime: timer-start fire skipped: driver shutting down",
+				slog.String("timer_id", timerID),
+				slog.String("def_id", def.ID),
+				slog.Int("def_version", def.Version),
+				slog.String("node_id", nodeID))
+			return
+		}
+		defer release()
 		fireCtx := context.Background()
 		driver.obs.timerFired.Add(fireCtx, 1)
 		if _, err := driver.createAtNode(fireCtx, def, nodeID, "", nil); err != nil {
@@ -282,12 +304,15 @@ func (driver *ProcessDriver) startTimerFireFunc(def *model.ProcessDefinition, no
 func (driver *ProcessDriver) armStartTimer(ctx context.Context, def *model.ProcessDefinition, nodeID, timerID string, trig schedule.TriggerSpec) {
 	nextRun, err := driver.sched.Schedule(ctx, timerID, trig, driver.startTimerFireFunc(def, nodeID, timerID))
 	if err != nil {
-		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: armStartTimer: trigger not schedulable, skipping timer-start",
+		// A skip during shutdown (scheduler closed) is expected, not a lost timer-start:
+		// it re-arms purely from the registered definition on next boot (Finding 4).
+		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: armStartTimer: trigger not schedulable, skipping timer-start (re-arms from definition on next boot)",
 			append(driver.obs.tel.LogAttrs(ctx),
 				slog.String("timer_id", timerID),
 				slog.String("def_id", def.ID),
 				slog.Int("def_version", def.Version),
 				slog.String("node_id", nodeID),
+				slog.Bool("driver_shutting_down", driver.IsShuttingDown()),
 				slog.Any("error", err))...)
 		return
 	}

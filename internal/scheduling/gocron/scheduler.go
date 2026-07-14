@@ -320,3 +320,12 @@ func (s *GocronScheduler) NextRun(timerID string) (time.Time, bool) {
 func (s *GocronScheduler) Close() error {
 	return s.sched.Shutdown()
 }
+
+// CloseWithContext shuts gocron down gracefully, honoring ctx's deadline: it stops
+// dispatch immediately (gocron's shutdownCancel fires first) and waits for running
+// jobs, returning ctx.Err() if ctx expires first. The scheduler cannot be reused
+// afterward. Unlike Close (which uses gocron's internal stop timeout), the caller's
+// ctx bounds the wait.
+func (s *GocronScheduler) CloseWithContext(ctx context.Context) error {
+	return s.sched.ShutdownWithContext(ctx)
+}

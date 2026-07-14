@@ -3,6 +3,7 @@ package eventing_test
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -226,6 +227,72 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, "p1", got.PredecessorID)
+
+	cancel()
+	assert.ErrorIs(t, <-done, context.Canceled)
+}
+
+// levelCountHandler is a slog.Handler that counts records per level, for asserting
+// the level a message was logged at.
+type levelCountHandler struct {
+	mu     sync.Mutex
+	counts map[slog.Level]int
+}
+
+func newLevelCountHandler() *levelCountHandler {
+	return &levelCountHandler{counts: make(map[slog.Level]int)}
+}
+
+func (h *levelCountHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h *levelCountHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.counts[r.Level]++
+	return nil
+}
+func (h *levelCountHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *levelCountHandler) WithGroup(string) slog.Handler      { return h }
+func (h *levelCountHandler) count(l slog.Level) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.counts[l]
+}
+
+// TestChainerRunLogsBenignShutdownAtDebug asserts that when the chain handler fails
+// with ErrDriverShuttingDown (driver draining), Run still nacks for redelivery but
+// logs the benign case at DEBUG, not ERROR.
+func TestChainerRunLogsBenignShutdownAtDebug(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	var mu sync.Mutex
+	var seen []chain.ChainEvent
+	// Every successor start fails with a benign driver-shutdown error → nack + redeliver.
+	starter := &capturingStarter{err: kernel.ErrDriverShuttingDown}
+	core := chainCore(t, starter, &seen, &mu)
+
+	rec := newLevelCountHandler()
+	pub, sub, closer := eventing.NewGoChannelPublisher()
+	defer func() { require.NoError(t, closer.Close()) }()
+
+	cr := eventing.NewChainerRunner(core, eventing.WithLogger(slog.New(rec)))
+	done := make(chan error, 1)
+	go func() { done <- cr.Run(ctx, sub) }()
+
+	// GoChannel drops messages published before Run subscribes; republish until the
+	// benign-shutdown DEBUG record appears (proving the handler ran and nacked).
+	require.Eventually(t, func() bool {
+		_ = pub.Publish(ctx, kernel.OutboxEvent{
+			Topic:      "instance.completed",
+			Payload:    map[string]any{},
+			InstanceID: "p1",
+		})
+		return rec.count(slog.LevelDebug) > 0
+	}, 3*time.Second, 25*time.Millisecond)
+
+	assert.Zero(t, rec.count(slog.LevelError),
+		"a benign driver-shutdown nack must NOT be logged at ERROR")
+	require.NotEmpty(t, starter.startedIDs(), "the handler must have attempted the successor start (then nacked)")
 
 	cancel()
 	assert.ErrorIs(t, <-done, context.Canceled)
