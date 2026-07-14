@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"fmt"
 )
 
 // ErrDriverShuttingDown is returned by every externally-initiated ProcessDriver entry
@@ -41,6 +42,23 @@ func (driver *ProcessDriver) reserveInternal() (release func()) {
 // (e.g. service.Engine's human-task handlers) reject before performing side effects.
 func (driver *ProcessDriver) IsShuttingDown() bool {
 	return driver.draining.Load()
+}
+
+// waitInflight blocks until every admitted in-flight unit of work has released its slot,
+// or ctx is done. On ctx expiry it returns ErrDrainTimeout wrapping ctx.Err(); the in-flight
+// work is NOT cancelled and keeps running to completion.
+func (driver *ProcessDriver) waitInflight(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		driver.inflight.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("%w: %w", ErrDrainTimeout, ctx.Err())
+	}
 }
 
 // effectiveShutdownCtx applies the WithShutdownTimeout fallback: a ctx deadline always wins;
