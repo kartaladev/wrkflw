@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -93,6 +94,17 @@ type ProcessDriver struct {
 	// consumer-owned and is deliberately NOT registered here. [ProcessDriver.Shutdown]
 	// delegates to this group. The zero value is ready to use.
 	shutdown ShutdownGroup
+
+	// draining is set true at the start of Shutdown; once set, admit() refuses new
+	// externally-initiated work so it is rejected with ErrDriverShuttingDown.
+	draining atomic.Bool
+	// inflight counts admitted, currently-executing units of work (each deliverLoop-
+	// driving call and each in-flight timer continuation). Shutdown waits on it to drain.
+	inflight sync.WaitGroup
+	// shutdownTimeout is the fallback drain deadline applied by Shutdown ONLY when the
+	// ctx passed to Shutdown carries no deadline of its own. Zero = no fallback. Set via
+	// WithShutdownTimeout.
+	shutdownTimeout time.Duration
 
 	// ownedScheduler is the in-process default scheduler the driver created when
 	// no [WithScheduler] was supplied. It is non-nil only for the owned default;
