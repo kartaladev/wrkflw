@@ -119,6 +119,13 @@ task-store side effect.
   joins running jobs), which removes the timeout-path window where a `reserveInternal` `Add`
   could have raced `Wait` had the deadline-raced closer returned early. An earlier draft
   counted timer fires via `reserveInternal`; it was removed as redundant and race-prone.
+- `ErrDriverShuttingDown` is defined canonically in `runtime/kernel` (alongside the other
+  cross-cutting sentinels) and re-exported from `runtime` to keep the public API stable. This
+  lets downstream consumers classify the benign shutdown case without importing the root
+  runtime package: `eventing.Chainer.Run` now logs a chain-handler failure caused by a
+  draining driver at DEBUG (the nack still redelivers the terminal event so the successor
+  starts once the driver is back) instead of the misleading ERROR it logged for every queued
+  terminal event during shutdown.
 - The engine core is untouched: no shutdown context threads through `engine.Step`, preserving
   deterministic replay.
 - A follow-up (out of scope) may expose `IsShuttingDown()` on `service.Engine` and map

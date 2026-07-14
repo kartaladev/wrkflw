@@ -4,12 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // ErrDriverShuttingDown is returned by every externally-initiated ProcessDriver entry
 // point once Shutdown has begun draining. In-flight work already admitted still runs to
 // completion; only new work is refused.
-var ErrDriverShuttingDown = errors.New("workflow-runtime: driver is shutting down")
+//
+// It is defined canonically in [kernel] (so downstream consumers like eventing/chain can
+// classify it without importing the root runtime package) and re-exported here to keep the
+// public runtime.ErrDriverShuttingDown API stable; the two are the same value, so
+// errors.Is holds across both.
+var ErrDriverShuttingDown = kernel.ErrDriverShuttingDown
 
 // ErrDrainTimeout is returned (joined) by Shutdown when the drain deadline expires before
 // every in-flight unit of work has finished. In-flight work is NOT force-cancelled; it
