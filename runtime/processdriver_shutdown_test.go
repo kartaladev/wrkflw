@@ -116,3 +116,33 @@ func TestProcessDriverShutdown(t *testing.T) {
 		assert.False(t, spy.closed.Load(), "an injected scheduler is consumer-owned and must not be closed by the driver")
 	})
 }
+
+// TestShutdownHonoursCtxDeadline guards the Finding-3 contract: with the owned gocron
+// scheduler started, Shutdown given an already-expired ctx returns PROMPTLY and surfaces
+// the ctx deadline error (joined), rather than blocking on gocron's internal stop
+// timeout. The deadline-raced scheduler closer (shutdown.Add in NewProcessDriver) is what
+// makes the scheduler drain ctx-bounded.
+//
+// Caveat on isolation: an empty owned gocron scheduler closes in well under 500ms even
+// via the old AddCloser path, and the drain wait also surfaces the deadline, so this test
+// asserts the observable Shutdown contract (prompt return + ctx error) rather than
+// isolating the closer mechanism — a slow-closing OWNED scheduler cannot be constructed in
+// a unit test (a consumer-injected slow scheduler is never registered in the
+// ShutdownGroup, ADR-0054). Stable across repeated runs: the already-expired ctx wins the
+// closer/drain selects deterministically in practice.
+func TestShutdownHonoursCtxDeadline(t *testing.T) {
+	driver, err := runtime.NewProcessDriver()
+	require.NoError(t, err)
+	require.NoError(t, driver.Start(t.Context())) // start the owned gocron scheduler
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	time.Sleep(2 * time.Millisecond) // ensure ctx is already expired
+
+	start := time.Now()
+	err = driver.Shutdown(ctx)
+	assert.Less(t, time.Since(start), 500*time.Millisecond,
+		"Shutdown must return promptly on an expired ctx, not block on gocron's stop timeout")
+	// The scheduler close raced against ctx (and/or the drain wait) surfaces the deadline.
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}
