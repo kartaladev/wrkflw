@@ -98,6 +98,11 @@ type ProcessDriver struct {
 	// draining is set true at the start of Shutdown; once set, admit() refuses new
 	// externally-initiated work so it is rejected with ErrDriverShuttingDown.
 	draining atomic.Bool
+	// gateMu serializes admit's draining-check+inflight.Add against Shutdown's
+	// draining-set, so no Add races waitInflight's Wait. Shutdown's Lock waits for
+	// every in-flight admit RLock to release, after which every subsequent admit
+	// observes draining and never Adds — ordering all admit Adds before Wait.
+	gateMu sync.RWMutex
 	// inflight counts admitted, currently-executing units of work (each deliverLoop-
 	// driving call and each in-flight timer continuation). Shutdown waits on it to drain.
 	inflight sync.WaitGroup
@@ -270,9 +275,15 @@ func (driver *ProcessDriver) Start(ctx context.Context) error {
 // ShutdownerWithContextAndError, so a do.Provide(driver) is released by
 // inj.ShutdownWithContext(ctx).
 func (driver *ProcessDriver) Shutdown(ctx context.Context) error {
-	// 1. Stop admitting new external work. Set before anything else so a command
-	//    racing Shutdown is rejected rather than admitted mid-teardown.
+	// 1. Stop admitting new external work. Set under gateMu so it excludes any
+	//    in-flight admit's draining-check+Add: the Lock waits for every concurrent
+	//    admit RLock to release, after which every subsequent admit observes draining
+	//    and never Adds — so no admit Add can race waitInflight's Wait below. Set
+	//    before anything else so a command racing Shutdown is rejected rather than
+	//    admitted mid-teardown.
+	driver.gateMu.Lock()
 	driver.draining.Store(true)
+	driver.gateMu.Unlock()
 
 	// Apply the WithShutdownTimeout fallback iff ctx carries no deadline (ADR-0133).
 	ctx, cancel := driver.effectiveShutdownCtx(ctx)

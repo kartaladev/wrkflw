@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,6 +29,39 @@ func TestAdmitGate(t *testing.T) {
 	// reserveInternal ignores the draining flag (continuations must proceed).
 	rel := driver.reserveInternal()
 	rel()
+}
+
+// TestAdmitConcurrentWithShutdown exercises many admit() calls racing a Shutdown to
+// guard against the WaitGroup Add/Wait data race: admit's draining-check+inflight.Add
+// must be mutually exclusive with Shutdown's draining-set (via gateMu) so no admit Add
+// can land concurrently with waitInflight's Wait. The race is prevented BY CONSTRUCTION
+// (gateMu mutual exclusion), not merely unobserved — this test cannot deterministically
+// force the interleaving, but it must run clean under -race and never panic with
+// "sync: WaitGroup misuse: Add called concurrently with Wait".
+func TestAdmitConcurrentWithShutdown(t *testing.T) {
+	driver, err := NewProcessDriver()
+	require.NoError(t, err)
+
+	const workers, iterations = 64, 200
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for range workers {
+		go func() {
+			defer wg.Done()
+			for range iterations {
+				if release, ok := driver.admit(); ok {
+					release()
+				}
+			}
+		}()
+	}
+
+	// Race a Shutdown against the admit storm; once it returns, admit must reject.
+	require.NoError(t, driver.Shutdown(context.Background()))
+	wg.Wait()
+
+	_, ok := driver.admit()
+	assert.False(t, ok, "admit must reject after Shutdown has drained")
 }
 
 func TestEffectiveShutdownCtx(t *testing.T) {

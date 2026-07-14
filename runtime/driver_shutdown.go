@@ -21,6 +21,8 @@ var ErrDrainTimeout = errors.New("workflow-runtime: shutdown drain timed out")
 // begun draining, so the caller rejects with ErrDriverShuttingDown. Call release (via
 // defer) exactly once when the unit of work returns.
 func (driver *ProcessDriver) admit() (release func(), ok bool) {
+	driver.gateMu.RLock()
+	defer driver.gateMu.RUnlock()
 	if driver.draining.Load() {
 		return nil, false
 	}
@@ -29,10 +31,17 @@ func (driver *ProcessDriver) admit() (release func(), ok bool) {
 }
 
 // reserveInternal joins an in-flight continuation to the drain WaitGroup WITHOUT the
-// draining check, so a continuation of already-scheduled work (a timer fire) completes even
-// while draining. Safe only because the sole post-draining source of such reservations —
-// in-flight timer fires — is drained by the scheduler close before Shutdown waits the
-// WaitGroup (see Shutdown's ordering invariant).
+// draining check (or gateMu), so a continuation of already-scheduled work (a timer fire)
+// completes even while draining.
+//
+// It needs no gateMu because its Add is already ordered before waitInflight's Wait by the
+// Shutdown sequence: the sole post-draining source of such reservations — in-flight
+// owned-scheduler timer fires — is joined by the scheduler Close (Shutdown step 2) before
+// waitInflight runs (step 3), so those Adds happen-before Wait via the close.
+//
+// Caveat: a consumer-injected scheduler is consumer-owned and is NOT closed by the driver,
+// so the consumer must stop it around Shutdown; the driver only guarantees this ordering
+// for its own owned default scheduler.
 func (driver *ProcessDriver) reserveInternal() (release func()) {
 	driver.inflight.Add(1)
 	return driver.inflight.Done
