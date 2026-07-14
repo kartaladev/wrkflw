@@ -13,8 +13,10 @@ import (
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/flow"
 	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // barrierDef builds a one-service-task definition (start -> service("barrier") -> end)
@@ -141,6 +143,69 @@ func TestExternalEntryPointsRejectedWhenDraining(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, driver.Shutdown(context.Background()))
 			assert.ErrorIs(t, call(driver), runtime.ErrDriverShuttingDown)
+		})
+	}
+}
+
+// timerStartFireDef builds start(timer-start) -> end, so createAtNode seeded at
+// "start" drives straight to completion, creating exactly one instance per fire.
+func timerStartFireDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "timer-start-fire", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start", event.WithStartTimer(schedule.AfterExpr(`"1h"`))),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "end"},
+		},
+	}
+}
+
+func TestTimerStartFire(t *testing.T) {
+	// The timer-start fire callback creates a brand-new instance on each fire — but
+	// only when the driver is admitting work. Once draining, the fire is dropped so
+	// no new instance is created (strict quiescence, D1).
+	type testCase struct {
+		name     string
+		draining bool
+		assert   func(t *testing.T, items []kernel.InstanceSummary)
+	}
+	cases := []testCase{
+		{
+			name:     "fires and creates an instance when not draining",
+			draining: false,
+			assert: func(t *testing.T, items []kernel.InstanceSummary) {
+				assert.Len(t, items, 1, "a fire must create exactly one instance")
+			},
+		},
+		{
+			name:     "dropped when draining",
+			draining: true,
+			assert: func(t *testing.T, items []kernel.InstanceSummary) {
+				assert.Empty(t, items, "timer-start must not create an instance during shutdown")
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store, err := kernel.NewMemInstanceStore()
+			require.NoError(t, err)
+			driver, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
+
+			def := timerStartFireDef()
+			if tc.draining {
+				require.NoError(t, driver.Shutdown(context.Background()))
+			}
+
+			fire := driver.StartTimerFireFuncForTest(def, "start", "start-timer:timer-start-fire:1:start")
+			fire()
+
+			page, err := store.List(context.Background(), kernel.InstanceFilter{})
+			require.NoError(t, err)
+			tc.assert(t, page.Items)
 		})
 	}
 }
