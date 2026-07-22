@@ -49,7 +49,7 @@ decision, and the Architecture section expands the rest:
 | Time source | [`jonboulle/clockwork`](https://github.com/jonboulle/clockwork) | implements the in-repo `clock.Clock` interface (ADR-0003) — **never import clockwork from engine/workflow code**, depend on `clock.Clock`; shared with gocron so a fake clock drives both engine + scheduler in tests; core never reads the wall clock |
 | Authorization | pluggable; **casbin** as the baseline | role, resource-privilege, **and attribute-based** (data/process-variable) evaluation |
 | DI container | [`samber/do` v2](https://github.com/samber/do) | application-layer wiring only — see Dependency Injection below |
-| Tests w/ external resources | [`testcontainers-go`](https://github.com/testcontainers/testcontainers-go) | real Postgres/MinIO/SNS in tests, never mocked |
+| Tests w/ external resources | [`testcontainers-go`](https://github.com/testcontainers/testcontainers-go) | real Postgres/MySQL containers in tests, never mocked; SQLite runs pure-Go (no container) |
 
 ## Repository Layout (single Go module)
 
@@ -137,10 +137,8 @@ golangci-lint run ./...                          # lint (clean before done)
 go generate ./...                                # regenerate mocks (mockgen) etc.
 ```
 
-The repo is pre-`go.mod`: run `go mod init <module-path>` before any of the
-above work (this is the Go-module counterpart to the `git init` step in Git
-Discipline). Tests touching Postgres/MinIO/SNS use testcontainers and need a
-running Docker daemon.
+Tests touching Postgres/MySQL use testcontainers and need a running Docker
+daemon (SQLite tests are pure-Go, no Docker).
 
 ## Dependency Injection
 
@@ -172,13 +170,14 @@ When working, you must always:
 6. **TDD strict** (see "TDD Operational Discipline" below — **read it before each new symbol**): no production code before a failing test. Use `superpowers:test-driven-development` as the workflow and `cc-skills-golang:golang-testing` as the Go baseline; the project's `table-test` and `use-mockgen` skills override its table-test closure style and mock-generation steps. Do not exit red-green-refactor before all tests are green.
 7. Use `superpowers:brainstorming` before implementing anything new — state the problem, present 2–3 options with trade-offs, then write the plan. Persist the resulting spec/design doc under `docs/specs/<slug>.md`.
 8. Create an explicit execution plan with a `verification checklist` for any task spanning 3+ steps. Persist plans (e.g. from `superpowers:writing-plans`) under `docs/plans/<slug>.md`.
-9. Write tests for untested legacy code. Suggest improvements for poor or smelly legacy code per your analysis. Run tests first; benchmarks for multi-option decisions are highly appreciated.
+9. **Adversarial audit of the design bundle (mandatory, ONE checkpoint per delivery).** Once **all** design documents for a delivery are written — the spec (`docs/specs/`), its ADR(s) (`docs/adr/`), **and** the plan (`docs/plans/`) — run **one** adversarial audit over the whole bundle together, **before implementation starts**. Not per-document, not per-stage: one audit per delivery bundle. The same trigger applies when a **new ADR or plan is later written for an existing spec** — audit that updated bundle before acting on it. Dispatch one or more subagents — **use the Opus model for audit agents** — briefed to *attack* the documents, not summarize them. The brief: hunt for holes, unstated assumptions, internal contradictions, cross-document inconsistencies (plan vs spec vs ADR), claims that contradict the actual codebase (**source-verify every factual claim**), missing failure modes / edge cases / migration gaps — and propose a concrete fix for each finding. Adjudicate the findings (do **not** auto-apply them), fold the accepted fixes into the documents, then proceed to implementation. A bundle that has not survived its audit is not an input to implementation.
+10. Write tests for untested legacy code. Suggest improvements for poor or smelly legacy code per your analysis. Run tests first; benchmarks for multi-option decisions are highly appreciated.
 
 ### Golang
 
 1. Strict adherence to Go idioms and best practices.
 2. The `cc-skills-golang:*` skill family covers most Go topics; load the ones the task needs. See the **Required Go skills** section below for the always-on list (and the broader family it references).
-3. Use [testcontainers-go](https://github.com/testcontainers/testcontainers-go) for tests requiring heavy external resources (database, MinIO, SNS). For database tests, prefer the shared `database.RunTestDatabase(t, opts...)` helper once it exists.
+3. Use [testcontainers-go](https://github.com/testcontainers/testcontainers-go) for tests requiring heavy external resources. For database tests, use the shared `internal/dbtest` helpers — `dbtest.RunTestDatabase(t, opts...)` (Postgres, pgx pool), `dbtest.RunTestMySQL(t)` / `dbtest.RunTestMySQLDSN(t)`, `dbtest.RunTestSQLite(t)` (pure-Go, no container). Never spin up ad-hoc containers in individual tests.
 4. Use the project's `table-test`, `use-testcontainers`, and `use-mockgen` skills alongside `cc-skills-golang:golang-testing`. These custom skills override or extend parts of `golang-testing`.
 5. Prefer **black-box tests** (use `<package>_test`).
 6. Write testable examples (https://go.dev/blog/examples) for code directly consumed by library users — the embedded-engine root-package API especially.
@@ -260,6 +259,7 @@ On completion of any change, verify:
    ```
 2. `go test ./...` from the repo root passes — no regressions elsewhere.
 3. `golangci-lint run ./...` is clean. Use the `cc-skills-golang:golang-lint` skill if configuration is needed.
+4. **Before delivery** (merging to `main` or pushing a PR branch): run `/code-review` **and** `/security-review` on the pending change and fix **all** findings — see the **Delivery Gate** under Git Discipline. Review-driven fixes are folded into the feature commit via `--amend`, never stacked as new commits.
 
 ## Common Pitfalls
 
@@ -269,7 +269,7 @@ On completion of any change, verify:
 
 ## Git Discipline
 
-Always commit per logical change. Ask before committing. Use Conventional Commits scoped to the area:
+Use Conventional Commits scoped to the area:
 
 - `feat(<scope>): <description>`     — new functionality
 - `fix(<scope>): <description>`      — bug fix
@@ -277,7 +277,32 @@ Always commit per logical change. Ask before committing. Use Conventional Commit
 - `refactor(<scope>): <description>` — behavior-preserving restructure
 - `docs(<scope>): <description>`     — documentation
 
-This repository is **not yet a git repo** — initialize one (`git init`) before the first commit.
+### Commit granularity — feature bundles, NO micro-commits
+
+- **Do not micro-commit.** One meaningful, deliverable feature = **one commit**. The
+  commit bundles everything that ships the feature: implementation, tests, **and its
+  documents (ADR(s), spec, plan)** — so `git log` reads as a sequence of complete,
+  self-contained feature bundles, and each ADR lands with the code that realizes it.
+- **Fold, don't stack.** Fixes arising from `/code-review` / `/security-review` (or any
+  pre-delivery rework) are folded into the feature commit with `git commit --amend` —
+  never appended as separate `fix:`/fixup commits. This is safe because the feature
+  commit stays local (unpushed, on its feature branch) until the Delivery Gate passes.
+  **Never amend a commit that has already been pushed/delivered** — after delivery,
+  follow-ups are new feature bundles of their own.
+- Updates to an already-committed spec/plan/ADR likewise `--amend` the commit that
+  introduced the document (keep history clean; one bundle per feature).
+
+### Delivery Gate (before merge to `main` or pushing a PR)
+
+A feature is deliverable only when **all** of the following pass, in order:
+
+1. The Verification section above (tests + ≥ 85% coverage, no cross-repo regressions, clean lint).
+2. `/code-review` on the pending change — **fix all findings** (fold via `--amend`).
+3. `/security-review` — **fix all findings** (fold via `--amend`).
+
+Only then merge (`--no-ff`) to `main` / push the PR branch. Findings you adjudicate as
+false-positive or out-of-scope must be stated explicitly with the reason — silence is
+not an adjudication.
 
 ## Required Go skills
 
