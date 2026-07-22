@@ -182,6 +182,7 @@ When working, you must always:
 5. Prefer **black-box tests** (use `<package>_test`).
 6. Write testable examples (https://go.dev/blog/examples) for code directly consumed by library users — the embedded-engine root-package API especially.
 7. **Dependency injection**: see the Dependency Injection section above.
+8. **Hot-path-first test coverage.** When writing a test plan and the tests themselves, deliberately enumerate the hot paths — the code paths production traffic actually exercises (the token-execution step loop, commit/persist transactions, timer arm/fire/rehydrate, event delivery/outbox, retry/CAS loops, gateway routing) — and cover them **all** first, including their failure branches, before touching anything else. The coverage percentage in Verification is a **floor, not the target**: never chase the number by testing trivial accessors or option setters while a hot path (or one of its error branches) stays uncovered.
 
 ## TDD Operational Discipline (READ BEFORE EVERY NEW SYMBOL)
 
@@ -257,6 +258,7 @@ On completion of any change, verify:
    ```bash
    go test -race -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1
    ```
+   The 85% is a floor, not the goal — hot paths and their failure branches must ALL be covered first (Golang rule #8); a package can fail review at 95% if a hot path is untested.
 2. `go test ./...` from the repo root passes — no regressions elsewhere.
 3. `golangci-lint run ./...` is clean. Use the `cc-skills-golang:golang-lint` skill if configuration is needed.
 4. **Before delivery** (merging to `main` or pushing a PR branch): run `/code-review` **and** `/security-review` on the pending change and fix **all** findings — see the **Delivery Gate** under Git Discipline. Review-driven fixes are folded into the feature commit via `--amend`, never stacked as new commits.
