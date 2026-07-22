@@ -88,7 +88,7 @@ func TestPerformRecordsJitterInRetryFireAt(t *testing.T) {
 	// the scheduler captured the fireAt. We only care that the scheduler was called.
 	_ = err
 
-	require.True(t, sched.Scheduled, "expected the scheduler to have been called for the retry timer")
+	require.True(t, sched.Armed, "expected the scheduler to have been called for the retry timer")
 
 	// attempt 0 → backoff = InitialInterval × BackoffCoef^0 = 1s; jitter = 0.5 → 500ms
 	want := T.Add(500 * time.Millisecond)

@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,8 +15,6 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/kartaladev/wrkflw/definition/schedule"
-	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/kartaladev/wrkflw/scheduler"
 )
 
@@ -26,16 +25,102 @@ func TestNewScheduler_SatisfiesPortAndFires(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	// Runtime checks that the façade satisfies the required contracts.
-	var _ kernel.Scheduler = s
+	var _ scheduler.Scheduler = s
 	var _ io.Closer = s
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	_, err = s.Schedule(t.Context(), "t1", schedule.At(fakeClock.Now().Add(3*time.Second)), func() { wg.Done() })
+	_, err = s.Schedule(t.Context(), mustJob(t, "t1", surfaceKind,
+		scheduler.At(fakeClock.Now().Add(3*time.Second)), func() { wg.Done() }))
 	require.NoError(t, err)
 	require.NoError(t, fakeClock.BlockUntilContext(t.Context(), 1))
 	fakeClock.Advance(3 * time.Second)
 	wg.Wait()
+}
+
+// TestNativeSchedulerCalendarTriggers proves that Daily/Weekly/Monthly
+// triggers survive the full façade→internal-gocron conversion path
+// (triggerDef → scheduleClockTimes) and actually fire once armed — not just
+// that Trigger.Next computes the right next instant in isolation (that is
+// already covered by TestTrigger_Next's calendar cases). Following the
+// internal gocron package's own calendar-fire pattern
+// (scheduler/internal/gocron/trigger_test.go): read the job's live NextRun
+// back and advance the fake clock exactly that far, rather than relying on
+// BlockUntilContext, whose fake-clock waiter count is not reliably 1 for
+// gocron's calendar-job internals.
+func TestNativeSchedulerCalendarTriggers(t *testing.T) {
+	t.Parallel()
+
+	// refTime is a Thursday; wantFire is independently computed (not derived
+	// through scheduleClockTimes) so the assertion actually exercises the
+	// hour/minute/second passthrough rather than trivially matching whatever
+	// the conversion produces.
+	//
+	// Timezone: the live scheduler resolves calendar at-times in time.Local,
+	// not UTC — see the timezone note on [scheduler.Daily]'s godoc and
+	// docs/specs/2026-07-24-calendar-trigger-timezone-followup.md. wantFire is
+	// built in time.Local here to reflect actual behavior.
+	refTime := time.Date(2026, time.January, 1, 8, 0, 0, 0, time.Local)
+	wantFire := time.Date(2026, time.January, 1, 9, 0, 0, 0, time.Local)
+
+	type testCase struct {
+		name    string
+		trigger func(at scheduler.ClockTime) scheduler.Trigger
+	}
+
+	cases := []testCase{
+		{
+			name: "Daily",
+			trigger: func(at scheduler.ClockTime) scheduler.Trigger {
+				return scheduler.Daily(1, at)
+			},
+		},
+		{
+			name: "Weekly",
+			trigger: func(at scheduler.ClockTime) scheduler.Trigger {
+				return scheduler.Weekly(1, []time.Weekday{refTime.Weekday()}, at)
+			},
+		},
+		{
+			name: "Monthly",
+			trigger: func(at scheduler.ClockTime) scheduler.Trigger {
+				return scheduler.Monthly(1, []int{refTime.Day()}, at)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fakeClock := clockwork.NewFakeClockAt(refTime)
+			s, err := scheduler.NewScheduler(scheduler.WithClock(fakeClock))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = s.Close() })
+
+			id := "calendar-" + tc.name
+			at := scheduler.ClockTime{
+				Hour:   uint(wantFire.Hour()),
+				Minute: uint(wantFire.Minute()),
+				Second: uint(wantFire.Second()),
+			}
+
+			var fired atomic.Bool
+			_, err = s.Schedule(t.Context(), mustJob(t, id, surfaceKind,
+				tc.trigger(at), func() { fired.Store(true) }))
+			require.NoError(t, err)
+
+			sj, err := s.Scheduled(t.Context(), id)
+			require.NoError(t, err)
+			require.False(t, sj.NextRun().IsZero())
+			require.Truef(t, sj.NextRun().Equal(wantFire),
+				"NextRun = %v, want %v (scheduleClockTimes must pass the hour/minute/second through unchanged)",
+				sj.NextRun(), wantFire)
+
+			fakeClock.Advance(wantFire.Sub(fakeClock.Now()) + time.Millisecond)
+			require.Eventually(t, fired.Load, time.Second, 5*time.Millisecond)
+		})
+	}
 }
 
 func TestScheduler_Cancel_NoOp(t *testing.T) {
@@ -45,13 +130,14 @@ func TestScheduler_Cancel_NoOp(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	// Cancel on an unknown ID must not panic or error.
-	s.Cancel(t.Context(), "nonexistent")
+	require.NoError(t, s.Cancel(t.Context(), "nonexistent"))
 
 	// Schedule then cancel — callback must NOT fire.
 	fired := false
-	_, err = s.Schedule(t.Context(), "t2", schedule.At(fakeClock.Now().Add(1*time.Second)), func() { fired = true })
+	_, err = s.Schedule(t.Context(), mustJob(t, "t2", surfaceKind,
+		scheduler.At(fakeClock.Now().Add(1*time.Second)), func() { fired = true }))
 	require.NoError(t, err)
-	s.Cancel(t.Context(), "t2")
+	require.NoError(t, s.Cancel(t.Context(), "t2"))
 
 	// Advance past the would-be fire time; nothing should fire.
 	// Drain any remaining waiters on the fake clock.
@@ -81,7 +167,8 @@ func TestNewScheduler_WithLogger(t *testing.T) {
 				// Verify scheduler still fires correctly with injected logger.
 				var wg sync.WaitGroup
 				wg.Add(1)
-				_, err = s.Schedule(t.Context(), "wl-t1", schedule.At(clk.Now().Add(time.Second)), func() { wg.Done() })
+				_, err = s.Schedule(t.Context(), mustJob(t, "wl-t1", surfaceKind,
+					scheduler.At(clk.Now().Add(time.Second)), func() { wg.Done() }))
 				require.NoError(t, err)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 				clk.Advance(time.Second)
@@ -193,10 +280,10 @@ func TestScheduler_CloseWithContext(t *testing.T) {
 		enter := make(chan struct{})
 		release := make(chan struct{})
 		var once sync.Once
-		_, err = s.Schedule(t.Context(), "blocker", schedule.At(time.Now()), func() {
+		_, err = s.Schedule(t.Context(), mustJob(t, "blocker", surfaceKind, scheduler.At(time.Now()), func() {
 			once.Do(func() { close(enter) })
 			<-release
-		})
+		}))
 		require.NoError(t, err)
 		select {
 		case <-enter:

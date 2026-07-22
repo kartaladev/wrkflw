@@ -12,13 +12,14 @@ import (
 	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database/transaction"
 	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // TimerStore is the vendor-neutral, dialect-parametrised [kernel.TimerStore].
-// It reads armed timers from wrkflw_timers — written transactionally by [Store]
-// via AppliedStep.TimerArms and TimerCancels (ADR-0027). The read side is
+// It reads armed timers from wrkflw_timers — written transactionally via the
+// standalone [kernel.TimerWriter] capability (ADR-0134). The read side is
 // intentionally separate so the runtime scheduler can be constructed with just
 // the connection and dialect value, without carrying the full [Store].
 //
@@ -36,10 +37,11 @@ type TimerStore struct {
 	dialect dialect.Dialect
 }
 
-// Compile-time checks that *TimerStore satisfies both runtime ports.
+// Compile-time checks that *TimerStore satisfies all three runtime ports.
 var (
 	_ kernel.TimerStore       = (*TimerStore)(nil)
 	_ kernel.TimerStatsReader = (*TimerStore)(nil)
+	_ kernel.TimerWriter      = (*TimerStore)(nil)
 )
 
 // NewTimerStore constructs a TimerStore over conn using dialect d. conn must be
@@ -97,6 +99,111 @@ func (s *TimerStore) ListArmed(ctx context.Context) ([]kernel.ArmedTimer, error)
 		return nil, fmt.Errorf("workflow-store: iterate armed timers: %w", err)
 	}
 	return out, nil
+}
+
+// UpsertJob implements [kernel.TimerWriter]. It writes (or updates) spec's
+// wrkflw_timers row via the shared [upsertTimer] SQL, joining the ambient
+// ctx-transaction if one is present ([transaction.JoinOrBegin], ADR-0134) so
+// the runtime JobStore can persist atomically with the state commit.
+//
+// NewTimerStore takes its own caller-supplied conn — nothing shares it
+// automatically with a Store constructed separately. Correctness does NOT
+// depend on same-conn: JoinOrBegin joins the ambient handle stashed in ctx
+// regardless of the conn argument, and only begins a fresh transaction over
+// s.conn when ctx carries no ambient handle. The wiring requirement this
+// implies is same-DATABASE (the join must resolve to the same physical
+// database the Store commits into), not same-connection/pool identity.
+func (s *TimerStore) UpsertJob(ctx context.Context, spec kernel.JobSpec) error {
+	q, err := transaction.JoinOrBegin(ctx, s.conn)
+	if err != nil {
+		return fmt.Errorf("workflow-store: upsert job %q/%q: begin: %w", spec.InstanceID, spec.TimerID, err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = q.Rollback(ctx)
+		}
+	}()
+
+	if err := upsertTimer(ctx, q, s.dialect, jobSpecToArmedTimer(spec)); err != nil {
+		return err
+	}
+
+	if err := q.Commit(ctx); err != nil {
+		return fmt.Errorf("workflow-store: upsert job %q/%q: commit: %w", spec.InstanceID, spec.TimerID, err)
+	}
+	committed = true
+	return nil
+}
+
+// DeleteJob implements [kernel.TimerWriter]. It removes the wrkflw_timers row
+// for (instanceID, timerID) via the shared [deleteTimer] SQL, joining the
+// ambient ctx-transaction on the same terms as [TimerStore.UpsertJob].
+func (s *TimerStore) DeleteJob(ctx context.Context, instanceID, timerID string) error {
+	q, err := transaction.JoinOrBegin(ctx, s.conn)
+	if err != nil {
+		return fmt.Errorf("workflow-store: delete job %q/%q: begin: %w", instanceID, timerID, err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = q.Rollback(ctx)
+		}
+	}()
+
+	if err := deleteTimer(ctx, q, s.dialect, instanceID, timerID); err != nil {
+		return err
+	}
+
+	if err := q.Commit(ctx); err != nil {
+		return fmt.Errorf("workflow-store: delete job %q/%q: commit: %w", instanceID, timerID, err)
+	}
+	committed = true
+	return nil
+}
+
+// DeleteJobByTimerID implements [kernel.TimerWriter]. It removes the
+// wrkflw_timers row for timerID alone (no instanceID scope) via the shared
+// [deleteTimerByTimerID] SQL, joining the ambient ctx-transaction on the same
+// terms as [TimerStore.UpsertJob]. Engine timer ids are globally unique, so
+// this is unambiguous; the runtime JobStore's Delete(id) (Task 10) uses it
+// when only the timer id is on hand.
+func (s *TimerStore) DeleteJobByTimerID(ctx context.Context, timerID string) error {
+	q, err := transaction.JoinOrBegin(ctx, s.conn)
+	if err != nil {
+		return fmt.Errorf("workflow-store: delete job %q: begin: %w", timerID, err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = q.Rollback(ctx)
+		}
+	}()
+
+	if err := deleteTimerByTimerID(ctx, q, s.dialect, timerID); err != nil {
+		return err
+	}
+
+	if err := q.Commit(ctx); err != nil {
+		return fmt.Errorf("workflow-store: delete job %q: commit: %w", timerID, err)
+	}
+	committed = true
+	return nil
+}
+
+// jobSpecToArmedTimer projects a [kernel.JobSpec] onto the [kernel.ArmedTimer]
+// shape [upsertTimer] persists — the two are field-for-field equivalent by
+// design (ADR-0134), so this is a straight copy.
+func jobSpecToArmedTimer(spec kernel.JobSpec) kernel.ArmedTimer {
+	return kernel.ArmedTimer{
+		InstanceID: spec.InstanceID,
+		DefID:      spec.DefID,
+		DefVersion: spec.DefVersion,
+		TimerID:    spec.TimerID,
+		Trigger:    spec.Trigger,
+		NextRun:    spec.NextRun,
+		Kind:       spec.Kind,
+	}
 }
 
 // Stats implements [kernel.TimerStatsReader]. It returns the total count of

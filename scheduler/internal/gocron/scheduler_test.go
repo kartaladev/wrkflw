@@ -14,7 +14,6 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/kartaladev/wrkflw/definition/schedule"
 	sched "github.com/kartaladev/wrkflw/scheduler/internal/gocron"
 )
 
@@ -60,7 +59,7 @@ func TestGocronScheduler_WithLogger(t *testing.T) {
 				// Verify normal operation still works with the injected logger.
 				var wg sync.WaitGroup
 				wg.Add(1)
-				_, err2 := s.Schedule(t.Context(), "log-t1", schedule.At(clk.Now().Add(time.Second)), func() { wg.Done() })
+				_, err2 := s.ScheduleJob(t.Context(), "log-t1", sched.At(clk.Now().Add(time.Second)), func(context.Context) error { wg.Done(); return nil }, false)
 				require.NoError(t, err2)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 				clk.Advance(time.Second)
@@ -104,7 +103,7 @@ func TestGocronScheduler_FiresAtTime(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	_, err = s.Schedule(t.Context(), "t1", schedule.At(fakeClock.Now().Add(5*time.Second)), func() { wg.Done() })
+	_, err = s.ScheduleJob(t.Context(), "t1", sched.At(fakeClock.Now().Add(5*time.Second)), func(context.Context) error { wg.Done(); return nil }, false)
 	require.NoError(t, err)
 
 	// MANDATORY barrier: wait until gocron armed its timer (1 waiter) before
@@ -121,9 +120,9 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 	}
 
 	// counter returns an atomically-incrementing fire callback and a reader.
-	counter := func() (func(), func() int64) {
+	counter := func() (func(context.Context) error, func() int64) {
 		var n atomic.Int64
-		return func() { n.Add(1) }, func() int64 { return n.Load() }
+		return func(context.Context) error { n.Add(1); return nil }, func() int64 { return n.Load() }
 	}
 
 	cases := []tc{
@@ -131,7 +130,7 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 			name: "cancel prevents fire",
 			assert: func(t *testing.T, s *sched.GocronScheduler, clk *clockwork.FakeClock) {
 				fire, count := counter()
-				_, err := s.Schedule(t.Context(), "c1", schedule.At(clk.Now().Add(5*time.Second)), fire)
+				_, err := s.ScheduleJob(t.Context(), "c1", sched.At(clk.Now().Add(5*time.Second)), fire, false)
 				require.NoError(t, err)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 				s.Cancel(t.Context(), "c1")
@@ -149,12 +148,12 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 				var wg sync.WaitGroup
 				wg.Add(1)
 				var n atomic.Int64
-				fire := func() { n.Add(1); wg.Done() }
+				fire := func(context.Context) error { n.Add(1); wg.Done(); return nil }
 
-				_, err := s.Schedule(t.Context(), "r1", schedule.At(clk.Now().Add(5*time.Second)), func() { t.Error("stale timer fired") })
+				_, err := s.ScheduleJob(t.Context(), "r1", sched.At(clk.Now().Add(5*time.Second)), func(context.Context) error { t.Error("stale timer fired"); return nil }, false)
 				require.NoError(t, err)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
-				_, err = s.Schedule(t.Context(), "r1", schedule.At(clk.Now().Add(10*time.Second)), fire) // replace
+				_, err = s.ScheduleJob(t.Context(), "r1", sched.At(clk.Now().Add(10*time.Second)), fire, false) // replace
 				require.NoError(t, err)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 
@@ -182,12 +181,12 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 				wgNew.Add(1)
 
 				// Arm the first (old) job at T+5; it will be replaced before firing.
-				_, err := s.Schedule(t.Context(), "uuid1", schedule.At(clk.Now().Add(5*time.Second)), func() { t.Error("old job must not fire") })
+				_, err := s.ScheduleJob(t.Context(), "uuid1", sched.At(clk.Now().Add(5*time.Second)), func(context.Context) error { t.Error("old job must not fire"); return nil }, false)
 				require.NoError(t, err)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 
 				// Replace with a new job at T+10.
-				_, err = s.Schedule(t.Context(), "uuid1", schedule.At(clk.Now().Add(10*time.Second)), func() { wgNew.Done() })
+				_, err = s.ScheduleJob(t.Context(), "uuid1", sched.At(clk.Now().Add(10*time.Second)), func(context.Context) error { wgNew.Done(); return nil }, false)
 				require.NoError(t, err)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 
@@ -213,7 +212,7 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 				var wg sync.WaitGroup
 				wg.Add(1)
 				var n atomic.Int64
-				_, err := s.Schedule(t.Context(), "o1", schedule.At(clk.Now().Add(time.Second)), func() { n.Add(1); wg.Done() })
+				_, err := s.ScheduleJob(t.Context(), "o1", sched.At(clk.Now().Add(time.Second)), func(context.Context) error { n.Add(1); wg.Done(); return nil }, false)
 				require.NoError(t, err)
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 				clk.Advance(time.Second)
@@ -237,9 +236,12 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 
 // TestGocronScheduler_WithTracerAndMeterProvider verifies that
 // WithTracerProvider and WithMeterProvider are accepted by NewGocronScheduler
-// and that the scheduler constructs and operates correctly with those options.
-// The scheduler emits no spans or metrics in this track (parity-only); the test
-// confirms no panics and continued correct operation.
+// and that the scheduler constructs and operates correctly with those
+// options. The scheduler emits no spans in this track (parity-only); it does
+// emit job-run metrics through the injected MeterProvider (ADR-0134
+// production item ①) — see TestGocronScheduler_MonitorStatus in
+// monitor_test.go for that coverage. This test only confirms no panics and
+// continued correct operation with the options wired in.
 func TestGocronScheduler_WithTracerAndMeterProvider(t *testing.T) {
 	type tc struct {
 		name   string
@@ -310,11 +312,12 @@ func TestSchedulePastFireAtFiresImmediately(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	fired := make(chan struct{}, 1)
-	// fireAt is 1 second in the past — schedule.At maps to OneTimeJobStartImmediately.
+	// fireAt is 1 second in the past — sched.At maps to OneTimeJobStartImmediately.
 	pastFireAt := startTime.Add(-1 * time.Second)
-	_, err = s.Schedule(t.Context(), "past-timer", schedule.At(pastFireAt), func() {
+	_, err = s.ScheduleJob(t.Context(), "past-timer", sched.At(pastFireAt), func(context.Context) error {
 		fired <- struct{}{}
-	})
+		return nil
+	}, false)
 	require.NoError(t, err)
 
 	// OneTimeJobStartImmediately fires without any clock advance needed.
@@ -340,10 +343,11 @@ func TestGocronScheduler_CloseWithContext(t *testing.T) {
 		enter := make(chan struct{})
 		release := make(chan struct{})
 		var once sync.Once
-		_, err = s.Schedule(t.Context(), "blocker", schedule.At(time.Now()), func() {
+		_, err = s.ScheduleJob(t.Context(), "blocker", sched.At(time.Now()), func(context.Context) error {
 			once.Do(func() { close(enter) })
 			<-release
-		})
+			return nil
+		}, false)
 		require.NoError(t, err)
 		select {
 		case <-enter:

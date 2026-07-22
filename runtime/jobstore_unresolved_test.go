@@ -61,11 +61,11 @@ func TestLoadScheduledUnresolvedDefinition_ReturnsSentinel(t *testing.T) {
 	)
 
 	js := runtime.NewJobStore(driver2)
-	jobs, err := js.LoadScheduled(t.Context())
+	jobs, err := js.Load(t.Context())
 
 	// Must return the sentinel error (not nil, not some generic DB error).
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, kernel.ErrUnresolvedTimerDefinitions),
+	assert.True(t, errors.Is(err, scheduler.ErrUnresolvedTimerDefinitions),
 		"expected ErrUnresolvedTimerDefinitions, got: %v", err)
 
 	// No resolvable jobs.
@@ -118,11 +118,11 @@ func TestLoadScheduledPartialUnresolved_ResolvableJobsReturned(t *testing.T) {
 	)
 
 	js := runtime.NewJobStore(driver2)
-	jobs, err := js.LoadScheduled(t.Context())
+	jobs, err := js.Load(t.Context())
 
 	// Sentinel error must be returned.
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, kernel.ErrUnresolvedTimerDefinitions),
+	assert.True(t, errors.Is(err, scheduler.ErrUnresolvedTimerDefinitions),
 		"expected ErrUnresolvedTimerDefinitions, got: %v", err)
 
 	// The two resolvable timers must still be returned.
@@ -162,7 +162,7 @@ func TestSchedulerStart_UnresolvedDefinitions_NonFatal(t *testing.T) {
 	var driver2 *runtime.ProcessDriver
 	sched2, err := scheduler.NewScheduler(
 		scheduler.WithClock(fc),
-		scheduler.WithJobStore(func() kernel.JobStore { return runtime.NewJobStore(driver2) }),
+		scheduler.WithJobStore("wrkflw.timer", func() scheduler.JobStore { return runtime.NewJobStore(driver2) }),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sched2.Close() })

@@ -13,29 +13,32 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
-// seedTimerInstance creates an instance via Store.Create, arming the given
-// timers atomically with it. It satisfies the FK constraint that
+// seedTimerInstance creates a bare instance via [seedTimerWriterInstance],
+// then arms each of timers through ts's TimerWriter capability (UpsertJob) —
+// the durable-jobs write path (ADR-0134). It satisfies the FK constraint that
 // wrkflw_timers.instance_id must reference an existing wrkflw_instances row.
 func seedTimerInstance(
 	t *testing.T,
 	s *store.Store,
+	ts *store.TimerStore,
 	id string,
 	base time.Time,
 	timers []kernel.ArmedTimer,
 ) {
 	t.Helper()
-	_, err := s.Create(t.Context(), kernel.AppliedStep{
-		State: engine.InstanceState{
-			InstanceID: id,
-			DefID:      "d",
-			DefVersion: 1,
-			Status:     engine.StatusRunning,
-			StartedAt:  base,
-		},
-		Trigger:   engine.NewStartInstance(base, nil),
-		TimerArms: timers,
-	})
-	require.NoError(t, err, "seedTimerInstance %q", id)
+	seedTimerWriterInstance(t, s, id, base)
+	for _, tm := range timers {
+		err := ts.UpsertJob(t.Context(), kernel.JobSpec{
+			TimerID:    tm.TimerID,
+			InstanceID: tm.InstanceID,
+			DefID:      tm.DefID,
+			DefVersion: tm.DefVersion,
+			Trigger:    tm.Trigger,
+			NextRun:    tm.NextRun,
+			Kind:       tm.Kind,
+		})
+		require.NoError(t, err, "seedTimerInstance %q: arm %q", id, tm.TimerID)
+	}
 }
 
 // TestTimerStoreListArmed verifies that NewTimerStore.ListArmed returns all
@@ -51,7 +54,7 @@ func TestTimerStoreListArmed(t *testing.T) {
 
 		base := time.Date(2026, 6, 22, 14, 0, 0, 0, time.UTC)
 
-		seedTimerInstance(t, s, "ts-ord-1", base, []kernel.ArmedTimer{
+		seedTimerInstance(t, s, ts, "ts-ord-1", base, []kernel.ArmedTimer{
 			{
 				InstanceID: "ts-ord-1",
 				DefID:      "proc-def",
@@ -120,13 +123,13 @@ func TestTimerStoreListArmedMultiInstance(t *testing.T) {
 		base := time.Date(2026, 6, 22, 15, 0, 0, 0, time.UTC)
 
 		// Two instances each with one timer; inst-a fires later than inst-b.
-		seedTimerInstance(t, s, "inst-a", base, []kernel.ArmedTimer{
+		seedTimerInstance(t, s, ts, "inst-a", base, []kernel.ArmedTimer{
 			{
 				InstanceID: "inst-a", DefID: "d", DefVersion: 1,
 				TimerID: "ta", NextRun: base.Add(2 * time.Hour), Kind: engine.TimerIntermediate,
 			},
 		})
-		seedTimerInstance(t, s, "inst-b", base, []kernel.ArmedTimer{
+		seedTimerInstance(t, s, ts, "inst-b", base, []kernel.ArmedTimer{
 			{
 				InstanceID: "inst-b", DefID: "d", DefVersion: 1,
 				TimerID: "tb", NextRun: base.Add(time.Hour), Kind: engine.TimerIntermediate,
@@ -163,7 +166,7 @@ func TestTimerStoreStats(t *testing.T) {
 		sooner := base.Add(time.Hour)
 		later := base.Add(2 * time.Hour)
 
-		seedTimerInstance(t, s, "stats-inst", base, []kernel.ArmedTimer{
+		seedTimerInstance(t, s, ts, "stats-inst", base, []kernel.ArmedTimer{
 			{
 				InstanceID: "stats-inst", DefID: "d", DefVersion: 1,
 				TimerID: "t-later", NextRun: later, Kind: engine.TimerIntermediate,
@@ -266,7 +269,7 @@ func TestTimerStoreDescriptorRoundTrip(t *testing.T) {
 				Kind:       engine.TimerIntermediate,
 			})
 		}
-		seedTimerInstance(t, s, "desc-inst", base, arms)
+		seedTimerInstance(t, s, ts, "desc-inst", base, arms)
 
 		armed, err := ts.ListArmed(t.Context())
 		require.NoError(t, err, "%s: ListArmed", b.name)
@@ -302,7 +305,7 @@ func TestTimerStoreFireAtSubSecond(t *testing.T) {
 		// store at most 6 decimal places; nanosecond digits are truncated/rounded.
 		at := time.Date(2026, 6, 22, 12, 0, 0, 123456000, time.UTC) // 123456 µs
 
-		seedTimerInstance(t, s, "sub-sec-inst", at, []kernel.ArmedTimer{
+		seedTimerInstance(t, s, ts, "sub-sec-inst", at, []kernel.ArmedTimer{
 			{
 				InstanceID: "sub-sec-inst", DefID: "d", DefVersion: 1,
 				TimerID: "t-usec", NextRun: at, Kind: engine.TimerIntermediate,

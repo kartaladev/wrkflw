@@ -18,9 +18,50 @@ import (
 var (
 	_ kernel.InstanceStore = (*CachingInstanceStore)(nil)
 	_ kernel.JournalReader = (*CachingInstanceStore)(nil)
+	_ kernel.TxRunner      = (*CachingInstanceStore)(nil)
 )
 
 const defaultInstanceCacheTTL = 5 * time.Minute
+
+// txTouched collects the instance ids write-through cached (via put) while a
+// RunInTx's fn is running, so a rollback can evict exactly those entries.
+// Safe for concurrent use: fn may call wrapper methods from multiple
+// goroutines against the same txCtx.
+type txTouched struct {
+	mu  sync.Mutex
+	ids map[string]struct{}
+}
+
+func newTxTouched() *txTouched { return &txTouched{ids: make(map[string]struct{})} }
+
+func (tt *txTouched) mark(id string) {
+	tt.mu.Lock()
+	tt.ids[id] = struct{}{}
+	tt.mu.Unlock()
+}
+
+func (tt *txTouched) snapshot() []string {
+	tt.mu.Lock()
+	defer tt.mu.Unlock()
+	ids := make([]string, 0, len(tt.ids))
+	for id := range tt.ids {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// txTouchedKey is the context key under which RunInTx stashes a *txTouched for
+// the duration of one fn call. Unexported so only this file can populate it.
+type txTouchedKey struct{}
+
+func withTxTouched(ctx context.Context, tt *txTouched) context.Context {
+	return context.WithValue(ctx, txTouchedKey{}, tt)
+}
+
+func txTouchedFrom(ctx context.Context) *txTouched {
+	tt, _ := ctx.Value(txTouchedKey{}).(*txTouched)
+	return tt
+}
 
 // instanceEntry is the cached unit: the snapshot plus its optimistic version.
 type instanceEntry struct {
@@ -179,8 +220,17 @@ func (c *CachingInstanceStore) lockFor(id string) func() {
 // put write-through caches state under id at the given version. The codec owns
 // isolation (it deep-clones on the value path and marshals on the byte path), so
 // callers may pass their own live state without a defensive copy.
+//
+// When ctx carries a *txTouched (i.e. this write happened during a RunInTx's
+// fn), the id is recorded so a subsequent rollback can evict it — a put made
+// while a joined write's own Commit is a no-op (the outer RunInTx owns the
+// real commit/rollback decision) would otherwise poison the cache with a value
+// the database never durably committed (ADR-0134 Task 8 audit BLOCKER).
 func (c *CachingInstanceStore) put(ctx context.Context, id string, state engine.InstanceState, version kernel.Version) {
 	_ = c.codec.Set(ctx, id, instanceEntry{State: state, Version: version}, c.ttl)
+	if tt := txTouchedFrom(ctx); tt != nil {
+		tt.mark(id)
+	}
 }
 
 // evict removes the cached entry for id.
@@ -274,4 +324,50 @@ func (c *CachingInstanceStore) Entries(ctx context.Context, id string) ([]engine
 		return nil, errors.New("workflow-persistence: backing store is not a JournalReader")
 	}
 	return jr.Entries(ctx, id)
+}
+
+// RunInTx forwards the [kernel.TxRunner] capability to the backing store when
+// it has one (ADR-0134). Without it, RunInTx degrades to a bare fn(ctx) call —
+// the same sequencing-only contract [kernel.MemInstanceStore.RunInTx] offers,
+// so a consumer wiring the wrapper over a non-transactional backing still gets
+// a compiling, non-panicking call.
+//
+// With the capability: every Create/Commit the wrapper serves during fn
+// write-through caches optimistically, before the outer unit actually commits
+// (a joined write's own Commit is a no-op — see internal/database/transaction
+// — the owner controls the real decision). If fn (or the transaction) later
+// fails, those optimistic cache entries are exactly a poisoned view of state
+// the database never durably persisted. RunInTx tracks every id [put] touches
+// during fn via a context-scoped [txTouched] and evicts each one unless the
+// inner call returned nil — never leaving a cached in-tx value behind. On
+// success no eviction happens; the already-cached values are correct as-is.
+//
+// The eviction runs in a defer gated on a success flag, so it fires on the
+// error return path AND when fn panics: the inner store's own defer rolls the
+// database back either way, but only this defer guarantees the wrapper's
+// cache doesn't keep serving the poisoned in-tx value to a caller that
+// recovers upstream. The defer never recovers — a panic in fn propagates out
+// of RunInTx unchanged, after eviction has already run.
+func (c *CachingInstanceStore) RunInTx(ctx context.Context, fn func(context.Context) error) error {
+	runner, ok := c.backing.(kernel.TxRunner)
+	if !ok {
+		return fn(ctx) // inner store without the capability: degraded, same as direct use
+	}
+
+	tt := newTxTouched()
+	succeeded := false
+	defer func() {
+		if succeeded {
+			return
+		}
+		for _, id := range tt.snapshot() {
+			c.evict(ctx, id)
+		}
+	}()
+
+	err := runner.RunInTx(ctx, func(txCtx context.Context) error {
+		return fn(withTxTouched(txCtx, tt))
+	})
+	succeeded = err == nil
+	return err
 }

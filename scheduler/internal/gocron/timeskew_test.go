@@ -1,6 +1,7 @@
 package gocron_test
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 	"testing"
@@ -10,7 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kartaladev/wrkflw/definition/schedule"
 	sched "github.com/kartaladev/wrkflw/scheduler/internal/gocron"
 )
 
@@ -126,11 +126,12 @@ func TestGocronScheduler_TimeSkew(t *testing.T) {
 
 			var mu sync.Mutex
 			fired := false
-			_, err = s.Schedule(t.Context(), "skew-timer", schedule.At(tc.fireAt()), func() {
+			_, err = s.ScheduleJob(t.Context(), "skew-timer", sched.At(tc.fireAt()), func(context.Context) error {
 				mu.Lock()
 				fired = true
 				mu.Unlock()
-			})
+				return nil
+			}, false)
 			require.NoError(t, err)
 
 			// Past-due timers use OneTimeJobStartImmediately — no clock advance needed.
@@ -167,11 +168,12 @@ func TestGocronScheduler_TimeSkew_DefaultSilentWithinFiveMinutes(t *testing.T) {
 	var mu sync.Mutex
 	fired := false
 	// fireAt is 4 minutes in the past — within the 5-minute default.
-	_, err = s.Schedule(t.Context(), "default-skew-timer", schedule.At(startTime.Add(-4*time.Minute)), func() {
+	_, err = s.ScheduleJob(t.Context(), "default-skew-timer", sched.At(startTime.Add(-4*time.Minute)), func(context.Context) error {
 		mu.Lock()
 		fired = true
 		mu.Unlock()
-	})
+		return nil
+	}, false)
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {

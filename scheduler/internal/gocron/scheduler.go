@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -17,7 +18,6 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/scheduler/internal/obs"
 )
 
@@ -28,7 +28,8 @@ import (
 // (never-drop invariant). Override with [WithTimeSkew].
 const defaultTimeSkew = 5 * time.Minute
 
-// GocronScheduler is a production kernel.Scheduler backed by gocron v2. It
+// GocronScheduler is the production scheduling engine backed by gocron v2,
+// consumed by the parent scheduler façade through ScheduleJob/RemoveJob. It
 // shares the engine's clockwork time source so one fake-clock advance drives
 // both engine timestamps and timer firing (ADR-0003, ADR-0009).
 type GocronScheduler struct {
@@ -67,7 +68,7 @@ type GocronScheduler struct {
 // and an Elector are configured. They are mutually-exclusive distributed modes
 // (load-balanced per-timer exclusion vs. single-leader); pick one.
 var ErrLockerElectorConflict = errors.New(
-	"workflow-scheduling: a distributed locker and elector are mutually exclusive — set only one")
+	"workflow-scheduler: a distributed locker and elector are mutually exclusive — set only one")
 
 // Option configures a [GocronScheduler].
 type Option func(*GocronScheduler)
@@ -89,9 +90,12 @@ func WithTracerProvider(tp trace.TracerProvider) Option {
 	}
 }
 
-// WithMeterProvider sets the OTel MeterProvider for the scheduler.
-// Default: the OTel global provider. The scheduler emits no metrics in this
-// track (API parity only — consistent with the relay and HTTP transport).
+// WithMeterProvider sets the OTel MeterProvider for the scheduler. Default:
+// the OTel global provider. The scheduler emits the
+// wrkflw_scheduler_job_runs_total counter and
+// wrkflw_scheduler_job_duration_seconds histogram through it, driven by
+// gocron's native MonitorStatus hook (ADR-0134 production item ① — see
+// monitor.go).
 func WithMeterProvider(mp metric.MeterProvider) Option {
 	return func(s *GocronScheduler) {
 		s.mpOpt = obs.WithMeterProvider(mp)
@@ -189,7 +193,44 @@ func NewGocronScheduler(opts ...Option) (*GocronScheduler, error) {
 		return nil, ErrLockerElectorConflict
 	}
 
-	gocronOpts := []gocron.SchedulerOption{gocron.WithClock(s.clk)}
+	// Build the Telemetry value before constructing the gocron engine: the
+	// MonitorStatus and EventListeners options wired in below (ADR-0134
+	// production item ①) both need the resolved logger/meter, so this must
+	// happen ahead of gocron.NewScheduler rather than after gs.Start() as
+	// before.
+	s.tel = obs.New(
+		"github.com/kartaladev/wrkflw/scheduler",
+		filterNilOpts(s.logOpt, s.tpOpt, s.mpOpt)...,
+	)
+
+	gocronOpts := []gocron.SchedulerOption{
+		gocron.WithClock(s.clk),
+		gocron.WithMonitorStatus(newMonitorStatus(s.tel)),
+		gocron.WithGlobalJobOptions(gocron.WithEventListeners(
+			// AfterJobRunsWithError also fires for a recovered panic: gocron
+			// wraps the panic as an error (wrapping gocron.ErrPanicRecovered)
+			// and still routes it through this listener in addition to
+			// AfterJobRunsWithPanic below.
+			gocron.AfterJobRunsWithError(func(jobID uuid.UUID, jobName string, err error) {
+				s.tel.Logger.Error("gocron: job run failed",
+					"job_id", jobID, "job_name", jobName, "error", err)
+			}),
+			// AfterJobRunsWithPanic is gocron's signal that a job's task
+			// panicked; registering it is also what makes gocron install
+			// panic recovery around the task in the first place (see
+			// executor.runJob) — without any listener here, a panicking task
+			// crashes the executor goroutine instead of being recovered.
+			gocron.AfterJobRunsWithPanic(func(jobID uuid.UUID, jobName string, recoverData any) {
+				s.tel.Logger.Error("gocron: job run panicked",
+					"job_id", jobID, "job_name", jobName,
+					"panic", recoverData, "stack", string(debug.Stack()))
+			}),
+			gocron.AfterLockError(func(jobID uuid.UUID, jobName string, err error) {
+				s.tel.Logger.Warn("gocron: distributed lock acquisition failed",
+					"job_id", jobID, "job_name", jobName, "error", err)
+			}),
+		)),
+	}
 	if s.locker != nil {
 		gocronOpts = append(gocronOpts, gocron.WithDistributedLocker(s.locker))
 	}
@@ -203,77 +244,7 @@ func NewGocronScheduler(opts ...Option) (*GocronScheduler, error) {
 	gs.Start() // non-blocking
 	s.sched = gs
 
-	// Build the Telemetry value after all options have been applied so that any
-	// subset of logger/tracer/meter providers can be set independently.
-	s.tel = obs.New(
-		"github.com/kartaladev/wrkflw/scheduler",
-		filterNilOpts(s.logOpt, s.tpOpt, s.mpOpt)...,
-	)
 	return s, nil
-}
-
-// Schedule registers a timer according to trig that calls fire each time it
-// fires. If a timer with the same timerID already exists it is replaced.
-// Returns the authoritative next scheduled run time from gocron (the first
-// fire for recurring triggers). A zero time is returned only on error.
-//
-// ctx is reserved for future cancellation propagation and is currently unused.
-func (s *GocronScheduler) Schedule(_ context.Context, timerID string, trig schedule.TriggerSpec, fire func()) (time.Time, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if existing, ok := s.jobs[timerID]; ok {
-		_ = s.sched.RemoveJob(existing) // ignore ErrJobNotFound: already fired/pruned
-		delete(s.jobs, timerID)
-	}
-
-	now := s.clk.Now()
-	def, oneShot, err := jobDefinition(trig, now)
-	if err != nil {
-		return time.Time{}, err
-	}
-
-	// Past-due skew check: only applies to one-shot triggers with an absolute
-	// fire time that has already elapsed (the branch that resolves to
-	// OneTimeJobStartImmediately). Timers are NEVER dropped — within tolerance
-	// they fire silently; beyond tolerance they still fire and a WARN is logged.
-	if oneShot {
-		if at, ok := trig.AbsTime(); ok && !at.After(now) {
-			lateness := now.Sub(at)
-			if lateness > s.timeSkew {
-				s.tel.Logger.Warn("workflow-scheduler: past-due timer exceeds time-skew tolerance; firing immediately",
-					"timer_id", timerID,
-					"fire_time", at,
-					"lateness", lateness,
-				)
-			}
-		}
-	}
-
-	opts := []gocron.JobOption{
-		gocron.WithName(timerID),
-		gocron.WithEventListeners(gocron.AfterJobRuns(func(jobID uuid.UUID, _ string) {
-			s.mu.Lock()
-			if oneShot {
-				// One-shots remove themselves from the tracking map after firing.
-				if cur, ok := s.jobs[timerID]; ok && cur == jobID {
-					delete(s.jobs, timerID)
-				}
-			}
-			s.mu.Unlock()
-		})),
-	}
-	if oneShot {
-		opts = append(opts, gocron.WithLimitedRuns(1))
-	}
-
-	job, err := s.sched.NewJob(def, gocron.NewTask(fire), opts...)
-	if err != nil {
-		return time.Time{}, err
-	}
-	s.jobs[timerID] = job.ID()
-	next, _ := job.NextRun()
-	return next, nil
 }
 
 // Cancel removes a pending timer. No-op if the timer is unknown or already fired.

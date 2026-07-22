@@ -125,9 +125,11 @@ func NewSQLiteAdvisoryLockOwnership() (kernel.InstanceOwnership, io.Closer, erro
 	return o, o, nil
 }
 
-// NewSQLiteTimerStore returns a kernel.TimerStore backed by SQLite, for
-// ProcessDriver.RehydrateTimers. The db must already have migrations applied.
-// Mirrors [NewMySQLTimerStore] for MySQL and [NewTimerStore] for Postgres.
+// NewSQLiteTimerStore returns a kernel.TimerStore backed by SQLite. It backs
+// ProcessDriver.RehydrateTimers (explicit re-arm) and, via runtime.NewJobStore's
+// Load, the scheduler's own automatic self-rehydration on Start (ADR-0134). The
+// db must already have migrations applied. Mirrors [NewMySQLTimerStore] for
+// MySQL and [NewTimerStore] for Postgres.
 //
 // SQLite is single-node and in-process; this constructor is well-suited for
 // embedded deployments, CLI tools, integration tests, and local development.

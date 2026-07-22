@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/internal/database"
 	"github.com/kartaladev/wrkflw/internal/persistence/store"
 	"github.com/kartaladev/wrkflw/persistence"
@@ -191,23 +192,33 @@ func TestPruner(t *testing.T) {
 			require.NoError(t, err)
 			ctx := t.Context()
 
+			// tmr-old / tmr-recent are one-shot (KindOneTime) — the existing
+			// expiry-based eligibility rule. tmr-recurring is expired (next_run <
+			// cutoff) but carries a RECURRING trigger_kind (KindDuration): under
+			// D16 next_run is written once and never updated, so an expired
+			// next_run does not mean the timer is done firing — it must survive
+			// PruneTimers.
 			prunerExec(t, ctx, b, s,
-				`INSERT INTO wrkflw_timers (instance_id, timer_id, next_run, kind, def_id, def_version)
+				`INSERT INTO wrkflw_timers (instance_id, timer_id, next_run, kind, def_id, def_version, trigger_kind)
 				 VALUES
-				   ('inst-tmr-old',    'tmr-old',    ?, 1, 'def-tmr', 1),
-				   ('inst-tmr-recent', 'tmr-recent', ?, 1, 'def-tmr', 1)`,
-				s.TimeArgForTest(old),
-				s.TimeArgForTest(recent),
+				   ('inst-tmr-old',       'tmr-old',       ?, 1, 'def-tmr', 1, ?),
+				   ('inst-tmr-recent',    'tmr-recent',    ?, 1, 'def-tmr', 1, ?),
+				   ('inst-tmr-recurring', 'tmr-recurring', ?, 1, 'def-tmr', 1, ?)`,
+				s.TimeArgForTest(old), int16(schedule.KindOneTime),
+				s.TimeArgForTest(recent), int16(schedule.KindOneTime),
+				s.TimeArgForTest(old), int16(schedule.KindDuration),
 			)
 
 			n, err := p.PruneTimers(ctx, cutoff)
 			require.NoError(t, err, "%s: PruneTimers", b.name)
-			assert.Equal(t, int64(1), n, "%s: exactly the old timer row must be deleted", b.name)
+			assert.Equal(t, int64(1), n, "%s: exactly the old one-shot timer row must be deleted", b.name)
 
 			assert.Equal(t, 0, prunerCount(t, ctx, b, `SELECT COUNT(*) FROM wrkflw_timers WHERE timer_id = ?`, "tmr-old"),
-				"%s: old timer row must be deleted", b.name)
+				"%s: old one-shot timer row must be deleted", b.name)
 			assert.Equal(t, 1, prunerCount(t, ctx, b, `SELECT COUNT(*) FROM wrkflw_timers WHERE timer_id = ?`, "tmr-recent"),
 				"%s: recent timer row must survive", b.name)
+			assert.Equal(t, 1, prunerCount(t, ctx, b, `SELECT COUNT(*) FROM wrkflw_timers WHERE timer_id = ?`, "tmr-recurring"),
+				"%s: expired recurring timer row must survive PruneTimers (next_run is write-once, D16)", b.name)
 
 			// Idempotent.
 			again, err := p.PruneTimers(ctx, cutoff)

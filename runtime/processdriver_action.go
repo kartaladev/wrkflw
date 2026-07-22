@@ -303,27 +303,10 @@ func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefi
 		}
 		return nil, nil
 
-	case engine.ScheduleTimer:
-		// Defensive nil-guard: NewProcessDriver always resolves a scheduler (a
-		// consumer-injected one or the in-process default), so sched is non-nil
-		// after construction. This guard exists only as dead-safe code.
-		if driver.sched == nil {
-			return nil, fmt.Errorf("workflow-runtime: perform ScheduleTimer %q: no Scheduler configured", cmd.TimerID)
-		}
-		if cmd.Kind == engine.TimerRetry {
-			driver.obs.actionRetries.Add(ctx, 1)
-		}
-		driver.armTimer(ctx, def, st.InstanceID, cmd.TimerID, cmd.Trigger)
-		return nil, nil
-
-	case engine.CancelTimer:
-		// Defensive nil-guard: see ScheduleTimer above — sched is always non-nil
-		// after NewProcessDriver, so this is dead-safe code.
-		if driver.sched == nil {
-			return nil, fmt.Errorf("workflow-runtime: perform CancelTimer %q: no Scheduler configured", cmd.TimerID)
-		}
-		driver.sched.Cancel(ctx, cmd.TimerID)
-		return nil, nil
+	// NOTE: engine.ScheduleTimer and engine.CancelTimer never reach perform —
+	// the deliverLoop handles them entirely on its commit path (in-tx durable
+	// persist via the runtime jobStore, post-commit scheduler
+	// activate/deactivate — ADR-0134) and skips them before dispatching here.
 
 	case engine.ThrowSignal:
 		if driver.sigbus == nil {

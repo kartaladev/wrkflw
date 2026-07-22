@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/internal/database"
 	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 )
@@ -170,12 +171,20 @@ func (p *Pruner) PruneProcessedMessages(ctx context.Context, cutoff time.Time) (
 	return d.Prune(ctx, cutoff)
 }
 
-// PruneTimers deletes timer rows whose next_run is strictly before cutoff.
-// Returns the number of rows deleted.
+// PruneTimers deletes timer rows whose next_run is strictly before cutoff and
+// whose trigger is not recurring. Returns the number of rows deleted.
 //
 // Fired timers that are no longer needed can accumulate in wrkflw_timers; this
 // method lets a consumer's retention job drop them. Choose a cutoff safely past
 // any window in which a timer could still fire or be rescheduled.
+//
+// Recurring rows (trigger_kind outside [nonRecurringTriggerKinds]) are excluded
+// even when next_run is expired: under D16, next_run is written once when the
+// timer is armed and never updated on each recurrence, so an expired next_run
+// on a recurring row does not mean the timer is done firing — deleting it would
+// drop a still-armed durable row. This is a known caveat, not a full fix; see
+// docs/production-checklist.md § timer pruning for the deferred run-count
+// follow-up that will let recurring rows be pruned precisely too.
 //
 // This method mirrors the MySQL-specific PruneTimers extension and is available
 // on all three dialects in the neutral store.
@@ -186,8 +195,12 @@ func (p *Pruner) PruneTimers(ctx context.Context, cutoff time.Time) (int64, erro
 	}
 
 	res, err := q.Exec(ctx,
-		p.dialect.Rebind(`DELETE FROM wrkflw_timers WHERE next_run < ?`),
+		p.dialect.Rebind(
+			`DELETE FROM wrkflw_timers
+			  WHERE next_run < ?
+			    AND trigger_kind IN (?, ?, ?)`),
 		timeArg(p.dialect, cutoff.UTC()),
+		int16(nonRecurringTriggerKinds[0]), int16(nonRecurringTriggerKinds[1]), int16(nonRecurringTriggerKinds[2]),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("workflow-store: pruner: prune timers: %w", err)
@@ -198,4 +211,15 @@ func (p *Pruner) PruneTimers(ctx context.Context, cutoff time.Time) (int64, erro
 		return 0, fmt.Errorf("workflow-store: pruner: prune timers: rows affected: %w", err)
 	}
 	return n, nil
+}
+
+// nonRecurringTriggerKinds are the [schedule.Kind] values that fire at most
+// once — the trigger_kind values [Pruner.PruneTimers] treats as eligible for
+// expiry-based deletion. Every other schedule.Kind value is recurring
+// ([schedule.TriggerSpec.Recurring] reports true) and is excluded regardless
+// of next_run; see the PruneTimers doc comment for why.
+var nonRecurringTriggerKinds = [3]schedule.Kind{
+	schedule.KindUnset,
+	schedule.KindOneTime,
+	schedule.KindExpr,
 }

@@ -187,7 +187,7 @@ func run(logger *slog.Logger) error {
 	if eerr != nil {
 		return eerr
 	}
-	scheduler, serr := scheduler.NewScheduler(
+	sched, serr := scheduler.NewScheduler(
 		scheduler.WithLogger(logger),
 		scheduler.WithElector(elector),
 	)
@@ -195,7 +195,7 @@ func run(logger *slog.Logger) error {
 		_ = elector.Close()
 		return serr
 	}
-	shutdown.AddCloser(scheduler)
+	shutdown.AddCloser(sched)
 
 	// --- A demo definition + catalog so the engine can actually run instances ---
 	def, derr := definition.NewBuilder("order", 1).
@@ -233,7 +233,7 @@ func run(logger *slog.Logger) error {
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(cachingStore),
 		runtime.WithHumanTasks(resolver, taskStore, az),
-		runtime.WithScheduler(scheduler),
+		runtime.WithScheduler(sched),
 		runtime.WithTimerStore(timerStore),
 	)
 	if err != nil {

@@ -25,6 +25,33 @@ release.
   now returns `scheduler.Locker` instead of `scheduling.Locker`; `scheduler.Elector`,
   `scheduler.Scheduler`, etc. replace their `scheduling.*` counterparts).
 
+- **Scheduler-owned durable jobs; `scheduler` is now a self-contained, spinnable-standalone
+  library (ADR-0134).** The `runtime/kernel.Scheduler` / `kernel.JobStore` / `kernel.ScheduledJob`
+  port that `runtime` previously depended on is **deleted from `kernel`**; `runtime.WithScheduler`
+  now takes a `scheduler.Scheduler` directly, and `runtime.NewJobStore` returns a `scheduler.JobStore`.
+  `kernel.ArmedTimer`, `kernel.TimerStore`, and `kernel.JobSpec` (+ `JobKind`) are unaffected and
+  remain in `kernel`. The sentinels `ErrUnsupportedTrigger` and `ErrUnresolvedTimerDefinitions`
+  move from `kernel` to `scheduler` (message prefix `workflow-scheduler:`, unchanged text otherwise).
+  `scheduler.JobStore` gains a real `Save`/`Delete` write path (previously `LoadScheduled`-only,
+  now `Load`/`Save`/`Delete`). **The old `AppliedStep.TimerArms`/`TimerCancels` fused-write
+  mechanism is deleted** (`applyTimerOps` is gone from `Store.Create`/`Commit`); atomicity is now
+  achieved by the runtime's own `jobStore.Save`/`deleteTimer` (routed through the new
+  `kernel.TimerWriter` capability) running **inside the same state-commit transaction** as the
+  step write (`kernel.TxRunner.RunInTx` / `JoinOrBegin`) — the scheduler itself is never called
+  during commit (direct-save). New `scheduler.Job`/`scheduler.NewJob`/`scheduler.NewJobWithID`,
+  `scheduler.ActivationType` (`ActivationAuto`/`ActivationManual`, `scheduler.WithManualActivation`),
+  and `scheduler.Scheduler.Activate` close the fire-before-commit race this way: a Manual job's
+  durable row is written inside the caller's own transaction, and only armed in-memory
+  (`Activate`, an idempotent upsert-by-id) strictly **after** that transaction commits — a failed
+  post-commit `Activate` is logged and benign, since the durable arm rehydrates on next boot.
+  `scheduler.WithJobStore(kind, provide)` registers a per-`JobKind` store; on `NativeScheduler.Start`
+  the scheduler self-rehydrates every registered kind (`Load` + `Activate` each). Job ids are
+  unchanged engine timer ids — no composite id scheme. New observability:
+  `wrkflw_scheduler_job_runs_total` counter and `wrkflw_scheduler_job_duration_seconds` histogram,
+  emitted via gocron's native `MonitorStatus` hook (`scheduler.WithMeterProvider`).
+  `go-co-op/gocron/v2` bumped to the pinned `v2.22.0` (ADR-0135). See `scheduler/example_test.go`
+  for `NewScheduler`/`NewJob`/`Trigger`/`WithJobStore` usage.
+
 - **`DefinitionRegistry.Lookup(ctx, defRef string)` → `Lookup(ctx, model.Qualifier)`;
   def-ref fields, params, and constructors now typed `definition.Qualifier` (ADR-0101).**
   The following Go symbols are now `definition.Qualifier` (or `model.Qualifier` internally)

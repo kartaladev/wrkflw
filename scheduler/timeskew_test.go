@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/scheduler"
 )
 
@@ -99,11 +98,12 @@ func TestScheduler_WithTimeSkew(t *testing.T) {
 
 			var mu sync.Mutex
 			fired := false
-			_, err = s.Schedule(t.Context(), "facade-skew-timer", schedule.At(tc.fireAt()), func() {
-				mu.Lock()
-				fired = true
-				mu.Unlock()
-			})
+			_, err = s.Schedule(t.Context(), mustJob(t, "facade-skew-timer", surfaceKind,
+				scheduler.At(tc.fireAt()), func() {
+					mu.Lock()
+					fired = true
+					mu.Unlock()
+				}))
 			require.NoError(t, err)
 
 			require.Eventually(t, func() bool {

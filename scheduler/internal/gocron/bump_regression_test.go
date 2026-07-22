@@ -1,6 +1,7 @@
 package gocron_test
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -8,7 +9,6 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kartaladev/wrkflw/definition/schedule"
 	sched "github.com/kartaladev/wrkflw/scheduler/internal/gocron"
 )
 
@@ -28,12 +28,13 @@ func TestBumpRegression_OneShotFiresExactlyOnce(t *testing.T) {
 	wg.Add(1)
 	var n int
 	var mu sync.Mutex
-	_, err = s.Schedule(t.Context(), "bump-t1", schedule.AfterDuration(time.Minute), func() {
+	_, err = s.ScheduleJob(t.Context(), "bump-t1", sched.After(time.Minute), func(context.Context) error {
 		mu.Lock()
 		n++
 		mu.Unlock()
 		wg.Done()
-	})
+		return nil
+	}, false)
 	require.NoError(t, err)
 
 	// MANDATORY barrier: wait until gocron armed its timer before advancing,

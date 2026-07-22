@@ -18,6 +18,7 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/idgen"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/kartaladev/wrkflw/runtime/signal"
+	"github.com/kartaladev/wrkflw/scheduler"
 )
 
 // Option is a functional option for ProcessDriver. All dependencies — including
@@ -75,10 +76,11 @@ func WithHumanTasks(resolver humantask.ActorResolver, tasks humantask.TaskStore,
 	}
 }
 
-// WithScheduler wires a Scheduler into the ProcessDriver, enabling timer commands
-// (ScheduleTimer / CancelTimer). Without this option any process that reaches a
-// timer node will return a descriptive error.
-func WithScheduler(sched kernel.Scheduler) Option {
+// WithScheduler wires a [scheduler.Scheduler] into the ProcessDriver, enabling
+// timer commands (ScheduleTimer / CancelTimer). Without this option the driver
+// creates and owns an in-process gocron-backed default. A consumer-injected
+// scheduler is consumer-owned: the driver never starts or closes it.
+func WithScheduler(sched scheduler.Scheduler) Option {
 	return func(driver *ProcessDriver) { driver.sched = sched }
 }
 

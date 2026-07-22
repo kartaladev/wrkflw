@@ -11,85 +11,137 @@ import (
 	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/scheduler"
 )
 
-// timerOpsFor derives the armed-timer side-effects of one applied step from its
-// commands and trigger. ScheduleTimer commands become arms carrying their
-// resolved [schedule.TriggerSpec]; CancelTimer commands become cancels.
+// convertTrigger maps a resolved [schedule.TriggerSpec] to the scheduler's own
+// [scheduler.Trigger] vocabulary. Total over all 10 schedule.Kind values:
+// KindUnset, KindExpr, and KindEveryExpr are programming errors (the engine
+// resolves dynamic expressions to concrete triggers before arming) reported as
+// errors wrapping [scheduler.ErrUnsupportedTrigger].
+func convertTrigger(t schedule.TriggerSpec) (scheduler.Trigger, error) {
+	switch t.Kind() {
+	case schedule.KindOneTime:
+		if at, ok := t.AbsTime(); ok {
+			return scheduler.At(at), nil
+		}
+		d, _ := t.Duration()
+		return scheduler.After(d), nil
+	case schedule.KindDuration:
+		d, _ := t.Duration()
+		return scheduler.Every(d), nil
+	case schedule.KindDurationRand:
+		minimum, maximum, _ := t.Random()
+		return scheduler.EveryRandom(minimum, maximum), nil
+	case schedule.KindCron:
+		expr, _ := t.CronExpr()
+		return scheduler.Cron(expr), nil
+	case schedule.KindDaily:
+		interval, _, _, at, _ := t.Calendar()
+		return scheduler.Daily(interval, convertClockTimes(at)...), nil
+	case schedule.KindWeekly:
+		interval, _, weekdays, at, _ := t.Calendar()
+		return scheduler.Weekly(interval, weekdays, convertClockTimes(at)...), nil
+	case schedule.KindMonthly:
+		interval, days, _, at, _ := t.Calendar()
+		return scheduler.Monthly(interval, days, convertClockTimes(at)...), nil
+	default:
+		return scheduler.Trigger{}, fmt.Errorf("workflow-runtime: convert trigger: %w: kind %v",
+			scheduler.ErrUnsupportedTrigger, t.Kind())
+	}
+}
+
+// convertClockTimes maps schedule.ClockTime values to the scheduler package's
+// identically-shaped ClockTime.
+func convertClockTimes(cs []schedule.ClockTime) []scheduler.ClockTime {
+	out := make([]scheduler.ClockTime, len(cs))
+	for i, c := range cs {
+		out[i] = scheduler.ClockTime{Hour: c.Hour, Minute: c.Minute, Second: c.Second}
+	}
+	return out
+}
+
+// cancelKey identifies one durable timer row to delete inside the commit
+// transaction — the PK-exact (instanceID, timerID) pair. Cancels carry both
+// parts as a struct; no composite string ids are involved (ADR-0134).
+type cancelKey struct {
+	instanceID string
+	timerID    string
+}
+
+// timerJobsFor derives the timer side-effects of one applied step from its
+// commands and trigger, in executable form: ScheduleTimer commands become
+// Manual [timerJob]s ready to Save in-tx and Activate post-commit; CancelTimer
+// commands become PK-exact [cancelKey]s. The derivation mirrors the retired
+// timerOpsFor exactly; the difference is the output shape.
 //
-// A TimerFired trigger normally consumes (cancels) the fired timer — EXCEPT when
-// the fired timer's armed trigger is recurring: a recurring native job keeps
-// firing on its own schedule and never self-disarms, so it must NOT be cancelled
-// on each fire. armedRecurring reports whether the timer with the given id is
-// currently armed with a recurring trigger; when it reports false (unknown timer,
-// or a genuinely one-shot timer) the fired timer is cancelled, preserving the
-// pre-recurrence safe default. An explicit CancelTimer command always cancels,
-// recurring or not — that is how a scope-exit / instance-terminate stops a
-// recurring native job. Pure; kind-agnostic so it covers every timer kind.
-func timerOpsFor(cmds []engine.Command, trg engine.Trigger, defID string, defVersion int, instanceID string, now time.Time, armedRecurring func(timerID string) bool) ([]kernel.ArmedTimer, []string) {
-	var arms []kernel.ArmedTimer
-	var cancels []string
+// Each arm's spec.NextRun is the persisted authoritative next-run instant,
+// computed as the converted trigger's [scheduler.Trigger.Next] at now and
+// UTC-normalised — synchronously, so the value saved in the state-commit
+// transaction is crash-safe (no out-of-band write-back). A one-shot therefore
+// re-arms at its ORIGINAL absolute instant after a restart, and recurring
+// triggers (including cron/calendar, whose next occurrence Next computes
+// natively) persist a truthful first-fire instant for timer Stats.
+//
+// An unconvertible trigger (KindUnset/Expr — programming errors, the engine
+// resolves dynamic expressions before arming) is WARN-logged and skipped
+// entirely: no scheduler arm and no durable row (a row that cannot convert
+// would only be re-skipped as corrupt at rehydration). It must never crash
+// the driver or the in-flight instance.
+//
+// A TimerFired trigger normally consumes (cancels) the fired timer — EXCEPT
+// when the fired timer's armed trigger is recurring: a recurring native job
+// keeps firing on its own schedule and never self-disarms, so it must NOT be
+// cancelled on each fire. armedRecurring reports whether the timer with the
+// given id is currently armed with a recurring trigger; when it reports false
+// (unknown timer, or a genuinely one-shot timer) the fired timer is consumed,
+// preserving the pre-recurrence safe default. A NIL armedRecurring means
+// recurrence is undeterminable (no timer store configured): the fired timer is
+// left alone — there is no durable row to delete, and disarming a
+// possibly-recurring native job would kill it (one-shot native jobs self-
+// consume on fire, so nothing leaks). An explicit CancelTimer command always
+// cancels, recurring or not — that is how a scope-exit / instance-terminate
+// stops a recurring native job. Kind-agnostic so it covers every timer kind;
+// the TimerRetry metric is counted at this single derivation site.
+func (driver *ProcessDriver) timerJobsFor(ctx context.Context, def *model.ProcessDefinition, cmds []engine.Command, trg engine.Trigger, instanceID string, armedRecurring func(timerID string) bool) ([]*timerJob, []cancelKey) {
+	var arms []*timerJob
+	var cancels []cancelKey
+	now := driver.clk.Now()
 	for _, c := range cmds {
 		switch cmd := c.(type) {
 		case engine.ScheduleTimer:
-			arms = append(arms, kernel.ArmedTimer{
-				InstanceID: instanceID,
-				DefID:      defID,
-				DefVersion: defVersion,
-				TimerID:    cmd.TimerID,
-				Trigger:    cmd.Trigger,
-				// NextRun is the persisted authoritative next-run instant so a
-				// SQL-backed one-shot re-arms at its original absolute time after
-				// a restart (rather than restarting its delay from "now"). It is
-				// computed synchronously here — in the same tx as the timer row —
-				// so it is crash-safe (no out-of-band write-back). Cron/calendar
-				// triggers persist a zero NextRun for now and rehydrate from their
-				// Trigger; the true scheduler-computed next-run for those is
-				// deferred to the Plan-3 JobStore, which will own the arm/persist
-				// lifecycle under one ambient tx.
-				NextRun: nextRunFor(cmd.Trigger, now),
-				Kind:    cmd.Kind,
-			})
+			if cmd.Kind == engine.TimerRetry {
+				driver.obs.actionRetries.Add(ctx, 1)
+			}
+			strig, err := convertTrigger(cmd.Trigger)
+			if err != nil {
+				// A skip during shutdown (scheduler closed) is expected, not a lost
+				// timer: nothing durable exists for an unconvertible trigger anyway.
+				driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: timer arm: trigger not schedulable, skipping timer",
+					append(driver.obs.tel.LogAttrs(ctx),
+						slog.String("timer_id", cmd.TimerID),
+						slog.String("instance_id", instanceID),
+						slog.Any("error", err))...)
+				continue
+			}
+			var nextRun time.Time
+			if next, ok := strig.Next(now); ok {
+				nextRun = next.UTC()
+			}
+			arms = append(arms, driver.newTimerJob(def, instanceID, cmd.TimerID, cmd.Trigger, strig, nextRun, cmd.Kind))
 		case engine.CancelTimer:
-			cancels = append(cancels, cmd.TimerID)
+			cancels = append(cancels, cancelKey{instanceID: instanceID, timerID: cmd.TimerID})
 		}
 	}
 	if tf, ok := trg.(engine.TimerFired); ok {
 		// A recurring timer survives its fire (the scheduler re-arms it natively);
-		// only consume one-shot (or unknown) timers.
-		if armedRecurring == nil || !armedRecurring(tf.TimerID) {
-			cancels = append(cancels, tf.TimerID)
+		// only consume one-shot (or unknown) timers, and only when recurrence is
+		// determinable at all (armedRecurring non-nil).
+		if armedRecurring != nil && !armedRecurring(tf.TimerID) {
+			cancels = append(cancels, cancelKey{instanceID: instanceID, timerID: tf.TimerID})
 		}
 	}
 	return arms, cancels
-}
-
-// nextRunFor computes the absolute next-run instant to persist for a timer arm,
-// in UTC, synchronously and in the state-commit transaction (crash-safe):
-//
-//   - At one-shot → the trigger's absolute time.
-//   - AfterDuration one-shot → now + duration, so a restart re-arms at the
-//     ORIGINAL instant (not restart + duration). RehydrateTimers re-arms it via
-//     schedule.At(NextRun).
-//   - Every (fixed-interval recurring) → now + interval, a truthful first-fire
-//     instant so the persisted next_run keeps timer Stats (MIN(next_run))
-//     meaningful. Rehydration still re-arms it from its Trigger.
-//
-// It returns the zero time for triggers whose next occurrence cannot be computed
-// without the scheduler (cron, calendar). Those keep next_run zero and are
-// rehydrated purely from their persisted Trigger; recording their true next-run
-// is deferred to the Plan-3 scheduler-owned lifecycle (interim gap). Engine-
-// resolved Expr forms are resolved to concrete one-shot/interval triggers before
-// reaching here, so they take the branches above.
-func nextRunFor(trig schedule.TriggerSpec, now time.Time) time.Time {
-	if at, ok := trig.AbsTime(); ok {
-		return at.UTC()
-	}
-	if d, ok := trig.Duration(); ok {
-		// Covers both AfterDuration (one-shot) and Every (recurring interval).
-		return now.UTC().Add(d)
-	}
-	return time.Time{}
 }
 
 // armedTimerRecurring reports whether the timer (instanceID, timerID) is
@@ -119,35 +171,54 @@ func (driver *ProcessDriver) armedTimerRecurring(ctx context.Context, instanceID
 	return false
 }
 
-// armTimer registers timerID on the scheduler from its resolved
-// [schedule.TriggerSpec], with the engine's standard fire callback: deliver a
-// TimerFired trigger, retrying on optimistic-CAS conflicts. Used by
-// perform(ScheduleTimer) and RehydrateTimers.
+// buildTimerJob assembles the runtime's Manual scheduler job for a process-
+// instance timer: the typed descriptor (kind included, so a durable Save of
+// this job's descriptor faithfully mirrors the persisted ArmedTimer.Kind —
+// ADR-0134 B1), the converted trigger, the engine's standard fire callback
+// wrapped as a [scheduler.JobFunc], and a static data provider carrying the
+// timer's identity. It errors when trig cannot be converted (an unsupported
+// kind).
 //
-// An unschedulable trigger (e.g. kernel.ErrUnsupportedTrigger from an in-memory
-// scheduler asked to run a cron trigger, or a gocron mapping error) is logged at
-// WARN and skipped — it must never crash the driver or the in-flight instance.
-func (driver *ProcessDriver) armTimer(ctx context.Context, def *model.ProcessDefinition, instanceID, timerID string, trig schedule.TriggerSpec) {
-	nextRun, err := driver.sched.Schedule(ctx, timerID, trig, driver.timerFireFunc(def, instanceID, timerID))
+// The wrapped fire deliberately keeps timerFireFunc's internal
+// context.Background() usage: gocron cancels a one-shot's injected per-run ctx
+// shortly after the task returns, and the fire is a self-contained
+// continuation by design.
+func (driver *ProcessDriver) buildTimerJob(def *model.ProcessDefinition, instanceID, timerID string, trig schedule.TriggerSpec, nextRun time.Time, kind engine.TimerKind) (*scheduledTimerJob, error) {
+	strig, err := convertTrigger(trig)
 	if err != nil {
-		// The trigger could not be scheduled (unsupported kind or a mapping
-		// error). Skip it — an unschedulable timer must never crash the driver.
-		// (Durable descriptor persistence + NextRun recording is Plan 3.)
-		// A skip during shutdown (scheduler closed) is expected, not a lost timer: the
-		// durable arm survives in the timer store and rehydrates on next boot (Finding 4).
-		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: armTimer: trigger not schedulable, skipping timer (durable arm rehydrates on next boot)",
-			append(driver.obs.tel.LogAttrs(ctx),
-				slog.String("timer_id", timerID),
-				slog.String("instance_id", instanceID),
-				slog.Bool("driver_shutting_down", driver.IsShuttingDown()),
-				slog.Any("error", err))...)
-		return
+		return nil, err
 	}
-	driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelDebug, "runtime: armTimer: scheduled",
-		append(driver.obs.tel.LogAttrs(ctx),
-			slog.String("timer_id", timerID),
-			slog.String("instance_id", instanceID),
-			slog.Time("next_run", nextRun))...)
+	j := driver.newTimerJob(def, instanceID, timerID, trig, strig, nextRun, kind)
+	return newScheduledTimerJob(j, driver.clk.Now()), nil
+}
+
+// newTimerJob assembles the runtime's Manual [timerJob] from its parts: the
+// typed descriptor spec (with the caller-computed authoritative nextRun), the
+// pre-converted scheduler trigger strig, the engine's standard fire callback
+// wrapped as a [scheduler.JobFunc], and a static data provider carrying the
+// timer's identity. Shared by buildTimerJob (rehydration, persisted nextRun)
+// and timerJobsFor (fresh arms, nextRun = Trigger.Next(now)).
+func (driver *ProcessDriver) newTimerJob(def *model.ProcessDefinition, instanceID, timerID string, trig schedule.TriggerSpec, strig scheduler.Trigger, nextRun time.Time, kind engine.TimerKind) *timerJob {
+	fire := driver.timerFireFunc(def, instanceID, timerID)
+	return &timerJob{
+		spec: kernel.JobSpec{
+			TimerID:    timerID,
+			InstanceID: instanceID,
+			DefID:      def.ID,
+			DefVersion: def.Version,
+			Trigger:    trig,
+			NextRun:    nextRun,
+			Kind:       kind,
+		},
+		trig: strig,
+		fn:   func(context.Context, scheduler.DataProvider) error { fire(); return nil },
+		data: scheduler.NewStaticDataProvider(map[string]any{
+			"instance_id": instanceID,
+			"timer_id":    timerID,
+			"def_id":      def.ID,
+			"def_version": def.Version,
+		}),
+	}
 }
 
 // timerFireFunc builds the fire callback for a timer. The callback runs from the
@@ -216,27 +287,23 @@ func (driver *ProcessDriver) RehydrateTimers(ctx context.Context) error {
 	if driver.sched == nil || driver.timerStore == nil || driver.defsReg == nil {
 		return fmt.Errorf("workflow-runtime: RehydrateTimers requires WithScheduler, WithTimerStore, and WithDefinitions")
 	}
-	armed, err := driver.timerStore.ListArmed(ctx)
-	if err != nil {
-		return fmt.Errorf("workflow-runtime: RehydrateTimers: list armed: %w", err)
+	jobs, err := NewJobStore(driver).Load(ctx)
+	if err != nil && !errors.Is(err, scheduler.ErrUnresolvedTimerDefinitions) {
+		return fmt.Errorf("workflow-runtime: RehydrateTimers: %w", err)
 	}
-	var unresolved int
-	for _, a := range armed {
-		defQ := model.Version(a.DefID, a.DefVersion)
-		def, err := driver.defsReg.Lookup(ctx, defQ)
-		if err != nil {
-			unresolved++
-			driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelError, "runtime: rehydrate: definition not found, skipping timer",
+	for _, j := range jobs {
+		if aerr := driver.sched.Activate(ctx, j); aerr != nil {
+			// One unschedulable timer must never abort the batch.
+			driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: rehydrate: failed to re-arm timer, skipping",
 				append(driver.obs.tel.LogAttrs(ctx),
-					slog.String("def_ref", defQ.String()),
-					slog.String("timer_id", a.TimerID),
-					slog.String("instance_id", a.InstanceID))...)
-			continue
+					slog.String("timer_id", j.ID()),
+					slog.Any("error", aerr))...)
 		}
-		driver.armTimer(ctx, def, a.InstanceID, a.TimerID, rehydrateTrigger(a))
 	}
-	if unresolved > 0 {
-		return fmt.Errorf("workflow-runtime: RehydrateTimers: %d timer(s) skipped (definition not found)", unresolved)
+	// Propagate the unresolved-definitions error (if any) so this strict,
+	// explicit entry point still reports the skipped subset to its caller.
+	if err != nil {
+		return fmt.Errorf("workflow-runtime: RehydrateTimers: %w", err)
 	}
 	return nil
 }
@@ -299,10 +366,14 @@ func (driver *ProcessDriver) startTimerFireFunc(def *model.ProcessDefinition, no
 
 // armStartTimer registers a timer-start event's timerID on the scheduler from
 // its resolved [schedule.TriggerSpec], firing startTimerFireFunc on each
-// occurrence. An unschedulable trigger is logged at WARN and skipped — it must
+// occurrence. It schedules an [scheduler.ActivationAuto] job under
+// startTimerJobKind: no JobStore is registered for that kind, so the job is
+// in-memory-only (persist-nothing) and arms immediately — a timer-start
+// re-derives from the registered definition on boot, so nothing durable is
+// needed. An unschedulable trigger is logged at WARN and skipped — it must
 // never crash the driver.
 func (driver *ProcessDriver) armStartTimer(ctx context.Context, def *model.ProcessDefinition, nodeID, timerID string, trig schedule.TriggerSpec) {
-	nextRun, err := driver.sched.Schedule(ctx, timerID, trig, driver.startTimerFireFunc(def, nodeID, timerID))
+	sj, err := driver.scheduleStartTimerJob(ctx, def, nodeID, timerID, trig)
 	if err != nil {
 		// A skip during shutdown (scheduler closed) is expected, not a lost timer-start:
 		// it re-arms purely from the registered definition on next boot (Finding 4).
@@ -322,7 +393,26 @@ func (driver *ProcessDriver) armStartTimer(ctx context.Context, def *model.Proce
 			slog.String("def_id", def.ID),
 			slog.Int("def_version", def.Version),
 			slog.String("node_id", nodeID),
-			slog.Time("next_run", nextRun))...)
+			slog.Time("next_run", sj.NextRun()))...)
+}
+
+// scheduleStartTimerJob converts trig and schedules the timer-start's Auto job
+// on the driver's scheduler, wrapping the existing startTimerFireFunc closure.
+// Like buildTimerJob's wrapping of timerFireFunc, the fire keeps its internal
+// context.Background() usage — it is self-contained by design.
+func (driver *ProcessDriver) scheduleStartTimerJob(ctx context.Context, def *model.ProcessDefinition, nodeID, timerID string, trig schedule.TriggerSpec) (scheduler.ScheduledJob, error) {
+	strig, err := convertTrigger(trig)
+	if err != nil {
+		return nil, err
+	}
+	fire := driver.startTimerFireFunc(def, nodeID, timerID)
+	job, err := scheduler.NewJobWithID(timerID, startTimerJobKind, strig,
+		func(context.Context, scheduler.DataProvider) error { fire(); return nil },
+		scheduler.NewEmptyDataProvider())
+	if err != nil {
+		return nil, err
+	}
+	return driver.sched.Schedule(ctx, job)
 }
 
 // RehydrateStartTimers arms every registered definition's timer-start event on

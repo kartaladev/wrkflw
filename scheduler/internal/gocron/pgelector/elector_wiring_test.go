@@ -9,7 +9,6 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/internal/dbtest"
 	gocronsched "github.com/kartaladev/wrkflw/scheduler/internal/gocron"
 	"github.com/kartaladev/wrkflw/scheduler/internal/gocron/pgelector"
@@ -66,7 +65,8 @@ func TestGocronSchedulerElectorGatesFire(t *testing.T) {
 			t.Cleanup(func() { _ = s.Close() })
 
 			fired := make(chan struct{}, 1)
-			_, schedErr := s.Schedule(ctx, "timer", schedule.At(clk.Now().Add(time.Second)), func() { fired <- struct{}{} })
+			_, schedErr := s.ScheduleJob(ctx, "timer", gocronsched.At(clk.Now().Add(time.Second)),
+				func(context.Context) error { fired <- struct{}{}; return nil }, false)
 			require.NoError(t, schedErr)
 			require.NoError(t, clk.BlockUntilContext(ctx, 1))
 			clk.Advance(time.Second)

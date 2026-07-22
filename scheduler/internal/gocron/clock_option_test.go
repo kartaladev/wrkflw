@@ -1,6 +1,7 @@
 package gocron_test
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -9,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kartaladev/wrkflw/definition/schedule"
 	sched "github.com/kartaladev/wrkflw/scheduler/internal/gocron"
 )
 
@@ -55,7 +55,7 @@ func TestGocronScheduler_WithClock_FakeClockDrivesFiring(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	_, err = s.Schedule(t.Context(), "clk-opt-t1", schedule.At(clk.Now().Add(5*time.Second)), func() { wg.Done() })
+	_, err = s.ScheduleJob(t.Context(), "clk-opt-t1", sched.At(clk.Now().Add(5*time.Second)), func(context.Context) error { wg.Done(); return nil }, false)
 	require.NoError(t, err)
 
 	// MANDATORY barrier: wait until gocron armed its waiter on the fake clock.
@@ -77,7 +77,7 @@ func TestGocronScheduler_WithClock_NotFiredWithoutAdvance(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	var fired bool
-	_, err = s.Schedule(t.Context(), "clk-opt-t2", schedule.At(clk.Now().Add(5*time.Second)), func() { fired = true })
+	_, err = s.ScheduleJob(t.Context(), "clk-opt-t2", sched.At(clk.Now().Add(5*time.Second)), func(context.Context) error { fired = true; return nil }, false)
 	require.NoError(t, err)
 
 	// Wait until gocron armed its waiter, then assert the job hasn't fired.

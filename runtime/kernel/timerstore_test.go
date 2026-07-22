@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/processtest"
 	"github.com/kartaladev/wrkflw/runtime"
@@ -76,35 +77,81 @@ func TestMemTimerStore(t *testing.T) {
 	}
 }
 
-func TestMemStoreRecordsTimerOps(t *testing.T) {
-	mts := kernel.NewMemTimerStore()
-	store := runtimetest.MustMemStore(t, kernel.WithTimers(mts))
-	at := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
-	st := engine.InstanceState{InstanceID: "i1", DefID: "d", DefVersion: 1, Status: engine.StatusRunning, StartedAt: at}
+// var _ kernel.TimerWriter = (*kernel.MemTimerStore)(nil) is the compile-time
+// check that MemTimerStore satisfies the write-side capability (ADR-0134).
+var _ kernel.TimerWriter = (*kernel.MemTimerStore)(nil)
 
-	// Create with a TimerArm records it.
-	tok, err := store.Create(t.Context(), kernel.AppliedStep{
-		State:   st,
-		Trigger: engine.NewStartInstance(at, nil),
-		TimerArms: []kernel.ArmedTimer{{
-			InstanceID: "i1", DefID: "d", DefVersion: 1, TimerID: "t1", NextRun: at.Add(time.Hour), Kind: engine.TimerIntermediate,
-		}},
-	})
-	require.NoError(t, err)
-	armed, err := mts.ListArmed(t.Context())
-	require.NoError(t, err)
-	require.Len(t, armed, 1)
+// TestMemTimerStoreTimerWriter exercises the TimerWriter capability
+// (UpsertJob/DeleteJob/DeleteJobByTimerID) added by ADR-0134: the runtime
+// JobStore delegates writes to this port. Kind must round-trip because it is
+// a new JobSpec field with no analogue on ArmedTimer's pre-existing Arm/Cancel
+// path.
+func TestMemTimerStoreTimerWriter(t *testing.T) {
+	base := time.Date(2026, 6, 22, 9, 0, 0, 0, time.UTC)
+	mkSpec := func(instanceID, timerID string, kind engine.TimerKind) kernel.JobSpec {
+		return kernel.JobSpec{
+			TimerID:    timerID,
+			InstanceID: instanceID,
+			DefID:      "d",
+			DefVersion: 1,
+			Trigger:    schedule.At(base.Add(time.Hour)),
+			NextRun:    base.Add(time.Hour),
+			Kind:       kind,
+		}
+	}
 
-	// Commit with a TimerCancel removes it.
-	_, err = store.Commit(t.Context(), tok, kernel.AppliedStep{
-		State:        st,
-		Trigger:      engine.NewTimerFired(at.Add(time.Hour), "t1"),
-		TimerCancels: []string{"t1"},
-	})
-	require.NoError(t, err)
-	armed, err = mts.ListArmed(t.Context())
-	require.NoError(t, err)
-	assert.Empty(t, armed)
+	cases := []struct {
+		name   string
+		assert func(t *testing.T)
+	}{
+		{
+			name: "UpsertJob then ListArmed round-trips Kind",
+			assert: func(t *testing.T) {
+				s := kernel.NewMemTimerStore()
+				require.NoError(t, s.UpsertJob(t.Context(), mkSpec("i1", "t1", engine.TimerDeadline)))
+				got, err := s.ListArmed(t.Context())
+				require.NoError(t, err)
+				require.Len(t, got, 1)
+				assert.Equal(t, "t1", got[0].TimerID)
+				assert.Equal(t, engine.TimerDeadline, got[0].Kind)
+			},
+		},
+		{
+			name: "DeleteJob removes by (instanceID, timerID)",
+			assert: func(t *testing.T) {
+				s := kernel.NewMemTimerStore()
+				require.NoError(t, s.UpsertJob(t.Context(), mkSpec("i1", "t1", engine.TimerDeadline)))
+				require.NoError(t, s.DeleteJob(t.Context(), "i1", "t1"))
+				got, err := s.ListArmed(t.Context())
+				require.NoError(t, err)
+				assert.Empty(t, got)
+			},
+		},
+		{
+			name: "DeleteJobByTimerID removes by timerID alone",
+			assert: func(t *testing.T) {
+				s := kernel.NewMemTimerStore()
+				require.NoError(t, s.UpsertJob(t.Context(), mkSpec("i1", "t1", engine.TimerDeadline)))
+				require.NoError(t, s.DeleteJobByTimerID(t.Context(), "t1"))
+				got, err := s.ListArmed(t.Context())
+				require.NoError(t, err)
+				assert.Empty(t, got)
+			},
+		},
+		{
+			name: "DeleteJobByTimerID unknown is a no-op",
+			assert: func(t *testing.T) {
+				s := kernel.NewMemTimerStore()
+				require.NoError(t, s.DeleteJobByTimerID(t.Context(), "nope"))
+				got, err := s.ListArmed(t.Context())
+				require.NoError(t, err)
+				assert.Empty(t, got)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) { tc.assert(t) })
+	}
 }
 
 func TestProcessDriverPersistsAndClearsTimer(t *testing.T) {

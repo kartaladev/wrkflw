@@ -8,7 +8,6 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/internal/dbtest"
 	"github.com/kartaladev/wrkflw/persistence"
 	"github.com/kartaladev/wrkflw/scheduler"
@@ -42,9 +41,11 @@ func TestSchedulerWithDistributedTimerLock(t *testing.T) {
 
 	heldFired := make(chan struct{}, 1)
 	freeFired := make(chan struct{}, 1)
-	_, err = s.Schedule(ctx, "held", schedule.At(clk.Now().Add(time.Second)), func() { heldFired <- struct{}{} })
+	_, err = s.Schedule(ctx, mustJob(t, "held", surfaceKind,
+		scheduler.At(clk.Now().Add(time.Second)), func() { heldFired <- struct{}{} }))
 	require.NoError(t, err)
-	_, err = s.Schedule(ctx, "free", schedule.At(clk.Now().Add(time.Second)), func() { freeFired <- struct{}{} })
+	_, err = s.Schedule(ctx, mustJob(t, "free", surfaceKind,
+		scheduler.At(clk.Now().Add(time.Second)), func() { freeFired <- struct{}{} }))
 	require.NoError(t, err)
 	require.NoError(t, clk.BlockUntilContext(ctx, 2))
 	clk.Advance(time.Second)
@@ -89,9 +90,11 @@ func TestSchedulerWithMySQLDistributedTimerLock(t *testing.T) {
 
 	heldFired := make(chan struct{}, 1)
 	freeFired := make(chan struct{}, 1)
-	_, err = s.Schedule(ctx, "held", schedule.At(clk.Now().Add(time.Second)), func() { heldFired <- struct{}{} })
+	_, err = s.Schedule(ctx, mustJob(t, "held", surfaceKind,
+		scheduler.At(clk.Now().Add(time.Second)), func() { heldFired <- struct{}{} }))
 	require.NoError(t, err)
-	_, err = s.Schedule(ctx, "free", schedule.At(clk.Now().Add(time.Second)), func() { freeFired <- struct{}{} })
+	_, err = s.Schedule(ctx, mustJob(t, "free", surfaceKind,
+		scheduler.At(clk.Now().Add(time.Second)), func() { freeFired <- struct{}{} }))
 	require.NoError(t, err)
 	require.NoError(t, clk.BlockUntilContext(ctx, 2))
 	clk.Advance(time.Second)

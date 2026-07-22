@@ -15,6 +15,7 @@ var (
 	_ InstanceStore  = (*MemInstanceStore)(nil)
 	_ JournalReader  = (*MemInstanceStore)(nil)
 	_ InstanceLister = (*MemInstanceStore)(nil)
+	_ TxRunner       = (*MemInstanceStore)(nil)
 )
 
 // memInstance is the in-memory record for one instance.
@@ -103,14 +104,6 @@ func (m *MemInstanceStore) Create(_ context.Context, step AppliedStep) (Version,
 	if m.callLinks != nil && step.NewCallLink != nil {
 		m.callLinks.record(*step.NewCallLink)
 	}
-	if m.timers != nil {
-		for _, a := range step.TimerArms {
-			m.timers.Arm(a)
-		}
-		for _, id := range step.TimerCancels {
-			m.timers.Cancel(step.State.InstanceID, id)
-		}
-	}
 	return initial, nil
 }
 
@@ -146,15 +139,19 @@ func (m *MemInstanceStore) Commit(_ context.Context, expected Version, step Appl
 	if m.callLinks != nil && step.CallOutcome != nil {
 		m.callLinks.markTerminal(step.State.InstanceID, *step.CallOutcome)
 	}
-	if m.timers != nil {
-		for _, a := range step.TimerArms {
-			m.timers.Arm(a)
-		}
-		for _, id := range step.TimerCancels {
-			m.timers.Cancel(step.State.InstanceID, id)
-		}
-	}
 	return next, nil
+}
+
+// RunInTx is the TxRunner capability's sequencing-only Mem implementation
+// (ADR-0134): it is exactly fn(ctx), with no transaction and no rollback.
+// MemInstanceStore's Create/Commit already apply atomically per call, so
+// there is nothing to join — but there is also nothing to undo. If fn
+// performs a Create or Commit and later returns a non-nil error, that write
+// stays applied; callers relying on Mem for rollback semantics get a false
+// sense of safety and must not do so. Rollback-parity guarantees are SQL-only
+// (see Store.RunInTx).
+func (m *MemInstanceStore) RunInTx(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
 }
 
 // Entries returns the recorded trigger history for id (JournalReader).

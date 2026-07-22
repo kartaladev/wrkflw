@@ -10,7 +10,6 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/scheduler"
 )
 
@@ -27,7 +26,7 @@ func TestSchedulerStartExplicitAndFire(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	_, err = s.Schedule(t.Context(), "t1", schedule.At(fc.Now().Add(time.Second)), wg.Done)
+	_, err = s.Schedule(t.Context(), mustJob(t, "t1", surfaceKind, scheduler.At(fc.Now().Add(time.Second)), wg.Done))
 	require.NoError(t, err)
 	require.NoError(t, fc.BlockUntilContext(t.Context(), 1))
 	fc.Advance(time.Second)
@@ -47,7 +46,7 @@ func TestSchedulerCtxCancelCloses(t *testing.T) {
 	cancel()
 
 	require.Eventually(t, func() bool {
-		_, serr := s.Schedule(context.Background(), "x", schedule.At(fc.Now().Add(time.Hour)), func() {})
+		_, serr := s.Schedule(context.Background(), mustJob(t, "x", surfaceKind, scheduler.At(fc.Now().Add(time.Hour)), nil))
 		return errors.Is(serr, scheduler.ErrSchedulerClosed)
 	}, 2*time.Second, 10*time.Millisecond, "ctx cancellation must close the scheduler")
 }
@@ -64,7 +63,7 @@ func TestSchedulerStartAfterAutoStartInstallsWatcher(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	// Auto-start via Schedule (background context, no cancellation watcher).
-	_, err = s.Schedule(t.Context(), "t1", schedule.At(fc.Now().Add(time.Hour)), func() {})
+	_, err = s.Schedule(t.Context(), mustJob(t, "t1", surfaceKind, scheduler.At(fc.Now().Add(time.Hour)), nil))
 	require.NoError(t, err)
 
 	// A subsequent explicit Start(ctx) must install the watcher so ctx drives shutdown.
@@ -73,7 +72,7 @@ func TestSchedulerStartAfterAutoStartInstallsWatcher(t *testing.T) {
 	cancel()
 
 	require.Eventually(t, func() bool {
-		_, serr := s.Schedule(context.Background(), "t2", schedule.At(fc.Now().Add(time.Hour)), func() {})
+		_, serr := s.Schedule(context.Background(), mustJob(t, "t2", surfaceKind, scheduler.At(fc.Now().Add(time.Hour)), nil))
 		return errors.Is(serr, scheduler.ErrSchedulerClosed)
 	}, 2*time.Second, 10*time.Millisecond, "Start after auto-start must bind ctx cancellation to shutdown")
 }
@@ -86,6 +85,6 @@ func TestSchedulerScheduleAfterCloseErrors(t *testing.T) {
 	require.NoError(t, s.Start(t.Context()))
 	require.NoError(t, s.Close())
 
-	_, err = s.Schedule(t.Context(), "y", schedule.At(time.Now().Add(time.Hour)), func() {})
+	_, err = s.Schedule(t.Context(), mustJob(t, "y", surfaceKind, scheduler.At(time.Now().Add(time.Hour)), nil))
 	require.ErrorIs(t, err, scheduler.ErrSchedulerClosed)
 }

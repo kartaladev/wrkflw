@@ -86,11 +86,11 @@ func run(logger *slog.Logger) error {
 	shutdown.AddCloser(evClose)
 
 	// --- Scheduler: gocron-backed timer/deadline driver ---
-	scheduler, err := scheduler.NewScheduler(scheduler.WithClock(clk), scheduler.WithLogger(logger))
+	sched, err := scheduler.NewScheduler(scheduler.WithClock(clk), scheduler.WithLogger(logger))
 	if err != nil {
 		return err
 	}
-	shutdown.AddCloser(scheduler) // *Scheduler is an io.Closer
+	shutdown.AddCloser(sched) // *Scheduler is an io.Closer
 
 	// --- Store, relay, and readiness probe (Postgres when DATABASE_URL is set) ---
 	memStore, merr := kernel.NewMemInstanceStore()

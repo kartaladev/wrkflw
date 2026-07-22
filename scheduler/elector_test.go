@@ -8,7 +8,6 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/internal/dbtest"
 	"github.com/kartaladev/wrkflw/persistence"
 	"github.com/kartaladev/wrkflw/scheduler"
@@ -64,7 +63,8 @@ func TestSchedulerWithTimerElector(t *testing.T) {
 			t.Cleanup(func() { _ = s.Close() })
 
 			fired := make(chan struct{}, 1)
-			_, err = s.Schedule(ctx, "timer", schedule.At(clk.Now().Add(time.Second)), func() { fired <- struct{}{} })
+			_, err = s.Schedule(ctx, mustJob(t, "timer", surfaceKind,
+				scheduler.At(clk.Now().Add(time.Second)), func() { fired <- struct{}{} }))
 			require.NoError(t, err)
 			require.NoError(t, clk.BlockUntilContext(ctx, 1))
 			clk.Advance(time.Second)
@@ -111,7 +111,8 @@ func TestSchedulerElectorHeartbeatStepsDown(t *testing.T) {
 	// Fire a timer so the leader actually wins leadership (gocron calls IsLeader on
 	// the job run), starting the heartbeat.
 	fired := make(chan struct{}, 1)
-	_, err = s.Schedule(ctx, "timer", schedule.At(clk.Now().Add(time.Second)), func() { fired <- struct{}{} })
+	_, err = s.Schedule(ctx, mustJob(t, "timer", surfaceKind,
+		scheduler.At(clk.Now().Add(time.Second)), func() { fired <- struct{}{} }))
 	require.NoError(t, err)
 	require.NoError(t, clk.BlockUntilContext(ctx, 1))
 	clk.Advance(time.Second)
@@ -167,7 +168,8 @@ func TestSchedulerElectorOnLeadershipAcquired(t *testing.T) {
 
 	// A timer run makes gocron call IsLeader, so the leader wins leadership and the
 	// hook fires (in production this is wired to ProcessDriver.RehydrateTimers).
-	_, err = s.Schedule(ctx, "timer", schedule.At(clk.Now().Add(time.Second)), func() {})
+	_, err = s.Schedule(ctx, mustJob(t, "timer", surfaceKind,
+		scheduler.At(clk.Now().Add(time.Second)), nil))
 	require.NoError(t, err)
 	require.NoError(t, clk.BlockUntilContext(ctx, 1))
 	clk.Advance(time.Second)
