@@ -1,0 +1,225 @@
+package scheduler_test
+
+import (
+	"context"
+	"io"
+	"log/slog"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/jonboulle/clockwork"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+
+	"github.com/kartaladev/wrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"github.com/kartaladev/wrkflw/scheduler"
+)
+
+func TestNewScheduler_SatisfiesPortAndFires(t *testing.T) {
+	fakeClock := clockwork.NewFakeClock()
+	s, err := scheduler.NewScheduler(scheduler.WithClock(fakeClock))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Runtime checks that the façade satisfies the required contracts.
+	var _ kernel.Scheduler = s
+	var _ io.Closer = s
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	_, err = s.Schedule(t.Context(), "t1", schedule.At(fakeClock.Now().Add(3*time.Second)), func() { wg.Done() })
+	require.NoError(t, err)
+	require.NoError(t, fakeClock.BlockUntilContext(t.Context(), 1))
+	fakeClock.Advance(3 * time.Second)
+	wg.Wait()
+}
+
+func TestScheduler_Cancel_NoOp(t *testing.T) {
+	fakeClock := clockwork.NewFakeClock()
+	s, err := scheduler.NewScheduler(scheduler.WithClock(fakeClock))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Cancel on an unknown ID must not panic or error.
+	s.Cancel(t.Context(), "nonexistent")
+
+	// Schedule then cancel — callback must NOT fire.
+	fired := false
+	_, err = s.Schedule(t.Context(), "t2", schedule.At(fakeClock.Now().Add(1*time.Second)), func() { fired = true })
+	require.NoError(t, err)
+	s.Cancel(t.Context(), "t2")
+
+	// Advance past the would-be fire time; nothing should fire.
+	// Drain any remaining waiters on the fake clock.
+	require.NoError(t, fakeClock.BlockUntilContext(t.Context(), 0))
+	fakeClock.Advance(2 * time.Second)
+	require.False(t, fired, "cancelled timer must not fire")
+}
+
+// TestNewScheduler_WithLogger verifies that the WithLogger façade option is
+// accepted and that the resulting scheduler constructs and fires correctly.
+func TestNewScheduler_WithLogger(t *testing.T) {
+	type tc struct {
+		name   string
+		assert func(t *testing.T)
+	}
+
+	cases := []tc{
+		{
+			name: "WithLogger propagates custom logger without error",
+			assert: func(t *testing.T) {
+				clk := clockwork.NewFakeClock()
+				logger := slog.New(slog.Default().Handler())
+				s, err := scheduler.NewScheduler(scheduler.WithClock(clk), scheduler.WithLogger(logger))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+
+				// Verify scheduler still fires correctly with injected logger.
+				var wg sync.WaitGroup
+				wg.Add(1)
+				_, err = s.Schedule(t.Context(), "wl-t1", schedule.At(clk.Now().Add(time.Second)), func() { wg.Done() })
+				require.NoError(t, err)
+				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
+				clk.Advance(time.Second)
+				wg.Wait()
+			},
+		},
+		{
+			name: "WithLogger nil is a no-op — construction succeeds",
+			assert: func(t *testing.T) {
+				clk := clockwork.NewFakeClock()
+				s, err := scheduler.NewScheduler(scheduler.WithClock(clk), scheduler.WithLogger(nil))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				require.NotNil(t, s)
+			},
+		},
+		{
+			name: "no options still constructs correctly",
+			assert: func(t *testing.T) {
+				clk := clockwork.NewFakeClock()
+				s, err := scheduler.NewScheduler(scheduler.WithClock(clk))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				require.NotNil(t, s)
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			c.assert(t)
+		})
+	}
+}
+
+// TestNewScheduler_ObservabilityOptions verifies that WithTracerProvider and
+// WithMeterProvider are accepted by the façade and that the resulting scheduler
+// constructs without panicking. Per spec §4, the scheduler holds these options
+// for parity with other components (relay, runtime, transports); no spans or
+// metrics are emitted in this track.
+func TestNewScheduler_ObservabilityOptions(t *testing.T) {
+	type tc struct {
+		name   string
+		assert func(t *testing.T)
+	}
+
+	cases := []tc{
+		{
+			name: "WithTracerProvider constructs without panic",
+			assert: func(t *testing.T) {
+				clk := clockwork.NewFakeClock()
+				tp := sdktrace.NewTracerProvider()
+				t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
+				s, err := scheduler.NewScheduler(scheduler.WithClock(clk), scheduler.WithTracerProvider(tp))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				require.NotNil(t, s)
+			},
+		},
+		{
+			name: "WithMeterProvider constructs without panic",
+			assert: func(t *testing.T) {
+				clk := clockwork.NewFakeClock()
+				mp := sdkmetric.NewMeterProvider()
+				t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
+				s, err := scheduler.NewScheduler(scheduler.WithClock(clk), scheduler.WithMeterProvider(mp))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				require.NotNil(t, s)
+			},
+		},
+		{
+			name: "all three options together construct without panic",
+			assert: func(t *testing.T) {
+				clk := clockwork.NewFakeClock()
+				tp := sdktrace.NewTracerProvider()
+				t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
+				mp := sdkmetric.NewMeterProvider()
+				t.Cleanup(func() { _ = mp.Shutdown(t.Context()) })
+				l := slog.New(slog.Default().Handler())
+				s, err := scheduler.NewScheduler(
+					scheduler.WithClock(clk),
+					scheduler.WithTracerProvider(tp),
+					scheduler.WithMeterProvider(mp),
+					scheduler.WithLogger(l),
+				)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = s.Close() })
+				require.NotNil(t, s)
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			c.assert(t)
+		})
+	}
+}
+
+// TestScheduler_CloseWithContext verifies the façade's context-aware shutdown:
+// it bounds the underlying gocron shutdown by ctx (returning its error while a
+// job is still running) and is idempotent like Close.
+func TestScheduler_CloseWithContext(t *testing.T) {
+	t.Run("honors an expired ctx while a job is running", func(t *testing.T) {
+		s, err := scheduler.NewScheduler() // real clock: an At(now) job fires immediately
+		require.NoError(t, err)
+
+		enter := make(chan struct{})
+		release := make(chan struct{})
+		var once sync.Once
+		_, err = s.Schedule(t.Context(), "blocker", schedule.At(time.Now()), func() {
+			once.Do(func() { close(enter) })
+			<-release
+		})
+		require.NoError(t, err)
+		select {
+		case <-enter:
+		case <-time.After(2 * time.Second):
+			t.Fatal("blocking job did not start")
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		start := time.Now()
+		err = s.CloseWithContext(ctx)
+		assert.Less(t, time.Since(start), 2*time.Second,
+			"CloseWithContext must honor ctx, not block on gocron's stop timeout")
+		assert.ErrorIs(t, err, context.Canceled)
+
+		close(release) // let the job finish so gocron fully shuts down (goleak)
+	})
+
+	t.Run("is idempotent", func(t *testing.T) {
+		s, err := scheduler.NewScheduler(scheduler.WithClock(clockwork.NewFakeClock()))
+		require.NoError(t, err)
+		require.NoError(t, s.CloseWithContext(context.Background()))
+		require.NoError(t, s.CloseWithContext(context.Background()), "second CloseWithContext must no-op")
+		require.NoError(t, s.Close(), "Close after CloseWithContext must also no-op")
+	})
+}

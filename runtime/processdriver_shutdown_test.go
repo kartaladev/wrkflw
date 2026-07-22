@@ -13,7 +13,7 @@ import (
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/processtest"
 	"github.com/kartaladev/wrkflw/runtime"
-	"github.com/kartaladev/wrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/scheduler"
 )
 
 // closeSpyScheduler is a kernel.Scheduler that also implements io.Closer and
@@ -46,13 +46,13 @@ func TestProcessDriverDefaultScheduler(t *testing.T) {
 }
 
 // TestProcessDriverNilSchedulerFallsBackToDefault verifies that a nil scheduler
-// supplied via WithScheduler — including a TYPED nil (e.g. a (*scheduling.Scheduler)(nil)
+// supplied via WithScheduler — including a TYPED nil (e.g. a (*scheduler.Scheduler)(nil)
 // variable, whose interface value is non-nil) — is treated as "not provided" and
 // falls back to the owned in-process default, consistent with how WithInstanceStore(nil)
 // and WithActionCatalog(nil) are ignored. Without the guard a typed nil would slip
 // past the driver.sched != nil check and panic on the first timer.
 func TestProcessDriverNilSchedulerFallsBackToDefault(t *testing.T) {
-	var typedNil *scheduling.Scheduler // typed nil: non-nil kernel.Scheduler interface, nil concrete pointer
+	var typedNil *scheduler.Scheduler // typed nil: non-nil kernel.Scheduler interface, nil concrete pointer
 
 	driver, err := runtime.NewProcessDriver(runtime.WithScheduler(typedNil))
 	require.NoError(t, err)
@@ -88,7 +88,7 @@ func TestProcessDriverStart(t *testing.T) {
 		// surface its terminal error rather than silently succeed — proving Start
 		// genuinely delegates to the owned scheduler.
 		err = driver.Start(context.Background())
-		require.ErrorIs(t, err, scheduling.ErrSchedulerClosed)
+		require.ErrorIs(t, err, scheduler.ErrSchedulerClosed)
 	})
 
 	t.Run("no-op for an injected scheduler", func(t *testing.T) {
@@ -121,7 +121,7 @@ func TestProcessDriverShutdown(t *testing.T) {
 // scheduler started, Shutdown given an already-expired ctx returns PROMPTLY and surfaces
 // the ctx deadline error (joined), rather than blocking on gocron's internal stop
 // timeout. The scheduler is closed via gocron's native ShutdownWithContext (through
-// scheduling.Scheduler.CloseWithContext), which honors ctx directly — no manual
+// scheduler.Scheduler.CloseWithContext), which honors ctx directly — no manual
 // close-race goroutine.
 //
 // Caveat on isolation: an empty owned gocron scheduler closes in well under 500ms, and

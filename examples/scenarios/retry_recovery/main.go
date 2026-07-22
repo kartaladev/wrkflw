@@ -47,7 +47,7 @@ import (
 	"github.com/kartaladev/wrkflw/runtime"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/kartaladev/wrkflw/runtime/view"
-	"github.com/kartaladev/wrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/scheduler"
 )
 
 // fixedJitter returns the full computed backoff (no randomization) so the retry
@@ -107,7 +107,7 @@ func main() {
 
 	startAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	clk := clockwork.NewFakeClockAt(startAt)
-	sched, err := scheduling.NewScheduler(scheduling.WithClock(clk))
+	sched, err := scheduler.NewScheduler(scheduler.WithClock(clk))
 	if err != nil {
 		log.Fatal("scheduler:", err)
 	}

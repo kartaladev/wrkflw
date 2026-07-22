@@ -47,7 +47,7 @@ import (
 	"github.com/kartaladev/wrkflw/persistence"
 	"github.com/kartaladev/wrkflw/runtime"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
-	"github.com/kartaladev/wrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/scheduler"
 	"github.com/kartaladev/wrkflw/service"
 	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 	"github.com/kartaladev/wrkflw/transport/http/stdlib"
@@ -86,7 +86,7 @@ func run(logger *slog.Logger) error {
 	shutdown.AddCloser(evClose)
 
 	// --- Scheduler: gocron-backed timer/deadline driver ---
-	scheduler, err := scheduling.NewScheduler(scheduling.WithClock(clk), scheduling.WithLogger(logger))
+	scheduler, err := scheduler.NewScheduler(scheduler.WithClock(clk), scheduler.WithLogger(logger))
 	if err != nil {
 		return err
 	}

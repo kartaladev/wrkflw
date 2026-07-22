@@ -50,7 +50,7 @@ func TestEngineShutdownLeavesInjectedDriverUntouched(t *testing.T) {
 	require.NoError(t, e.Shutdown(ctx))
 
 	// The injected driver must still be usable: Start must not report
-	// scheduling.ErrSchedulerClosed (which it would if it had been shut down).
+	// scheduler.ErrSchedulerClosed (which it would if it had been shut down).
 	err := h.driver.Start(context.Background())
 	assert.NoError(t, err)
 

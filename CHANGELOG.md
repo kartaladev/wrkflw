@@ -17,6 +17,14 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **`scheduling` package renamed to `scheduler` and unified with the internal gocron engine.**
+  The public import path is now `github.com/kartaladev/wrkflw/scheduler` (formerly
+  `github.com/kartaladev/wrkflw/scheduling`). The internal gocron implementation relocated from
+  `internal/scheduling/gocron` to `scheduler/internal/gocron`. Public signatures returning
+  `scheduling.*` types now return `scheduler.*` equivalents (e.g. `persistence.NewSchedulerLocker`
+  now returns `scheduler.Locker` instead of `scheduling.Locker`; `scheduler.Elector`,
+  `scheduler.Scheduler`, etc. replace their `scheduling.*` counterparts).
+
 - **`DefinitionRegistry.Lookup(ctx, defRef string)` → `Lookup(ctx, model.Qualifier)`;
   def-ref fields, params, and constructors now typed `definition.Qualifier` (ADR-0101).**
   The following Go symbols are now `definition.Qualifier` (or `model.Qualifier` internally)
@@ -198,7 +206,7 @@ release.
     name uniqueness is enforced at `RegisterDefinition`/`MustRegisterDefinition`
     (`ErrDuplicateMessageStart`).
   - **Timer start** — scheduler-driven, multi-replica safe via the existing
-    `scheduling.Elector`. New explicit `runtime.ProcessDriver.RehydrateStartTimers(ctx) error`
+    `scheduler.Elector`. New explicit `runtime.ProcessDriver.RehydrateStartTimers(ctx) error`
     step (a sibling of `RehydrateTimers`) arms recurring/one-shot start timers by enumerating
     registered definitions; each fire creates one instance.
   - New opt-in `runtime/kernel.DefinitionLister` capability (`ListDefinitions(ctx)

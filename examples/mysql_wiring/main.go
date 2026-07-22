@@ -13,7 +13,7 @@
 //	multiStatements=true            — required only during migration (goose runs multi-stmt SQL)
 //
 // The scheduler is wired with a MySQL-backed leader elector (built from
-// scheduling/backend/mysql and passed via scheduling.WithElector) so exactly one
+// scheduler/backend/mysql and passed via scheduler.WithElector) so exactly one
 // replica runs timer fires across a multi-replica deployment (ADR-0059, ADR-0072,
 // ADR-0102). The on-leadership-acquired callback rehydrates persisted timers on
 // the new leader so timers armed at runtime are not lost on failover (Option A).
@@ -47,8 +47,8 @@ import (
 	"github.com/kartaladev/wrkflw/runtime"
 	"github.com/kartaladev/wrkflw/runtime/calllink"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
-	"github.com/kartaladev/wrkflw/scheduling"
-	mysqlbackend "github.com/kartaladev/wrkflw/scheduling/backend/mysql"
+	"github.com/kartaladev/wrkflw/scheduler"
+	mysqlbackend "github.com/kartaladev/wrkflw/scheduler/backend/mysql"
 	"github.com/kartaladev/wrkflw/service"
 	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 	"github.com/kartaladev/wrkflw/transport/http/stdlib"
@@ -187,9 +187,9 @@ func run(logger *slog.Logger) error {
 	if eerr != nil {
 		return eerr
 	}
-	scheduler, serr := scheduling.NewScheduler(
-		scheduling.WithLogger(logger),
-		scheduling.WithElector(elector),
+	scheduler, serr := scheduler.NewScheduler(
+		scheduler.WithLogger(logger),
+		scheduler.WithElector(elector),
 	)
 	if serr != nil {
 		_ = elector.Close()

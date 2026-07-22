@@ -9,7 +9,7 @@ import (
 
 	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 	"github.com/kartaladev/wrkflw/persistence"
-	"github.com/kartaladev/wrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/scheduler"
 )
 
 // fakeDialectLocker is an in-memory dialect.Locker for exercising the scheduler
@@ -37,14 +37,14 @@ func TestNewSchedulerLocker(t *testing.T) {
 	type tc struct {
 		name   string
 		fake   *fakeDialectLocker
-		assert func(t *testing.T, l scheduling.Locker, fake *fakeDialectLocker)
+		assert func(t *testing.T, l scheduler.Locker, fake *fakeDialectLocker)
 	}
 
 	cases := []tc{
 		{
 			name: "acquired lock unlocks via dialect.Unlock",
 			fake: &fakeDialectLocker{tryOK: true},
-			assert: func(t *testing.T, l scheduling.Locker, fake *fakeDialectLocker) {
+			assert: func(t *testing.T, l scheduler.Locker, fake *fakeDialectLocker) {
 				held, err := l.Lock(t.Context(), "timer-1")
 				require.NoError(t, err)
 				require.NotNil(t, held)
@@ -57,7 +57,7 @@ func TestNewSchedulerLocker(t *testing.T) {
 		{
 			name: "contended lock returns an error and does not unlock",
 			fake: &fakeDialectLocker{tryOK: false},
-			assert: func(t *testing.T, l scheduling.Locker, fake *fakeDialectLocker) {
+			assert: func(t *testing.T, l scheduler.Locker, fake *fakeDialectLocker) {
 				held, err := l.Lock(t.Context(), "timer-2")
 				require.Error(t, err)
 				require.Nil(t, held)
@@ -67,7 +67,7 @@ func TestNewSchedulerLocker(t *testing.T) {
 		{
 			name: "try error propagates",
 			fake: &fakeDialectLocker{tryErr: errors.New("boom")},
-			assert: func(t *testing.T, l scheduling.Locker, fake *fakeDialectLocker) {
+			assert: func(t *testing.T, l scheduler.Locker, fake *fakeDialectLocker) {
 				held, err := l.Lock(t.Context(), "timer-3")
 				require.Error(t, err)
 				require.Nil(t, held)

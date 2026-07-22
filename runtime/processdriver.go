@@ -26,7 +26,7 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/kartaladev/wrkflw/runtime/signal"
 	"github.com/kartaladev/wrkflw/runtime/validation"
-	"github.com/kartaladev/wrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/scheduler"
 )
 
 // ProcessDriver is the reference single-process driver loop.
@@ -116,7 +116,7 @@ type ProcessDriver struct {
 	// [ProcessDriver.Start] starts it and [ProcessDriver.Shutdown] closes it. A
 	// consumer-injected scheduler is consumer-owned, so this stays nil and the
 	// consumer manages its lifecycle.
-	ownedScheduler *scheduling.Scheduler
+	ownedScheduler *scheduler.Scheduler
 
 	// gate is the executor-side validation memoizer (runtime/validation.Gate)
 	// used by validateInput to compile-once-and-cache each
@@ -181,7 +181,7 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 	// ignored, so a stray typed nil cannot slip past and panic on the first timer.
 	customScheduler := !isNilScheduler(driver.sched)
 	if !customScheduler {
-		var schedOpts []scheduling.Option
+		var schedOpts []scheduler.Option
 		// Auto-wire self-rehydration when a durable timer store is configured.
 		// defsReg is always non-nil (defaults to the process-global
 		// defaultDefinitionRegistry), so the check is omitted. Rehydration is
@@ -191,9 +191,9 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 		// resolved lazily at first Start/Schedule, by which time the driver is
 		// fully constructed — breaking the driver↔jobstore↔scheduler cycle.
 		if driver.timerStore != nil {
-			schedOpts = append(schedOpts, scheduling.WithJobStore(func() kernel.JobStore { return NewJobStore(driver) }))
+			schedOpts = append(schedOpts, scheduler.WithJobStore(func() kernel.JobStore { return NewJobStore(driver) }))
 		}
-		sched, serr := scheduling.NewScheduler(schedOpts...)
+		sched, serr := scheduler.NewScheduler(schedOpts...)
 		if serr != nil {
 			return nil, fmt.Errorf("workflow-runtime: default scheduler: %w", serr)
 		}

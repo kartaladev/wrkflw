@@ -15,7 +15,7 @@ import (
 	"github.com/kartaladev/wrkflw/runtime"
 	"github.com/kartaladev/wrkflw/runtime/internal/runtimetest"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
-	"github.com/kartaladev/wrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/scheduler"
 )
 
 // greetAction is a trivial action used across rehydration tests.
@@ -129,7 +129,7 @@ func TestLoadScheduledPartialUnresolved_ResolvableJobsReturned(t *testing.T) {
 	assert.Len(t, jobs, 2, "resolvable jobs must be returned even alongside the sentinel")
 }
 
-// TestSchedulerStart_UnresolvedDefinitions_NonFatal proves that scheduling.Scheduler.Start
+// TestSchedulerStart_UnresolvedDefinitions_NonFatal proves that scheduler.Scheduler.Start
 // returns nil (non-fatal) when LoadScheduled returns ErrUnresolvedTimerDefinitions,
 // so unresolved-def timers do not block startup.
 func TestSchedulerStart_UnresolvedDefinitions_NonFatal(t *testing.T) {
@@ -160,9 +160,9 @@ func TestSchedulerStart_UnresolvedDefinitions_NonFatal(t *testing.T) {
 	// Fresh driver WITHOUT the definition — simulates a consumer that hasn't registered defs yet.
 	emptyReg := kernel.NewMapDefinitionRegistry() // no defs
 	var driver2 *runtime.ProcessDriver
-	sched2, err := scheduling.NewScheduler(
-		scheduling.WithClock(fc),
-		scheduling.WithJobStore(func() kernel.JobStore { return runtime.NewJobStore(driver2) }),
+	sched2, err := scheduler.NewScheduler(
+		scheduler.WithClock(fc),
+		scheduler.WithJobStore(func() kernel.JobStore { return runtime.NewJobStore(driver2) }),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sched2.Close() })

@@ -236,7 +236,7 @@ All packages live directly at the module root — no `pkg/` prefix.
 | `transport` | HTTP transport adapters: `transport/http/httpcore` (shared pure-endpoint funcs, DTOs, validation, error classification, observability), `transport/http/stdlib` (net/http), `transport/http/gin`, `transport/http/fiber`. |
 | `persistence` | Persistence façade over the neutral SQL store: `OpenPostgres`, `OpenMySQL`, and `OpenSQLite`, plus migrations and relay/lister/store constructors (ADR-0081/0082). |
 | `eventing` | Eventing façade for publishing domain events via the transactional outbox. |
-| `scheduling` | Façade over the timer/deadline scheduler (gocron behind the abstraction). |
+| `scheduler` | Façade over the timer/deadline scheduler (gocron behind the abstraction). |
 | `observability` | Metrics, traces, and `slog` wiring at the runtime boundary. |
 | `clock` | `clock.Clock` time abstraction. Supply `clock.System()` in production; inject a fake in tests. |
 | `service` | Application-layer `Service` façade consumed by transport adapters. |
@@ -424,7 +424,7 @@ Pass the authorizer to `runtime.NewProcessDriver` via `runtime.WithHumanTasks(re
 
 ## Scheduling and waits
 
-Timers and deadlines are driven by gocron (behind the `scheduling` abstraction).
+Timers and deadlines are driven by gocron (behind the `scheduler` abstraction).
 
 - **Intermediate timer events** — pause execution for a Go-duration interval (e.g. `"1h"`) before continuing.
 - **Deadlines** — if a human task (or any wait node) is not resolved within the deadline
@@ -596,7 +596,7 @@ transport/http/gin/         # gin adapter
 transport/http/fiber/       # fiber v3 adapter
 persistence/        # Persistence façade (public)
 eventing/           # Eventing façade (public)
-scheduling/         # Scheduling façade (public)
+scheduler/          # Scheduling façade (public)
 observability/      # OTel + slog wiring (public)
 clock/              # Clock abstraction (public)
 service/            # Application-layer Service façade (public)
@@ -1376,7 +1376,7 @@ clean production embedding ergonomic (ADR-0054):
   (a `pool.Ping` probe), or register an inline check with `httpcore.HealthCheckFunc(name, fn)`.
 
 - **One-call graceful shutdown.** `runtime.ShutdownGroup` aggregates your resource
-  holders — the `scheduling.Scheduler` (`io.Closer`), the advisory-lock ownership
+  holders — the `scheduler.Scheduler` (`io.Closer`), the advisory-lock ownership
   closer, the eventing closer, the `pgxpool.Pool` — and `Shutdown(ctx)` closes them in
   reverse registration order, running every one even if an earlier fails and joining the
   errors with `errors.Join`. The background `Run(ctx)` workers (relay, call notifier,

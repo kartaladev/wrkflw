@@ -45,7 +45,7 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/kartaladev/wrkflw/runtime/task"
 	"github.com/kartaladev/wrkflw/runtime/view"
-	"github.com/kartaladev/wrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/scheduler"
 )
 
 func main() {
@@ -92,7 +92,7 @@ func main() {
 		"reviewer": {reviewer},
 	})
 	az := authz.RoleAuthorizer{}
-	sched, err := scheduling.NewScheduler(scheduling.WithClock(clk))
+	sched, err := scheduler.NewScheduler(scheduler.WithClock(clk))
 	if err != nil {
 		log.Fatal("scheduler:", err)
 	}

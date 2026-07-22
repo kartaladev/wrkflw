@@ -17,7 +17,7 @@ import (
 	"github.com/kartaladev/wrkflw/runtime"
 	"github.com/kartaladev/wrkflw/runtime/internal/runtimetest"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
-	"github.com/kartaladev/wrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/scheduler"
 )
 
 // TestSelfRehydrateOnStart proves that a Scheduler wired with WithJobStore
@@ -26,7 +26,7 @@ import (
 // ADR-0102 scheduler self-rehydration (Task 3).
 //
 // Scenario: a timer is armed against a SQLite store (row persists). The driver
-// and scheduler are discarded ("crash"). A fresh scheduling.Scheduler is
+// and scheduler are discarded ("crash"). A fresh scheduler.Scheduler is
 // constructed with WithJobStore capturing a fresh driver2. Start fires the
 // self-rehydrate path; advancing the fake clock triggers the re-armed timer
 // and the instance resumes to completion.
@@ -66,9 +66,9 @@ func TestSelfRehydrateOnStart(t *testing.T) {
 	// Phase 2 — fresh REAL scheduler + driver2, wired via thunk so the
 	// construction cycle is broken (driver2 pointer captured before assignment).
 	var driver2 *runtime.ProcessDriver
-	sched2, err := scheduling.NewScheduler(
-		scheduling.WithClock(fc),
-		scheduling.WithJobStore(func() kernel.JobStore { return runtime.NewJobStore(driver2) }),
+	sched2, err := scheduler.NewScheduler(
+		scheduler.WithClock(fc),
+		scheduler.WithJobStore(func() kernel.JobStore { return runtime.NewJobStore(driver2) }),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sched2.Close() })

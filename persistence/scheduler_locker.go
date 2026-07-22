@@ -10,20 +10,20 @@ import (
 
 	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 	"github.com/kartaladev/wrkflw/internal/persistence/store"
-	"github.com/kartaladev/wrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/scheduler"
 )
 
-// ErrSchedulerLockNotObtained is returned by the bridge's [scheduling.Locker.Lock]
+// ErrSchedulerLockNotObtained is returned by the bridge's [scheduler.Locker.Lock]
 // when the underlying advisory lock is already held by another session. The
 // scheduler treats any Lock error as "do not run this timer on this replica",
 // which is exactly the per-timer exclusion the bridge provides.
 var ErrSchedulerLockNotObtained = errors.New("workflow-persistence: scheduler advisory lock not obtained")
 
 // NewSchedulerLocker bridges a single-session database advisory lock
-// ([dialect.Locker]) to the neutral [scheduling.Locker] used for multi-replica
+// ([dialect.Locker]) to the neutral [scheduler.Locker] used for multi-replica
 // timer exclusion, reusing the very same advisory-lock SQL the store uses for
-// instance ownership — no lock code is duplicated in the scheduling package
-// (ADR-0102). Pass the result to scheduling.WithLocker.
+// instance ownership — no lock code is duplicated in the scheduler package
+// (ADR-0102). Pass the result to scheduler.WithLocker.
 //
 // Concurrency note: a [dialect.Locker] holds ONE session connection, so the
 // returned locker serializes concurrent timer fires onto that single session. Use
@@ -33,23 +33,23 @@ var ErrSchedulerLockNotObtained = errors.New("workflow-persistence: scheduler ad
 // which acquire a fresh session per lock so distinct timers never contend on one
 // connection.
 //
-// Lock(ctx, key) calls dl.TryLock: on success it returns a [scheduling.Lock] whose
+// Lock(ctx, key) calls dl.TryLock: on success it returns a [scheduler.Lock] whose
 // Unlock calls dl.Unlock(ctx, key); when the key is already held it returns
 // [ErrSchedulerLockNotObtained]; any TryLock error is propagated.
-func NewSchedulerLocker(dl dialect.Locker) scheduling.Locker {
+func NewSchedulerLocker(dl dialect.Locker) scheduler.Locker {
 	return &schedulerLocker{lock: dl.TryLock, unlock: dl.Unlock}
 }
 
-// NewPostgresSchedulerLocker returns a [scheduling.Locker] backed by Postgres
+// NewPostgresSchedulerLocker returns a [scheduler.Locker] backed by Postgres
 // session-level advisory locks over pool. Pass the result to
-// scheduling.WithLocker for multi-replica timer exclusion.
+// scheduler.WithLocker for multi-replica timer exclusion.
 //
 // Each Lock acquires a FRESH pooled connection and holds the advisory lock on it
 // for the fire's duration; Unlock releases the lock and returns the connection to
 // the pool. This mirrors the store's advisory-lock SQL exactly (no duplication)
 // while letting distinct timers fire concurrently without contending on a single
 // session. Nothing to close: connections are borrowed from and returned to pool.
-func NewPostgresSchedulerLocker(pool *pgxpool.Pool) scheduling.Locker {
+func NewPostgresSchedulerLocker(pool *pgxpool.Pool) scheduler.Locker {
 	return &poolSchedulerLocker{
 		acquire: func(ctx context.Context) (dialect.Locker, func() error, error) {
 			return store.NewPostgresLocker(ctx, pool)
@@ -57,15 +57,15 @@ func NewPostgresSchedulerLocker(pool *pgxpool.Pool) scheduling.Locker {
 	}
 }
 
-// NewMySQLSchedulerLocker returns a [scheduling.Locker] backed by MySQL GET_LOCK /
-// RELEASE_LOCK over db. Pass the result to scheduling.WithLocker for multi-replica
+// NewMySQLSchedulerLocker returns a [scheduler.Locker] backed by MySQL GET_LOCK /
+// RELEASE_LOCK over db. Pass the result to scheduler.WithLocker for multi-replica
 // timer exclusion.
 //
 // Each Lock acquires a FRESH session connection and holds the named lock on it for
 // the fire's duration; Unlock releases the lock and closes the connection. This
 // mirrors the store's advisory-lock SQL exactly (no duplication) while letting
 // distinct timers fire concurrently without contending on a single session.
-func NewMySQLSchedulerLocker(db *sql.DB) scheduling.Locker {
+func NewMySQLSchedulerLocker(db *sql.DB) scheduler.Locker {
 	return &poolSchedulerLocker{
 		acquire: func(ctx context.Context) (dialect.Locker, func() error, error) {
 			return store.NewMySQLLocker(ctx, db)
@@ -73,13 +73,13 @@ func NewMySQLSchedulerLocker(db *sql.DB) scheduling.Locker {
 	}
 }
 
-// schedulerLocker adapts a single-session dialect.Locker to scheduling.Locker.
+// schedulerLocker adapts a single-session dialect.Locker to scheduler.Locker.
 type schedulerLocker struct {
 	lock   func(ctx context.Context, key string) (bool, error)
 	unlock func(ctx context.Context, key string) error
 }
 
-func (l *schedulerLocker) Lock(ctx context.Context, key string) (scheduling.Lock, error) {
+func (l *schedulerLocker) Lock(ctx context.Context, key string) (scheduler.Lock, error) {
 	ok, err := l.lock(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-persistence: scheduler locker try %q: %w", key, err)
@@ -109,7 +109,7 @@ type poolSchedulerLocker struct {
 	acquire func(ctx context.Context) (dialect.Locker, func() error, error)
 }
 
-func (l *poolSchedulerLocker) Lock(ctx context.Context, key string) (scheduling.Lock, error) {
+func (l *poolSchedulerLocker) Lock(ctx context.Context, key string) (scheduler.Lock, error) {
 	dl, closeConn, err := l.acquire(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-persistence: scheduler locker acquire session: %w", err)
