@@ -49,7 +49,7 @@ import (
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/runtime"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
-	"github.com/kartaladev/wrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/scheduler"
 )
 
 func main() {
@@ -99,7 +99,7 @@ func main() {
 	startAt := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
 	clk := clockwork.NewFakeClockAt(startAt)
 
-	sched, err := scheduling.NewScheduler(scheduling.WithClock(clk))
+	sched, err := scheduler.NewScheduler(scheduler.WithClock(clk))
 	if err != nil {
 		log.Fatal("scheduler:", err)
 	}

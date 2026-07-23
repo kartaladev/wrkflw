@@ -86,7 +86,7 @@
 //   - eventing     The eventing façade for publishing domain events (outbox).
 //     Keeps watermill confined: runtime/engine never import it. Provides
 //     NewGoChannelPublisher, NewMessageHandler, NewChainerRunner.
-//   - scheduling   The façade over the timer/deadline scheduler (gocron v2 behind
+//   - scheduler    The façade over the timer/deadline scheduler (gocron v2 behind
 //     the abstraction). Provides the gocron-backed Scheduler; the in-memory
 //     MemScheduler test double lives in the processtest harness package.
 //   - observability Metrics, traces, and slog wiring at the runtime boundary.

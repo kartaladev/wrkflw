@@ -52,7 +52,7 @@ import (
 	"github.com/kartaladev/wrkflw/persistence"
 	"github.com/kartaladev/wrkflw/runtime"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
-	"github.com/kartaladev/wrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/scheduler"
 
 	_ "modernc.org/sqlite"
 )
@@ -139,11 +139,11 @@ func main() {
 
 	// ── Step 2: Generation 1 — arm the timer, park the instance ──────────────
 	var driver1 *runtime.ProcessDriver
-	sched1, err := scheduling.NewScheduler(
-		scheduling.WithClock(fc),
+	sched1, err := scheduler.NewScheduler(
+		scheduler.WithClock(fc),
 		// Thunk: driver1 is nil at construction time; it is assigned before
 		// sched1.Start is called explicitly, so the provider sees the live pointer.
-		scheduling.WithJobStore(func() kernel.JobStore { return runtime.NewJobStore(driver1) }),
+		scheduler.WithJobStore("wrkflw.timer", func() scheduler.JobStore { return runtime.NewJobStore(driver1) }),
 	)
 	if err != nil {
 		log.Fatal("sched1:", err)
@@ -204,11 +204,11 @@ func main() {
 
 	// ── Step 5: Generation 2 — fresh driver self-rehydrates timers on Start ──
 	var driver2 *runtime.ProcessDriver
-	sched2, err := scheduling.NewScheduler(
-		scheduling.WithClock(fc),
+	sched2, err := scheduler.NewScheduler(
+		scheduler.WithClock(fc),
 		// Thunk breaks the construction cycle: driver2 is nil at this point but
 		// will be assigned before sched2.Start() calls the provider.
-		scheduling.WithJobStore(func() kernel.JobStore { return runtime.NewJobStore(driver2) }),
+		scheduler.WithJobStore("wrkflw.timer", func() scheduler.JobStore { return runtime.NewJobStore(driver2) }),
 	)
 	if err != nil {
 		log.Fatal("sched2:", err)

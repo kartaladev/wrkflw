@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/processtest"
+	"github.com/kartaladev/wrkflw/scheduler"
 )
 
 // TestReview_AdvanceTimersNoBackwardClock covers finding #5: advancing to a timer
@@ -26,7 +26,11 @@ func TestReview_AdvanceTimersNoBackwardClock(t *testing.T) {
 	require.NoError(t, err)
 
 	// A past-due timer (fireAt = base-1h) scheduled directly on the shared scheduler.
-	if _, err := h.Scheduler().Schedule(t.Context(), "past", schedule.At(base.Add(-time.Hour)), func() {}); err != nil {
+	pastJob, err := scheduler.NewJobWithID("past", "test-timer", scheduler.At(base.Add(-time.Hour)),
+		func(_ context.Context, _ scheduler.DataProvider) error { return nil },
+		scheduler.NewEmptyDataProvider())
+	require.NoError(t, err)
+	if _, err := h.Scheduler().Schedule(t.Context(), pastJob); err != nil {
 		t.Fatalf("Schedule past timer: %v", err)
 	}
 

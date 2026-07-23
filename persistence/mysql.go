@@ -99,9 +99,10 @@ func MigrateMySQL(ctx context.Context, db *sql.DB) error {
 	return store.MigrateMySQL(ctx, db)
 }
 
-// NewMySQLTimerStore returns a kernel.TimerStore backed by MySQL, for
-// ProcessDriver.RehydrateTimers. The db must already have migrations applied.
-// Mirrors NewTimerStore for Postgres.
+// NewMySQLTimerStore returns a kernel.TimerStore backed by MySQL. It backs
+// ProcessDriver.RehydrateTimers (explicit re-arm) and, via runtime.NewJobStore's
+// Load, the scheduler's own automatic self-rehydration on Start (ADR-0134). The
+// db must already have migrations applied. Mirrors NewTimerStore for Postgres.
 //
 // Example:
 //

@@ -411,8 +411,11 @@ func NewCallLinkStore(pool *pgxpool.Pool, opts ...CallLinkOption) (kernel.CallLi
 	return store.NewCallLinkStore(pool, dialect.NewPostgres(), opts...)
 }
 
-// NewTimerStore returns a kernel.TimerStore backed by Postgres, for
-// ProcessDriver.RehydrateTimers. The pool must already have migrations applied.
+// NewTimerStore returns a kernel.TimerStore backed by Postgres. It backs
+// ProcessDriver.RehydrateTimers (explicit re-arm) and, via runtime.NewJobStore's
+// Load, the scheduler's own automatic self-rehydration on Start (ADR-0134) —
+// both read the same durable ListArmed rows and re-arm with scheduler.Scheduler.Activate.
+// The pool must already have migrations applied.
 //
 // Example:
 //

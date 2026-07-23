@@ -20,7 +20,7 @@ type ShutdownFunc func(ctx context.Context) error
 // Run(ctx) workers (relay, call notifier, chainer runner, …) themselves and stops
 // them by cancelling that context. ShutdownGroup covers the *other* half — the
 // resource holders whose release is NOT ctx-driven (the scheduler's gocron
-// goroutine via the scheduling package's Scheduler.Close, the advisory-lock ownership connection, the
+// goroutine via the scheduler package's Scheduler.Close, the advisory-lock ownership connection, the
 // casbin closer, the pgx pool, an http.Server's graceful Shutdown) — so the whole
 // release is one well-defined call.
 //
@@ -62,7 +62,7 @@ func (g *ShutdownGroup) Add(fn ShutdownFunc) {
 
 // AddCloser registers an [io.Closer] (whose Close takes no context) to be closed
 // by [ShutdownGroup.Shutdown]. A nil closer is ignored. This adapts the many
-// resource holders that expose Close() error — the scheduling package's
+// resource holders that expose Close() error — the scheduler package's
 // Scheduler.Close, the advisory-lock io.Closer, the casbin closer — into the group.
 func (g *ShutdownGroup) AddCloser(c io.Closer) {
 	if c == nil {

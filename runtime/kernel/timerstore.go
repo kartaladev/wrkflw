@@ -31,12 +31,32 @@ type ArmedTimer struct {
 }
 
 // TimerStore is the read-side port for enumerating armed timers at startup. The
-// write side is fused into the transactional Store (AppliedStep.TimerArms /
-// TimerCancels), atomically with the state commit — see ADR-0027.
+// write side is the standalone [TimerWriter] capability (ADR-0134), persisted
+// atomically with the state commit via the runtime's own JobStore.
 type TimerStore interface {
 	// ListArmed returns all timers currently armed, ordered by
 	// (NextRun, InstanceID, TimerID) for deterministic re-arm order.
 	ListArmed(ctx context.Context) ([]ArmedTimer, error)
+}
+
+// TimerWriter is the write-side capability a TimerStore MAY implement. It is
+// type-asserted off the store supplied via WithTimerStore. Writes join an
+// ambient ctx-transaction (JoinOrBegin) so the runtime JobStore can persist
+// atomically with the state commit (ADR-0134).
+//
+// DeleteJobByTimerID removes a job by TimerID alone, without an InstanceID —
+// engine timer ids are globally unique (`<instanceID>-tm<seq>`), so a bare
+// TimerID lookup is unambiguous. It exists for the runtime JobStore's
+// Delete(id) (Task 10), which only carries the timer id.
+type TimerWriter interface {
+	// UpsertJob persists (or updates) the durable descriptor for spec's timer.
+	UpsertJob(ctx context.Context, spec JobSpec) error
+	// DeleteJob removes the durable descriptor for (instanceID, timerID).
+	// A no-op (nil error) if no such row exists.
+	DeleteJob(ctx context.Context, instanceID, timerID string) error
+	// DeleteJobByTimerID removes the durable descriptor for timerID alone.
+	// A no-op (nil error) if no such row exists.
+	DeleteJobByTimerID(ctx context.Context, timerID string) error
 }
 
 // MemTimerStore is the in-memory reference TimerStore. It is both the write
@@ -88,8 +108,43 @@ func (s *MemTimerStore) ListArmed(_ context.Context) ([]ArmedTimer, error) {
 }
 
 var _ TimerStore = (*MemTimerStore)(nil)
+var _ TimerWriter = (*MemTimerStore)(nil)
 
-// JobSpec is the descriptor of one durable scheduled timer job.
+// UpsertJob implements TimerWriter by arming (or re-arming) the descriptor
+// built from spec.
+func (s *MemTimerStore) UpsertJob(_ context.Context, spec JobSpec) error {
+	s.Arm(ArmedTimer{
+		InstanceID: spec.InstanceID,
+		DefID:      spec.DefID,
+		DefVersion: spec.DefVersion,
+		TimerID:    spec.TimerID,
+		Trigger:    spec.Trigger,
+		NextRun:    spec.NextRun,
+		Kind:       spec.Kind,
+	})
+	return nil
+}
+
+// DeleteJob implements TimerWriter by cancelling the (instanceID, timerID) entry.
+func (s *MemTimerStore) DeleteJob(_ context.Context, instanceID, timerID string) error {
+	s.Cancel(instanceID, timerID)
+	return nil
+}
+
+// DeleteJobByTimerID implements TimerWriter by scanning for and removing the
+// entry matching timerID alone, regardless of InstanceID.
+func (s *MemTimerStore) DeleteJobByTimerID(_ context.Context, timerID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k := range s.armed {
+		if k.timerID == timerID {
+			delete(s.armed, k)
+		}
+	}
+	return nil
+}
+
+// JobSpec is the typed descriptor of one durable scheduled timer job.
 type JobSpec struct {
 	TimerID    string
 	InstanceID string
@@ -100,22 +155,9 @@ type JobSpec struct {
 	// fire instant); otherwise it is the stored recurring Trigger.
 	Trigger schedule.TriggerSpec
 	NextRun time.Time
-}
-
-// ScheduledJob is an executable durable timer: its descriptor plus a rebuilt Fire
-// callback that delivers the timer's TimerFired trigger when invoked.
-type ScheduledJob struct {
-	Spec JobSpec
-	Fire func()
-}
-
-// JobStore is the read-side port a Scheduler uses to self-rehydrate armed timers
-// on start. It rebuilds executable ScheduledJobs from the durable TimerStore; the
-// write side remains the fused AppliedStep.TimerArms/TimerCancels on the state
-// commit (ADR-0027) — JobStore never writes.
-type JobStore interface {
-	// LoadScheduled enumerates every armed timer and returns an executable
-	// ScheduledJob (descriptor + rebuilt Fire) for each. Timers whose definition
-	// cannot be resolved are skipped and counted in the returned error.
-	LoadScheduled(ctx context.Context) ([]ScheduledJob, error)
+	// Kind discriminates the purpose of the timer (intermediate/deadline/
+	// in-wait/retry — see [engine.TimerKind]), mirroring [ArmedTimer.Kind].
+	// Zero-value (engine.TimerIntermediate) is compatible with all pre-existing
+	// JobSpec literals that don't set it.
+	Kind engine.TimerKind
 }

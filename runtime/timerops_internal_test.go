@@ -4,8 +4,12 @@ import (
 	"testing"
 	"time"
 
+	clockwork "github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
@@ -15,39 +19,101 @@ import (
 // (non-recurring), i.e. today's safe default: a fired timer is always consumed.
 func noRecurring(string) bool { return false }
 
-func TestTimerOpsFor(t *testing.T) {
+// timerOpsDef is a minimal definition carrier for timerJobsFor (which only
+// reads ID/Version and builds fire callbacks from it).
+func timerOpsDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      "d",
+		Version: 1,
+		Nodes:   []model.Node{event.NewStart("start"), event.NewEnd("end")},
+	}
+}
+
+// TestTimerJobsFor covers the single derivation site for timer side-effects
+// (ADR-0134): ScheduleTimer commands become Manual timerJobs whose
+// spec.NextRun is the converted trigger's Next(now) in UTC (subsuming the
+// retired nextRunFor — including the UTC and original-instant guarantees);
+// CancelTimer commands and consumed TimerFired triggers become PK-exact
+// cancelKeys.
+func TestTimerJobsFor(t *testing.T) {
 	at := time.Date(2026, 6, 22, 11, 0, 0, 0, time.UTC)
+	absTime := time.Date(2026, 6, 22, 15, 30, 0, 0, time.UTC)
 	oneShot := schedule.AfterDuration(time.Hour)
 	recurring := schedule.Every(15 * time.Minute)
+
 	cases := []struct {
 		name    string
 		cmds    []engine.Command
 		trg     engine.Trigger
 		armedFn func(string) bool
-		assert  func(t *testing.T, arms []kernel.ArmedTimer, cancels []string)
+		assert  func(t *testing.T, arms []*timerJob, cancels []cancelKey)
 	}{
 		{
-			name:    "ScheduleTimer becomes an arm carrying its Trigger",
+			name:    "ScheduleTimer becomes a Manual arm job carrying its Trigger",
 			cmds:    []engine.Command{engine.ScheduleTimer{TimerID: "t1", Trigger: oneShot, Kind: engine.TimerIntermediate}},
 			trg:     engine.NewStartInstance(at, nil),
 			armedFn: noRecurring,
-			assert: func(t *testing.T, arms []kernel.ArmedTimer, cancels []string) {
-				assert.Len(t, arms, 1)
-				assert.Equal(t, "t1", arms[0].TimerID)
-				assert.Equal(t, oneShot, arms[0].Trigger)
-				assert.True(t, arms[0].NextRun.Equal(at.Add(time.Hour)),
-					"one-shot AfterDuration NextRun must be now+duration (truthful, crash-safe): want %v got %v", at.Add(time.Hour), arms[0].NextRun)
+			assert: func(t *testing.T, arms []*timerJob, cancels []cancelKey) {
+				require.Len(t, arms, 1)
+				spec := arms[0].descriptor()
+				assert.Equal(t, "t1", spec.TimerID)
+				assert.Equal(t, "i1", spec.InstanceID)
+				assert.Equal(t, "d", spec.DefID)
+				assert.Equal(t, 1, spec.DefVersion)
+				assert.Equal(t, oneShot, spec.Trigger)
+				assert.Equal(t, engine.TimerIntermediate, spec.Kind)
+				assert.True(t, spec.NextRun.Equal(at.Add(time.Hour)),
+					"one-shot AfterDuration NextRun must be now+duration (original instant, crash-safe): want %v got %v", at.Add(time.Hour), spec.NextRun)
+				assert.Equal(t, time.UTC, spec.NextRun.Location(), "next run must be UTC-located")
 				assert.Empty(t, cancels)
 			},
 		},
 		{
-			name:    "CancelTimer becomes a cancel",
+			name:    "At one-shot arm persists the absolute time (UTC) even when built in another zone",
+			cmds:    []engine.Command{engine.ScheduleTimer{TimerID: "t1", Trigger: schedule.At(absTime.In(time.FixedZone("x", 3600))), Kind: engine.TimerIntermediate}},
+			trg:     engine.NewStartInstance(at, nil),
+			armedFn: noRecurring,
+			assert: func(t *testing.T, arms []*timerJob, cancels []cancelKey) {
+				require.Len(t, arms, 1)
+				spec := arms[0].descriptor()
+				assert.True(t, spec.NextRun.Equal(absTime), "At one-shot must persist its absolute instant: want %v got %v", absTime, spec.NextRun)
+				assert.Equal(t, time.UTC, spec.NextRun.Location(), "next run must be UTC-located")
+				assert.Empty(t, cancels)
+			},
+		},
+		{
+			name:    "cron arm persists the REAL next occurrence (ADR-0134 closes the interim zero-NextRun gap)",
+			cmds:    []engine.Command{engine.ScheduleTimer{TimerID: "t1", Trigger: schedule.Cron("0 9 * * *"), Kind: engine.TimerIntermediate}},
+			trg:     engine.NewStartInstance(at, nil),
+			armedFn: noRecurring,
+			assert: func(t *testing.T, arms []*timerJob, cancels []cancelKey) {
+				require.Len(t, arms, 1)
+				spec := arms[0].descriptor()
+				want := time.Date(2026, 6, 23, 9, 0, 0, 0, time.UTC) // next 09:00 after 2026-06-22 11:00 UTC
+				assert.True(t, spec.NextRun.Equal(want),
+					"cron next_run must be the trigger's real next occurrence: want %v got %v", want, spec.NextRun)
+				assert.Equal(t, time.UTC, spec.NextRun.Location(), "next run must be UTC-located")
+				assert.Empty(t, cancels)
+			},
+		},
+		{
+			name:    "unset trigger is unschedulable: skipped entirely (no arm, no row)",
+			cmds:    []engine.Command{engine.ScheduleTimer{TimerID: "t1", Trigger: schedule.TriggerSpec{}, Kind: engine.TimerIntermediate}},
+			trg:     engine.NewStartInstance(at, nil),
+			armedFn: noRecurring,
+			assert: func(t *testing.T, arms []*timerJob, cancels []cancelKey) {
+				assert.Empty(t, arms, "an unconvertible trigger must be WARN-skipped, never armed")
+				assert.Empty(t, cancels)
+			},
+		},
+		{
+			name:    "CancelTimer becomes a PK-exact cancel key",
 			cmds:    []engine.Command{engine.CancelTimer{TimerID: "t1"}},
 			trg:     engine.NewStartInstance(at, nil),
 			armedFn: noRecurring,
-			assert: func(t *testing.T, arms []kernel.ArmedTimer, cancels []string) {
+			assert: func(t *testing.T, arms []*timerJob, cancels []cancelKey) {
 				assert.Empty(t, arms)
-				assert.Equal(t, []string{"t1"}, cancels)
+				assert.Equal(t, []cancelKey{{instanceID: "i1", timerID: "t1"}}, cancels)
 			},
 		},
 		{
@@ -55,9 +121,9 @@ func TestTimerOpsFor(t *testing.T) {
 			cmds:    nil,
 			trg:     engine.NewTimerFired(at, "t1"),
 			armedFn: noRecurring,
-			assert: func(t *testing.T, arms []kernel.ArmedTimer, cancels []string) {
+			assert: func(t *testing.T, arms []*timerJob, cancels []cancelKey) {
 				assert.Empty(t, arms)
-				assert.Equal(t, []string{"t1"}, cancels)
+				assert.Equal(t, []cancelKey{{instanceID: "i1", timerID: "t1"}}, cancels)
 			},
 		},
 		{
@@ -67,7 +133,7 @@ func TestTimerOpsFor(t *testing.T) {
 			armedFn: func(id string) bool {
 				return id == "rec-1"
 			},
-			assert: func(t *testing.T, arms []kernel.ArmedTimer, cancels []string) {
+			assert: func(t *testing.T, arms []*timerJob, cancels []cancelKey) {
 				assert.Empty(t, arms)
 				assert.Empty(t, cancels, "a recurring timer must survive its fire; the native scheduler re-arms it")
 			},
@@ -77,9 +143,20 @@ func TestTimerOpsFor(t *testing.T) {
 			cmds:    nil,
 			trg:     engine.NewTimerFired(at, "gone"),
 			armedFn: noRecurring,
-			assert: func(t *testing.T, arms []kernel.ArmedTimer, cancels []string) {
+			assert: func(t *testing.T, arms []*timerJob, cancels []cancelKey) {
 				assert.Empty(t, arms)
-				assert.Equal(t, []string{"gone"}, cancels)
+				assert.Equal(t, []cancelKey{{instanceID: "i1", timerID: "gone"}}, cancels)
+			},
+		},
+		{
+			name:    "TimerFired with NIL armedRecurring (no timer store) is left alone",
+			cmds:    nil,
+			trg:     engine.NewTimerFired(at, "t1"),
+			armedFn: nil,
+			assert: func(t *testing.T, arms []*timerJob, cancels []cancelKey) {
+				assert.Empty(t, arms)
+				assert.Empty(t, cancels,
+					"without a timer store recurrence is undeterminable: never deactivate a possibly-recurring native job")
 			},
 		},
 		{
@@ -87,75 +164,37 @@ func TestTimerOpsFor(t *testing.T) {
 			cmds:    []engine.Command{engine.CancelTimer{TimerID: "rec-1"}},
 			trg:     engine.NewStartInstance(at, nil),
 			armedFn: func(id string) bool { return id == "rec-1" },
-			assert: func(t *testing.T, arms []kernel.ArmedTimer, cancels []string) {
+			assert: func(t *testing.T, arms []*timerJob, cancels []cancelKey) {
 				assert.Empty(t, arms)
-				assert.Equal(t, []string{"rec-1"}, cancels, "an explicit CancelTimer must always cancel, recurring or not")
+				assert.Equal(t, []cancelKey{{instanceID: "i1", timerID: "rec-1"}}, cancels,
+					"an explicit CancelTimer must always cancel, recurring or not")
 			},
 		},
 		{
-			name:    "arm carries a recurring Trigger",
+			name:    "arm carries a recurring Trigger with a truthful first-fire next_run",
 			cmds:    []engine.Command{engine.ScheduleTimer{TimerID: "rec-2", Trigger: recurring, Kind: engine.TimerInWait}},
 			trg:     engine.NewStartInstance(at, nil),
 			armedFn: noRecurring,
-			assert: func(t *testing.T, arms []kernel.ArmedTimer, cancels []string) {
-				assert.Len(t, arms, 1)
-				assert.Equal(t, recurring, arms[0].Trigger)
-				assert.True(t, arms[0].Trigger.Recurring())
-				assert.True(t, arms[0].NextRun.Equal(at.Add(15*time.Minute)),
-					"recurring Every persists a truthful first-fire next_run (now+interval) for Stats; rehydration still re-arms from Trigger: want %v got %v", at.Add(15*time.Minute), arms[0].NextRun)
+			assert: func(t *testing.T, arms []*timerJob, cancels []cancelKey) {
+				require.Len(t, arms, 1)
+				spec := arms[0].descriptor()
+				assert.Equal(t, recurring, spec.Trigger)
+				assert.True(t, spec.Trigger.Recurring())
+				assert.Equal(t, engine.TimerInWait, spec.Kind)
+				assert.True(t, spec.NextRun.Equal(at.Add(15*time.Minute)),
+					"recurring Every persists a truthful first-fire next_run (now+interval) for Stats: want %v got %v", at.Add(15*time.Minute), spec.NextRun)
 				assert.Empty(t, cancels)
 			},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			arms, cancels := timerOpsFor(tc.cmds, tc.trg, "d", 1, "i1", at, tc.armedFn)
-			tc.assert(t, arms, cancels)
-		})
-	}
-}
+			driver, err := NewProcessDriver(WithClock(clockwork.NewFakeClockAt(at)))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = driver.Shutdown(t.Context()) })
 
-func TestNextRunFor(t *testing.T) {
-	now := time.Date(2026, 6, 22, 11, 0, 0, 0, time.UTC)
-	absTime := time.Date(2026, 6, 22, 15, 30, 0, 0, time.UTC)
-	cases := []struct {
-		name string
-		trig schedule.TriggerSpec
-		want time.Time
-	}{
-		{
-			name: "At one-shot returns the absolute time (UTC)",
-			trig: schedule.At(absTime.In(time.FixedZone("x", 3600))),
-			want: absTime,
-		},
-		{
-			name: "AfterDuration one-shot returns now + duration",
-			trig: schedule.AfterDuration(2 * time.Hour),
-			want: now.Add(2 * time.Hour),
-		},
-		{
-			name: "recurring Every returns now + interval (truthful for Stats)",
-			trig: schedule.Every(15 * time.Minute),
-			want: now.Add(15 * time.Minute),
-		},
-		{
-			name: "cron recurring returns zero (interim: rehydrated from Trigger)",
-			trig: schedule.Cron("0 9 * * *"),
-			want: time.Time{},
-		},
-		{
-			name: "unset trigger returns zero",
-			trig: schedule.TriggerSpec{},
-			want: time.Time{},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := nextRunFor(tc.trig, now)
-			assert.True(t, got.Equal(tc.want), "want %v got %v", tc.want, got)
-			if !tc.want.IsZero() {
-				assert.Equal(t, time.UTC, got.Location(), "next run must be UTC-located")
-			}
+			arms, cancels := driver.timerJobsFor(t.Context(), timerOpsDef(), tc.cmds, tc.trg, "i1", tc.armedFn)
+			tc.assert(t, arms, cancels)
 		})
 	}
 }

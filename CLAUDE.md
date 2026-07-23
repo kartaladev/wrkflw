@@ -45,7 +45,7 @@ decision, and the Architecture section expands the rest:
 | SQLite | `modernc.org/sqlite` | hard pin (ADR-0082); pure-Go, WAL mode, single-writer; single-node/test/embedded use only |
 | Expressions | `github.com/expr-lang/expr` | all in-definition / in-execution expressions |
 | Eventing | [`watermill`](https://github.com/ThreeDotsLabs/watermill), **outbox publishing** | **never import watermill from workflow code** — go through the eventing abstraction (no vendor lock-in) |
-| Scheduling | [`go-co-op/gocron`](https://github.com/go-co-op/gocron) **pinned to v2.21.2** | hard pin; timers, deadline waiters, in-wait actions |
+| Scheduling | [`go-co-op/gocron`](https://github.com/go-co-op/gocron) **pinned to v2.22.0** (ADR-0135) | hard pin; timers, deadline waiters, in-wait actions |
 | Time source | [`jonboulle/clockwork`](https://github.com/jonboulle/clockwork) | implements the in-repo `clock.Clock` interface (ADR-0003) — **never import clockwork from engine/workflow code**, depend on `clock.Clock`; shared with gocron so a fake clock drives both engine + scheduler in tests; core never reads the wall clock |
 | Authorization | pluggable; **casbin** as the baseline | role, resource-privilege, **and attribute-based** (data/process-variable) evaluation |
 | DI container | [`samber/do` v2](https://github.com/samber/do) | application-layer wiring only — see Dependency Injection below |

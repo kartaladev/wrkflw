@@ -26,7 +26,7 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/kartaladev/wrkflw/runtime/signal"
 	"github.com/kartaladev/wrkflw/runtime/validation"
-	"github.com/kartaladev/wrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/scheduler"
 )
 
 // ProcessDriver is the reference single-process driver loop.
@@ -38,11 +38,22 @@ type ProcessDriver struct {
 	resolver   humantask.ActorResolver
 	tasks      humantask.TaskStore
 	authz      authz.Authorizer
-	sched      kernel.Scheduler
+	sched      scheduler.Scheduler
 	sigbus     *signal.SignalBus
 	defsReg    kernel.DefinitionRegistry
 	callLinks  kernel.CallLinkStore
 	timerStore kernel.TimerStore
+	// timerWriter is the write-side capability of timerStore, resolved once at
+	// construction (NewProcessDriver) by type-asserting the WithTimerStore
+	// value. nil when no TimerStore is configured, or when the configured
+	// TimerStore does not implement kernel.TimerWriter — either way jobStore's
+	// Save/Delete/deleteTimer become documented no-ops (ADR-0134 B1).
+	timerWriter kernel.TimerWriter
+	// jobStore is the runtime's scheduler.JobStore for timerJobKind, held as a
+	// concrete field (not just registered by thunk on the scheduler) so other
+	// runtime call sites (e.g. the Drive cancel path) can invoke its
+	// unexported deleteTimer helper directly instead of re-deriving a JobStore.
+	jobStore *jobStore
 	// jitter supplies the random fraction used to de-synchronize retry backoff.
 	// It is sampled at the runtime edge (perform) and recorded on the ActionFailed
 	// trigger so that engine replay remains deterministic.
@@ -116,7 +127,7 @@ type ProcessDriver struct {
 	// [ProcessDriver.Start] starts it and [ProcessDriver.Shutdown] closes it. A
 	// consumer-injected scheduler is consumer-owned, so this stays nil and the
 	// consumer manages its lifecycle.
-	ownedScheduler *scheduling.Scheduler
+	ownedScheduler *scheduler.NativeScheduler
 
 	// gate is the executor-side validation memoizer (runtime/validation.Gate)
 	// used by validateInput to compile-once-and-cache each
@@ -169,6 +180,17 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 		o(driver)
 	}
 
+	// Resolve the TimerWriter capability off whatever TimerStore the consumer
+	// wired via WithTimerStore (including the Mem default when a caller passes
+	// kernel.NewMemTimerStore() through that option — MemTimerStore implements
+	// TimerWriter). A TimerStore that does not implement it (or none at all)
+	// leaves timerWriter nil, and jobStore's write path degrades to a
+	// documented no-op (ADR-0134 B1).
+	if tw, ok := driver.timerStore.(kernel.TimerWriter); ok {
+		driver.timerWriter = tw
+	}
+	driver.jobStore = newJobStore(driver)
+
 	// Default scheduler: when the consumer did not wire a usable one via
 	// [WithScheduler], create an in-process gocron-backed scheduler (real clock,
 	// single-node) so timer nodes work zero-config. The driver OWNS this default
@@ -181,19 +203,19 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 	// ignored, so a stray typed nil cannot slip past and panic on the first timer.
 	customScheduler := !isNilScheduler(driver.sched)
 	if !customScheduler {
-		var schedOpts []scheduling.Option
+		var schedOpts []scheduler.Option
 		// Auto-wire self-rehydration when a durable timer store is configured.
 		// defsReg is always non-nil (defaults to the process-global
 		// defaultDefinitionRegistry), so the check is omitted. Rehydration is
 		// best-effort: timers whose definitions are not yet registered are skipped
-		// with a WARN (see kernel.ErrUnresolvedTimerDefinitions). The provider is
-		// a thunk that captures the driver pointer (already allocated); it is
-		// resolved lazily at first Start/Schedule, by which time the driver is
-		// fully constructed — breaking the driver↔jobstore↔scheduler cycle.
+		// with a WARN (see scheduler.ErrUnresolvedTimerDefinitions). The provider
+		// is a thunk that captures the driver pointer (already allocated); it is
+		// resolved lazily at first Start/arm, by which time the driver is fully
+		// constructed — breaking the driver↔jobstore↔scheduler cycle.
 		if driver.timerStore != nil {
-			schedOpts = append(schedOpts, scheduling.WithJobStore(func() kernel.JobStore { return NewJobStore(driver) }))
+			schedOpts = append(schedOpts, scheduler.WithJobStore(timerJobKind, func() scheduler.JobStore { return driver.jobStore }))
 		}
-		sched, serr := scheduling.NewScheduler(schedOpts...)
+		sched, serr := scheduler.NewScheduler(schedOpts...)
 		if serr != nil {
 			return nil, fmt.Errorf("workflow-runtime: default scheduler: %w", serr)
 		}
@@ -301,7 +323,7 @@ func (driver *ProcessDriver) Shutdown(ctx context.Context) error {
 // nil interface, or a typed nil (a nil concrete pointer/map/chan/func boxed in a
 // non-nil interface). The latter would otherwise pass a plain `s != nil` check and
 // panic on first use, so NewProcessDriver treats both as "no scheduler supplied".
-func isNilScheduler(s kernel.Scheduler) bool {
+func isNilScheduler(s scheduler.Scheduler) bool {
 	if s == nil {
 		return true
 	}
@@ -616,39 +638,116 @@ func (driver *ProcessDriver) deliverLoop(
 			}
 		}
 
-		var timerArms []kernel.ArmedTimer
-		var timerCancels []string
+		// armedRecurring reports whether the fired timer is armed with a
+		// recurring trigger, so timerJobsFor knows a recurring timer must
+		// survive its fire (the native scheduler re-arms it) rather than be
+		// consumed. It reads the armed set lazily — timerJobsFor only calls it
+		// for a TimerFired trigger — and defaults to non-recurring (safe:
+		// consume) on any lookup failure or unknown timer. It stays nil when no
+		// timer store is configured: recurrence is then undeterminable and the
+		// fired timer is left alone (see timerJobsFor).
+		var armedRecurring func(timerID string) bool
 		if driver.timerStore != nil {
-			// armedRecurring reports whether the fired timer is armed with a
-			// recurring trigger, so timerOpsFor knows a recurring timer must
-			// survive its fire (the native scheduler re-arms it) rather than be
-			// consumed. It reads the armed set lazily — timerOpsFor only calls it
-			// for a TimerFired trigger — and defaults to non-recurring (safe:
-			// consume) on any lookup failure or unknown timer.
-			timerArms, timerCancels = timerOpsFor(res.Commands, t, st.DefID, st.DefVersion, st.InstanceID, driver.clk.Now(),
-				func(timerID string) bool { return driver.armedTimerRecurring(stepCtx, st.InstanceID, timerID) })
+			armedRecurring = func(timerID string) bool { return driver.armedTimerRecurring(stepCtx, st.InstanceID, timerID) }
 		}
+		armJobs, cancelKeys := driver.timerJobsFor(stepCtx, def, res.Commands, t, st.InstanceID, armedRecurring)
 
-		appliedStep := kernel.AppliedStep{State: st, Trigger: t, Events: events, CallOutcome: outcome, TimerArms: timerArms, TimerCancels: timerCancels}
+		appliedStep := kernel.AppliedStep{State: st, Trigger: t, Events: events, CallOutcome: outcome}
 
 		if create {
 			// Attach the firstCallLink to the Create step (child async path only).
 			// After the first iteration this is nil for all callers.
 			appliedStep.NewCallLink = firstCallLink
-			firstCallLink = nil // consumed; cleared so subsequent steps don't carry it
-			token, err = driver.store.Create(ctx, appliedStep)
-			create = false
+		}
+
+		// DIRECT-SAVE (ADR-0134): durable timer writes ride the runtime's own
+		// jobStore INSIDE the state-commit transaction; the scheduler is NEVER
+		// called inside commitFn — it is touched post-commit only, so the commit
+		// survives the ADR-0133 shutdown-drain window and works identically with
+		// a consumer-injected scheduler.
+		var armed []*scheduledTimerJob
+		commitFn := func(txCtx context.Context) error {
+			var cerr error
+			if create {
+				token, cerr = driver.store.Create(txCtx, appliedStep)
+			} else {
+				token, cerr = driver.store.Commit(txCtx, token, appliedStep)
+			}
+			if cerr != nil {
+				return cerr
+			}
+			for _, j := range armJobs {
+				// The ScheduledJob wrapper is built in-tx; its descriptor carries
+				// the authoritative spec.NextRun computed by timerJobsFor, which is
+				// what jobStore.Save persists (JoinOrBegin joins this same tx).
+				sj := newScheduledTimerJob(j, driver.clk.Now())
+				if serr := driver.jobStore.Save(txCtx, sj); serr != nil {
+					return serr
+				}
+				armed = append(armed, sj)
+			}
+			for _, ck := range cancelKeys {
+				// PK-exact by-parts delete; NO in-memory disarm yet (post-commit).
+				if derr := driver.jobStore.deleteTimer(txCtx, ck.instanceID, ck.timerID); derr != nil {
+					return derr
+				}
+			}
+			return nil
+		}
+		if tx, ok := driver.store.(kernel.TxRunner); ok {
+			err = tx.RunInTx(ctx, commitFn)
 		} else {
-			token, err = driver.store.Commit(ctx, token, appliedStep)
+			// Store without the TxRunner capability: each write self-commits —
+			// documented degraded atomicity, matching pre-ADR-0134 behaviour.
+			err = commitFn(ctx)
 		}
 		if err != nil {
 			return st, fmt.Errorf("workflow-runtime: commit: %w", err)
+		}
+		if create {
+			create = false
+			firstCallLink = nil // consumed; cleared so subsequent steps don't carry it
+		}
+
+		// Post-commit: flip in-memory scheduler state to the durable truth.
+		// Activate receives the SAME ScheduledJob persisted in-tx (no
+		// re-anchoring of relative triggers). A failure here is benign — the
+		// scheduler may be closed during shutdown drain, or reject an
+		// unsupported trigger kind — and never fails the committed step: the
+		// durable arm survives in the timer store and rehydrates on next boot.
+		for _, sj := range armed {
+			if aerr := driver.sched.Activate(ctx, sj); aerr != nil {
+				driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: timer arm: post-commit activate failed, skipping (durable arm rehydrates on next boot)",
+					append(driver.obs.tel.LogAttrs(ctx),
+						slog.String("timer_id", sj.ID()),
+						slog.String("instance_id", st.InstanceID),
+						slog.Bool("driver_shutting_down", driver.IsShuttingDown()),
+						slog.Any("error", aerr))...)
+			}
+		}
+		for _, ck := range cancelKeys {
+			// Engine timer id — no composite. A cancel bookkeeping failure must
+			// never fail the instance: the engine treats a late fire of a consumed
+			// timer as an idempotent no-op, and the durable delete already
+			// committed above.
+			if derr := driver.sched.Deactivate(ctx, ck.timerID); derr != nil {
+				driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: timer cancel: post-commit deactivate failed (continuing)",
+					append(driver.obs.tel.LogAttrs(ctx),
+						slog.String("timer_id", ck.timerID),
+						slog.Any("error", derr))...)
+			}
 		}
 
 		// Reconcile signal-bus and message waiters after each committed save.
 		driver.syncWaiters(st)
 
 		for _, c := range res.Commands {
+			switch c.(type) {
+			case engine.ScheduleTimer, engine.CancelTimer:
+				// Timer commands are fully handled by the commit path above
+				// (in-tx persist + post-commit activate/deactivate).
+				continue
+			}
 			next, err := driver.perform(stepCtx, def, st, c)
 			if err != nil {
 				return st, err

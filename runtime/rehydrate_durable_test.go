@@ -104,11 +104,11 @@ func assertDurableTimerRehydration(t *testing.T, conn any, dlct dialect.Dialect)
 
 	// The rehydrated one-shot's next run must be the ORIGINAL absolute instant
 	// (startAt + 1h), which is already in the past — so a single Tick fires it.
-	next, ok := sched2.NextRun("rh-1-tm1")
-	require.True(t, ok, "rehydrated timer must be pending on the fresh scheduler")
+	sj, err := sched2.Scheduled(t.Context(), "rh-1-tm1")
+	require.NoError(t, err, "rehydrated timer must be pending on the fresh scheduler")
 	wantFire := startAt.Add(time.Hour)
-	assert.True(t, next.Equal(wantFire),
-		"AfterDuration one-shot must fire at ORIGINAL instant %v, not restart+duration; got %v", wantFire, next)
+	assert.True(t, sj.NextRun().Equal(wantFire),
+		"AfterDuration one-shot must fire at ORIGINAL instant %v, not restart+duration; got %v", wantFire, sj.NextRun())
 
 	require.NoError(t, sched2.Tick(t.Context()))
 

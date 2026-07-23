@@ -73,6 +73,9 @@ func TestNewSQLiteTimerStore_ListArmed(t *testing.T) {
 	store, err := persistence.OpenSQLite(t.Context(), db)
 	require.NoError(t, err)
 
+	// Create the instance bare, then arm a timer through the TimerWriter
+	// capability (ADR-0134) — NewSQLiteTimerStore's returned kernel.TimerStore is
+	// backed by *store.TimerStore, which also implements kernel.TimerWriter.
 	now := time.Unix(1700000000, 0).UTC()
 	fireAt := now.Add(time.Hour)
 	step := kernel.AppliedStep{
@@ -84,22 +87,23 @@ func TestNewSQLiteTimerStore_ListArmed(t *testing.T) {
 			StartedAt:  now,
 		},
 		Trigger: engine.NewStartInstance(now, nil),
-		TimerArms: []kernel.ArmedTimer{
-			{
-				InstanceID: "sqlite-timer-instance-1",
-				TimerID:    "t1",
-				DefID:      "d",
-				DefVersion: 1,
-				NextRun:    fireAt,
-				Kind:       engine.TimerDeadline,
-			},
-		},
 	}
 	_, err = store.Create(t.Context(), step)
 	require.NoError(t, err)
 
 	ts, err := persistence.NewSQLiteTimerStore(db)
 	require.NoError(t, err)
+	tw, ok := ts.(kernel.TimerWriter)
+	require.True(t, ok, "NewSQLiteTimerStore must return a kernel.TimerWriter")
+	require.NoError(t, tw.UpsertJob(t.Context(), kernel.JobSpec{
+		InstanceID: "sqlite-timer-instance-1",
+		TimerID:    "t1",
+		DefID:      "d",
+		DefVersion: 1,
+		NextRun:    fireAt,
+		Kind:       engine.TimerDeadline,
+	}))
+
 	armed, err := ts.ListArmed(t.Context())
 	require.NoError(t, err)
 	require.Len(t, armed, 1, "exactly one armed timer expected")

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/internal/dbtest"
 	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
@@ -29,8 +30,6 @@ func TestStoreCreateBeginError(t *testing.T) {
 // the error paths that the happy-path conformance suite cannot reach, on the
 // in-process backend so no Docker is required.
 func TestStoreWriteErrors(t *testing.T) {
-	now := time.Unix(1700000000, 0).UTC()
-
 	tests := map[string]struct {
 		drop string
 		run  func(t *testing.T, s *store.Store)
@@ -65,15 +64,6 @@ func TestStoreWriteErrors(t *testing.T) {
 				require.Error(t, err)
 			},
 		},
-		"create timer-arm error": {
-			drop: "wrkflw_timers",
-			run: func(t *testing.T, s *store.Store) {
-				step := appliedStep("i", "a")
-				step.TimerArms = []kernel.ArmedTimer{{InstanceID: "i", DefID: "d", DefVersion: 1, TimerID: "t", NextRun: now, Kind: engine.TimerIntermediate}}
-				_, err := s.Create(t.Context(), step)
-				require.Error(t, err)
-			},
-		},
 		"entries query error": {
 			drop: "wrkflw_journal",
 			run: func(t *testing.T, s *store.Store) {
@@ -103,11 +93,9 @@ func TestStoreWriteErrors(t *testing.T) {
 }
 
 // TestStoreCommitWriteErrors forces the write-error branches inside Commit
-// (after the CAS UPDATE succeeds) by dropping the journal/outbox/timer tables of
-// a live instance mid-flight.
+// (after the CAS UPDATE succeeds) by dropping the journal/outbox/call-link
+// tables of a live instance mid-flight.
 func TestStoreCommitWriteErrors(t *testing.T) {
-	now := time.Unix(1700000000, 0).UTC()
-
 	tests := map[string]struct {
 		drop string
 		mut  func(step *kernel.AppliedStep)
@@ -117,10 +105,6 @@ func TestStoreCommitWriteErrors(t *testing.T) {
 		"commit call-link error": {
 			drop: "wrkflw_call_links",
 			mut:  func(s *kernel.AppliedStep) { s.CallOutcome = &kernel.CallOutcome{Completed: true} },
-		},
-		"commit timer-cancel error": {
-			drop: "wrkflw_timers",
-			mut:  func(s *kernel.AppliedStep) { s.TimerCancels = []string{"t"} },
 		},
 	}
 
@@ -139,9 +123,60 @@ func TestStoreCommitWriteErrors(t *testing.T) {
 			if tc.mut != nil {
 				tc.mut(&step)
 			}
-			_ = now
 			_, err = s.Commit(t.Context(), tok, step)
 			require.Error(t, err, "commit must surface the dropped-table write error")
+		})
+	}
+}
+
+// TestTimerWriterWriteErrors covers the driver-level SQL-error branches of the
+// standalone [kernel.TimerWriter] capability (ADR-0134) — UpsertJob, DeleteJob,
+// and DeleteJobByTimerID — by dropping wrkflw_timers mid-flight, mirroring
+// [TestStoreWriteErrors]'s dropped-table harness. TestTimerWriterAtomicWithCommit
+// only exercises fn-returned rollbacks; these cases force the writer's own
+// driver-error wrap branches (the `workflow-store:` prefix) directly, which the
+// happy-path TimerWriter suite in timerwriter_test.go cannot reach.
+func TestTimerWriterWriteErrors(t *testing.T) {
+	now := time.Unix(1700000000, 0).UTC()
+
+	tests := map[string]struct {
+		run func(t *testing.T, ts *store.TimerStore)
+	}{
+		"upsert job error": {
+			run: func(t *testing.T, ts *store.TimerStore) {
+				err := ts.UpsertJob(t.Context(), kernel.JobSpec{
+					InstanceID: "i", TimerID: "t", DefID: "d", DefVersion: 1,
+					Trigger: schedule.At(now.Add(time.Hour)), NextRun: now.Add(time.Hour),
+					Kind: engine.TimerDeadline,
+				})
+				require.Error(t, err)
+				require.ErrorContains(t, err, "workflow-store:")
+			},
+		},
+		"delete job error": {
+			run: func(t *testing.T, ts *store.TimerStore) {
+				err := ts.DeleteJob(t.Context(), "i", "t")
+				require.Error(t, err)
+				require.ErrorContains(t, err, "workflow-store:")
+			},
+		},
+		"delete job by timer id error": {
+			run: func(t *testing.T, ts *store.TimerStore) {
+				err := ts.DeleteJobByTimerID(t.Context(), "t")
+				require.Error(t, err)
+				require.ErrorContains(t, err, "workflow-store:")
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			db := dbtest.RunTestSQLite(t)
+			_, err := db.ExecContext(t.Context(), "DROP TABLE wrkflw_timers")
+			require.NoError(t, err, "drop wrkflw_timers")
+			ts, err := store.NewTimerStore(db, dialect.NewSQLite())
+			require.NoError(t, err)
+			tc.run(t, ts)
 		})
 	}
 }

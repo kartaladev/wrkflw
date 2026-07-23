@@ -151,9 +151,8 @@ func TestStoreSideEffects(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
 		s, err := store.New(b.conn, b.dialect, store.WithHistoryCap(4), store.WithOutboxNotify())
 		require.NoError(t, err)
-		now := time.Unix(1700000000, 0).UTC()
 
-		// Create a parent + a child that carries a NewCallLink and an armed timer.
+		// Create a parent + a child that carries a NewCallLink.
 		_, err = s.Create(t.Context(), appliedStep("parent", "p"))
 		require.NoError(t, err, "%s: create parent", b.name)
 
@@ -166,32 +165,22 @@ func TestStoreSideEffects(t *testing.T) {
 			ParentDefVersion: 1,
 			Depth:            1,
 		}
-		child.TimerArms = []kernel.ArmedTimer{
-			{InstanceID: "child", DefID: "d", DefVersion: 1, TimerID: "t1", NextRun: now.Add(time.Hour), Kind: engine.TimerIntermediate},
-		}
 		childTok, err := s.Create(t.Context(), child)
 		require.NoError(t, err, "%s: create child", b.name)
 
 		require.Equal(t, 1, countRows(t, b,
 			`SELECT COUNT(*) FROM wrkflw_call_links WHERE child_instance_id = ? AND status = 'running'`, "child"),
 			"%s: call link inserted running", b.name)
-		require.Equal(t, 1, countRows(t, b,
-			`SELECT COUNT(*) FROM wrkflw_timers WHERE instance_id = ? AND timer_id = ?`, "child", "t1"),
-			"%s: timer armed", b.name)
 
-		// Commit a terminal step: flip the call link to completed + cancel the timer.
+		// Commit a terminal step: flip the call link to completed.
 		term := appliedStep("child", "done")
 		term.CallOutcome = &kernel.CallOutcome{Completed: true, Output: map[string]any{"r": float64(1)}}
-		term.TimerCancels = []string{"t1"}
 		_, err = s.Commit(t.Context(), childTok, term)
 		require.NoError(t, err, "%s: commit terminal", b.name)
 
 		require.Equal(t, 1, countRows(t, b,
 			`SELECT COUNT(*) FROM wrkflw_call_links WHERE child_instance_id = ? AND status = 'completed'`, "child"),
 			"%s: call link flipped completed", b.name)
-		require.Equal(t, 0, countRows(t, b,
-			`SELECT COUNT(*) FROM wrkflw_timers WHERE instance_id = ? AND timer_id = ?`, "child", "t1"),
-			"%s: timer cancelled", b.name)
 
 		// A second child with a FAILED terminal outcome exercises the error-text
 		// branch of flipCallLink (status='failed', error column set).

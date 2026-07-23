@@ -2,6 +2,8 @@ package runtime_test
 
 import (
 	"context"
+	"fmt"
+	"iter"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -9,26 +11,38 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/processtest"
 	"github.com/kartaladev/wrkflw/runtime"
-	"github.com/kartaladev/wrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/scheduler"
 )
 
-// closeSpyScheduler is a kernel.Scheduler that also implements io.Closer and
-// records whether Close was invoked. It lets a test assert that the driver does
-// NOT close a consumer-injected scheduler on Shutdown (owned-vs-injected).
+// closeSpyScheduler is a scheduler.Scheduler that also implements io.Closer
+// and records whether Close was invoked. It lets a test assert that the
+// driver does NOT close a consumer-injected scheduler on Shutdown
+// (owned-vs-injected).
 type closeSpyScheduler struct {
 	closed atomic.Bool
 }
 
-func (s *closeSpyScheduler) Schedule(_ context.Context, _ string, _ schedule.TriggerSpec, _ func()) (time.Time, error) {
-	return time.Time{}, nil
+var _ scheduler.Scheduler = (*closeSpyScheduler)(nil)
+
+func (s *closeSpyScheduler) Schedule(_ context.Context, j scheduler.Job) (scheduler.ScheduledJob, error) {
+	if j == nil {
+		return nil, fmt.Errorf("closeSpyScheduler: Schedule requires a non-nil Job")
+	}
+	return scheduler.NewScheduledJob(j, time.Time{})
 }
-func (s *closeSpyScheduler) Cancel(context.Context, string)   {}
-func (s *closeSpyScheduler) NextRun(string) (time.Time, bool) { return time.Time{}, false }
-func (s *closeSpyScheduler) Close() error                     { s.closed.Store(true); return nil }
+func (s *closeSpyScheduler) Activate(context.Context, scheduler.ScheduledJob) error { return nil }
+func (s *closeSpyScheduler) Deactivate(context.Context, string) error               { return nil }
+func (s *closeSpyScheduler) Cancel(context.Context, string) error                   { return nil }
+func (s *closeSpyScheduler) Scheduled(_ context.Context, id string) (scheduler.ScheduledJob, error) {
+	return nil, fmt.Errorf("closeSpyScheduler: job %q: %w", id, scheduler.ErrJobNotFound)
+}
+func (s *closeSpyScheduler) List(context.Context) iter.Seq[scheduler.ScheduledJob] {
+	return func(func(scheduler.ScheduledJob) bool) {}
+}
+func (s *closeSpyScheduler) Close() error { s.closed.Store(true); return nil }
 
 // TestProcessDriverDefaultScheduler verifies that a zero-config ProcessDriver
 // wires an in-process default scheduler, so a process reaching a timer node arms
@@ -46,13 +60,13 @@ func TestProcessDriverDefaultScheduler(t *testing.T) {
 }
 
 // TestProcessDriverNilSchedulerFallsBackToDefault verifies that a nil scheduler
-// supplied via WithScheduler — including a TYPED nil (e.g. a (*scheduling.Scheduler)(nil)
+// supplied via WithScheduler — including a TYPED nil (e.g. a (*scheduler.Scheduler)(nil)
 // variable, whose interface value is non-nil) — is treated as "not provided" and
 // falls back to the owned in-process default, consistent with how WithInstanceStore(nil)
 // and WithActionCatalog(nil) are ignored. Without the guard a typed nil would slip
 // past the driver.sched != nil check and panic on the first timer.
 func TestProcessDriverNilSchedulerFallsBackToDefault(t *testing.T) {
-	var typedNil *scheduling.Scheduler // typed nil: non-nil kernel.Scheduler interface, nil concrete pointer
+	var typedNil *scheduler.NativeScheduler // typed nil: non-nil scheduler.Scheduler interface, nil concrete pointer
 
 	driver, err := runtime.NewProcessDriver(runtime.WithScheduler(typedNil))
 	require.NoError(t, err)
@@ -88,7 +102,7 @@ func TestProcessDriverStart(t *testing.T) {
 		// surface its terminal error rather than silently succeed — proving Start
 		// genuinely delegates to the owned scheduler.
 		err = driver.Start(context.Background())
-		require.ErrorIs(t, err, scheduling.ErrSchedulerClosed)
+		require.ErrorIs(t, err, scheduler.ErrSchedulerClosed)
 	})
 
 	t.Run("no-op for an injected scheduler", func(t *testing.T) {
@@ -121,7 +135,7 @@ func TestProcessDriverShutdown(t *testing.T) {
 // scheduler started, Shutdown given an already-expired ctx returns PROMPTLY and surfaces
 // the ctx deadline error (joined), rather than blocking on gocron's internal stop
 // timeout. The scheduler is closed via gocron's native ShutdownWithContext (through
-// scheduling.Scheduler.CloseWithContext), which honors ctx directly — no manual
+// scheduler.Scheduler.CloseWithContext), which honors ctx directly — no manual
 // close-race goroutine.
 //
 // Caveat on isolation: an empty owned gocron scheduler closes in well under 500ms, and

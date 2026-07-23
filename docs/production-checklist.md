@@ -204,6 +204,14 @@ pruning job you schedule:
 | `wrkflw_chain_links` | `pruner.PruneChainLinks(ctx, cutoff)` | created > 90 days ago |
 | `wrkflw_timers` | `pruner.PruneTimers(ctx, cutoff)` (on public `persistence.Pruner`) | expired > 30 days ago |
 
+**Caveat — recurring timers:** `PruneTimers` skips rows whose trigger is recurring (a
+`Duration`/`DurationRand`/`Cron`/`Daily`/`Weekly`/`Monthly`/`EveryExpr` trigger), even when
+`next_run` is in the past. A recurring row's `next_run` is written once when the timer is
+armed and never updated on each recurrence, so an expired `next_run` does not mean the timer
+is done firing; only one-shot triggers are eligible for expiry-based pruning today. Recurring
+rows are retained indefinitely by `PruneTimers` until the deferred run-count/last-fired
+follow-up lands to make them precisely prunable.
+
 ```go
 pruner := persistence.NewPruner(pool) // Postgres
 // MySQL: persistence.NewMySQLPruner(db); SQLite: persistence.NewSQLitePruner(db)

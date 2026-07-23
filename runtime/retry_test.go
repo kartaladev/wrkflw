@@ -63,7 +63,7 @@ func TestProcessDriverDefaultPolicyEnablesRetry(t *testing.T) {
 			withDefaultRetry: true,
 			assert: func(t *testing.T, st engine.InstanceState, sched *runtimetest.RecordingScheduler, T time.Time) {
 				t.Helper()
-				assert.True(t, sched.Scheduled, "expected scheduler to capture a retry timer")
+				assert.True(t, sched.Armed, "expected scheduler to capture a retry timer")
 				assert.Equal(t, engine.StatusRunning, st.Status,
 					"instance must park (StatusRunning), not fail")
 				// attempt 0: backoff = InitialInterval × BackoffCoef^0 = 1s; jitter = 1.0 → 1s
@@ -77,7 +77,7 @@ func TestProcessDriverDefaultPolicyEnablesRetry(t *testing.T) {
 			withDefaultRetry: false,
 			assert: func(t *testing.T, st engine.InstanceState, sched *runtimetest.RecordingScheduler, _ time.Time) {
 				t.Helper()
-				assert.False(t, sched.Scheduled, "scheduler must NOT be called when no retry policy is set")
+				assert.False(t, sched.Armed, "scheduler must NOT be called when no retry policy is set")
 				assert.Equal(t, engine.StatusFailed, st.Status,
 					"instance must fail when no retry policy is configured")
 			},

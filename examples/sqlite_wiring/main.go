@@ -16,9 +16,9 @@
 //     For a single-process deployment, kernel.AlwaysOwn{} is the correct
 //     ownership value for persistence.NewCachingInstanceStore — it avoids the error path and
 //     gives the in-process cache its full benefit.
-//   - No multi-replica timer elector: scheduling.NewScheduler with no elector
+//   - No multi-replica timer elector: scheduler.NewScheduler with no elector
 //     option (unlike the MySQL/Postgres examples, which build a backend elector
-//     and pass scheduling.WithElector). SQLite is inherently single-process.
+//     and pass scheduler.WithElector). SQLite is inherently single-process.
 //
 // WAL + foreign-key pragmas are set in the DSN so they apply for every connection
 // opened from the pool (even though MaxOpenConns(1) means one at a time).
@@ -56,7 +56,7 @@ import (
 	"github.com/kartaladev/wrkflw/runtime"
 	"github.com/kartaladev/wrkflw/runtime/calllink"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
-	"github.com/kartaladev/wrkflw/scheduling"
+	"github.com/kartaladev/wrkflw/scheduler"
 	"github.com/kartaladev/wrkflw/service"
 	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 	"github.com/kartaladev/wrkflw/transport/http/stdlib"
@@ -201,16 +201,17 @@ func run(logger *slog.Logger) error {
 
 	// --- Scheduler (no elector — SQLite is single-process) ---
 	// SQLite is inherently single-process; there is no multi-replica timer leader
-	// election. Unlike the MySQL/Postgres examples, we omit WithMySQLTimerElector
-	// / WithTimerElector so every process fires its own timers independently
-	// (which is correct when only one process exists).
-	scheduler, serr := scheduling.NewScheduler(
-		scheduling.WithLogger(logger),
+	// election. Unlike the MySQL/Postgres examples, we omit scheduler.WithElector
+	// (which those examples pass a backend-specific elector to, built via
+	// mysqlbackend.NewElector / pgbackend.NewElector) so every process fires its
+	// own timers independently (which is correct when only one process exists).
+	sched, serr := scheduler.NewScheduler(
+		scheduler.WithLogger(logger),
 	)
 	if serr != nil {
 		return serr
 	}
-	shutdown.AddCloser(scheduler)
+	shutdown.AddCloser(sched)
 
 	// --- A demo definition + catalog so the engine can actually run instances ---
 	def, derr := definition.NewBuilder("order", 1).
@@ -248,7 +249,7 @@ func run(logger *slog.Logger) error {
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(cachingStore),
 		runtime.WithHumanTasks(resolver, taskStore, az),
-		runtime.WithScheduler(scheduler),
+		runtime.WithScheduler(sched),
 		runtime.WithTimerStore(timerStore),
 	)
 	if err != nil {

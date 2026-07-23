@@ -131,11 +131,13 @@ from the expression in the definition) and parks. The scheduler is entirely owne
 by the runtime — swapping from `MemScheduler` (tests) to `gocron` (production) is
 a single constructor option with no engine change.
 
-**Files to read:** `runtime/runner.go` (`armTimer`), `runtime/scheduler.go` (port
-interface), `scheduling/scheduler.go` (gocron wrapper), `runtime/memstore.go`
-(`MemTimerStore`).
+**Files to read:** `runtime/timerops.go` (`timerJobsFor`/`buildTimerJob`, the
+Drive-path commit code that arms timers), `scheduler/port.go` (the `Scheduler`
+port interface), `scheduler/scheduler.go` (the gocron-backed `NativeScheduler`),
+`runtime/kernel/timerstore.go` (`MemTimerStore`).
 
-The port is `runtime.Scheduler`; the trigger is `engine.TimerFired`. See also the
+The port is `scheduler.Scheduler` (ADR-0134; formerly `runtime/kernel.Scheduler`,
+now deleted from `kernel`); the trigger is `engine.TimerFired`. See also the
 **"arm" terminology** note at the end.
 
 ```mermaid
@@ -153,19 +155,29 @@ sequenceDiagram
     R->>E: ProcessDriver.Deliver(...) → Step advances the token
 ```
 
-**Guarantees and ownership:**
-- `armTimer` (`runner.go`) registers the timer and also writes the arm into
-  `AppliedStep.TimerArms` inside the same `Store.Commit` transaction (atomic).
+**Guarantees and ownership (ADR-0134 direct-save):**
+- The `Drive` commit path (`processdriver.go`'s `commitFn`) writes each armed/cancelled
+  timer's durable row itself — via `driver.jobStore.Save`/`deleteTimer`, routed through
+  the `kernel.TimerWriter` capability — **inside the same state-commit transaction**
+  as the step write (`kernel.TxRunner.RunInTx`, joined via `JoinOrBegin`). The
+  scheduler is never called during commit. Only strictly **after** the transaction
+  commits does the driver call `scheduler.Scheduler.Activate` to arm the job
+  in-memory; a failed post-commit `Activate` is logged and benign because the durable
+  row already committed and rehydrates on next boot. This closes the fire-before-commit
+  race an immediate/past-due one-shot would otherwise hit if it were armed in-memory
+  before the row was visible.
   The `fire` callback uses a fresh `context.Background()` (the original request
   context is long gone) and retries on `ErrConcurrentUpdate` — a timer firing
   concurrently with a human-task completion is a normal race; the losing side
   simply retries.
-- Armed timers are persisted as `AppliedStep.TimerArms` (atomic with state) so
-  `RehydrateTimers` can re-arm them after a process restart via the `TimerStore`
-  read port. A timer whose `FireAt` is already past fires immediately, producing an
-  idempotent engine no-op if the instance has already advanced.
-- `CancelTimer` commands are written into `AppliedStep.TimerCancels` and applied by
-  `armTimer`'s cancel path immediately after commit — no separate transaction.
+- Armed timers are persisted durably (atomic with state, per above) so
+  `RehydrateTimers` — or the scheduler's own self-rehydration on `Start`
+  (`scheduler.JobStore.Load` + `Activate` per registered kind) — can re-arm them
+  after a process restart via the `TimerStore` read port. A timer whose `FireAt` is
+  already past fires immediately, producing an idempotent engine no-op if the
+  instance has already advanced.
+- `CancelTimer` commands are deleted via `jobStore.deleteTimer` inside the same
+  commit transaction as above; the in-memory `Deactivate` follows post-commit.
 - **`Kind` determines routing** inside `step_timers.go`: `TimerRetry` re-invokes
   the parked service action; `TimerDeadline` routes the token down the deadline's
   escape flow; `TimerInWait` runs the reminder action fire-and-forget (no trigger

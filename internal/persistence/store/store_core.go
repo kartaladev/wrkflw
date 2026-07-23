@@ -17,6 +17,7 @@ import (
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/internal/database"
 	"github.com/kartaladev/wrkflw/internal/database/transaction"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
@@ -116,10 +117,6 @@ func (s *Store) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Ver
 		}
 	}
 
-	if err := s.applyTimerOps(ctx, q, step); err != nil {
-		return 0, s.mapConflict(err)
-	}
-
 	if err := q.Commit(ctx); err != nil {
 		return 0, s.mapConflict(fmt.Errorf("workflow-store: create: commit: %w", err))
 	}
@@ -177,7 +174,7 @@ func (s *Store) Load(ctx context.Context, id string) (engine.InstanceState, kern
 //   - CAS UPDATE on wrkflw_instances (WHERE version = expected → version+1),
 //   - INSERT into wrkflw_journal (next seq),
 //   - INSERT each event into wrkflw_outbox,
-//   - flip call link / apply timer ops when the step carries them.
+//   - flip call link when the step carries a CallOutcome.
 //
 // Returns kernel.ErrConcurrentUpdate when the expected token is stale (another
 // writer advanced the instance first) or when the backend raises a transient
@@ -280,11 +277,6 @@ func (s *Store) Commit(ctx context.Context, expected kernel.Version, step kernel
 			spanErr(mapped)
 			return 0, mapped
 		}
-	}
-
-	if err := s.applyTimerOps(ctx, q, step); err != nil {
-		spanErr(err)
-		return 0, err
 	}
 
 	if err := q.Commit(ctx); err != nil {
@@ -413,18 +405,23 @@ func (s *Store) insertCallLink(ctx context.Context, q database.Querier, link ker
 	return nil
 }
 
-// upsertTimer writes (or updates) a wrkflw_timers row on q, atomic with the
-// state commit (ADR-0027). Re-arming the same (instance, timer) overwrites the
-// row via the dialect's UpsertTimer conflict clause.
-func (s *Store) upsertTimer(ctx context.Context, q database.Querier, tm kernel.ArmedTimer) error {
+// upsertTimer writes (or updates) a wrkflw_timers row on q, atomic with
+// whatever transaction q participates in. Re-arming the same (instance,
+// timer) overwrites the row via the dialect's UpsertTimer conflict clause.
+//
+// A package-level free function (not a *Store method) so [TimerStore.UpsertJob]
+// (the standalone TimerWriter capability, ADR-0134) can call it with its own
+// dialect value rather than relying on a receiver, since TimerStore is a
+// distinct type from Store.
+func upsertTimer(ctx context.Context, q database.Querier, d dialect.Dialect, tm kernel.ArmedTimer) error {
 	payload, err := triggerPayloadArg(tm.Trigger)
 	if err != nil {
 		return fmt.Errorf("workflow-store: upsert timer %q/%q: %w", tm.InstanceID, tm.TimerID, err)
 	}
-	_, err = q.Exec(ctx, s.dialect.Rebind(
+	_, err = q.Exec(ctx, d.Rebind(
 		`INSERT INTO wrkflw_timers (instance_id, timer_id, next_run, kind, def_id, def_version, trigger_kind, trigger_payload)
-		 VALUES (?,?,?,?,?,?,?,?)`+s.dialect.UpsertTimer()),
-		tm.InstanceID, tm.TimerID, timeArg(s.dialect, tm.NextRun), int16(tm.Kind), tm.DefID, tm.DefVersion,
+		 VALUES (?,?,?,?,?,?,?,?)`+d.UpsertTimer()),
+		tm.InstanceID, tm.TimerID, timeArg(d, tm.NextRun), int16(tm.Kind), tm.DefID, tm.DefVersion,
 		int16(tm.Trigger.Kind()), payload)
 	if err != nil {
 		return fmt.Errorf("workflow-store: upsert timer %q/%q: %w", tm.InstanceID, tm.TimerID, err)
@@ -450,10 +447,12 @@ func triggerPayloadArg(trig schedule.TriggerSpec) (any, error) {
 	return b, nil
 }
 
-// deleteTimer removes a wrkflw_timers row on q (fired or cancelled). A zero-row
-// delete is fine (idempotent / already gone).
-func (s *Store) deleteTimer(ctx context.Context, q database.Querier, instanceID, timerID string) error {
-	_, err := q.Exec(ctx, s.dialect.Rebind(
+// deleteTimer removes a wrkflw_timers row on q (fired or cancelled), scoped by
+// (instanceID, timerID). A zero-row delete is fine (idempotent / already
+// gone). A package-level free function for the same reason as [upsertTimer]:
+// used by [TimerStore.DeleteJob].
+func deleteTimer(ctx context.Context, q database.Querier, d dialect.Dialect, instanceID, timerID string) error {
+	_, err := q.Exec(ctx, d.Rebind(
 		`DELETE FROM wrkflw_timers WHERE instance_id = ? AND timer_id = ?`),
 		instanceID, timerID)
 	if err != nil {
@@ -462,17 +461,17 @@ func (s *Store) deleteTimer(ctx context.Context, q database.Querier, instanceID,
 	return nil
 }
 
-// applyTimerOps applies a step's timer arms and cancels on q.
-func (s *Store) applyTimerOps(ctx context.Context, q database.Querier, step kernel.AppliedStep) error {
-	for _, a := range step.TimerArms {
-		if err := s.upsertTimer(ctx, q, a); err != nil {
-			return err
-		}
-	}
-	for _, id := range step.TimerCancels {
-		if err := s.deleteTimer(ctx, q, step.State.InstanceID, id); err != nil {
-			return err
-		}
+// deleteTimerByTimerID removes a wrkflw_timers row on q by timer_id alone,
+// without an instance_id scope. Engine timer ids are globally unique
+// (`<instanceID>-tm<seq>`), so this is unambiguous; it backs
+// [TimerStore.DeleteJobByTimerID], which the runtime JobStore's Delete(id)
+// (Task 10) uses when it only carries the timer id, not the instance id.
+func deleteTimerByTimerID(ctx context.Context, q database.Querier, d dialect.Dialect, timerID string) error {
+	_, err := q.Exec(ctx, d.Rebind(
+		`DELETE FROM wrkflw_timers WHERE timer_id = ?`),
+		timerID)
+	if err != nil {
+		return fmt.Errorf("workflow-store: delete timer %q: %w", timerID, err)
 	}
 	return nil
 }

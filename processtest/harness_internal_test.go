@@ -1,6 +1,7 @@
 package processtest
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -8,9 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kartaladev/wrkflw/authz"
-	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/humantask"
+	"github.com/kartaladev/wrkflw/scheduler"
 )
 
 // TestCompleteTasksWithSkipsDeclined is a white-box test for finding #7: when the
@@ -95,7 +96,11 @@ func TestHarnessEnvClassifyPrecise(t *testing.T) {
 			h, err := New(WithClockStart(base))
 			require.NoError(t, err)
 			for id, at := range tc.schedule {
-				if _, err := h.sched.Schedule(t.Context(), id, schedule.At(at), func() {}); err != nil {
+				job, err := scheduler.NewJobWithID(id, "test-timer", scheduler.At(at),
+					func(_ context.Context, _ scheduler.DataProvider) error { return nil },
+					scheduler.NewEmptyDataProvider())
+				require.NoError(t, err)
+				if _, err := h.sched.Schedule(t.Context(), job); err != nil {
 					t.Fatalf("Schedule(%q): %v", id, err)
 				}
 			}

@@ -58,14 +58,6 @@ type AppliedStep struct {
 	// CallOutcome, when non-nil, flips THIS instance's call link to terminal
 	// atomically with this step (set on the child's terminal Commit). ADR-0025.
 	CallOutcome *CallOutcome
-	// TimerArms are timers armed by this step (one per ScheduleTimer command).
-	// The Store upserts them into the armed-timers table atomically with the
-	// state commit (ADR-0027). Empty unless a TimerStore is wired.
-	TimerArms []ArmedTimer
-	// TimerCancels are timer IDs disarmed by this step (CancelTimer commands and
-	// the fired timer on a TimerFired trigger). The Store deletes them atomically
-	// with the state commit. Empty unless a TimerStore is wired.
-	TimerCancels []string
 }
 
 // ErrConcurrentUpdate is returned by Store.Commit when the expected token is
