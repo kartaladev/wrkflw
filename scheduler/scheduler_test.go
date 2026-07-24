@@ -56,12 +56,14 @@ func TestNativeSchedulerCalendarTriggers(t *testing.T) {
 	// hour/minute/second passthrough rather than trivially matching whatever
 	// the conversion produces.
 	//
-	// Timezone: the live scheduler resolves calendar at-times in time.Local,
-	// not UTC — see the timezone note on [scheduler.Daily]'s godoc and
-	// docs/specs/2026-07-24-calendar-trigger-timezone-followup.md. wantFire is
-	// built in time.Local here to reflect actual behavior.
-	refTime := time.Date(2026, time.January, 1, 8, 0, 0, 0, time.Local)
-	wantFire := time.Date(2026, time.January, 1, 9, 0, 0, 0, time.Local)
+	// Timezone: the live scheduler now resolves calendar at-times in UTC by
+	// default (ADR-0136) — see the timezone note on [scheduler.Daily]'s
+	// godoc. refTime and wantFire are built in time.UTC here to match that
+	// default, while still exercising the hour/minute/second passthrough
+	// (wantFire is independently computed above, not derived through
+	// scheduleClockTimes).
+	refTime := time.Date(2026, time.January, 1, 8, 0, 0, 0, time.UTC)
+	wantFire := time.Date(2026, time.January, 1, 9, 0, 0, 0, time.UTC)
 
 	type testCase struct {
 		name    string

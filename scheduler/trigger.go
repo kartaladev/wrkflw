@@ -26,9 +26,10 @@ const (
 
 // ClockTime is a wall-clock time-of-day (hour/minute/second) used by the
 // calendar constructors ([Daily], [Weekly], [Monthly]) to say *when during the
-// day* a recurring trigger fires. [Trigger.Next] resolves it in UTC (see
-// [Daily]), but the live scheduler resolves it in the scheduler's local
-// timezone (time.Local) — see the timezone note on [Daily].
+// day* a recurring trigger fires. [Trigger.Next] resolves it in UTC, and the
+// live scheduler resolves it in UTC by default — override the live scheduler's
+// zone with the scheduler's WithLocation option. See the timezone note on
+// [Daily].
 type ClockTime struct {
 	Hour, Minute, Second uint
 }
@@ -115,7 +116,8 @@ func EveryRandom(minimum, maximum time.Duration) Trigger {
 // expression that fails to parse is not rejected here — Trigger has no
 // validation step of its own — but [Trigger.Next] then always reports
 // ok=false for it; the scheduler enforces expression validity at schedule
-// time.
+// time. [Trigger.Next] resolves the expression in UTC (the uniform reference
+// for all recurring kinds).
 func Cron(expr string) Trigger {
 	return Trigger{kind: triggerCron, cron: expr}
 }
@@ -123,24 +125,24 @@ func Cron(expr string) Trigger {
 // Daily builds a recurring Trigger that fires every interval days, at each
 // of the given wall-clock times. Omitting at defaults to midnight.
 //
-// Timezone note: [Trigger.Next] (the pure computation used by this package's
-// own tests and by anything driving Trigger directly) resolves at-times in
-// UTC. The live scheduler built from this Trigger, however, currently
-// resolves at-times in the scheduler's local timezone (time.Local) — the
-// internal gocron adapter does not pin gocron.WithLocation(time.UTC), so
-// gocron falls back to its own time.Local default. This split is a
-// pre-existing, environment-dependent discrepancy, not a documented
-// contract; making the live scheduler UTC-fixed (or configurable) is a
-// planned follow-up — see
-// docs/specs/2026-07-24-calendar-trigger-timezone-followup.md.
+// Timezone note (ADR-0136): [Trigger.Next] (the pure computation used by this
+// package's own tests and by anything driving Trigger directly) resolves
+// at-times in UTC. The live scheduler built from this Trigger resolves
+// at-times in UTC by default, matching that reference; a consumer may override
+// the live zone with the scheduler's WithLocation option (e.g. time.Local or a
+// named zone). Under a non-UTC location the trigger fires in that zone, while
+// [Trigger.Next] stays UTC — a reporting-only difference that never affects
+// firing or rehydration. Named zones resolve at-times per their DST rules on
+// the live scheduler, which [Trigger.Next] (UTC, DST-free) does not observe.
 func Daily(interval uint, at ...ClockTime) Trigger {
 	return Trigger{kind: triggerDaily, interval: interval, atTimes: at}
 }
 
 // Weekly builds a recurring Trigger that fires every interval weeks, on each
 // of the given weekdays, at each of the given wall-clock times. Omitting at
-// defaults to midnight. See the timezone note on [Daily]: at-times resolve
-// in UTC via [Trigger.Next] but in time.Local on the live scheduler.
+// defaults to midnight. See the timezone note on [Daily]: at-times resolve in
+// UTC by default on both [Trigger.Next] and the live scheduler (override the
+// live zone with WithLocation).
 func Weekly(interval uint, days []time.Weekday, at ...ClockTime) Trigger {
 	return Trigger{kind: triggerWeekly, interval: interval, weekdays: days, atTimes: at}
 }
@@ -149,8 +151,9 @@ func Weekly(interval uint, days []time.Weekday, at ...ClockTime) Trigger {
 // each of the given days of the month, at each of the given wall-clock
 // times. Omitting at defaults to midnight. A day of the month that does not
 // exist in a given month (e.g. 31 in February) is simply skipped that month.
-// See the timezone note on [Daily]: at-times resolve in UTC via
-// [Trigger.Next] but in time.Local on the live scheduler.
+// See the timezone note on [Daily]: at-times resolve in UTC by default on both
+// [Trigger.Next] and the live scheduler (override the live zone with
+// WithLocation).
 func Monthly(interval uint, days []int, at ...ClockTime) Trigger {
 	return Trigger{kind: triggerMonthly, interval: interval, days: days, atTimes: at}
 }
@@ -188,7 +191,9 @@ func (t Trigger) Recurring() bool {
 // ok=false for a non-positive min, for the same reason as [Every]; bounds
 // are not validated here (e.g. min>max), so Next always uses min as the
 // earliest bound regardless. [Cron] parses expr with the standard
-// five-field parser and delegates to it. [Daily], [Weekly], and [Monthly]
+// five-field parser and delegates to it, resolving in UTC regardless of
+// after's location — the uniform UTC reference shared with the calendar
+// branch below. [Daily], [Weekly], and [Monthly]
 // report the next matching calendar occurrence strictly after after, in
 // UTC — the interval only constrains subsequent fires, not this first one
 // (matching gocron's first-fire behaviour); an omitted atTimes defaults to
@@ -217,7 +222,11 @@ func (t Trigger) Next(after time.Time) (time.Time, bool) {
 		if err != nil {
 			return time.Time{}, false
 		}
-		return sched.Next(after), true
+		// Resolve in UTC so Next is the uniform UTC reference across all
+		// recurring kinds (the calendar branch already normalizes to UTC in
+		// calendarNext). This matches the default (UTC) live scheduler; see
+		// docs/adr/0136-calendar-trigger-timezone.md.
+		return sched.Next(after.UTC()), true
 	case triggerDaily, triggerWeekly, triggerMonthly:
 		return calendarNext(after, t.kind, t.days, t.weekdays, t.atTimes)
 	default:

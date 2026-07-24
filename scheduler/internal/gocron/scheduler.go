@@ -36,6 +36,12 @@ type GocronScheduler struct {
 	sched gocron.Scheduler
 	clk   clockwork.Clock
 
+	// loc is the timezone the scheduler resolves calendar at-times and cron
+	// expressions against. nil means "unset"; NewGocronScheduler resolves an
+	// unset loc to time.UTC (it never falls through to gocron's time.Local
+	// default). Set via WithLocation. See ADR-0136.
+	loc *time.Location
+
 	// timeSkew is the maximum lateness that is accepted silently for a
 	// past-due one-shot timer. Lateness beyond this threshold emits a WARN
 	// (the timer still fires — no timer is ever dropped).
@@ -140,6 +146,27 @@ func WithClock(clk clockwork.Clock) Option {
 	}
 }
 
+// WithLocation sets the timezone in which the scheduler resolves calendar
+// at-times (Daily/Weekly/Monthly) and cron expressions. Default: [time.UTC],
+// which matches the pure scheduler.Trigger.Next reference. A nil value is
+// ignored (the default UTC is used). The nil-guard matters for two reasons:
+// (1) gocron's own default when no location is pinned is time.Local, so an
+// unset location must be resolved to UTC before construction; and (2)
+// gocron.WithLocation(nil) returns ErrWithLocationNil and would fail scheduler
+// construction, so nil must never be forwarded. Pass time.Local for host-local
+// resolution, or any named zone. Named zones with DST resolve at-times per that
+// zone's DST rules on the live scheduler; the UTC reference does not observe
+// DST, so the two diverge across DST boundaries. In a multi-replica deployment
+// (WithLocker/WithElector) every replica must use the same location. See
+// ADR-0136.
+func WithLocation(loc *time.Location) Option {
+	return func(s *GocronScheduler) {
+		if loc != nil {
+			s.loc = loc
+		}
+	}
+}
+
 // WithTimeSkew sets the maximum past-due lateness that is accepted silently
 // for a one-shot timer whose absolute fire time has already elapsed at
 // schedule time (e.g. after a restart or DB↔process clock skew).
@@ -203,7 +230,16 @@ func NewGocronScheduler(opts ...Option) (*GocronScheduler, error) {
 		filterNilOpts(s.logOpt, s.tpOpt, s.mpOpt)...,
 	)
 
+	// Resolve the effective location: option-provided or UTC default. This is
+	// pinned explicitly so gocron never falls back to its own time.Local
+	// default (ADR-0136).
+	loc := s.loc
+	if loc == nil {
+		loc = time.UTC
+	}
+
 	gocronOpts := []gocron.SchedulerOption{
+		gocron.WithLocation(loc), // ADR-0136: pin location (default UTC)
 		gocron.WithClock(s.clk),
 		gocron.WithMonitorStatus(newMonitorStatus(s.tel)),
 		gocron.WithGlobalJobOptions(gocron.WithEventListeners(
