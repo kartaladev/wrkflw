@@ -11,9 +11,15 @@ import (
 // NodeWire is the flat JSON/JSONB representation of any node. It is the single
 // serialization shape through which every node kind decodes and encodes.
 type NodeWire struct {
-	ID                 string   `json:"id"`
-	Kind               NodeKind `json:"kind"`
-	Name               string   `json:"name,omitempty"`
+	ID   string   `json:"id"`
+	Kind NodeKind `json:"kind"`
+	Name string   `json:"name,omitempty"`
+	// Label is the raw (not-baked) human display label, written only when
+	// explicitly set (Base.SetLabel). An unset label stays omitted here — the
+	// Name fallback (Base.Label()) is resolved in-memory, never baked into the
+	// wire, so a definition authored without a label keeps tracking Name across
+	// renames after a reload.
+	Label              string   `json:"label,omitempty"`
 	Action             string   `json:"action,omitempty"`
 	EligibleRoles      []string `json:"eligibleRoles,omitempty"`
 	EligiblePrivileges []string `json:"eligiblePrivileges,omitempty"`
@@ -73,6 +79,9 @@ type NodeWire struct {
 // toWire flattens a Node into its wire form via the kind's registered spec.
 func toWire(n Node) NodeWire {
 	w := NodeWire{ID: n.ID(), Kind: n.Kind(), Name: n.Name()}
+	if lc, ok := n.(interface{ rawLabel() string }); ok {
+		w.Label = lc.rawLabel()
+	}
 	if s, ok := specFor(n.Kind()); ok && s.ToWire != nil {
 		s.ToWire(n, &w)
 	}
@@ -122,7 +131,7 @@ func fromWire(w NodeWire) (Node, error) {
 	if !ok || s.FromWire == nil {
 		return nil, fmt.Errorf("%w: %q", ErrKindNotRegistered, w.Kind)
 	}
-	return s.FromWire(Base{id: w.ID, name: w.Name}, w), nil
+	return s.FromWire(Base{id: w.ID, name: w.Name, label: w.Label}, w), nil
 }
 
 // definitionWire mirrors ProcessDefinition with Nodes as wire forms.

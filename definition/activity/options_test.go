@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/activity"
+	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/definition/model/validate"
 	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/stretchr/testify/assert"
@@ -124,4 +125,66 @@ func TestWithWaitDeadline_And_WithDeadlineAction(t *testing.T) {
 	assert.Equal(t, "escalate", st.DeadlineFlow)
 	assert.Equal(t, "notify", st.DeadlineAction)
 	assert.False(t, st.DeadlineTimer.IsZero())
+}
+
+// TestWithLabel exercises WithLabel across all seven activity constructors.
+// NewSubProcess and NewCallActivity route the label through applyActivityOpts
+// (applyActivity + applyName) rather than a per-kind apply method — a
+// distinct path from the five task kinds, and the one previously flagged as
+// at risk of silently dropping the label (see labelOpt.applyName).
+func TestWithLabel(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		newNode func() model.Node
+		assert  func(t *testing.T, n model.Node)
+	}{
+		{
+			name:    "ServiceTask",
+			newNode: func() model.Node { return activity.NewServiceTask("svc", activity.WithLabel("L")) },
+			assert:  func(t *testing.T, n model.Node) { assert.Equal(t, "L", n.Label()) },
+		},
+		{
+			name:    "UserTask",
+			newNode: func() model.Node { return activity.NewUserTask("usr", activity.WithLabel("L")) },
+			assert:  func(t *testing.T, n model.Node) { assert.Equal(t, "L", n.Label()) },
+		},
+		{
+			name:    "ReceiveTask",
+			newNode: func() model.Node { return activity.NewReceiveTask("rcv", "OrderPlaced", activity.WithLabel("L")) },
+			assert:  func(t *testing.T, n model.Node) { assert.Equal(t, "L", n.Label()) },
+		},
+		{
+			name:    "SendTask",
+			newNode: func() model.Node { return activity.NewSendTask("snd", "OrderShipped", activity.WithLabel("L")) },
+			assert:  func(t *testing.T, n model.Node) { assert.Equal(t, "L", n.Label()) },
+		},
+		{
+			name:    "BusinessRuleTask",
+			newNode: func() model.Node { return activity.NewBusinessRuleTask("brt", activity.WithLabel("L")) },
+			assert:  func(t *testing.T, n model.Node) { assert.Equal(t, "L", n.Label()) },
+		},
+		{
+			name: "SubProcess",
+			newNode: func() model.Node {
+				return activity.NewSubProcess("sub", &model.ProcessDefinition{}, activity.WithLabel("L"))
+			},
+			assert: func(t *testing.T, n model.Node) { assert.Equal(t, "L", n.Label()) },
+		},
+		{
+			name: "CallActivity",
+			newNode: func() model.Node {
+				return activity.NewCallActivity("call", model.Latest("other"), activity.WithLabel("L"))
+			},
+			assert: func(t *testing.T, n model.Node) { assert.Equal(t, "L", n.Label()) },
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, tc.newNode())
+		})
+	}
 }

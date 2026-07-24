@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/kartaladev/wrkflw/definition/gateway"
 	"github.com/kartaladev/wrkflw/definition/model"
 )
@@ -13,7 +15,7 @@ func TestGatewayConstructors(t *testing.T) {
 		node model.Node
 		kind model.NodeKind
 	}{
-		{gateway.NewExclusive("x", "XOR"), model.KindExclusiveGateway},
+		{gateway.NewExclusive("x", gateway.WithName("XOR")), model.KindExclusiveGateway},
 		{gateway.NewParallel("p"), model.KindParallelGateway},
 		{gateway.NewInclusive("i"), model.KindInclusiveGateway},
 		{gateway.NewEventBased("e"), model.KindEventBasedGateway},
@@ -23,11 +25,55 @@ func TestGatewayConstructors(t *testing.T) {
 			t.Errorf("Kind() = %v, want %v", c.node.Kind(), c.kind)
 		}
 	}
-	if n := gateway.NewExclusive("x", "XOR"); n.ID() != "x" || n.Name() != "XOR" {
+	if n := gateway.NewExclusive("x", gateway.WithName("XOR")); n.ID() != "x" || n.Name() != "XOR" {
 		t.Fatalf("id/name = %q/%q", n.ID(), n.Name())
 	}
 	if n := gateway.NewParallel("p"); n.Name() != "" {
 		t.Fatalf("optional name should default empty, got %q", n.Name())
+	}
+}
+
+// TestGatewayOptions covers the functional-options constructors: WithName sets
+// the semantic name, WithLabel sets the human display label (overriding the
+// Name fallback), and a bare id with no options remains valid with empty
+// name/label — preserving source compatibility for the 100+ id-only call
+// sites across the repo.
+func TestGatewayOptions(t *testing.T) {
+	cases := []struct {
+		name   string
+		node   func() model.Node
+		assert func(t *testing.T, n model.Node)
+	}{
+		{
+			name: "name and label both set",
+			node: func() model.Node {
+				return gateway.NewExclusive("x", gateway.WithName("Decision"), gateway.WithLabel("Approve?"))
+			},
+			assert: func(t *testing.T, n model.Node) {
+				require.Equal(t, "Decision", n.Name())
+				require.Equal(t, "Approve?", n.Label())
+			},
+		},
+		{
+			name: "unset label falls back to name",
+			node: func() model.Node { return gateway.NewParallel("fork", gateway.WithName("Fork")) },
+			assert: func(t *testing.T, n model.Node) {
+				require.Equal(t, "Fork", n.Label())
+			},
+		},
+		{
+			name: "bare id valid, empty name",
+			node: func() model.Node { return gateway.NewInclusive("i") },
+			assert: func(t *testing.T, n model.Node) {
+				require.Equal(t, "", n.Name())
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.assert(t, tc.node())
+		})
 	}
 }
 

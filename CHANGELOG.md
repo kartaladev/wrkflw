@@ -17,6 +17,15 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **Gateway constructors and `Builder` gateway methods now take functional options (ADR-0139).**
+  `gateway.NewExclusive`/`NewParallel`/`NewInclusive`/`NewEventBased` change from
+  `(id string, name ...string)` to `(id string, opts ...gateway.Option)`, and
+  `Builder.AddExclusiveGateway`/`AddParallelGateway`/`AddInclusiveGateway`/`AddEventBasedGateway`
+  change from `(id string, name ...string)` to `(id string, opts ...gateway.Option)`. Set a
+  gateway's name with `gateway.WithName("…")` (and its human label with `gateway.WithLabel("…")`)
+  instead of a trailing name string, e.g. `gateway.NewExclusive("decide", gateway.WithName("Decision?"))`.
+  Bare id-only calls (`gateway.NewParallel("fork")`) are unaffected.
+
 - **`scheduling` package renamed to `scheduler` and unified with the internal gocron engine.**
   The public import path is now `github.com/kartaladev/wrkflw/scheduler` (formerly
   `github.com/kartaladev/wrkflw/scheduling`). The internal gocron implementation relocated from
@@ -216,6 +225,14 @@ release.
   event-sub arm (pre-existing) — use `ApplyTrigger`.
 
 ### Added
+
+- **Optional human `label` on every node (ADR-0139).** Each node kind now carries an optional
+  display label, set with `WithLabel("…")` (`activity.WithLabel`, `event.WithLabel` /
+  `WithThrowLabel` / `WithCompensateThrowLabel`, `gateway.WithLabel`) and exposed via
+  `Node.Label()`, which falls back to the node's `Name()` when no label was set. The label
+  serializes as `"label"` in JSON (`omitempty`) and YAML; the raw value round-trips (an unset
+  label is omitted, not baked in). `Name` is now documented as the node's *semantic/reference*
+  name (code-facing), with `Label` as the human-facing display string.
 
 - **Graceful shutdown for `runtime.ProcessDriver` (ADR-0133).** `ProcessDriver.Shutdown`
   now performs real admission control and in-flight drain: it rejects new externally-initiated

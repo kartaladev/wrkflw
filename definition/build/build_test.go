@@ -9,6 +9,7 @@ import (
 	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/build"
 	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/gateway"
 	"github.com/kartaladev/wrkflw/definition/model"
 )
 
@@ -43,7 +44,7 @@ flows:
 func TestFluentChain(t *testing.T) {
 	def, err := build.NewBuilder("order", 1).
 		AddStartEvent("s").
-		AddExclusiveGateway("gw", "Approved?").
+		AddExclusiveGateway("gw", gateway.WithName("Approved?")).
 		AddServiceTask("charge", activity.WithTaskAction("charge-card")).
 		AddUserTask("approve", activity.WithEligibleRoles("manager")).
 		AddEndEvent("e").
