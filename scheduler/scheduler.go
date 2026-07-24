@@ -124,6 +124,7 @@ type config struct {
 	locker   Locker
 	elector  Elector
 	timeSkew *time.Duration // nil = use internal default (5 minutes)
+	loc      *time.Location // nil = UTC default (resolved in the internal engine)
 
 	// jobStores holds the kind-routed JobStore providers registered via
 	// WithJobStore. Nil until the first WithJobStore option is applied.
@@ -198,6 +199,39 @@ func WithTimeSkew(d time.Duration) Option {
 	}
 }
 
+// WithLocation sets the timezone in which the scheduler resolves recurring
+// calendar at-times (Daily/Weekly/Monthly) and cron expressions. Default:
+// [time.UTC], matching the [Trigger.Next] reference. A nil value is ignored
+// (UTC is used). Pass [time.Local] for host-local resolution, or any named
+// zone.
+//
+// Firing and rehydration are correct under any location. A non-UTC location
+// only perturbs how the next-run instant is REPORTED, and the surfaces differ:
+// the persisted/admin next-fire and Schedule()'s return value use the UTC
+// [Trigger.Next] reference, while Scheduled/List re-fetch the live,
+// location-resolved next-run. This never affects when a timer fires (recurring
+// timers re-arm from the trigger, not from the reported next-run).
+//
+// Named zones with DST resolve at-times per that zone's DST rules on the live
+// scheduler; the UTC reference does not observe DST, so the two diverge across
+// DST boundaries. In a multi-replica deployment (see [WithLocker] /
+// [WithElector]) every replica MUST use the same location. See ADR-0136.
+//
+// Cron caveat: a [Cron] trigger resolves its location by NAME (the underlying
+// scheduler re-parses time.Location.String() via time.LoadLocation), so a
+// [Cron] trigger scheduled under a non-IANA location — e.g. an anonymous
+// time.FixedZone — fails at schedule time. Use [time.UTC], [time.Local], or an
+// IANA zone (time.LoadLocation) with cron triggers. Calendar triggers
+// (Daily/Weekly/Monthly) use the location's offset directly and accept any
+// *time.Location.
+func WithLocation(loc *time.Location) Option {
+	return func(c *config) {
+		if loc != nil {
+			c.loc = loc
+		}
+	}
+}
+
 // NewScheduler constructs a gocron-backed [NativeScheduler]. Pass [WithClock]
 // to drive timer scheduling with a specific [clockwork.Clock] (default:
 // [clockwork.NewRealClock]).
@@ -247,6 +281,9 @@ func (s *NativeScheduler) internalOpts() []gocronsched.Option {
 	}
 	if s.cfg.timeSkew != nil {
 		opts = append(opts, gocronsched.WithTimeSkew(*s.cfg.timeSkew))
+	}
+	if s.cfg.loc != nil {
+		opts = append(opts, gocronsched.WithLocation(s.cfg.loc))
 	}
 	if s.cfg.locker != nil {
 		opts = append(opts, gocronsched.WithLocker(gocronsched.AdaptLocker(neutralLockerBridge{s.cfg.locker})))

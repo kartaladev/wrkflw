@@ -94,26 +94,27 @@ func EveryRandom(minimum, maximum time.Duration) TriggerDef {
 func Cron(expr string) TriggerDef { return TriggerDef{kind: triggerDefCron, cron: expr} }
 
 // Daily builds a recurring TriggerDef that fires every interval days,
-// optionally at specified wall-clock times. The live gocron scheduler
-// resolves these in its configured location (time.Local by default) — see
-// docs/specs/2026-07-24-calendar-trigger-timezone-followup.md. Omitting at
-// defaults to midnight.
+// optionally at specified wall-clock times. The live scheduler resolves
+// these in its configured location — time.UTC by default, or the zone set
+// via WithLocation (ADR-0136). Omitting at defaults to midnight.
 func Daily(interval uint, at ...ClockTime) TriggerDef {
 	return TriggerDef{kind: triggerDefDaily, interval: interval, atTimes: at}
 }
 
 // Weekly builds a recurring TriggerDef that fires every interval weeks on
-// the given weekdays, optionally at specified wall-clock times (resolved in
-// the live scheduler's location, time.Local by default — see the note on
-// [Daily]). Omitting at defaults to midnight.
+// the given weekdays, optionally at specified wall-clock times. The live
+// scheduler resolves these in its configured location — time.UTC by
+// default, or the zone set via WithLocation (ADR-0136). Omitting at
+// defaults to midnight.
 func Weekly(interval uint, days []time.Weekday, at ...ClockTime) TriggerDef {
 	return TriggerDef{kind: triggerDefWeekly, interval: interval, weekdays: days, atTimes: at}
 }
 
 // Monthly builds a recurring TriggerDef that fires every interval months on
-// the given days of the month, optionally at specified wall-clock times
-// (resolved in the live scheduler's location, time.Local by default — see
-// the note on [Daily]). Omitting at defaults to midnight.
+// the given days of the month, optionally at specified wall-clock times. The
+// live scheduler resolves these in its configured location — time.UTC by
+// default, or the zone set via WithLocation (ADR-0136). Omitting at defaults
+// to midnight.
 func Monthly(interval uint, days []int, at ...ClockTime) TriggerDef {
 	return TriggerDef{kind: triggerDefMonthly, interval: interval, days: days, atTimes: at}
 }

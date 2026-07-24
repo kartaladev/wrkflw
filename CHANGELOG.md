@@ -52,6 +52,19 @@ release.
   `go-co-op/gocron/v2` bumped to the pinned `v2.22.0` (ADR-0135). See `scheduler/example_test.go`
   for `NewScheduler`/`NewJob`/`Trigger`/`WithJobStore` usage.
 
+- **Calendar (`Daily`/`Weekly`/`Monthly`) and cron triggers now resolve their at-times in
+  UTC by default on the live scheduler (ADR-0136).** Previously the live scheduler used the
+  host's `time.Local` (the internal gocron engine never pinned a location), while the pure
+  `scheduler.Trigger.Next` reference computed calendar at-times in UTC — so on a non-UTC host
+  the two disagreed. The live scheduler is now pinned to UTC by default, matching
+  `Trigger.Next` (whose cron branch is likewise normalized to UTC). Deployments running
+  `TZ=UTC` (typical containers) are unaffected. A non-UTC host that intends host-local
+  resolution must now pass the new `scheduler.WithLocation(time.Local)` option (which also
+  accepts any named `*time.Location`). Under a non-UTC location the trigger fires in that zone
+  while `Trigger.Next` stays UTC — a reporting-only difference that never affects firing or
+  rehydration; named zones additionally resolve at-times per their DST rules on the live
+  scheduler. In a multi-replica deployment every replica must use the same location.
+
 - **`DefinitionRegistry.Lookup(ctx, defRef string)` → `Lookup(ctx, model.Qualifier)`;
   def-ref fields, params, and constructors now typed `definition.Qualifier` (ADR-0101).**
   The following Go symbols are now `definition.Qualifier` (or `model.Qualifier` internally)

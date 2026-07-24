@@ -16,6 +16,7 @@ func TestTrigger_Next(t *testing.T) {
 
 	type testCase struct {
 		name   string
+		after  time.Time // optional per-case reference instant; zero uses the default `after` above
 		trig   scheduler.Trigger
 		assert func(t *testing.T, next time.Time, ok bool)
 	}
@@ -145,6 +146,20 @@ func TestTrigger_Next(t *testing.T) {
 			},
 		},
 		{
+			name:  "cron resolves in UTC regardless of after location",
+			after: time.Date(2026, 1, 1, 0, 0, 0, 0, time.FixedZone("plusTwo", 2*60*60)),
+			trig:  scheduler.Cron("0 9 * * *"),
+			assert: func(t *testing.T, next time.Time, ok bool) {
+				// after is 2026-01-01 00:00 in UTC+2 (== 2025-12-31 22:00 UTC); the
+				// next 09:00 is computed in UTC (uniform reference), so 2026-01-01
+				// 09:00 UTC — NOT 09:00 in +02:00. Regression guard for ADR-0136.
+				want := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
+				if !ok || !next.Equal(want) || next.Location() != time.UTC {
+					t.Fatalf("next=%v ok=%v want %v UTC", next, ok, want)
+				}
+			},
+		},
+		{
 			name: "daily fires at the next matching clock time same day",
 			trig: scheduler.Daily(1, scheduler.ClockTime{Hour: 9}),
 			assert: func(t *testing.T, next time.Time, ok bool) {
@@ -245,7 +260,12 @@ func TestTrigger_Next(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			next, ok := tt.trig.Next(after)
+			a := after
+			if !tt.after.IsZero() {
+				a = tt.after
+			}
+
+			next, ok := tt.trig.Next(a)
 			tt.assert(t, next, ok)
 		})
 	}
