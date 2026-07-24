@@ -23,6 +23,19 @@ func TestBaseNewAndSetName(t *testing.T) {
 	}
 }
 
+// TestBaseLabelFallsBackToName covers the Label() human-display accessor: it
+// falls back to the semantic Name until SetLabel provides an explicit label.
+func TestBaseLabelFallsBackToName(t *testing.T) {
+	b := NewBase("id1", "SemanticName")
+	if got := b.Label(); got != "SemanticName" {
+		t.Fatalf("unset Label() = %q, want fallback to name", got)
+	}
+	b.SetLabel("Human Label")
+	if got := b.Label(); got != "Human Label" {
+		t.Fatalf("Label() = %q, want explicit label", got)
+	}
+}
+
 // TestActivityFieldsCarriers covers the unexported carrier methods that the
 // kind-agnostic accessors (DeadlineOf/WaitActionOf/RetryPolicyOf/recoveryFlowOf)
 // dispatch on after the node kinds move into leaf packages.

@@ -62,6 +62,21 @@ func (o nameOpt) applyBusinessRule(b *BusinessRuleTask) { b.SetName(o.name) }
 // WithName sets the display name on any activity node.
 func WithName(name string) nameOpt { return nameOpt{name} }
 
+// --- WithLabel (accepted by every activity constructor) ---
+
+type labelOpt struct{ label string }
+
+func (o labelOpt) applyActivity(_ *model.ActivityFields) {}
+func (o labelOpt) applyName(b *model.Base)               { b.SetLabel(o.label) }
+func (o labelOpt) applyServiceTask(s *ServiceTask)       { s.SetLabel(o.label) }
+func (o labelOpt) applyUserTask(u *UserTask)             { u.SetLabel(o.label) }
+func (o labelOpt) applyReceiveTask(r *ReceiveTask)       { r.SetLabel(o.label) }
+func (o labelOpt) applySendTask(s *SendTask)             { s.SetLabel(o.label) }
+func (o labelOpt) applyBusinessRule(b *BusinessRuleTask) { b.SetLabel(o.label) }
+
+// WithLabel sets the human display label on any activity node.
+func WithLabel(label string) labelOpt { return labelOpt{label} }
+
 // --- action options (ServiceTask + BusinessRuleTask) ---
 
 type actionNameOpt struct{ name string }

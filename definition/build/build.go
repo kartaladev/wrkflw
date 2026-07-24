@@ -96,17 +96,17 @@ func (b *Builder) AddCompensationThrow(id string, opts ...event.CompensateThrowO
 
 // --- gateways ---
 
-func (b *Builder) AddExclusiveGateway(id string, name ...string) *Builder {
-	return b.Add(gateway.NewExclusive(id, name...))
+func (b *Builder) AddExclusiveGateway(id string, opts ...gateway.Option) *Builder {
+	return b.Add(gateway.NewExclusive(id, opts...))
 }
-func (b *Builder) AddParallelGateway(id string, name ...string) *Builder {
-	return b.Add(gateway.NewParallel(id, name...))
+func (b *Builder) AddParallelGateway(id string, opts ...gateway.Option) *Builder {
+	return b.Add(gateway.NewParallel(id, opts...))
 }
-func (b *Builder) AddInclusiveGateway(id string, name ...string) *Builder {
-	return b.Add(gateway.NewInclusive(id, name...))
+func (b *Builder) AddInclusiveGateway(id string, opts ...gateway.Option) *Builder {
+	return b.Add(gateway.NewInclusive(id, opts...))
 }
-func (b *Builder) AddEventBasedGateway(id string, name ...string) *Builder {
-	return b.Add(gateway.NewEventBased(id, name...))
+func (b *Builder) AddEventBasedGateway(id string, opts ...gateway.Option) *Builder {
+	return b.Add(gateway.NewEventBased(id, opts...))
 }
 
 // --- activities ---

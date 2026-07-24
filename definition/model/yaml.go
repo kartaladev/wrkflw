@@ -17,6 +17,7 @@ type nodeYAML struct {
 	ID                 string       `yaml:"id"`
 	Kind               string       `yaml:"kind"`
 	Name               string       `yaml:"name,omitempty"`
+	Label              string       `yaml:"label,omitempty"`
 	Action             string       `yaml:"action,omitempty"`
 	EligibleRoles      []string     `yaml:"eligibleRoles,omitempty"`
 	EligiblePrivileges []string     `yaml:"eligiblePrivileges,omitempty"`
@@ -106,6 +107,7 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 		ID:                    ny.ID,
 		Kind:                  kind,
 		Name:                  ny.Name,
+		Label:                 ny.Label,
 		Action:                ny.Action,
 		EligibleRoles:         ny.EligibleRoles,
 		EligiblePrivileges:    ny.EligiblePrivileges,

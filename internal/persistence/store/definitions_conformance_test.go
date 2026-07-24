@@ -46,7 +46,7 @@ func richConformanceDefinition() *model.ProcessDefinition {
 				activity.WithWaitAction(schedule.EveryExpr("PT6H"), "send-reminder"),
 				activity.WithCompensateAction("cancel-review"),
 			),
-			gateway.NewExclusive("approve", "Approved?"),
+			gateway.NewExclusive("approve", gateway.WithName("Approved?")),
 			activity.NewServiceTask("fulfill", activity.WithTaskAction("fulfillment-service"),
 				activity.WithName("Fulfill Order"),
 				activity.WithCompensateAction("rollback-fulfillment"),

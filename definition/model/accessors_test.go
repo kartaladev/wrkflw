@@ -169,7 +169,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 			event.NewBoundary("error-bnd", "charge",
 				event.WithBoundaryErrorCode("ERR_PAYMENT"),
 			),
-			gateway.NewExclusive("xor", "Decision"),
+			gateway.NewExclusive("xor", gateway.WithName("Decision")),
 			event.NewEnd("end", event.WithName("End")),
 			event.NewEnd("err-end", event.WithErrorCode("ERR_FATAL")),
 			event.NewEnd("term-end", event.WithForceTermination("terminated", event.OutcomeAbort)),

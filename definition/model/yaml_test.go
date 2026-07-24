@@ -283,6 +283,69 @@ flows:
 	}
 }
 
+// TestYAMLNodeLabel covers the YAML authoring `label` key (Task 3): a node
+// with an explicit label decodes it into Label(), while a node without one
+// falls back to its name (Base.Label() fallback from Task 1).
+func TestYAMLNodeLabel(t *testing.T) {
+	t.Parallel()
+
+	// tmpl is a minimal start->userTask->end definition; %s injects the
+	// userTask node's label field (4-space indented to align under "- id: n").
+	const tmpl = `id: p
+version: 1
+nodes:
+  - id: s
+    kind: startEvent
+  - id: n
+    kind: userTask
+    name: semantic-name
+%s
+  - id: e
+    kind: endEvent
+flows:
+  - { id: f1, source: s, target: n }
+  - { id: f2, source: n, target: e }
+`
+
+	type testCase struct {
+		name   string
+		fields string
+		assert func(t *testing.T, node model.Node)
+	}
+
+	cases := []testCase{
+		{
+			name:   "explicit label decodes",
+			fields: "    label: Human Caption",
+			assert: func(t *testing.T, node model.Node) {
+				assert.Equal(t, "Human Caption", node.Label())
+			},
+		},
+		{
+			name:   "no label falls back to name",
+			fields: "",
+			assert: func(t *testing.T, node model.Node) {
+				assert.Equal(t, "semantic-name", node.Label())
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ld, err := model.ParseYAML(strings.NewReader(fmt.Sprintf(tmpl, tc.fields)))
+			require.NoError(t, err)
+			def, err := ld.Build()
+			require.NoError(t, err)
+
+			node, ok := def.Node("n")
+			require.True(t, ok, "node n not found")
+			tc.assert(t, node)
+		})
+	}
+}
+
 // TestParseYAMLEndBehavior verifies that an EndEvent's behavior discriminator
 // and its full payload round-trip through the YAML authoring form: the
 // terminate payload (terminationReason + terminationOutcome) and the error
