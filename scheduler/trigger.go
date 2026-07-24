@@ -26,10 +26,10 @@ const (
 
 // ClockTime is a wall-clock time-of-day (hour/minute/second) used by the
 // calendar constructors ([Daily], [Weekly], [Monthly]) to say *when during the
-// day* a recurring trigger fires. [Trigger.Next] resolves it in UTC, and the
-// live scheduler resolves it in UTC by default — override the live scheduler's
-// zone with the scheduler's WithLocation option. See the timezone note on
-// [Daily].
+// day* a recurring trigger fires. [Trigger.Next] resolves it in the location
+// of the after instant it is given; the live scheduler resolves it in its
+// configured zone (default UTC, see the scheduler's WithLocation). See the
+// timezone note on [Daily].
 type ClockTime struct {
 	Hour, Minute, Second uint
 }
@@ -62,9 +62,11 @@ type Trigger struct {
 	cron string
 
 	// interval, days, weekdays, atTimes hold the calendar shape for
-	// triggerDaily, triggerWeekly, and triggerMonthly. interval affects only
-	// subsequent fires (the live scheduler's business), never the first one
-	// Next computes. days is used by triggerMonthly (day-of-month); weekdays
+	// triggerDaily, triggerWeekly, and triggerMonthly. calendarNext ignores
+	// interval on the first fire it computes — it always returns the next
+	// matching period-day regardless of interval — which can differ from the
+	// live scheduler's first fire for interval>1 (see the caveat on
+	// [Trigger.Next]). days is used by triggerMonthly (day-of-month); weekdays
 	// is used by triggerWeekly. atTimes is shared by all three calendar
 	// kinds; an empty atTimes defaults to midnight (00:00:00).
 	interval uint
@@ -116,8 +118,7 @@ func EveryRandom(minimum, maximum time.Duration) Trigger {
 // expression that fails to parse is not rejected here — Trigger has no
 // validation step of its own — but [Trigger.Next] then always reports
 // ok=false for it; the scheduler enforces expression validity at schedule
-// time. [Trigger.Next] resolves the expression in UTC (the uniform reference
-// for all recurring kinds).
+// time. [Trigger.Next] resolves the expression in after's location.
 func Cron(expr string) Trigger {
 	return Trigger{kind: triggerCron, cron: expr}
 }
@@ -125,24 +126,18 @@ func Cron(expr string) Trigger {
 // Daily builds a recurring Trigger that fires every interval days, at each
 // of the given wall-clock times. Omitting at defaults to midnight.
 //
-// Timezone note (ADR-0136): [Trigger.Next] (the pure computation used by this
-// package's own tests and by anything driving Trigger directly) resolves
-// at-times in UTC. The live scheduler built from this Trigger resolves
-// at-times in UTC by default, matching that reference; a consumer may override
-// the live zone with the scheduler's WithLocation option (e.g. time.Local or a
-// named zone). Under a non-UTC location the trigger fires in that zone, while
-// [Trigger.Next] stays UTC — a reporting-only difference that never affects
-// firing or rehydration. Named zones resolve at-times per their DST rules on
-// the live scheduler, which [Trigger.Next] (UTC, DST-free) does not observe.
+// Timezone note (ADR-0137): [Trigger.Next] resolves at-times in after's
+// location. The runtime and the façade Schedule() pass now.In(scheduler
+// location), so this matches the live scheduler's own at-time resolution;
+// a UTC after (the default) yields UTC.
 func Daily(interval uint, at ...ClockTime) Trigger {
 	return Trigger{kind: triggerDaily, interval: interval, atTimes: at}
 }
 
 // Weekly builds a recurring Trigger that fires every interval weeks, on each
 // of the given weekdays, at each of the given wall-clock times. Omitting at
-// defaults to midnight. See the timezone note on [Daily]: at-times resolve in
-// UTC by default on both [Trigger.Next] and the live scheduler (override the
-// live zone with WithLocation).
+// defaults to midnight. See the timezone note on [Daily]: [Trigger.Next]
+// resolves at-times in after's location (ADR-0137).
 func Weekly(interval uint, days []time.Weekday, at ...ClockTime) Trigger {
 	return Trigger{kind: triggerWeekly, interval: interval, weekdays: days, atTimes: at}
 }
@@ -151,9 +146,8 @@ func Weekly(interval uint, days []time.Weekday, at ...ClockTime) Trigger {
 // each of the given days of the month, at each of the given wall-clock
 // times. Omitting at defaults to midnight. A day of the month that does not
 // exist in a given month (e.g. 31 in February) is simply skipped that month.
-// See the timezone note on [Daily]: at-times resolve in UTC by default on both
-// [Trigger.Next] and the live scheduler (override the live zone with
-// WithLocation).
+// See the timezone note on [Daily]: [Trigger.Next] resolves at-times in
+// after's location (ADR-0137).
 func Monthly(interval uint, days []int, at ...ClockTime) Trigger {
 	return Trigger{kind: triggerMonthly, interval: interval, days: days, atTimes: at}
 }
@@ -190,13 +184,19 @@ func (t Trigger) Recurring() bool {
 // positive min — the live scheduler resolves the actual draw per fire — and
 // ok=false for a non-positive min, for the same reason as [Every]; bounds
 // are not validated here (e.g. min>max), so Next always uses min as the
-// earliest bound regardless. [Cron] parses expr with the standard
-// five-field parser and delegates to it, resolving in UTC regardless of
-// after's location — the uniform UTC reference shared with the calendar
-// branch below. [Daily], [Weekly], and [Monthly]
-// report the next matching calendar occurrence strictly after after, in
-// UTC — the interval only constrains subsequent fires, not this first one
-// (matching gocron's first-fire behaviour); an omitted atTimes defaults to
+// earliest bound regardless.
+//
+// [Cron], [Daily], [Weekly], and [Monthly] resolve the next matching
+// occurrence in the location of after (ADR-0137). A UTC after yields UTC.
+// [Cron] additionally: robfig/cron resolves the expression in after's
+// location; note the live gocron scheduler resolves cron by zone name, so a
+// [Cron] trigger under a non-IANA time.FixedZone fails to schedule there
+// (ADR-0136) — use UTC/Local/IANA zones with cron. Interval caveat: for
+// interval>1 calendar triggers whose current-period at-times are already
+// past, Next returns the next matching period-day (interval ignored on the
+// first fire), whereas the live scheduler jumps by interval — so the two can
+// differ for the first fire of an interval>1 trigger (a pre-existing
+// day-scan gap, tracked separately). An omitted atTimes defaults to
 // midnight (00:00:00).
 func (t Trigger) Next(after time.Time) (time.Time, bool) {
 	switch t.kind {
@@ -222,11 +222,11 @@ func (t Trigger) Next(after time.Time) (time.Time, bool) {
 		if err != nil {
 			return time.Time{}, false
 		}
-		// Resolve in UTC so Next is the uniform UTC reference across all
-		// recurring kinds (the calendar branch already normalizes to UTC in
-		// calendarNext). This matches the default (UTC) live scheduler; see
-		// docs/adr/0136-calendar-trigger-timezone.md.
-		return sched.Next(after.UTC()), true
+		// Resolve in after's location (ADR-0137): robfig/cron computes Next in
+		// the location of the passed instant. The runtime and the façade
+		// Schedule() pass now.In(scheduler location), so this matches the live
+		// scheduler; a UTC after (the default) yields UTC.
+		return sched.Next(after), true
 	case triggerDaily, triggerWeekly, triggerMonthly:
 		return calendarNext(after, t.kind, t.days, t.weekdays, t.atTimes)
 	default:
@@ -293,14 +293,15 @@ func (t Trigger) Calendar() (uint, []int, []time.Weekday, []ClockTime, bool) {
 // ever hits it.
 const maxCalendarScanDays = 366 * 5
 
-// calendarNext scans forward from after, day by day in UTC, for the first
-// instant matching kind's day filter (any day for triggerDaily, a weekday in
-// weekdays for triggerWeekly, a day-of-month in days for triggerMonthly) at
-// one of atTimes (sorted; midnight if atTimes is empty). It returns
-// ok=false only if the day filter is empty for a kind that requires one, or
-// if the scan exhausts its bound without finding a match.
+// calendarNext scans forward from after, day by day in after's location
+// (ADR-0137), for the first instant matching kind's day filter (any day for
+// triggerDaily, a weekday in weekdays for triggerWeekly, a day-of-month in
+// days for triggerMonthly) at one of atTimes (sorted; midnight if atTimes is
+// empty). It returns ok=false only if the day filter is empty for a kind
+// that requires one, or if the scan exhausts its bound without finding a
+// match.
 func calendarNext(after time.Time, kind triggerKind, days []int, weekdays []time.Weekday, atTimes []ClockTime) (time.Time, bool) {
-	after = after.UTC()
+	loc := after.Location()
 
 	times := atTimes
 	if len(times) == 0 {
@@ -340,7 +341,7 @@ func calendarNext(after time.Time, kind triggerKind, days []int, weekdays []time
 		}
 	}
 
-	start := time.Date(after.Year(), after.Month(), after.Day(), 0, 0, 0, 0, time.UTC)
+	start := time.Date(after.Year(), after.Month(), after.Day(), 0, 0, 0, 0, loc)
 	for i := 0; i <= maxCalendarScanDays; i++ {
 		day := start.AddDate(0, 0, i)
 
@@ -356,7 +357,7 @@ func calendarNext(after time.Time, kind triggerKind, days []int, weekdays []time
 		}
 
 		for _, ct := range sortedTimes {
-			candidate := time.Date(day.Year(), day.Month(), day.Day(), int(ct.Hour), int(ct.Minute), int(ct.Second), 0, time.UTC)
+			candidate := time.Date(day.Year(), day.Month(), day.Day(), int(ct.Hour), int(ct.Minute), int(ct.Second), 0, loc)
 			if candidate.After(after) {
 				return candidate, true
 			}

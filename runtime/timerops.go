@@ -14,6 +14,28 @@ import (
 	"github.com/kartaladev/wrkflw/scheduler"
 )
 
+// locatedScheduler is the opt-in capability a scheduler implements to report
+// the timezone it resolves calendar/cron at-times in (see
+// scheduler.NativeScheduler.Location). The runtime type-asserts its scheduler
+// against this so the NextRun it computes and persists matches the live fire
+// instant under a non-UTC scheduler location (ADR-0137). A scheduler that does
+// not implement it (foreign doubles) is treated as UTC.
+type locatedScheduler interface {
+	Location() *time.Location
+}
+
+// schedulingLocation resolves the timezone the runtime should compute NextRun
+// in: the scheduler's reported location, or time.UTC when the scheduler does
+// not report one.
+func (driver *ProcessDriver) schedulingLocation() *time.Location {
+	if ls, ok := driver.sched.(locatedScheduler); ok {
+		if loc := ls.Location(); loc != nil {
+			return loc
+		}
+	}
+	return time.UTC
+}
+
 // convertTrigger maps a resolved [schedule.TriggerSpec] to the scheduler's own
 // [scheduler.Trigger] vocabulary. Total over all 10 schedule.Kind values:
 // KindUnset, KindExpr, and KindEveryExpr are programming errors (the engine
@@ -106,7 +128,7 @@ type cancelKey struct {
 func (driver *ProcessDriver) timerJobsFor(ctx context.Context, def *model.ProcessDefinition, cmds []engine.Command, trg engine.Trigger, instanceID string, armedRecurring func(timerID string) bool) ([]*timerJob, []cancelKey) {
 	var arms []*timerJob
 	var cancels []cancelKey
-	now := driver.clk.Now()
+	now := driver.clk.Now().In(driver.schedulingLocation())
 	for _, c := range cmds {
 		switch cmd := c.(type) {
 		case engine.ScheduleTimer:
@@ -189,7 +211,7 @@ func (driver *ProcessDriver) buildTimerJob(def *model.ProcessDefinition, instanc
 		return nil, err
 	}
 	j := driver.newTimerJob(def, instanceID, timerID, trig, strig, nextRun, kind)
-	return newScheduledTimerJob(j, driver.clk.Now()), nil
+	return newScheduledTimerJob(j, driver.clk.Now().In(driver.schedulingLocation())), nil
 }
 
 // newTimerJob assembles the runtime's Manual [timerJob] from its parts: the

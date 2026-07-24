@@ -52,18 +52,23 @@ release.
   `go-co-op/gocron/v2` bumped to the pinned `v2.22.0` (ADR-0135). See `scheduler/example_test.go`
   for `NewScheduler`/`NewJob`/`Trigger`/`WithJobStore` usage.
 
-- **Calendar (`Daily`/`Weekly`/`Monthly`) and cron triggers now resolve their at-times in
-  UTC by default on the live scheduler (ADR-0136).** Previously the live scheduler used the
-  host's `time.Local` (the internal gocron engine never pinned a location), while the pure
-  `scheduler.Trigger.Next` reference computed calendar at-times in UTC — so on a non-UTC host
-  the two disagreed. The live scheduler is now pinned to UTC by default, matching
-  `Trigger.Next` (whose cron branch is likewise normalized to UTC). Deployments running
-  `TZ=UTC` (typical containers) are unaffected. A non-UTC host that intends host-local
-  resolution must now pass the new `scheduler.WithLocation(time.Local)` option (which also
-  accepts any named `*time.Location`). Under a non-UTC location the trigger fires in that zone
-  while `Trigger.Next` stays UTC — a reporting-only difference that never affects firing or
-  rehydration; named zones additionally resolve at-times per their DST rules on the live
-  scheduler. In a multi-replica deployment every replica must use the same location.
+- **Calendar (`Daily`/`Weekly`/`Monthly`) and cron triggers resolve their at-times in UTC by
+  default on the live scheduler; opt into another zone with `scheduler.WithLocation`
+  (ADR-0136, ADR-0137).** Previously the live scheduler fell through to the host's `time.Local`
+  (the internal gocron engine never pinned a location). It is now pinned to UTC by default;
+  `scheduler.WithLocation(*time.Location)` opts into `time.Local` or any named zone.
+  `scheduler.Trigger.Next` resolves recurring at-times in the location of its `after` argument,
+  and the runtime and the façade `Schedule()` pass `now` in the scheduler's configured location
+  (new `scheduler.NativeScheduler.Location()`) — so the persisted/admin next-fire and
+  `Schedule()`'s return match the live `Scheduled()`/`List()` instant under any location.
+  Deployments running `TZ=UTC` (typical containers) are unaffected; a non-UTC host that intends
+  host-local resolution passes `scheduler.WithLocation(time.Local)`. A consumer driving
+  `Trigger.Next` directly with a non-UTC `after` now gets a result in that zone. Named zones
+  resolve at-times per their DST rules on the live scheduler. In a multi-replica deployment
+  every replica must use the same location. Caveats: a `Cron` trigger under a non-IANA
+  `time.FixedZone` cannot schedule on the live engine (gocron resolves cron by zone name); and
+  an `interval>1` calendar trigger's *reported* first-fire may still differ from the live fire
+  (a separate, pre-existing `calendarNext` day-scan gap, tracked as a follow-up).
 
 - **`DefinitionRegistry.Lookup(ctx, defRef string)` → `Lookup(ctx, model.Qualifier)`;
   def-ref fields, params, and constructors now typed `definition.Qualifier` (ADR-0101).**

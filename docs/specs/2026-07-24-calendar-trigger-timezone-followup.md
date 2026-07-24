@@ -1,7 +1,11 @@
 # Calendar/cron trigger timezone resolution
 
 Status: Decided (2026-07-24) — supersedes the "Decision: Pending" state this
-document opened with. Implementation via ADR-0136.
+document opened with. Implementation via ADR-0136. **Note: the "uniform UTC
+reference" property of `Trigger.Next` described below was subsequently refined
+by ADR-0137 (`docs/specs/2026-07-24-location-aware-trigger-next.md`), which makes
+`Trigger.Next` resolve in its `after` argument's location; those mentions below
+are historical.**
 
 ## Context
 

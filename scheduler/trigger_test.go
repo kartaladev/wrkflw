@@ -146,16 +146,26 @@ func TestTrigger_Next(t *testing.T) {
 			},
 		},
 		{
-			name:  "cron resolves in UTC regardless of after location",
+			name:  "cron resolves in after's location",
 			after: time.Date(2026, 1, 1, 0, 0, 0, 0, time.FixedZone("plusTwo", 2*60*60)),
 			trig:  scheduler.Cron("0 9 * * *"),
 			assert: func(t *testing.T, next time.Time, ok bool) {
-				// after is 2026-01-01 00:00 in UTC+2 (== 2025-12-31 22:00 UTC); the
-				// next 09:00 is computed in UTC (uniform reference), so 2026-01-01
-				// 09:00 UTC — NOT 09:00 in +02:00. Regression guard for ADR-0136.
-				want := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
-				if !ok || !next.Equal(want) || next.Location() != time.UTC {
-					t.Fatalf("next=%v ok=%v want %v UTC", next, ok, want)
+				// after is 2026-01-01 00:00 +02:00; the next 09:00 is resolved in
+				// that same +02:00 zone (ADR-0137), i.e. 2026-01-01 09:00 +02:00.
+				want := time.Date(2026, 1, 1, 9, 0, 0, 0, time.FixedZone("plusTwo", 2*60*60))
+				if !ok || !next.Equal(want) {
+					t.Fatalf("next=%v ok=%v want %v", next, ok, want)
+				}
+			},
+		},
+		{
+			name:  "daily resolves in after's location",
+			after: time.Date(2026, 1, 1, 0, 0, 0, 0, time.FixedZone("plusTwo", 2*60*60)),
+			trig:  scheduler.Daily(1, scheduler.ClockTime{Hour: 9}),
+			assert: func(t *testing.T, next time.Time, ok bool) {
+				want := time.Date(2026, 1, 1, 9, 0, 0, 0, time.FixedZone("plusTwo", 2*60*60))
+				if !ok || !next.Equal(want) {
+					t.Fatalf("next=%v ok=%v want %v", next, ok, want)
 				}
 			},
 		},

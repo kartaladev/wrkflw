@@ -311,6 +311,24 @@ func (s *NativeScheduler) now() time.Time {
 	return time.Now()
 }
 
+// location resolves the effective timezone the scheduler resolves calendar
+// at-times and cron expressions in: the WithLocation value if set, else
+// time.UTC (never nil), mirroring the internal engine's nil->UTC default. It
+// is safe to call on a nil receiver, returning time.UTC, which is why the
+// s == nil guard below exists.
+func (s *NativeScheduler) location() *time.Location {
+	if s == nil || s.cfg.loc == nil {
+		return time.UTC
+	}
+	return s.cfg.loc
+}
+
+// Location reports the timezone this scheduler resolves calendar at-times and
+// cron expressions in (see [WithLocation]); time.UTC by default. The runtime
+// reads this (via an opt-in capability interface) so the NextRun it computes
+// and persists matches the live fire instant. See ADR-0137.
+func (s *NativeScheduler) Location() *time.Location { return s.location() }
+
 // Start starts the underlying gocron scheduler if it is not already running,
 // creating its background goroutine. Cancelling ctx stops the scheduler (it is
 // closed as if [NativeScheduler.Close] were called), tying the scheduler's
@@ -557,7 +575,7 @@ func (s *NativeScheduler) Schedule(ctx context.Context, j Job) (ScheduledJob, er
 		return nil, ErrSchedulerClosed
 	}
 
-	next, ok := j.Trigger().Next(s.now())
+	next, ok := j.Trigger().Next(s.now().In(s.location()))
 	if !ok {
 		return nil, fmt.Errorf("workflow-scheduler: job %q trigger can never fire: %w", j.ID(), ErrUnsupportedTrigger)
 	}

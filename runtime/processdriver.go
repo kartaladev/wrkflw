@@ -680,7 +680,7 @@ func (driver *ProcessDriver) deliverLoop(
 				// The ScheduledJob wrapper is built in-tx; its descriptor carries
 				// the authoritative spec.NextRun computed by timerJobsFor, which is
 				// what jobStore.Save persists (JoinOrBegin joins this same tx).
-				sj := newScheduledTimerJob(j, driver.clk.Now())
+				sj := newScheduledTimerJob(j, driver.clk.Now().In(driver.schedulingLocation()))
 				if serr := driver.jobStore.Save(txCtx, sj); serr != nil {
 					return serr
 				}
