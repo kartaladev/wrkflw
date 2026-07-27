@@ -31,12 +31,12 @@ func startEndDef() *model.ProcessDefinition {
 
 func TestStartInstanceGeneratesID(t *testing.T) {
 	def := startEndDef()
-	eng, err := service.NewEngine(
+	eng, err := service.NewProcessEngine(
 		service.WithDefinitions(regWith(t, def)),
 		service.WithIDGenerator(idgen.Func(func() (string, error) { return "svc-gen-1", nil })),
 	)
 	if err != nil {
-		t.Fatalf("NewEngine: %v", err)
+		t.Fatalf("NewProcessEngine: %v", err)
 	}
 	pi, err := eng.StartInstance(t.Context(), service.StartInstanceRequest{DefRef: model.Latest("d"), Vars: map[string]any{}})
 	if err != nil {
@@ -53,12 +53,12 @@ func TestStartInstanceGeneratesID(t *testing.T) {
 func TestStartInstancePropagatesGeneratorError(t *testing.T) {
 	boom := errors.New("no entropy")
 	def := startEndDef()
-	eng, err := service.NewEngine(
+	eng, err := service.NewProcessEngine(
 		service.WithDefinitions(regWith(t, def)),
 		service.WithIDGenerator(idgen.Func(func() (string, error) { return "", boom })),
 	)
 	if err != nil {
-		t.Fatalf("NewEngine: %v", err)
+		t.Fatalf("NewProcessEngine: %v", err)
 	}
 	_, err = eng.StartInstance(t.Context(), service.StartInstanceRequest{DefRef: model.Latest("d"), Vars: map[string]any{}})
 	if !errors.Is(err, boom) {

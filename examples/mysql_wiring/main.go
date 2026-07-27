@@ -225,7 +225,7 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("new mysql timer store: %w", err)
 	}
 
-	// --- Engine + human-task plumbing + Service facade ---
+	// --- ProcessEngine + human-task plumbing + Service facade ---
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
@@ -243,7 +243,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("new mysql lister: %w", err)
 	}
-	svc, err := service.NewEngine(
+	svc, err := service.NewProcessEngine(
 		service.WithProcessDriver(driver),
 		service.WithInstanceStore(cachingStore),
 		service.WithDefinitions(reg),

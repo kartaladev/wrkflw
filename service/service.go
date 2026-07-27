@@ -98,9 +98,15 @@ type Service interface {
 	InstanceOps
 }
 
-// Engine is the concrete implementation of Service. It wires together the
+// ProcessEngine is the concrete implementation of Service. It wires together the
 // runtime.ProcessDriver, task.TaskService, kernel.DefinitionRegistry,
 // kernel.InstanceStore, kernel.InstanceLister, and humantask.TaskStore.
+//
+// ProcessEngine and runtime.ProcessDriver are intentionally distinct: the
+// driver is the lower-layer primitive that moves tokens through a single
+// process definition, while ProcessEngine is the application-facing facade
+// that wires the driver together with task management, definition
+// resolution, and instance storage into the public Service surface.
 //
 // The constructor requires all collaborators as interface/concrete parameters;
 // no DI container is used so consumers can wire this by hand.
@@ -109,7 +115,7 @@ type Service interface {
 // in "DefID:DefVersion" format for the resolveDefinition helper to work when
 // loading an existing instance. Short aliases (e.g. the bare definition ID)
 // may also be registered for use with StartInstance.
-type Engine struct {
+type ProcessEngine struct {
 	driver    *runtime.ProcessDriver
 	tasks     *task.TaskService
 	reg       kernel.DefinitionRegistry
@@ -118,13 +124,13 @@ type Engine struct {
 	taskStore humantask.TaskStore
 	clk       clockwork.Clock
 	idgen     idgen.Generator
-	// ownsDriver is true only when NewEngine built the driver itself (no driver
+	// ownsDriver is true only when NewProcessEngine built the driver itself (no driver
 	// was injected via WithProcessDriver). It gates Start/Shutdown so a
-	// consumer-injected driver is never started or torn down by the Engine.
+	// consumer-injected driver is never started or torn down by the ProcessEngine.
 	ownsDriver bool
 }
 
-// NewEngine constructs an Engine facade from functional options over a coherent
+// NewProcessEngine constructs a ProcessEngine facade from functional options over a coherent
 // in-memory default graph. Called with no options it wires a fully-functional,
 // non-durable engine: an in-memory instance store, the process-global definition
 // registry, an in-memory human-task store, an allow-all authorizer, and a driver
@@ -133,7 +139,7 @@ type Engine struct {
 //
 // Options that receive nil are ignored (the default is kept). A required leaf
 // resolving to nil surfaces as ErrNilDependency during validation.
-func NewEngine(opts ...Option) (*Engine, error) {
+func NewProcessEngine(opts ...Option) (*ProcessEngine, error) {
 	c := &engineConfig{}
 	for _, o := range opts {
 		if o != nil {
@@ -213,7 +219,7 @@ func NewEngine(opts ...Option) (*Engine, error) {
 		return nil, fmt.Errorf("%w: process driver", ErrNilDependency)
 	}
 
-	e := &Engine{
+	e := &ProcessEngine{
 		driver:     driver,
 		tasks:      tasks,
 		reg:        c.reg,
@@ -231,7 +237,7 @@ func NewEngine(opts ...Option) (*Engine, error) {
 // Start starts the engine's owned process driver (its in-process scheduler),
 // binding its lifetime to ctx. It is a no-op when the driver was supplied by
 // the consumer via WithProcessDriver (that driver is consumer-owned). Idempotent.
-func (e *Engine) Start(ctx context.Context) error {
+func (e *ProcessEngine) Start(ctx context.Context) error {
 	if !e.ownsDriver {
 		return nil
 	}
@@ -244,7 +250,7 @@ func (e *Engine) Start(ctx context.Context) error {
 // Shutdown releases resources the engine owns — currently its owned process
 // driver. A consumer-injected driver is left untouched. Idempotent; matches
 // samber/do ShutdownerWithContextAndError.
-func (e *Engine) Shutdown(ctx context.Context) error {
+func (e *ProcessEngine) Shutdown(ctx context.Context) error {
 	if !e.ownsDriver {
 		return nil
 	}
@@ -274,7 +280,7 @@ func validateEngineLeaves(c *engineConfig) error {
 
 // logConstructionSummary emits a DEBUG-level summary of the resolved engine graph
 // so a consumer wiring an engine can see which defaults are in effect.
-func (e *Engine) logConstructionSummary(c *engineConfig) {
+func (e *ProcessEngine) logConstructionSummary(c *engineConfig) {
 	storeLabel := "in-memory(non-durable)"
 	if c.durable {
 		storeLabel = "durable"
@@ -288,7 +294,7 @@ func (e *Engine) logConstructionSummary(c *engineConfig) {
 		defLabel = "default-global"
 	}
 	slog.Default().LogAttrs(context.Background(), slog.LevelDebug,
-		"service.Engine constructed",
+		"service.ProcessEngine constructed",
 		slog.String("store", storeLabel),
 		slog.String("definitions", defLabel),
 		slog.String("taskStore", storeLabel),
@@ -297,13 +303,13 @@ func (e *Engine) logConstructionSummary(c *engineConfig) {
 	)
 }
 
-// Compile-time assertion: *Engine satisfies Service.
-var _ Service = (*Engine)(nil)
+// Compile-time assertion: *ProcessEngine satisfies Service.
+var _ Service = (*ProcessEngine)(nil)
 
 // StartInstance resolves the process definition by req.DefRef, mints a new
 // instance ID via the configured generator, and returns the resulting
 // ProcessInstance (completed or parked).
-func (e *Engine) StartInstance(ctx context.Context, req StartInstanceRequest) (ProcessInstance, error) {
+func (e *ProcessEngine) StartInstance(ctx context.Context, req StartInstanceRequest) (ProcessInstance, error) {
 	def, err := e.reg.Lookup(ctx, req.DefRef)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: start instance: %w", err)
@@ -323,7 +329,7 @@ func (e *Engine) StartInstance(ctx context.Context, req StartInstanceRequest) (P
 // instance. The fused definition is resolved best-effort from the registry and
 // is nil when the registry has no matching entry — a missing definition is NOT
 // an error on this path (only instance-not-found / store errors are returned).
-func (e *Engine) GetInstance(ctx context.Context, instanceID string) (ProcessInstance, error) {
+func (e *ProcessEngine) GetInstance(ctx context.Context, instanceID string) (ProcessInstance, error) {
 	st, _, err := e.store.Load(ctx, instanceID)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: get instance: %w", err)
@@ -335,7 +341,7 @@ func (e *Engine) GetInstance(ctx context.Context, instanceID string) (ProcessIns
 // DeliverSignal resumes a process instance that is parked at a signal-catch
 // node by delivering a SignalReceived trigger. Returns ErrConflict when the
 // instance has already reached a terminal state.
-func (e *Engine) DeliverSignal(ctx context.Context, req DeliverSignalRequest) (ProcessInstance, error) {
+func (e *ProcessEngine) DeliverSignal(ctx context.Context, req DeliverSignalRequest) (ProcessInstance, error) {
 	def, st, err := e.resolveDefinition(ctx, req.InstanceID)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: deliver signal: %w", err)
@@ -361,7 +367,7 @@ func (e *Engine) DeliverSignal(ctx context.Context, req DeliverSignalRequest) (P
 // itself — from the correlated instance's own snapshot, or from the registered
 // message-start definitions — so the caller supplies no def reference.
 // No-op when the message matches neither a waiting instance nor a message-start.
-func (e *Engine) DeliverMessage(ctx context.Context, req DeliverMessageRequest) error {
+func (e *ProcessEngine) DeliverMessage(ctx context.Context, req DeliverMessageRequest) error {
 	if err := e.driver.DeliverMessage(ctx, req.Name, req.CorrelationKey, req.Payload); err != nil {
 		// No ErrInvalidTransition classification here: DeliverMessage routes via
 		// the driver's waiter table and no-ops when no instance is waiting, so a
@@ -372,7 +378,7 @@ func (e *Engine) DeliverMessage(ctx context.Context, req DeliverMessageRequest) 
 }
 
 // ClaimTask authorizes the actor, issues a HumanClaimed trigger, and advances the instance.
-func (e *Engine) ClaimTask(ctx context.Context, req ClaimTaskRequest) (ProcessInstance, error) {
+func (e *ProcessEngine) ClaimTask(ctx context.Context, req ClaimTaskRequest) (ProcessInstance, error) {
 	// Reject before the task-store write so a shutdown race cannot leave a claimed
 	// task behind that the draining driver then refuses to advance.
 	if e.driver.IsShuttingDown() {
@@ -386,7 +392,7 @@ func (e *Engine) ClaimTask(ctx context.Context, req ClaimTaskRequest) (ProcessIn
 }
 
 // CompleteTask authorizes the actor, issues a HumanCompleted trigger, and advances the instance.
-func (e *Engine) CompleteTask(ctx context.Context, req CompleteTaskRequest) (ProcessInstance, error) {
+func (e *ProcessEngine) CompleteTask(ctx context.Context, req CompleteTaskRequest) (ProcessInstance, error) {
 	// Reject before the task-store write so a shutdown race cannot leave a completed
 	// task behind that the draining driver then refuses to advance.
 	if e.driver.IsShuttingDown() {
@@ -400,7 +406,7 @@ func (e *Engine) CompleteTask(ctx context.Context, req CompleteTaskRequest) (Pro
 }
 
 // ReassignTask authorizes the reassigner, issues a HumanReassigned trigger, and advances the instance.
-func (e *Engine) ReassignTask(ctx context.Context, req ReassignTaskRequest) (ProcessInstance, error) {
+func (e *ProcessEngine) ReassignTask(ctx context.Context, req ReassignTaskRequest) (ProcessInstance, error) {
 	// Reject before the task-store write so a shutdown race cannot leave a reassigned
 	// task behind that the draining driver then refuses to advance.
 	if e.driver.IsShuttingDown() {
@@ -414,7 +420,7 @@ func (e *Engine) ReassignTask(ctx context.Context, req ReassignTaskRequest) (Pro
 }
 
 // ListInstances delegates to the InstanceLister.
-func (e *Engine) ListInstances(ctx context.Context, filter kernel.InstanceFilter) (kernel.InstancePage, error) {
+func (e *ProcessEngine) ListInstances(ctx context.Context, filter kernel.InstanceFilter) (kernel.InstancePage, error) {
 	page, err := e.lister.List(ctx, filter)
 	if err != nil {
 		return kernel.InstancePage{}, fmt.Errorf("workflow-service: list instances: %w", err)
@@ -425,7 +431,7 @@ func (e *Engine) ListInstances(ctx context.Context, filter kernel.InstanceFilter
 // ResolveIncident resolves an open incident on a process instance by resolving
 // its definition from the registry and delegating to ProcessDriver.ResolveIncident.
 // AddAttempts ≤ 0 is coerced to 1 so callers always grant at least one attempt.
-func (e *Engine) ResolveIncident(ctx context.Context, req ResolveIncidentRequest) (ProcessInstance, error) {
+func (e *ProcessEngine) ResolveIncident(ctx context.Context, req ResolveIncidentRequest) (ProcessInstance, error) {
 	def, _, err := e.resolveDefinition(ctx, req.InstanceID)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: resolve incident: %w", err)
@@ -443,7 +449,7 @@ func (e *Engine) ResolveIncident(ctx context.Context, req ResolveIncidentRequest
 
 // CancelInstance resolves the instance's definition, rejects an already-terminal
 // instance with ErrConflict, and delegates to ProcessDriver.CancelInstance.
-func (e *Engine) CancelInstance(ctx context.Context, req CancelInstanceRequest) (ProcessInstance, error) {
+func (e *ProcessEngine) CancelInstance(ctx context.Context, req CancelInstanceRequest) (ProcessInstance, error) {
 	def, st, err := e.resolveDefinition(ctx, req.InstanceID)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: cancel instance: %w", err)
@@ -464,7 +470,7 @@ func (e *Engine) CancelInstance(ctx context.Context, req CancelInstanceRequest) 
 // Returns the definition, the current instance state, and any error. Both
 // ErrInstanceNotFound and ErrDefinitionNotFound propagate as-is through the
 // wrapping chain so transport layers can classify them with errors.Is.
-func (e *Engine) resolveDefinition(ctx context.Context, instanceID string) (*model.ProcessDefinition, engine.InstanceState, error) {
+func (e *ProcessEngine) resolveDefinition(ctx context.Context, instanceID string) (*model.ProcessDefinition, engine.InstanceState, error) {
 	st, _, err := e.store.Load(ctx, instanceID)
 	if err != nil {
 		return nil, engine.InstanceState{}, err
@@ -480,7 +486,7 @@ func (e *Engine) resolveDefinition(ctx context.Context, instanceID string) (*mod
 // ReassignTask. It looks up the task by token to get the owning instance ID,
 // checks that both the task and its instance are in a state that accepts the
 // operation, resolves the definition, and delivers the trigger.
-func (e *Engine) deliverTaskTrigger(ctx context.Context, taskToken string, trg engine.Trigger) (ProcessInstance, error) {
+func (e *ProcessEngine) deliverTaskTrigger(ctx context.Context, taskToken string, trg engine.Trigger) (ProcessInstance, error) {
 	task, err := e.taskStore.Get(ctx, taskToken)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: deliver task trigger: get task: %w", err)

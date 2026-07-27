@@ -214,7 +214,7 @@ func run() error {
 	//		persistence.WithDurableInstanceCacheTTL(time.Minute),
 	//		// persistence.WithoutCache(),                                      // opt out entirely
 	//	)
-	//	eng, _ := service.NewEngine(service.WithDurableStore(provider))
+	//	eng, _ := service.NewProcessEngine(service.WithDurableStore(provider))
 	//
 	// That split — instance state in the in-process hotcache, human tasks in a
 	// shared Redis — is usually what you want in a MULTI-REPLICA deployment:

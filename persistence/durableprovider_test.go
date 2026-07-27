@@ -15,7 +15,7 @@ import (
 var _ service.DurableProvider = (*persistence.DurableProvider)(nil)
 
 // TestSQLiteDurableProviderPowersEngine builds a SQLite-backed DurableProvider,
-// hands it to service.NewEngine via WithDurableStore, and round-trips a
+// hands it to service.NewProcessEngine via WithDurableStore, and round-trips a
 // start→get entirely against the durable graph. SQLite needs no Docker.
 func TestSQLiteDurableProviderPowersEngine(t *testing.T) {
 	db := dbtest.RunTestSQLite(t)
@@ -32,7 +32,7 @@ func TestSQLiteDurableProviderPowersEngine(t *testing.T) {
 	require.NotNil(t, p.TimerStore())
 	require.NotNil(t, p.CallLinkStore())
 
-	e, err := service.NewEngine(service.WithDurableStore(p))
+	e, err := service.NewProcessEngine(service.WithDurableStore(p))
 	require.NoError(t, err)
 	require.NotNil(t, e)
 }
@@ -51,7 +51,7 @@ func TestPostgresDurableProviderPowersEngine(t *testing.T) {
 	require.NotNil(t, p.TimerStore())
 	require.NotNil(t, p.CallLinkStore())
 
-	e, err := service.NewEngine(service.WithDurableStore(p))
+	e, err := service.NewProcessEngine(service.WithDurableStore(p))
 	require.NoError(t, err)
 	require.NotNil(t, e)
 }
@@ -69,7 +69,7 @@ func TestMySQLDurableProviderPowersEngine(t *testing.T) {
 	require.NotNil(t, p.TimerStore())
 	require.NotNil(t, p.CallLinkStore())
 
-	e, err := service.NewEngine(service.WithDurableStore(p))
+	e, err := service.NewProcessEngine(service.WithDurableStore(p))
 	require.NoError(t, err)
 	require.NotNil(t, e)
 }

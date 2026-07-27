@@ -49,18 +49,18 @@ func TestGetInstanceNilDefinitionWhenUnresolved(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		setup  func(t *testing.T) (svc *service.Engine, instanceID string)
+		setup  func(t *testing.T) (svc *service.ProcessEngine, instanceID string)
 		assert func(t *testing.T, r result)
 	}
 
 	cases := []testCase{
 		{
 			name: "happy path — returns state and non-nil definition",
-			setup: func(t *testing.T) (*service.Engine, string) {
+			setup: func(t *testing.T) (*service.ProcessEngine, string) {
 				t.Helper()
 				def := linearDef()
 				h := newHarness(t, def)
-				svc := h.newEngine(t)
+				svc := h.newProcessEngine(t)
 
 				// Start a linear instance so it exists in the store.
 				pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
@@ -81,10 +81,10 @@ func TestGetInstanceNilDefinitionWhenUnresolved(t *testing.T) {
 		},
 		{
 			name: "unknown instance returns ErrInstanceNotFound",
-			setup: func(t *testing.T) (*service.Engine, string) {
+			setup: func(t *testing.T) (*service.ProcessEngine, string) {
 				t.Helper()
 				h := newHarness(t) // no defs, no instances
-				svc := h.newEngine(t)
+				svc := h.newProcessEngine(t)
 				return svc, "no-such-instance"
 			},
 			assert: func(t *testing.T, r result) {
@@ -94,7 +94,7 @@ func TestGetInstanceNilDefinitionWhenUnresolved(t *testing.T) {
 		},
 		{
 			name: "instance exists but definition missing returns nil definition and no error",
-			setup: func(t *testing.T) (*service.Engine, string) {
+			setup: func(t *testing.T) (*service.ProcessEngine, string) {
 				t.Helper()
 				def := linearDef()
 				h := newHarness(t, def)
@@ -107,7 +107,7 @@ func TestGetInstanceNilDefinitionWhenUnresolved(t *testing.T) {
 				// Build the service with an EMPTY registry so the definition cannot
 				// be resolved. GetInstance must NOT error — it returns a nil def.
 				emptyReg := kernel.NewMapDefinitionRegistry()
-				svc, err := service.NewEngine(
+				svc, err := service.NewProcessEngine(
 					service.WithProcessDriver(h.driver),
 					service.WithInstanceStore(h.store),
 					service.WithDefinitions(emptyReg),
@@ -191,7 +191,7 @@ func TestStartInstanceProcessDriverError(t *testing.T) {
 
 			def := tc.def()
 			h := newHarness(t, def)
-			svc := h.newEngine(t)
+			svc := h.newProcessEngine(t)
 
 			st, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
 				DefRef: defRefFor(def),
@@ -233,7 +233,7 @@ func TestClaimTaskStoreGetError(t *testing.T) {
 
 			def := approvalDef()
 			h := newHarness(t, def)
-			svc := h.newEngine(t)
+			svc := h.newProcessEngine(t)
 
 			manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 			st, err := svc.ClaimTask(t.Context(), service.ClaimTaskRequest{
@@ -278,7 +278,7 @@ func TestListInstancesListerError(t *testing.T) {
 			h := newHarness(t, def)
 
 			// Override the lister with one that always fails.
-			svc, err := service.NewEngine(
+			svc, err := service.NewProcessEngine(
 				service.WithProcessDriver(h.driver),
 				service.WithInstanceStore(h.store),
 				service.WithDefinitions(h.reg),
@@ -341,7 +341,7 @@ func TestClaimTaskAuthorizationFailure(t *testing.T) {
 			taskToken := parked.Tokens[0].AwaitCommand
 			require.NotEmpty(t, taskToken)
 
-			svc := h.newEngine(t)
+			svc := h.newProcessEngine(t)
 
 			st, err := svc.ClaimTask(t.Context(), service.ClaimTaskRequest{
 				TaskToken: taskToken,

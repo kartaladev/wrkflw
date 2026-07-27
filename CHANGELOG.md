@@ -17,6 +17,13 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **Renamed `service.Engine` → `service.ProcessEngine` and `NewEngine` → `NewProcessEngine`
+  (ADR-0141).** The public facade type and constructor read more clearly against the pure
+  `engine` package and `runtime.ProcessDriver`. No deprecation alias (pre-v0.1.0 hard-rename
+  convention, ADR-0098/0107/0108). Migration: replace `service.Engine` with
+  `service.ProcessEngine` and `service.NewEngine(...)` with `service.NewProcessEngine(...)`
+  everywhere.
+
 - **The public `clock` package is removed; every `With…Clock` option now takes
   `clockwork.Clock` directly (ADR-0138, supersedes ADR-0003).** Outer stateful layers
   (the expression-evaluation timeout, the call-link ticker, the outbox relay ticker, the

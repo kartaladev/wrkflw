@@ -33,10 +33,10 @@ func cancelDef() *model.ProcessDefinition {
 	}
 }
 
-// newCancelTestService builds an Engine seeded with:
+// newCancelTestService builds a ProcessEngine seeded with:
 //   - "ci-run": Running instance parked at a human task (cancelDef)
 //   - "ci-done": Completed terminal instance (linearDef)
-func newCancelTestService(t *testing.T) *service.Engine {
+func newCancelTestService(t *testing.T) *service.ProcessEngine {
 	t.Helper()
 
 	def := cancelDef()
@@ -55,17 +55,17 @@ func newCancelTestService(t *testing.T) *service.Engine {
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, done2.Status, "ci-done must be terminal")
 
-	return h.newEngine(t)
+	return h.newProcessEngine(t)
 }
 
 func TestCancelInstance(t *testing.T) {
 	cases := []struct {
 		name   string
-		assert func(t *testing.T, svc *service.Engine)
+		assert func(t *testing.T, svc *service.ProcessEngine)
 	}{
 		{
 			name: "cancels a running instance",
-			assert: func(t *testing.T, svc *service.Engine) {
+			assert: func(t *testing.T, svc *service.ProcessEngine) {
 				st, err := svc.CancelInstance(t.Context(), service.CancelInstanceRequest{InstanceID: "ci-run"})
 				require.NoError(t, err)
 				assert.Equal(t, engine.StatusTerminated, st.State().Status)
@@ -74,14 +74,14 @@ func TestCancelInstance(t *testing.T) {
 		},
 		{
 			name: "already-terminal returns ErrConflict",
-			assert: func(t *testing.T, svc *service.Engine) {
+			assert: func(t *testing.T, svc *service.ProcessEngine) {
 				_, err := svc.CancelInstance(t.Context(), service.CancelInstanceRequest{InstanceID: "ci-done"})
 				require.ErrorIs(t, err, service.ErrConflict)
 			},
 		},
 		{
 			name: "unknown instance returns ErrInstanceNotFound",
-			assert: func(t *testing.T, svc *service.Engine) {
+			assert: func(t *testing.T, svc *service.ProcessEngine) {
 				_, err := svc.CancelInstance(t.Context(), service.CancelInstanceRequest{InstanceID: "nope"})
 				require.ErrorIs(t, err, kernel.ErrInstanceNotFound)
 			},

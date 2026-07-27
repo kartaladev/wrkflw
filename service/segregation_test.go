@@ -7,16 +7,16 @@ import (
 )
 
 var (
-	_ service.InstanceStarter = (*service.Engine)(nil)
-	_ service.InstanceReader  = (*service.Engine)(nil)
-	_ service.TaskManager     = (*service.Engine)(nil)
-	_ service.Messaging       = (*service.Engine)(nil)
-	_ service.InstanceOps     = (*service.Engine)(nil)
-	_ service.Service         = (*service.Engine)(nil)
+	_ service.InstanceStarter = (*service.ProcessEngine)(nil)
+	_ service.InstanceReader  = (*service.ProcessEngine)(nil)
+	_ service.TaskManager     = (*service.ProcessEngine)(nil)
+	_ service.Messaging       = (*service.ProcessEngine)(nil)
+	_ service.InstanceOps     = (*service.ProcessEngine)(nil)
+	_ service.Service         = (*service.ProcessEngine)(nil)
 )
 
 func TestEngineSatisfiesRoleInterfaces(t *testing.T) {
-	e, err := service.NewEngine()
+	e, err := service.NewProcessEngine()
 	if err != nil {
 		t.Fatal(err)
 	}

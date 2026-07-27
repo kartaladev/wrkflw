@@ -155,7 +155,7 @@ func run(logger *slog.Logger) error {
 	})
 	reg := kernel.NewMapDefinitionRegistry(def)
 
-	// --- Engine + human-task plumbing + Service facade ---
+	// --- ProcessEngine + human-task plumbing + Service facade ---
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
@@ -167,7 +167,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	svc, err := service.NewEngine(
+	svc, err := service.NewProcessEngine(
 		service.WithProcessDriver(driver),
 		service.WithInstanceStore(store),
 		service.WithDefinitions(reg),
