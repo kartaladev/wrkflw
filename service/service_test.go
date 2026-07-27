@@ -304,16 +304,16 @@ func TestHumanTaskLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "must park at user task")
 	require.Len(t, parked.Tokens, 1)
-	taskToken := parked.Tokens[0].AwaitCommand
-	require.NotEmpty(t, taskToken, "task token must be set")
+	taskID := parked.Tokens[0].AwaitCommand
+	require.NotEmpty(t, taskID, "task id must be set")
 
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	noManager := authz.Actor{ID: "bob", Roles: []string{"viewer"}}
 
 	t.Run("ClaimTask authorized", func(t *testing.T) {
 		st, err := svc.ClaimTask(ctx, service.ClaimTaskRequest{
-			TaskToken: taskToken,
-			Actor:     manager,
+			TaskID: taskID,
+			Actor:  manager,
 		})
 		require.NoError(t, err)
 		assert.Equal(t, "approval-inst-1", st.State().InstanceID)
@@ -323,10 +323,10 @@ func TestHumanTaskLifecycle(t *testing.T) {
 	t.Run("ReassignTask authorized", func(t *testing.T) {
 		// Reassign alice → carol (same role, so by=manager is authorized).
 		st, err := svc.ReassignTask(ctx, service.ReassignTaskRequest{
-			TaskToken: taskToken,
-			From:      "alice",
-			To:        "carol",
-			By:        manager,
+			TaskID: taskID,
+			From:   "alice",
+			To:     "carol",
+			By:     manager,
 		})
 		require.NoError(t, err)
 		assert.Equal(t, "approval-inst-1", st.State().InstanceID)
@@ -335,9 +335,9 @@ func TestHumanTaskLifecycle(t *testing.T) {
 
 	t.Run("CompleteTask unauthorized", func(t *testing.T) {
 		_, err := svc.CompleteTask(ctx, service.CompleteTaskRequest{
-			TaskToken: taskToken,
-			Actor:     noManager,
-			Output:    map[string]any{"approved": false},
+			TaskID: taskID,
+			Actor:  noManager,
+			Output: map[string]any{"approved": false},
 		})
 		require.Error(t, err)
 		assert.ErrorIs(t, err, authz.ErrNotAuthorized)
@@ -345,9 +345,9 @@ func TestHumanTaskLifecycle(t *testing.T) {
 
 	t.Run("CompleteTask authorized", func(t *testing.T) {
 		st, err := svc.CompleteTask(ctx, service.CompleteTaskRequest{
-			TaskToken: taskToken,
-			Actor:     manager,
-			Output:    map[string]any{"approved": true},
+			TaskID: taskID,
+			Actor:  manager,
+			Output: map[string]any{"approved": true},
 		})
 		require.NoError(t, err)
 		assert.Equal(t, engine.StatusCompleted, st.State().Status)
@@ -402,16 +402,16 @@ func TestCompleteTaskValidatesCompletionOutput(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, engine.StatusRunning, parked.Status, "must park at the user task")
 			require.Len(t, parked.Tokens, 1)
-			taskToken := parked.Tokens[0].AwaitCommand
-			require.NotEmpty(t, taskToken)
+			taskID := parked.Tokens[0].AwaitCommand
+			require.NotEmpty(t, taskID)
 
-			_, err = svc.ClaimTask(ctx, service.ClaimTaskRequest{TaskToken: taskToken, Actor: manager})
+			_, err = svc.ClaimTask(ctx, service.ClaimTaskRequest{TaskID: taskID, Actor: manager})
 			require.NoError(t, err)
 
 			st, cerr := svc.CompleteTask(ctx, service.CompleteTaskRequest{
-				TaskToken: taskToken,
-				Actor:     manager,
-				Output:    tc.output,
+				TaskID: taskID,
+				Actor:  manager,
+				Output: tc.output,
 			})
 			tc.assert(t, st, cerr)
 		})
@@ -496,26 +496,26 @@ func TestReassignTaskUnauthorized(t *testing.T) {
 	parked, err := h.driver.Drive(ctx, def, "reassign-unauth-1", nil)
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status)
-	taskToken := parked.Tokens[0].AwaitCommand
-	require.NotEmpty(t, taskToken)
+	taskID := parked.Tokens[0].AwaitCommand
+	require.NotEmpty(t, taskID)
 
 	// Claim the task first (required for Reassign's "from" check).
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	svc := h.newProcessEngine(t)
 
 	_, err = svc.ClaimTask(ctx, service.ClaimTaskRequest{
-		TaskToken: taskToken,
-		Actor:     manager,
+		TaskID: taskID,
+		Actor:  manager,
 	})
 	require.NoError(t, err)
 
 	// Now attempt reassign with a non-manager "by" actor.
 	noManager := authz.Actor{ID: "dave", Roles: []string{"viewer"}}
 	_, err = svc.ReassignTask(ctx, service.ReassignTaskRequest{
-		TaskToken: taskToken,
-		From:      "alice",
-		To:        "carol",
-		By:        noManager,
+		TaskID: taskID,
+		From:   "alice",
+		To:     "carol",
+		By:     noManager,
 	})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, authz.ErrNotAuthorized)

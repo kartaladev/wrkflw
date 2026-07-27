@@ -114,7 +114,7 @@ func TestStepSchedulesRetryWithJitteredBackoff(t *testing.T) {
 		"RetryAttempts should be 1 after first retry scheduled")
 
 	// Token must be parked waiting on the timer.
-	assert.Equal(t, engine.TokenWaitingCommand, tok.State)
+	assert.Equal(t, engine.TokenWaiting, tok.State)
 	assert.Equal(t, st.TimerID, tok.AwaitCommand)
 }
 

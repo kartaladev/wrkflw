@@ -67,7 +67,7 @@ func linearEndDef() *model.ProcessDefinition {
 //   - Auto-advancing nodes (StartEvent, ExclusiveGateway, ParallelGateway fork)
 //     do NOT count as stops; execution passes through them within the same
 //     Micro drive call.
-//   - Parking a ServiceTask (emitting InvokeAction, setting TokenWaitingCommand)
+//   - Parking a ServiceTask (emitting InvokeAction, setting TokenWaiting)
 //     counts as ONE stop.
 //
 // Consequence on start→fork→(svc-a, svc-b):
@@ -106,7 +106,7 @@ func TestMicroStepAdvancesOneNode(t *testing.T) {
 		}
 		require.NotNil(t, svcATok, "token on svc-a must exist")
 		require.NotNil(t, svcBTok, "token on svc-b must exist")
-		assert.Equal(t, engine.TokenWaitingCommand, svcATok.State, "svc-a token must be parked")
+		assert.Equal(t, engine.TokenWaiting, svcATok.State, "svc-a token must be parked")
 		assert.Equal(t, engine.TokenActive, svcBTok.State, "svc-b token must still be active")
 
 		assert.Equal(t, engine.StatusRunning, res.State.Status)
@@ -130,7 +130,7 @@ func TestMicroStepAdvancesOneNode(t *testing.T) {
 
 		// Both tokens parked after macro.
 		for _, tok := range res.State.Tokens {
-			assert.Equal(t, engine.TokenWaitingCommand, tok.State,
+			assert.Equal(t, engine.TokenWaiting, tok.State,
 				"all tokens must be parked after macro step, token on %q", tok.NodeID)
 		}
 	})

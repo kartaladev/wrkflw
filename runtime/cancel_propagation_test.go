@@ -123,7 +123,7 @@ func TestCancelPropagationParentAndChild(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be running (parked) after Run")
 
-	childID := parentID + "-sub-c1"
+	childID := soleChildOf(ctx, t, cl, parentID)
 	childSt, _, loadErr := store.Load(ctx, childID)
 	require.NoError(t, loadErr)
 	assert.Equal(t, engine.StatusRunning, childSt.Status, "child must be running (parked)")
@@ -161,9 +161,10 @@ func TestCancelPropagationGrandchild(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be running (parked)")
 
-	// Derive child and grandchild IDs based on the short-suffix scheme.
-	childID := parentID + "-sub-c1"
-	grandchildID := childID + "-sub-c1"
+	// Child ids are opaque (minted by the driver's IDGenerator, ADR-0149) —
+	// resolve them through the recorded call links.
+	childID := soleChildOf(ctx, t, cl, parentID)
+	grandchildID := soleChildOf(ctx, t, cl, childID)
 
 	childSt, _, err := store.Load(ctx, childID)
 	require.NoError(t, err)
@@ -298,7 +299,6 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 	children, err := cl.ListRunningChildren(ctx, "list-parent-ab-i1")
 	require.NoError(t, err)
 	require.Len(t, children, 1, "only one running child of list-parent-ab-i1")
-	assert.Equal(t, "list-parent-ab-i1-sub-c1", children[0].ChildInstanceID)
 	assert.Equal(t, "list-parent-ab-i1", children[0].ParentInstanceID)
 
 	// List running children of "list-parent-ab-i2" — expect only 1 child.
@@ -319,7 +319,7 @@ func TestMemCallLinkStoreListRunningChildren(t *testing.T) {
 	assert.True(t, slices.IsSorted(sorted), "results must be sorted by ChildInstanceID")
 
 	// Terminal children must be excluded: cancel one child and verify it disappears.
-	childIDtoTerminate := "list-parent-ab-i2-sub-c1"
+	childIDtoTerminate := children2[0].ChildInstanceID
 	childDefForCancel := cancelPropChildDef("list-child-a") // same def, just used for CancelInstance
 	childDefForCancel.ID = "list-child-a"
 	cancelSt, err := driver.CancelInstance(ctx, childA, childIDtoTerminate)
@@ -418,7 +418,7 @@ func TestCancelPropagationNoDefsReg(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must park")
 
-	childID := parentID + "-sub-c1"
+	childID := soleChildOf(ctx, t, cl, parentID)
 	childSt, _, loadErr := store.Load(ctx, childID)
 	require.NoError(t, loadErr)
 	assert.Equal(t, engine.StatusRunning, childSt.Status, "child must be running")
@@ -503,8 +503,8 @@ func TestCancelPropagationDiamond(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be running")
 
-	bID := parentID + "-sub-c1" // child of parent
-	dID := bID + "-sub-c1"      // child of B (grandchild of parent)
+	bID := soleChildOf(ctx, t, cl, parentID) // child of parent
+	dID := soleChildOf(ctx, t, cl, bID)      // child of B (grandchild of parent)
 
 	bSt, _, err := store.Load(ctx, bID)
 	require.NoError(t, err)

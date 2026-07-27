@@ -1,7 +1,9 @@
 package runtime_test
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
@@ -25,7 +27,7 @@ import (
 //  3. TaskService.Claim → ProcessDriver.ApplyTrigger(HumanClaimed) transitions the task to Claimed.
 //  4. TaskService.Complete → ProcessDriver.ApplyTrigger(HumanCompleted) completes the instance.
 //  5. Journal shows StartInstance + HumanClaimed + HumanCompleted.
-//  6. Final task State==Completed and ClaimedBy==manager actor ID.
+//  6. Final task State==Completed and Claim.Actor.ID==manager actor ID.
 func TestHumanTaskEndToEnd(t *testing.T) {
 	ctx := t.Context()
 
@@ -61,12 +63,12 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	assert.Equal(t, instanceID, task.InstanceID)
 	assert.Equal(t, humantask.Unclaimed, task.State)
 
-	taskToken := task.TaskToken
+	taskID := task.TaskID
 
 	// --- TaskService.Claim → ApplyTrigger ---
 	svc := runtimetest.MustTaskService(t, taskStore, az)
 
-	claimTrg, err := svc.Claim(ctx, taskToken, manager)
+	claimTrg, err := svc.Claim(ctx, taskID, manager)
 	require.NoError(t, err)
 
 	claimedState, err := driver.ApplyTrigger(ctx, def, instanceID, claimTrg)
@@ -74,13 +76,14 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	assert.Equal(t, engine.StatusRunning, claimedState.Status, "instance still running after claim")
 
 	// Verify task is Claimed in the store.
-	storedTask, err := taskStore.Get(ctx, taskToken)
+	storedTask, err := taskStore.Get(ctx, taskID)
 	require.NoError(t, err)
 	assert.Equal(t, humantask.Claimed, storedTask.State)
-	assert.Equal(t, manager.ID, storedTask.ClaimedBy)
+	require.NotNil(t, storedTask.Claim)
+	assert.Equal(t, manager.ID, storedTask.Claim.Actor.ID)
 
 	// --- TaskService.Complete → ApplyTrigger ---
-	completeTrg, err := svc.Complete(ctx, taskToken, manager, map[string]any{"approved": true})
+	completeTrg, err := svc.Complete(ctx, taskID, manager, engine.CompletionInput{Output: map[string]any{"approved": true}})
 	require.NoError(t, err)
 
 	finalState, err := driver.ApplyTrigger(ctx, def, instanceID, completeTrg)
@@ -89,13 +92,18 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	assert.Empty(t, finalState.Tokens, "no tokens remain after completion")
 
 	// Final task state.
-	finalTask, err := taskStore.Get(ctx, taskToken)
+	finalTask, err := taskStore.Get(ctx, taskID)
 	require.NoError(t, err)
 	assert.Equal(t, humantask.Completed, finalTask.State)
-	assert.Equal(t, manager.ID, finalTask.ClaimedBy)
+	require.NotNil(t, finalTask.Claim)
+	assert.Equal(t, manager.ID, finalTask.Claim.Actor.ID)
 
 	// Journal: StartInstance + HumanClaimed + HumanCompleted (Run's StartInstance
-	// plus two ApplyTrigger calls).
+	// plus two ApplyTrigger calls). Candidate resolution rides the SAME commit
+	// that parks the task (ADR-0147 amendment #1), so creating a human task costs
+	// no extra step, no extra commit, and no extra journal entry. A
+	// HumanCandidatesResolved entry here would mean resolution had regressed to a
+	// second, race-losable commit.
 	entries, err := store.Entries(ctx, instanceID)
 	require.NoError(t, err)
 	require.Len(t, entries, 3, "journal must record StartInstance + HumanClaimed + HumanCompleted")
@@ -111,7 +119,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	// Output variable merged into state.
 	assert.Equal(t, true, finalState.Variables["approved"])
 
-	// ActorID on the NodeVisit for the user-task node.
+	// The user-task visit links to its human task, which carries the audit.
 	var userVisit *engine.NodeVisit
 	for i := range finalState.History {
 		if finalState.History[i].NodeID == "approve" {
@@ -119,8 +127,8 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 		}
 	}
 	require.NotNil(t, userVisit, "must have a history entry for the 'approve' node")
-	require.NotNil(t, userVisit.ActorID, "ActorID must be set on user-task visit")
-	assert.Equal(t, manager.ID, *userVisit.ActorID)
+	require.Len(t, finalState.Tasks, 1)
+	assert.Equal(t, finalState.Tasks[0].TaskID, userVisit.TaskID, "visit must link to its task")
 }
 
 // TestDeliverLoadError verifies that ApplyTrigger returns an error when the state
@@ -170,7 +178,7 @@ func TestProcessDriverSnapshotsVarsIntoHumanTask(t *testing.T) {
 
 	// Defensive-copy proof: mutating instanceVars after Run must NOT change task.Vars.
 	instanceVars["region"] = "US"
-	fetched, err := taskStore.Get(ctx, task.TaskToken)
+	fetched, err := taskStore.Get(ctx, task.TaskID)
 	require.NoError(t, err)
 	assert.Equal(t, "EU", fetched.Vars["region"],
 		"mutating the original vars map must not change the snapshotted task.Vars")
@@ -255,13 +263,13 @@ func TestProcessDriverAttributeOverVarsThroughRunner(t *testing.T) {
 			require.Equal(t, engine.StatusRunning, parkedState.Status, "instance must park at the user task")
 			require.Len(t, parkedState.Tokens, 1, "exactly one parked token expected")
 
-			// The parked token's AwaitCommand is the task token (engine assigns it).
-			taskToken := parkedState.Tokens[0].AwaitCommand
-			require.NotEmpty(t, taskToken, "task token must be set on the parked token")
+			// The parked token's AwaitCommand is the task id (engine assigns it).
+			taskID := parkedState.Tokens[0].AwaitCommand
+			require.NotEmpty(t, taskID, "task id must be set on the parked token")
 
 			// Step 2: Verify the runner populated task.Vars from the process variables
 			// (not pre-upserted): the snapshotted vars must carry the region value.
-			storedTask, err := taskStore.Get(ctx, taskToken)
+			storedTask, err := taskStore.Get(ctx, taskID)
 			require.NoError(t, err)
 			assert.Equal(t, tc.region, storedTask.Vars["region"],
 				"runner must snapshot process vars into task.Vars at task-creation time")
@@ -269,8 +277,151 @@ func TestProcessDriverAttributeOverVarsThroughRunner(t *testing.T) {
 			// Step 3: Claim — the TaskService evaluates the EligibleExpr against
 			// the snapshotted vars. Result depends on whether region matches the predicate.
 			svc := runtimetest.MustTaskService(t, taskStore, az)
-			_, err = svc.Claim(ctx, taskToken, approver)
+			_, err = svc.Claim(ctx, taskID, approver)
 			tc.assertErr(t, err)
+		})
+	}
+}
+
+// TestHumanTaskCandidatesSurviveReload is the regression test for the defect the
+// rule-#9 audit found: candidates must reach the COMMITTED snapshot, not just the
+// in-memory state the current call happens to return.
+//
+// The instance view is a pure projection over the persisted snapshot
+// (service.newInstanceJSON), so anything the runtime writes after the commit is
+// invisible to every later reader. Resolution therefore happens BEFORE the
+// parking commit; this test reloads the instance from the store to prove it,
+// which is exactly what a post-commit write would fail.
+//
+// It also pins that a claim does not erase the list: every UpdateTask command
+// round-trips the engine's task through the task store, so a task whose snapshot
+// lacks candidates wipes them from the store on the first update.
+func TestHumanTaskCandidatesSurviveReload(t *testing.T) {
+	ctx := t.Context()
+
+	manager := authz.Actor{
+		ID:         "alice",
+		Roles:      []string{"manager"},
+		Attributes: map[string]any{"email": "alice@acme.com"},
+	}
+	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"manager": {manager}})
+	taskStore := humantask.NewMemTaskStore()
+	az := authz.RoleAuthorizer{}
+	store := runtimetest.MustMemStore(t)
+
+	driver := runtimetest.MustProcessDriver(t, nil, store,
+		runtime.WithHumanTasks(resolver, taskStore, az),
+	)
+	def := runtimetest.ApprovalDef()
+	const instanceID = "inst-reload-1"
+
+	_, err := driver.Drive(ctx, def, instanceID, nil)
+	require.NoError(t, err)
+
+	// Reload from the store — the committed snapshot, not the returned value.
+	reloaded, _, err := store.Load(ctx, instanceID)
+	require.NoError(t, err)
+	require.Len(t, reloaded.Tasks, 1)
+	require.Equal(t, []authz.Actor{manager}, reloaded.Tasks[0].Candidates,
+		"the committed snapshot must carry the resolved actors verbatim")
+
+	// A claim must not erase them, in the snapshot or in the task store.
+	taskID := reloaded.Tasks[0].TaskID
+	svc := runtimetest.MustTaskService(t, taskStore, az)
+	claimTrg, err := svc.Claim(ctx, taskID, manager)
+	require.NoError(t, err)
+	_, err = driver.ApplyTrigger(ctx, def, instanceID, claimTrg)
+	require.NoError(t, err)
+
+	afterClaim, _, err := store.Load(ctx, instanceID)
+	require.NoError(t, err)
+	require.Equal(t, []authz.Actor{manager}, afterClaim.Tasks[0].Candidates,
+		"a claim must not erase the candidate list from the snapshot")
+
+	storedTask, err := taskStore.Get(ctx, taskID)
+	require.NoError(t, err)
+	require.Equal(t, []authz.Actor{manager}, storedTask.Candidates,
+		"a claim must not erase the candidate list from the task store")
+}
+
+// blockingResolver blocks until its context is cancelled, then reports why. It
+// models a directory service that has stopped responding.
+type blockingResolver struct{ entered chan struct{} }
+
+func (r *blockingResolver) Candidates(ctx context.Context, _ authz.AuthzSpec, _ map[string]any) ([]authz.Actor, error) {
+	select {
+	case r.entered <- struct{}{}:
+	default:
+	}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+// TestCandidateResolveTimeout verifies that a single candidate resolution is
+// bounded. Resolution runs BEFORE the parking commit (ADR-0147 amendment #1), so
+// an unresponsive ActorResolver would otherwise hold the step open indefinitely
+// and stall the commit — the driver must not depend on a third-party directory
+// being well-behaved.
+//
+// The bound is a sensible default with an explicit opt-out, mirroring
+// WithActionTimeout.
+func TestCandidateResolveTimeout(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		opts   []runtime.Option
+		assert func(t *testing.T, err error)
+	}
+
+	cases := []testCase{
+		{
+			name: "a hung resolver is bounded by the default timeout",
+			opts: []runtime.Option{runtime.WithCandidateResolveTimeout(50 * time.Millisecond)},
+			assert: func(t *testing.T, err error) {
+				require.Error(t, err)
+				require.ErrorIs(t, err, context.DeadlineExceeded)
+				require.Contains(t, err.Error(), "resolve candidates")
+			},
+		},
+		{
+			name: "a non-positive timeout disables the bound",
+			opts: []runtime.Option{runtime.WithCandidateResolveTimeout(0)},
+			assert: func(t *testing.T, err error) {
+				// With no deadline the resolver blocks on ctx.Done, which only fires
+				// when the test's own context is cancelled — so the drive must not
+				// have returned a deadline error of its own.
+				require.NotErrorIs(t, err, context.DeadlineExceeded)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			resolver := &blockingResolver{entered: make(chan struct{}, 1)}
+			opts := append([]runtime.Option{
+				runtime.WithHumanTasks(resolver, humantask.NewMemTaskStore(), authz.RoleAuthorizer{}),
+			}, tc.opts...)
+			driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t), opts...)
+
+			done := make(chan error, 1)
+			go func() {
+				_, err := driver.Drive(ctx, runtimetest.ApprovalDef(), "resolve-timeout-1", nil)
+				done <- err
+			}()
+
+			select {
+			case err := <-done:
+				tc.assert(t, err)
+			case <-time.After(2 * time.Second):
+				cancel()
+				tc.assert(t, <-done)
+			}
 		})
 	}
 }

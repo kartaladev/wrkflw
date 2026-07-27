@@ -3,6 +3,8 @@ package runtime_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -11,16 +13,20 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jonboulle/clockwork"
+	"github.com/rs/xid"
 
 	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/authz"
 	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/flow"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
 	"github.com/kartaladev/wrkflw/processtest"
 	"github.com/kartaladev/wrkflw/runtime"
+	"github.com/kartaladev/wrkflw/runtime/idgen"
 	"github.com/kartaladev/wrkflw/runtime/internal/runtimetest"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
@@ -377,4 +383,56 @@ func TestNewProcessDriverAlwaysSucceeds(t *testing.T) {
 			tc.assert(t, driver, err)
 		})
 	}
+}
+
+// TestDriverEngineIDsUseInjectedGenerator verifies the driver threads its id
+// generator into the engine (ADR-0149): every id the engine mints — tokens and
+// human tasks here — comes from the generator, not from the engine's
+// instance-derived fallback counter. A consumer-supplied generator (the seam
+// used for deterministic tests) must win over the xid default.
+func TestDriverEngineIDsUseInjectedGenerator(t *testing.T) {
+	var n atomic.Int64
+	driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),
+		humanTaskWiring(),
+		runtime.WithIDGenerator(idgen.Func(func() (string, error) {
+			return fmt.Sprintf("gen-%d", n.Add(1)), nil
+		})),
+	)
+
+	st, err := driver.Drive(t.Context(), runtimetest.ApprovalDef(), "i1", nil)
+	require.NoError(t, err)
+
+	require.Len(t, st.Tokens, 1)
+	assert.True(t, strings.HasPrefix(st.Tokens[0].ID, "gen-"),
+		"token id %q must come from the injected generator", st.Tokens[0].ID)
+	require.Len(t, st.Tasks, 1)
+	assert.True(t, strings.HasPrefix(st.Tasks[0].TaskID, "gen-"),
+		"task id %q must come from the injected generator", st.Tasks[0].TaskID)
+}
+
+// TestDriverEngineIDsDefaultToXID verifies the DEFAULT driver (no generator
+// injected) mints opaque xid-shaped engine ids rather than the engine's
+// "<instance>-tN" fallback (ADR-0149).
+func TestDriverEngineIDsDefaultToXID(t *testing.T) {
+	driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t), humanTaskWiring())
+
+	st, err := driver.Drive(t.Context(), runtimetest.ApprovalDef(), "i1", nil)
+	require.NoError(t, err)
+
+	require.Len(t, st.Tokens, 1)
+	assert.NotContains(t, st.Tokens[0].ID, "i1-", "default engine ids must not embed the instance id")
+	_, err = xid.FromString(st.Tokens[0].ID)
+	assert.NoError(t, err, "default engine ids are xid-shaped, got %q", st.Tokens[0].ID)
+}
+
+// humanTaskWiring is the minimal human-task collaborator set the approval
+// fixture needs to park a user task.
+func humanTaskWiring() runtime.Option {
+	return runtime.WithHumanTasks(
+		humantask.NewStaticActorResolver(map[string][]authz.Actor{
+			"manager": {{ID: "alice", Roles: []string{"manager"}}},
+		}),
+		humantask.NewMemTaskStore(),
+		authz.RoleAuthorizer{},
+	)
 }

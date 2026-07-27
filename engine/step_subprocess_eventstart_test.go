@@ -333,7 +333,7 @@ func nestedEventStartDef(nonInterrupting bool) *model.ProcessDefinition {
 
 // TestEventStartSubprocess_Nested_Interrupting mirrors
 // TestInterruptingEventSubprocessCancelsParentScope: a nested (inside "sub")
-// interrupting event-sub cancels the user-task token in the enclosing (inner)
+// interrupting event-sub cancels the user-task id in the enclosing (inner)
 // scope, runs its own path, and completing it drains the enclosing scope and
 // completes the instance. A late HumanCompleted on the cancelled task must
 // error with ErrTokenNotFound.
@@ -349,8 +349,8 @@ func TestEventStartSubprocess_Nested_Interrupting(t *testing.T) {
 
 	require.Len(t, r1.State.Tokens, 1, "expected one parked token at inner-user")
 	assert.Equal(t, "inner-user", r1.State.Tokens[0].NodeID)
-	taskToken := r1.State.Tokens[0].AwaitCommand
-	require.NotEmpty(t, taskToken)
+	taskID := r1.State.Tokens[0].AwaitCommand
+	require.NotEmpty(t, taskID)
 
 	require.Len(t, r1.State.Scopes, 1, "expected one scope open for sub")
 	innerScopeID := r1.State.Scopes[0].ID
@@ -397,7 +397,7 @@ func TestEventStartSubprocess_Nested_Interrupting(t *testing.T) {
 
 	// ---- Step 4: late HumanCompleted must error with ErrTokenNotFound ----
 	_, err = engine.Step(t.Context(), def, r3.State,
-		engine.NewHumanCompleted(at.Add(3*time.Second), taskToken, nil, authz.Actor{ID: "alice"}), engine.StepOptions{})
+		engine.NewHumanCompleted(at.Add(3*time.Second), taskID, engine.CompletionInput{}, authz.Actor{ID: "alice"}), engine.StepOptions{})
 	require.Error(t, err)
 	require.ErrorIs(t, err, engine.ErrTokenNotFound)
 }
@@ -450,7 +450,7 @@ func TestEventStartSubprocess_Nested_NonInterrupting(t *testing.T) {
 	// ---- Step 4: complete inner-user → inner scope drains → outer completes ----
 	task := r3.State.Tasks[0]
 	r4, err := engine.Step(t.Context(), def, r3.State,
-		engine.NewHumanCompleted(at.Add(3*time.Second), task.TaskToken, nil, authz.Actor{ID: "alice"}), engine.StepOptions{})
+		engine.NewHumanCompleted(at.Add(3*time.Second), task.TaskID, engine.CompletionInput{}, authz.Actor{ID: "alice"}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r4.State.Status)
 	assert.Empty(t, r4.State.Tokens)

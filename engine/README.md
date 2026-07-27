@@ -159,9 +159,9 @@ never build the struct literals directly.
 | `engine.NewStartInstance(at, vars)` | Begin a new process instance with initial variables. |
 | `engine.NewActionCompleted(at, commandID, output)` | A service action finished successfully. |
 | `engine.NewActionFailed(at, commandID, errMsg, retryable, opts...)` | A service action failed (optionally retryable). Pass `engine.WithJitter(fraction)` to record a backoff jitter fraction. |
-| `engine.NewHumanClaimed(at, taskToken, actor)` | A human task was claimed. |
-| `engine.NewHumanCompleted(at, taskToken, output, actor)` | A human task was completed. |
-| `engine.NewHumanReassigned(at, taskToken, from, to, by)` | A human task was reassigned from one actor to another (e.g. by an admin). |
+| `engine.NewHumanClaimed(at, taskID, actor)` | A human task was claimed. |
+| `engine.NewHumanCompleted(at, taskID, output, actor)` | A human task was completed. |
+| `engine.NewHumanReassigned(at, taskID, from, to, by)` | A human task was reassigned from one actor to another (e.g. by an admin). |
 | `engine.NewTimerFired(at, timerID)` | A previously scheduled timer fired. |
 | `engine.NewSignalReceived(at, name, payload)` | A named signal was broadcast (resumes all tokens awaiting it). |
 | `engine.NewMessageReceived(at, name, correlationKey, payload)` | A named message arrived (resumes the single matching token). |
@@ -208,7 +208,7 @@ runtime executes them all before persisting the new state.
 | `InvokeAction{CommandID, Name, Inline, Scoped, Input, FireAndForget}` | Run an `action.Action`; return result as `ActionCompleted`/`ActionFailed` carrying the same `CommandID`. `Inline` (engine-resolved node-local action) and `Scoped` (scope-effective catalog) are set by the engine and take precedence over resolving `Name` against the global catalog. When `FireAndForget` is true (deadline-breach and reminder actions) the runtime runs the action for its side effect only and feeds **no** `ActionCompleted`/`ActionFailed` back. |
 | `ScheduleTimer{TimerID, Token, Trigger, Kind}` | Schedule a timer; deliver `TimerFired{TimerID}` per the resolved `schedule.TriggerSpec` in `Trigger`. The engine emits the trigger verbatim (including native recurring/calendar forms) and the scheduler owns the firing math and any recurrence — there is no engine-computed `FireAt`. `Kind` is `TimerIntermediate`, `TimerDeadline`, `TimerInWait`, or `TimerRetry`. |
 | `CancelTimer{TimerID}` | Cancel a previously scheduled timer. |
-| `AwaitHuman{TaskToken, Eligibility}` | Create a human-task record; park until `HumanCompleted`. |
+| `AwaitHuman{TaskID, Eligibility}` | Create a human-task record; park until `HumanCompleted`. |
 | `UpdateTask{Task}` | Persist an updated `HumanTask` record (e.g. after a claim or reassignment). |
 | `CompleteInstance{Result}` | Mark the instance completed with a result variable map. |
 | `FailInstance{Err}` | Mark the instance failed. |
@@ -353,7 +353,7 @@ A token marks one point of execution within the instance.
 | `NodeID` | `string` | The node the token currently sits at. |
 | `ScopeID` | `string` | The execution scope (empty = root; non-empty = a sub-process scope). |
 | `State` | `TokenState` | Active / parked / at-join / incident (see the `TokenState` table in §2). |
-| `AwaitCommand` | `string` | The `CommandID` or human-task token the parked token is waiting on. |
+| `AwaitCommand` | `string` | The `CommandID` or human-task id the parked token is waiting on. |
 | `AwaitSignal` | `string` | The signal name the token is waiting for (signal catch). |
 | `AwaitMessage` | `string` | The message name the token is waiting for (message catch/receive). |
 | `AwaitMessageKey` | `string` | The resolved correlation key that must match an incoming message. |
@@ -385,7 +385,7 @@ convention):
 | Sentinel | Meaning | `errors.Is` behaviour |
 |---|---|---|
 | `engine.ErrInvalidTransition` | A trigger arrived for a token that is not awaiting it (wrong state). | Parent sentinel — use `errors.Is(err, engine.ErrInvalidTransition)` to classify any wrong-state error. |
-| `engine.ErrTokenNotFound` | Specific wrong-state: no token is awaiting the given command/task token. Wraps `ErrInvalidTransition`. | `errors.Is(err, ErrInvalidTransition)` is true. |
+| `engine.ErrTokenNotFound` | Specific wrong-state: no token is awaiting the given command/task id. Wraps `ErrInvalidTransition`. | `errors.Is(err, ErrInvalidTransition)` is true. |
 | `engine.ErrNoMatchingFlow` | Exclusive/inclusive gateway found no matching or default outgoing flow. Definition/data error. | Does **not** wrap `ErrInvalidTransition`. |
 | `engine.ErrUnknownTrigger` | Trigger type is not handled by `Step`. Programming/infrastructure error. | Does **not** wrap `ErrInvalidTransition`. |
 

@@ -175,7 +175,7 @@ custom := func(_ context.Context, p processtest.Park) (processtest.Decision, err
         return processtest.AdvanceTimers(), nil
     }
     if len(p.OpenTasks) > 0 {
-        trg, err := h.TaskService().Claim(ctx, p.OpenTasks[0].TaskToken, actor)
+        trg, err := h.TaskService().Claim(ctx, p.OpenTasks[0].TaskID, actor)
         if err != nil { return processtest.Abort(err), nil }
         return processtest.Deliver(trg), nil
     }
@@ -321,7 +321,7 @@ correctly), stamped with the fake clock. `Publish` only reaches instances that w
 
 ### 8. `CompleteTasks`: one decision per task, first accepted task wins
 
-`decide` is invoked **at most once per task token** — the verdict (actor, output,
+`decide` is invoked **at most once per task id** — the verdict (actor, output,
 accept) is memoized and reused for the claim and the completion, so completion
 always uses the actor that claimed. Claiming and completing are two separate
 deliveries, so it takes two drive steps per task. The handler acts on the **first

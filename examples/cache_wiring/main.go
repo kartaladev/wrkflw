@@ -174,7 +174,7 @@ func run() error {
 	if len(claimable) == 0 {
 		return errors.New("expected one claimable task")
 	}
-	token := claimable[0].TaskToken
+	token := claimable[0].TaskID
 	for i := 0; i < 2; i++ {
 		t, gerr := cachingTasks.Get(ctx, token)
 		if gerr != nil {

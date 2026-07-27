@@ -144,9 +144,11 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be StatusRunning (parked at call activity)")
 
-	// Derive child and grandchild instance IDs using the "<parentID>-sub-c1" scheme.
-	childID := parentID + "-sub-c1"
-	grandchildID := childID + "-sub-c1"
+	// Child ids are derived from the call command's id, which the engine's
+	// IDGenerator mints (ADR-0149) — so resolve them through the link store
+	// rather than assuming an id FORMAT.
+	childID := soleChildOf(ctx, t, cl, parentID)
+	grandchildID := soleChildOf(ctx, t, cl, childID)
 
 	// ── step 2: verify depths ────────────────────────────────────────────────
 	childLink, ok, err := cl.LookupChild(ctx, childID)
@@ -170,10 +172,10 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	claimable, err := tasks.ClaimableBy(ctx, worker)
 	require.NoError(t, err)
 	require.Len(t, claimable, 1, "exactly one human task must be pending (grandchild's task)")
-	taskToken := claimable[0].TaskToken
+	taskID := claimable[0].TaskID
 
 	svc := runtimetest.MustTaskService(t, tasks, az)
-	completeTrg, err := svc.Complete(ctx, taskToken, worker, map[string]any{"gcResult": "done"})
+	completeTrg, err := svc.Complete(ctx, taskID, worker, engine.CompletionInput{Output: map[string]any{"gcResult": "done"}})
 	require.NoError(t, err)
 
 	gcFinalSt, err := driver.ApplyTrigger(ctx, gcDef, grandchildID, completeTrg)
@@ -256,13 +258,12 @@ func TestFailurePathCallActivity(t *testing.T) {
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be StatusRunning (async path parks parent regardless of child outcome)")
 
 	// ── step 2: verify child link is terminal with failure ───────────────────
-	childID := parentID + "-sub-c1"
 	pending, err := cl.ClaimPending(ctx, 10)
 	require.NoError(t, err)
 	require.Len(t, pending, 1, "exactly one terminal link expected (the failed child)")
 
 	n := pending[0]
-	assert.Equal(t, childID, n.Link.ChildInstanceID)
+	assert.Equal(t, soleChildOf(ctx, t, cl, parentID), n.Link.ChildInstanceID)
 	assert.False(t, n.Outcome.Completed, "Outcome.Completed must be false for a failed child")
 	assert.NotEmpty(t, n.Outcome.Err, "Outcome.Err must be non-empty")
 
@@ -420,21 +421,32 @@ func TestRunawayGuardCallActivity(t *testing.T) {
 
 // countCallLinks counts how many call links exist for the chain rooted at rootID
 // by walking the derived child IDs. It checks at most maxCheck depth levels.
-// Each child ID follows the scheme: "<parentID>-sub-c1".
+// Each child ID follows the "<parentID>-sub-<suffix>" scheme (childInstanceIDFor);
+// the counter form "c1" holds only while the engine mints command ids from its
+// built-in counter, which is what this test injects.
 func countCallLinks(ctx context.Context, t *testing.T, cl *kernel.MemCallLinkStore, rootID string, maxCheck int) int {
 	t.Helper()
 	count := 0
 	currentID := rootID
 	for range maxCheck {
-		childID := currentID + "-sub-c1"
-		_, ok, err := cl.LookupChild(ctx, childID)
-		if err != nil || !ok {
+		children, err := cl.ChildrenOf(ctx, currentID)
+		if err != nil || len(children) == 0 {
 			break
 		}
 		count++
-		currentID = childID
+		currentID = children[0].ChildInstanceID
 	}
 	return count
+}
+
+// soleChildOf returns the single child instance id spawned by parentID, failing
+// the test when the parent has no child (or more than one).
+func soleChildOf(ctx context.Context, t *testing.T, cl *kernel.MemCallLinkStore, parentID string) string {
+	t.Helper()
+	children, err := cl.ChildrenOf(ctx, parentID)
+	require.NoError(t, err)
+	require.Len(t, children, 1, "expected exactly one child of %q", parentID)
+	return children[0].ChildInstanceID
 }
 
 // ── scenario 4: opt-out preserved ────────────────────────────────────────────
@@ -485,10 +497,21 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 	assert.Equal(t, engine.StatusFailed, finalSt.Status,
 		"parent must be StatusFailed when child parks and runner uses the synchronous (opt-out) path")
 
-	// The child instance should exist in the store and be StatusRunning
-	// (it parked at the human task; no async mechanism to continue it).
-	childID := parentID + "-sub-c1"
-	childSt, _, loadErr := store.Load(ctx, childID)
+	// The child instance should exist in the store and be StatusRunning (it
+	// parked at the human task; no async mechanism to continue it). This driver
+	// opts OUT of call-link tracking, so there is no link to resolve the child's
+	// id through — and the id itself is opaque (ADR-0149). List the store and
+	// take the instance that is not the parent.
+	page, listErr := store.List(ctx, kernel.InstanceFilter{})
+	require.NoError(t, listErr)
+	var childSummaries []kernel.InstanceSummary
+	for _, sum := range page.Items {
+		if sum.InstanceID != parentID {
+			childSummaries = append(childSummaries, sum)
+		}
+	}
+	require.Len(t, childSummaries, 1, "exactly one child instance must have been started")
+	childSt, _, loadErr := store.Load(ctx, childSummaries[0].InstanceID)
 	require.NoError(t, loadErr, "child instance must exist even on the synchronous failure path")
 	assert.Equal(t, engine.StatusRunning, childSt.Status,
 		"child must be StatusRunning (parked at human task; the parent failed because it couldn't wait for the child)")

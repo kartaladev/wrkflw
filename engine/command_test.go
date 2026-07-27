@@ -30,23 +30,23 @@ func TestCommandsImplementInterface(t *testing.T) {
 func TestHumanCommandsImplementInterface(t *testing.T) {
 	spec := authz.AuthzSpec{Roles: []string{"approver"}, Attribute: "actor.ID != \"\""}
 	task := humantask.HumanTask{
-		TaskToken:   "tok1",
+		TaskID:      "tok1",
 		InstanceID:  "i1",
 		NodeID:      "approve",
 		Eligibility: authz.AuthzSpec{Roles: []string{"manager"}},
-		Candidates:  []string{"u1", "u2"},
+		Candidates:  []authz.Actor{{ID: "u1"}, {ID: "u2"}},
 		State:       humantask.Unclaimed,
 	}
 
 	cmds := []engine.Command{
-		engine.AwaitHuman{TaskToken: "tok1", Eligibility: spec},
+		engine.AwaitHuman{TaskID: "tok1", Eligibility: spec},
 		engine.UpdateTask{Task: task},
 	}
 	assert.Len(t, cmds, 2)
 
 	ah, ok := cmds[0].(engine.AwaitHuman)
 	require.True(t, ok)
-	assert.Equal(t, "tok1", ah.TaskToken)
+	assert.Equal(t, "tok1", ah.TaskID)
 	assert.Equal(t, spec, ah.Eligibility)
 
 	ut, ok := cmds[1].(engine.UpdateTask)
@@ -61,7 +61,7 @@ func TestAwaitHumanEligibilityRoundTrip(t *testing.T) {
 		Privileges: []string{"approve"},
 		Attribute:  "actor.ID != \"\"",
 	}
-	cmd := engine.AwaitHuman{TaskToken: "tok42", Eligibility: spec}
+	cmd := engine.AwaitHuman{TaskID: "tok42", Eligibility: spec}
 	assert.Equal(t, spec.Roles, cmd.Eligibility.Roles)
 	assert.Equal(t, spec.Privileges, cmd.Eligibility.Privileges)
 	assert.Equal(t, spec.Attribute, cmd.Eligibility.Attribute)
@@ -70,13 +70,13 @@ func TestAwaitHumanEligibilityRoundTrip(t *testing.T) {
 // TestUpdateTaskRoundTrip asserts HumanTask is faithfully stored.
 func TestUpdateTaskRoundTrip(t *testing.T) {
 	task := humantask.HumanTask{
-		TaskToken:   "tok7",
+		TaskID:      "tok7",
 		InstanceID:  "inst1",
 		NodeID:      "review",
 		Eligibility: authz.AuthzSpec{Roles: []string{"reviewer"}},
-		Candidates:  []string{"alice", "bob"},
+		Candidates:  []authz.Actor{{ID: "alice"}, {ID: "bob"}},
 		State:       humantask.Claimed,
-		ClaimedBy:   "alice",
+		Claim:       &humantask.Claim{Actor: authz.Actor{ID: "alice"}},
 	}
 	cmd := engine.UpdateTask{Task: task}
 	assert.Equal(t, task, cmd.Task)
@@ -230,11 +230,11 @@ func TestTimerRetryDistinctAndStringable(t *testing.T) {
 // Tasks so that mutating the returned state's Tasks does not affect the input.
 func TestInstanceStateTasksDeepCopied(t *testing.T) {
 	task := humantask.HumanTask{
-		TaskToken:   "tok1",
+		TaskID:      "tok1",
 		InstanceID:  "i1",
 		NodeID:      "approve",
 		Eligibility: authz.AuthzSpec{Roles: []string{"approver"}},
-		Candidates:  []string{"u1", "u2"},
+		Candidates:  []authz.Actor{{ID: "u1"}, {ID: "u2"}},
 		State:       humantask.Unclaimed,
 	}
 	in := engine.InstanceState{
@@ -243,20 +243,20 @@ func TestInstanceStateTasksDeepCopied(t *testing.T) {
 	}
 
 	// task() lookup on the original state: must find the task by token.
-	found := in.TaskByToken("tok1")
+	found := in.TaskByID("tok1")
 	require.NotNil(t, found)
 	assert.Equal(t, task, *found)
 
 	// nil for unknown token.
-	assert.Nil(t, in.TaskByToken("no-such-token"))
+	assert.Nil(t, in.TaskByID("no-such-token"))
 
 	// Clone the state; mutate the clone's Tasks and Candidates — original must be unchanged.
 	cloned := in.Clone()
 	cloned.Tasks[0].State = humantask.Claimed
-	cloned.Tasks[0].Candidates = append(cloned.Tasks[0].Candidates, "u3")
+	cloned.Tasks[0].Candidates = append(cloned.Tasks[0].Candidates, authz.Actor{ID: "u3"})
 	cloned.Tasks[0].Eligibility.Roles = append(cloned.Tasks[0].Eligibility.Roles, "extra-role")
 
 	assert.Equal(t, humantask.Unclaimed, in.Tasks[0].State)
-	assert.Equal(t, []string{"u1", "u2"}, in.Tasks[0].Candidates)
+	assert.Equal(t, []authz.Actor{{ID: "u1"}, {ID: "u2"}}, in.Tasks[0].Candidates)
 	assert.Equal(t, []string{"approver"}, in.Tasks[0].Eligibility.Roles)
 }

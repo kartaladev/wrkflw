@@ -64,6 +64,10 @@ func readsClock() { _ = time.Now() }
 var deniedEngineImports = []string{
 	"/transport/",
 	"/internal/persistence",
+	// The engine core is a layer BELOW the runtime: its seams (IDGenerator,
+	// ConditionEvaluator, …) are declared locally and satisfied structurally by
+	// runtime types, never by importing them back down (ADR-0149).
+	"/runtime/",
 	"watermill",
 	"gocron",
 	"clockwork",

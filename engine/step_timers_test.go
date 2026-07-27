@@ -74,7 +74,7 @@ func TestTimerIntermediateSchedulesAndResumes(t *testing.T) {
 	require.Len(t, r1.State.Tokens, 1)
 	tok := r1.State.Tokens[0]
 	assert.Equal(t, "wait1h", tok.NodeID)
-	assert.Equal(t, engine.TokenWaitingCommand, tok.State)
+	assert.Equal(t, engine.TokenWaiting, tok.State)
 	assert.Equal(t, "i1-tm1", tok.AwaitCommand)
 
 	// ScheduleTimer.Token must reference the parked token ID.
@@ -97,7 +97,7 @@ func TestTimerIntermediateSchedulesAndResumes(t *testing.T) {
 	// Token advanced past the timer node to the service task.
 	require.Len(t, r2.State.Tokens, 1)
 	assert.Equal(t, "notify", r2.State.Tokens[0].NodeID)
-	assert.Equal(t, engine.TokenWaitingCommand, r2.State.Tokens[0].State)
+	assert.Equal(t, engine.TokenWaiting, r2.State.Tokens[0].State)
 
 	// Instance still running.
 	assert.Equal(t, engine.StatusRunning, r2.State.Status)
@@ -215,8 +215,8 @@ func TestUserTaskDeadlineBreachTakesAlternativePath(t *testing.T) {
 	require.True(t, foundAH, "AwaitHuman not found in commands")
 	require.True(t, foundST, "ScheduleTimer not found in commands")
 
-	// TaskToken deterministic.
-	assert.Equal(t, "i1-h1", ah.TaskToken)
+	// TaskID deterministic.
+	assert.Equal(t, "i1-h1", ah.TaskID)
 	assert.Equal(t, []string{"manager"}, ah.Eligibility.Roles)
 
 	// Deadline timer properties. AfterExpr("3h") resolves to AfterDuration(3h);
@@ -228,11 +228,11 @@ func TestUserTaskDeadlineBreachTakesAlternativePath(t *testing.T) {
 	assert.NotEmpty(t, st.TimerID)
 	deadlineTimerID := st.TimerID
 
-	// Token parked on the task (AwaitCommand == TaskToken).
+	// Token parked on the task (AwaitCommand == TaskID).
 	require.Len(t, r1.State.Tokens, 1)
 	tok := r1.State.Tokens[0]
 	assert.Equal(t, "userTask", tok.NodeID)
-	assert.Equal(t, engine.TokenWaitingCommand, tok.State)
+	assert.Equal(t, engine.TokenWaiting, tok.State)
 	assert.Equal(t, "i1-h1", tok.AwaitCommand)
 
 	// Token referenced in ScheduleTimer matches the parked token.
@@ -280,7 +280,7 @@ func TestUserTaskDeadlineBreachTakesAlternativePath(t *testing.T) {
 	assert.Equal(t, "notify", ia.Name)
 
 	// UpdateTask marks the task Cancelled.
-	assert.Equal(t, "i1-h1", ut.Task.TaskToken)
+	assert.Equal(t, "i1-h1", ut.Task.TaskID)
 	assert.Equal(t, humantask.Cancelled, ut.Task.State)
 
 	// CompleteInstance confirms the process reached the escalate end.
@@ -324,7 +324,7 @@ func TestUserTaskCompletedBeforeDeadlineIgnoresTimer(t *testing.T) {
 	actor := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	completeAt := startAt.Add(time.Hour) // well before the 3h deadline
 	r2, err := engine.Step(t.Context(), def, r1.State,
-		engine.NewHumanCompleted(completeAt, "i1-h1", nil, actor), engine.StepOptions{})
+		engine.NewHumanCompleted(completeAt, "i1-h1", engine.CompletionInput{}, actor), engine.StepOptions{})
 	require.NoError(t, err)
 	// Instance must have completed via the normal end path.
 	assert.Equal(t, engine.StatusCompleted, r2.State.Status)
@@ -416,8 +416,8 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 	require.NotEmpty(t, deadlineST.TimerID, "Deadline ScheduleTimer not found in entry commands")
 	require.NotEmpty(t, reminderST.TimerID, "InWait ScheduleTimer not found in entry commands")
 
-	// TaskToken is deterministic.
-	assert.Equal(t, "i1-h1", ah.TaskToken)
+	// TaskID is deterministic.
+	assert.Equal(t, "i1-h1", ah.TaskID)
 
 	// Deadline: AfterExpr("3h") → AfterDuration(3h) (one-shot).
 	assert.Equal(t, engine.TimerDeadline, deadlineST.Kind)
@@ -441,8 +441,8 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 	require.Len(t, r1.State.Tokens, 1)
 	tok := r1.State.Tokens[0]
 	assert.Equal(t, "userTask", tok.NodeID)
-	assert.Equal(t, engine.TokenWaitingCommand, tok.State)
-	assert.Equal(t, "i1-h1", tok.AwaitCommand, "token must remain parked on the task token")
+	assert.Equal(t, engine.TokenWaiting, tok.State)
+	assert.Equal(t, "i1-h1", tok.AwaitCommand, "token must remain parked on the task id")
 
 	// Task state is Unclaimed.
 	require.Len(t, r1.State.Tasks, 1)
@@ -477,7 +477,7 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 	// Token must NOT move — still parked at userTask; reminder record persists.
 	require.Len(t, r2.State.Tokens, 1)
 	assert.Equal(t, "userTask", r2.State.Tokens[0].NodeID)
-	assert.Equal(t, engine.TokenWaitingCommand, r2.State.Tokens[0].State)
+	assert.Equal(t, engine.TokenWaiting, r2.State.Tokens[0].State)
 	assert.Equal(t, "i1-h1", r2.State.Tokens[0].AwaitCommand)
 
 	// Task still Unclaimed.
@@ -507,7 +507,7 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 	actor := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	completeAt := startAt.Add(3 * time.Hour / 2) // 1.5h into the process, before deadline
 	r4, err := engine.Step(t.Context(), def, r3.State,
-		engine.NewHumanCompleted(completeAt, "i1-h1", nil, actor), engine.StepOptions{})
+		engine.NewHumanCompleted(completeAt, "i1-h1", engine.CompletionInput{}, actor), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r4.State.Status, "instance should complete on HumanCompleted")
 
@@ -662,7 +662,7 @@ func TestActionFailedCancelsOutstandingTimers(t *testing.T) {
 	//
 	// For simplicity, use a definition where both branches lead to an end event
 	// directly (no join) — the important invariant is that two tokens exist
-	// simultaneously: one at userTask (WaitingCommand on taskToken, deadline timer in
+	// simultaneously: one at userTask (WaitingCommand on taskID, deadline timer in
 	// s.Timers) and one at serviceTask (WaitingCommand on commandID).
 	def := &model.ProcessDefinition{
 		ID:      "p-parallel-deadline",

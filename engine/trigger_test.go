@@ -37,7 +37,7 @@ func TestHumanTriggersCarryOccurredAt(t *testing.T) {
 	actor := authz.Actor{ID: "u1", Roles: []string{"approver"}}
 
 	trs := []engine.Trigger{
-		engine.NewHumanCompleted(at, "tok1", map[string]any{"approved": true}, actor),
+		engine.NewHumanCompleted(at, "tok1", engine.CompletionInput{Output: map[string]any{"approved": true}}, actor),
 		engine.NewHumanClaimed(at, "tok1", actor),
 		engine.NewHumanReassigned(at, "tok1", "u0", "u1", actor),
 	}
@@ -52,8 +52,8 @@ func TestHumanCompletedFields(t *testing.T) {
 	actor := authz.Actor{ID: "u1", Roles: []string{"approver"}}
 	output := map[string]any{"decision": "yes"}
 
-	hc := engine.NewHumanCompleted(at, "tok1", output, actor)
-	assert.Equal(t, "tok1", hc.TaskToken)
+	hc := engine.NewHumanCompleted(at, "tok1", engine.CompletionInput{Output: output}, actor)
+	assert.Equal(t, "tok1", hc.TaskID)
 	assert.Equal(t, output, hc.Output)
 	assert.Equal(t, actor, hc.Actor)
 }
@@ -97,7 +97,7 @@ func TestHumanClaimedFields(t *testing.T) {
 	actor := authz.Actor{ID: "u2", Roles: []string{"reviewer"}}
 
 	hcl := engine.NewHumanClaimed(at, "tok2", actor)
-	assert.Equal(t, "tok2", hcl.TaskToken)
+	assert.Equal(t, "tok2", hcl.TaskID)
 	assert.Equal(t, actor, hcl.Actor)
 }
 
@@ -107,7 +107,7 @@ func TestHumanReassignedFields(t *testing.T) {
 	by := authz.Actor{ID: "admin", Roles: []string{"admin"}}
 
 	hr := engine.NewHumanReassigned(at, "tok3", "u0", "u1", by)
-	assert.Equal(t, "tok3", hr.TaskToken)
+	assert.Equal(t, "tok3", hr.TaskID)
 	assert.Equal(t, "u0", hr.From)
 	assert.Equal(t, "u1", hr.To)
 	assert.Equal(t, by, hr.By)
@@ -275,4 +275,22 @@ func TestResolveIncidentIsTrigger(t *testing.T) {
 	if !r.OccurredAt().Equal(at) {
 		t.Fatal("OccurredAt mismatch")
 	}
+}
+
+// TestCompletionInputNaming pins the input payload's name. The persisted audit
+// record is humantask.Completion; naming the submitted payload Completion too put
+// two exported types with overlapping fields (Outcome, Note) in the API, so a file
+// importing both had to disambiguate and a reader could not tell request from
+// record. The input side carries the Input suffix (ADR-0146 amendment).
+func TestCompletionInputNaming(t *testing.T) {
+	t.Parallel()
+
+	in := engine.CompletionInput{Outcome: "approve", Note: "ok", Output: map[string]any{"k": "v"}}
+	assert.Equal(t, "approve", in.Outcome)
+	assert.Equal(t, "ok", in.Note)
+
+	// The trigger constructor takes the input type.
+	trg := engine.NewHumanCompleted(time.Now(), "task-1", in, authz.Actor{ID: "u1"})
+	assert.Equal(t, "approve", trg.Outcome)
+	assert.Equal(t, "ok", trg.Note)
 }

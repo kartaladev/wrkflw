@@ -47,7 +47,7 @@ type Dialect interface {
 
 	// UpsertTask returns the dialect-specific conflict clause appended to an
 	// INSERT INTO wrkflw_human_task ... VALUES(...) so the write is an
-	// idempotent insert-or-replace keyed on (task_token).
+	// idempotent insert-or-replace keyed on (task_id).
 	UpsertTask() string
 
 	// InsertIgnorePrefix returns the INSERT keyword prefix used for the
@@ -123,9 +123,10 @@ type Dialect interface {
 	// leading AND keyword and the trailing space) used for keyset pagination in
 	// the instance-lister query when a cursor is present.
 	//
-	// The predicate binds two values in this order: cursorTime (time.Time or
-	// RFC3339Nano string for SQLite) and cursorID (string). Postgres uses a
-	// row-value comparison; MySQL and SQLite use an explicit OR decomposition.
+	// The predicate binds two values in this order: cursorTime (time.Time, or a
+	// fixed-width RFC3339 string for SQLite — see [Dialect.TimestampsAsText]) and
+	// cursorID (string). Postgres uses a row-value comparison; MySQL and SQLite
+	// use an explicit OR decomposition.
 	//
 	// Callers append this to the rest of the WHERE clause when hasCursor is true:
 	//
@@ -146,12 +147,17 @@ type Dialect interface {
 	KeysetCursorArgCount() int
 
 	// TimestampsAsText reports whether this dialect stores timestamp columns as
-	// RFC3339Nano TEXT strings rather than native time.Time values.
+	// RFC3339 TEXT strings rather than native time.Time values.
 	//
-	// When true (SQLite only), the store must format time.Time values with
-	// time.RFC3339Nano before binding them as query arguments, and must parse
-	// the raw string back into time.Time when scanning results. Postgres and
-	// MySQL bind and scan time.Time natively, so both return false.
+	// When true (SQLite only), the store must format time.Time values as UTC
+	// RFC3339 with a FIXED-WIDTH nine-digit fraction before binding them as query
+	// arguments, and must parse the raw string back into time.Time when scanning
+	// results. The fixed width is required, not cosmetic: TEXT columns are
+	// compared lexicographically, so `<=` predicates and ORDER BY are only correct
+	// while string order matches chronological order. time.RFC3339Nano must NOT be
+	// used for the write path — it trims trailing zeros and therefore does not sort
+	// (ADR-0151). Postgres and MySQL bind and scan time.Time natively, so both
+	// return false.
 	//
 	// This flag is the single decision point for time (de)serialization across
 	// all store and lister sites; callers must not compare [Dialect.Name] to

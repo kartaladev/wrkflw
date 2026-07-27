@@ -29,23 +29,21 @@ func NewMemTaskStore() *MemTaskStore {
 	return &MemTaskStore{m: make(map[string]HumanTask)}
 }
 
-// Upsert inserts or replaces the task identified by t.TaskToken.
+// Upsert inserts or replaces the task identified by t.TaskID.
 func (s *MemTaskStore) Upsert(_ context.Context, t HumanTask) error {
-	// Defensive copy of mutable slice fields before storing.
-	t.Candidates = copyStrings(t.Candidates)
-	t.Eligibility.Roles = copyStrings(t.Eligibility.Roles)
-	t.Eligibility.Privileges = copyStrings(t.Eligibility.Privileges)
+	// Defensive copy of mutable fields before storing.
+	t = copyTask(t)
 
 	s.mu.Lock()
-	s.m[t.TaskToken] = t
+	s.m[t.TaskID] = t
 	s.mu.Unlock()
 	return nil
 }
 
 // Get returns the task for the given token or [ErrTaskNotFound].
-func (s *MemTaskStore) Get(_ context.Context, taskToken string) (HumanTask, error) {
+func (s *MemTaskStore) Get(_ context.Context, taskID string) (HumanTask, error) {
 	s.mu.RLock()
-	t, ok := s.m[taskToken]
+	t, ok := s.m[taskID]
 	s.mu.RUnlock()
 	if !ok {
 		return HumanTask{}, ErrTaskNotFound
@@ -53,18 +51,29 @@ func (s *MemTaskStore) Get(_ context.Context, taskToken string) (HumanTask, erro
 	return copyTask(t), nil
 }
 
-// AssignedTo returns all tasks currently claimed by actorID, sorted by TaskToken.
+// AssignedTo returns all tasks currently claimed by actorID, sorted by TaskID.
+//
+// An empty actorID identifies no actor and always returns an empty result: it is
+// not a wildcard. Unclaimed tasks are stored with no claim at all (and the SQL
+// store keeps their claimant column empty), so treating "" as a match would turn
+// an unauthenticated or unresolved actor ID into a dump of every task nobody is
+// holding. The guard is explicit rather than incidental so both [TaskStore]
+// implementations answer identically.
 func (s *MemTaskStore) AssignedTo(_ context.Context, actorID string) ([]HumanTask, error) {
+	if actorID == "" {
+		return nil, nil
+	}
+
 	s.mu.RLock()
 	var result []HumanTask
 	for _, t := range s.m {
-		if t.ClaimedBy == actorID {
+		if t.Claim != nil && t.Claim.Actor.ID == actorID {
 			result = append(result, copyTask(t))
 		}
 	}
 	s.mu.RUnlock()
 
-	sort.Slice(result, func(i, j int) bool { return result[i].TaskToken < result[j].TaskToken })
+	sort.Slice(result, func(i, j int) bool { return result[i].TaskID < result[j].TaskID })
 	return result, nil
 }
 
@@ -74,7 +83,7 @@ func (s *MemTaskStore) AssignedTo(_ context.Context, actorID string) ([]HumanTas
 //   - actor.ID is present in the task's Candidates slice, OR
 //   - actor.Roles and task.Eligibility.Roles share at least one value.
 //
-// Results are sorted by TaskToken for determinism.
+// Results are sorted by TaskID for determinism.
 func (s *MemTaskStore) ClaimableBy(_ context.Context, actor authz.Actor) ([]HumanTask, error) {
 	actorRoleSet := roleSet(actor.Roles)
 
@@ -90,7 +99,7 @@ func (s *MemTaskStore) ClaimableBy(_ context.Context, actor authz.Actor) ([]Huma
 	}
 	s.mu.RUnlock()
 
-	sort.Slice(result, func(i, j int) bool { return result[i].TaskToken < result[j].TaskToken })
+	sort.Slice(result, func(i, j int) bool { return result[i].TaskID < result[j].TaskID })
 	return result, nil
 }
 
@@ -136,30 +145,16 @@ func (r *StaticActorResolver) Candidates(_ context.Context, spec authz.AuthzSpec
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-// copyTask returns a shallow copy of t with its slice fields independently copied
+// copyTask returns a copy of t whose mutable fields are independently allocated
 // so callers cannot mutate the store's internal state through the returned value.
 func copyTask(t HumanTask) HumanTask {
-	t.Candidates = copyStrings(t.Candidates)
-	t.Eligibility.Roles = copyStrings(t.Eligibility.Roles)
-	t.Eligibility.Privileges = copyStrings(t.Eligibility.Privileges)
-	return t
+	return t.Clone()
 }
 
-// copyStrings returns a new slice with the same elements as src, or nil when src
-// is nil/empty, to avoid handing out references to internal backing arrays.
-func copyStrings(src []string) []string {
-	if len(src) == 0 {
-		return nil
-	}
-	dst := make([]string, len(src))
-	copy(dst, src)
-	return dst
-}
-
-// candidateContains reports whether id appears in the candidates slice.
-func candidateContains(candidates []string, id string) bool {
+// candidateContains reports whether id identifies one of the candidate actors.
+func candidateContains(candidates []authz.Actor, id string) bool {
 	for _, c := range candidates {
-		if c == id {
+		if c.ID == id {
 			return true
 		}
 	}

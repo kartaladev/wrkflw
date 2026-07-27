@@ -57,7 +57,7 @@ func TestManualTaskCompletesOnBareTrigger(t *testing.T) {
 	var token string
 	for i := range parked.Tasks {
 		if parked.Tasks[i].IsOpen() {
-			token = parked.Tasks[i].TaskToken
+			token = parked.Tasks[i].TaskID
 			break
 		}
 	}
@@ -70,7 +70,7 @@ func TestManualTaskCompletesOnBareTrigger(t *testing.T) {
 		t.Fatalf("task service: %v", err)
 	}
 	// Bare completion: no claim, no payload.
-	trg, err := svc.Complete(ctx, token, authz.Actor{ID: "operator"}, nil)
+	trg, err := svc.Complete(ctx, token, authz.Actor{ID: "operator"}, engine.CompletionInput{})
 	if err != nil {
 		t.Fatalf("complete: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestManualWaitTaskRejectsPayload(t *testing.T) {
 	var token string
 	for i := range parked.Tasks {
 		if parked.Tasks[i].IsOpen() {
-			token = parked.Tasks[i].TaskToken
+			token = parked.Tasks[i].TaskID
 			break
 		}
 	}
@@ -128,7 +128,7 @@ func TestManualWaitTaskRejectsPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("svc: %v", err)
 	}
-	trg, err := svc.Complete(ctx, token, authz.Actor{ID: "operator"}, map[string]any{"note": "oops"})
+	trg, err := svc.Complete(ctx, token, authz.Actor{ID: "operator"}, engine.CompletionInput{Output: map[string]any{"note": "oops"}})
 	if err != nil {
 		t.Fatalf("complete build: %v", err)
 	}

@@ -29,7 +29,7 @@ func TestUpsertTaskClause(t *testing.T) {
 			name: "postgres on-conflict",
 			d:    dialect.NewPostgres(),
 			assert: func(t *testing.T, clause string) {
-				assert.Contains(t, clause, "ON CONFLICT (task_token)")
+				assert.Contains(t, clause, "ON CONFLICT (task_id)")
 				assert.Contains(t, clause, "EXCLUDED.state")
 			},
 		},
@@ -45,7 +45,7 @@ func TestUpsertTaskClause(t *testing.T) {
 			name: "sqlite on-conflict-excluded",
 			d:    dialect.NewSQLite(),
 			assert: func(t *testing.T, clause string) {
-				assert.Contains(t, clause, "ON CONFLICT (task_token)")
+				assert.Contains(t, clause, "ON CONFLICT (task_id)")
 				assert.Contains(t, clause, "excluded.state")
 			},
 		},

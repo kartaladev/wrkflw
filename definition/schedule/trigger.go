@@ -23,7 +23,11 @@ const (
 )
 
 // ClockTime is a wall-clock time-of-day for calendar triggers (maps to gocron NewAtTime).
-type ClockTime struct{ Hour, Minute, Second uint }
+type ClockTime struct {
+	Hour   uint `json:"hour" yaml:"hour"`
+	Minute uint `json:"minute" yaml:"minute"`
+	Second uint `json:"second" yaml:"second"`
+}
 
 // TriggerSpec specifies when a timer fires. Build with the constructors below.
 type TriggerSpec struct {

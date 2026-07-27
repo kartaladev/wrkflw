@@ -133,14 +133,14 @@ func driveReverseFixtureToApprove2(t *testing.T) reverseFixture {
 	require.Equal(t, "approve1", parked.Tokens[0].NodeID)
 
 	svc := runtimetest.MustTaskService(t, taskStore, az)
-	taskToken := parked.Tasks[0].TaskToken
+	taskID := parked.Tasks[0].TaskID
 
-	claimTrg, err := svc.Claim(ctx, taskToken, manager)
+	claimTrg, err := svc.Claim(ctx, taskID, manager)
 	require.NoError(t, err)
 	_, err = driver.ApplyTrigger(ctx, def, instanceID, claimTrg)
 	require.NoError(t, err)
 
-	completeTrg, err := svc.Complete(ctx, taskToken, manager, map[string]any{"amount": 999})
+	completeTrg, err := svc.Complete(ctx, taskID, manager, engine.CompletionInput{Output: map[string]any{"amount": 999}})
 	require.NoError(t, err)
 	parked2, err := driver.ApplyTrigger(ctx, def, instanceID, completeTrg)
 	require.NoError(t, err)
@@ -225,19 +225,19 @@ func driveReverseTargetVarsFixtureToApprove3(t *testing.T) reverseFixture {
 		// lifetime (completed ones are retained, not removed) so the OPEN
 		// task is not reliably at index 0 once a second UserTask has run;
 		// find it explicitly via HumanTask.IsOpen.
-		var taskToken string
+		var taskID string
 		for _, ht := range state.Tasks {
 			if ht.IsOpen() {
-				taskToken = ht.TaskToken
+				taskID = ht.TaskID
 				break
 			}
 		}
-		require.NotEmpty(t, taskToken, "expected exactly one open human task")
-		claimTrg, err := svc.Claim(ctx, taskToken, manager)
+		require.NotEmpty(t, taskID, "expected exactly one open human task")
+		claimTrg, err := svc.Claim(ctx, taskID, manager)
 		require.NoError(t, err)
 		_, err = driver.ApplyTrigger(ctx, def, instanceID, claimTrg)
 		require.NoError(t, err)
-		completeTrg, err := svc.Complete(ctx, taskToken, manager, map[string]any{"amount": amount})
+		completeTrg, err := svc.Complete(ctx, taskID, manager, engine.CompletionInput{Output: map[string]any{"amount": amount}})
 		require.NoError(t, err)
 		next, err := driver.ApplyTrigger(ctx, def, instanceID, completeTrg)
 		require.NoError(t, err)

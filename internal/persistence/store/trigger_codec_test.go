@@ -58,18 +58,49 @@ func TestTriggerCodecRoundTrip(t *testing.T) {
 			},
 		},
 		"HumanCompleted": {
-			in: engine.NewHumanCompleted(at, "t1", payload, actor),
+			in: engine.NewHumanCompleted(at, "t1", engine.CompletionInput{Output: payload}, actor),
 			assert: func(t *testing.T, got engine.Trigger) {
 				require.Equal(t, actor, got.(engine.HumanCompleted).Actor)
-				require.Equal(t, "t1", got.(engine.HumanCompleted).TaskToken)
+				require.Equal(t, "t1", got.(engine.HumanCompleted).TaskID)
 				require.Equal(t, payload, got.(engine.HumanCompleted).Output)
+				require.Empty(t, got.(engine.HumanCompleted).Outcome)
+				require.Empty(t, got.(engine.HumanCompleted).Note)
+			},
+		},
+		// The outcome and note are added to the envelope as additive omitempty
+		// fields (ADR-0146): a completion that carries them must survive the
+		// durable round-trip, since replay re-applies the journalled trigger and
+		// the engine validates the outcome on every path.
+		"HumanCompleted with outcome and note": {
+			in: engine.NewHumanCompleted(at, "t1",
+				engine.CompletionInput{Outcome: "approve", Note: "budget confirmed", Output: payload}, actor),
+			assert: func(t *testing.T, got engine.Trigger) {
+				require.Equal(t, "approve", got.(engine.HumanCompleted).Outcome)
+				require.Equal(t, "budget confirmed", got.(engine.HumanCompleted).Note)
+				require.Equal(t, payload, got.(engine.HumanCompleted).Output)
+				require.Equal(t, actor, got.(engine.HumanCompleted).Actor)
+			},
+		},
+		// Candidate resolution is journalled so replay re-applies the actors that
+		// were resolved at the time, rather than re-resolving against a group
+		// registry whose membership may since have changed (ADR-0147).
+		"HumanCandidatesResolved": {
+			in: engine.NewHumanCandidatesResolved(at, "t1",
+				[]authz.Actor{{ID: "u-jane", Roles: []string{"manager"}, Attributes: map[string]any{"email": "jane@acme.com"}}}),
+			assert: func(t *testing.T, got engine.Trigger) {
+				hcr := got.(engine.HumanCandidatesResolved)
+				require.Equal(t, "t1", hcr.TaskID)
+				require.Len(t, hcr.Candidates, 1)
+				require.Equal(t, "u-jane", hcr.Candidates[0].ID)
+				require.Equal(t, []string{"manager"}, hcr.Candidates[0].Roles)
+				require.Equal(t, "jane@acme.com", hcr.Candidates[0].Attributes["email"])
 			},
 		},
 		"HumanClaimed": {
 			in: engine.NewHumanClaimed(at, "t1", actor),
 			assert: func(t *testing.T, got engine.Trigger) {
 				require.Equal(t, actor, got.(engine.HumanClaimed).Actor)
-				require.Equal(t, "t1", got.(engine.HumanClaimed).TaskToken)
+				require.Equal(t, "t1", got.(engine.HumanClaimed).TaskID)
 			},
 		},
 		"HumanReassigned": {
@@ -130,12 +161,19 @@ func TestTriggerCodecRoundTrip(t *testing.T) {
 		},
 	}
 
+	// A kind may legitimately appear in more than one table case (e.g. a
+	// completion with and without an outcome), so collect the DISTINCT kinds
+	// before cross-checking against the declared set.
+	seenKinds := make(map[string]struct{}, len(tests))
 	var gotKinds []string
 	for name, tc := range tests {
 		data, kind, err := st.MarshalTrigger(tc.in)
 		require.NoError(t, err, "MarshalTrigger failed for %q", name)
 		require.NotEmpty(t, kind, "MarshalTrigger returned empty kind for %q", name)
-		gotKinds = append(gotKinds, kind)
+		if _, dup := seenKinds[kind]; !dup {
+			seenKinds[kind] = struct{}{}
+			gotKinds = append(gotKinds, kind)
+		}
 
 		got, err := st.UnmarshalTrigger(kind, data)
 		require.NoError(t, err, "UnmarshalTrigger failed for %q", name)

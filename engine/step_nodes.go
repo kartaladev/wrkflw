@@ -54,7 +54,7 @@ func emitActionInvoke(c *stepCtx, tok *Token, node model.Node) ([]Command, error
 		Scoped:    c.tdef.ScopedCatalog(),
 		Input:     serviceActionInput(c.s, node),
 	}}
-	tok.State = TokenWaitingCommand
+	tok.State = TokenWaiting
 	tok.AwaitCommand = cmdID
 	// Arm any boundary events attached to this host activity.
 	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID(), c.at, c.eval)
@@ -94,7 +94,7 @@ func (receiveTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 	if err != nil {
 		return nil, false, fmt.Errorf("workflow-engine: receive task %q correlation key: %w", node.ID(), err)
 	}
-	tok.State = TokenWaitingCommand
+	tok.State = TokenWaiting
 	tok.AwaitMessage = rt.MessageName
 	tok.AwaitMessageKey = resolvedKey
 	// Arm the node's in-wait reminder, if configured. For a ReceiveTask the
@@ -146,7 +146,7 @@ func (startEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 
 // endEventStrategy handles KindEndEvent node entry.
 //
-// Stopped semantics: most paths stop (tok.State set to TokenWaitingCommand so
+// Stopped semantics: most paths stop (tok.State set to TokenWaiting so
 // drive() sees stopped=true). The "break" paths (scope still has tokens, or
 // child scopes still running) leave tok.State==TokenActive so drive() sees
 // stopped=false and keeps advancing the next active token.
@@ -165,7 +165,7 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			// propagateError walks the scope chain to a matching boundary error
 			// handler (may catch + recover) or fails the instance.
 			currentScopeID := tok.ScopeID
-			c.s.consumeToken(tok, c.at)
+			c.s.consumeTokenAs(tok, c.at, CloseKindErrored)
 			errCmds, propErr := propagateError(c.ctx, c.def, c.s, currentScopeID, "", "", ev.ErrorCode, nil, c.at, c.mode, c.eval, failFast)
 			if propErr != nil {
 				return nil, false, propErr
@@ -201,9 +201,9 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	// so the newly placed continuation token (if any) is processed in the next
 	// Step call. stop=false leaves tok.State==TokenActive so drive() sees
 	// stopped=false and keeps advancing; stop=true parks the token
-	// (tok.State=TokenWaitingCommand) so drive() sees stopped=true.
+	// (tok.State=TokenWaiting) so drive() sees stopped=true.
 	if stop {
-		tok.State = TokenWaitingCommand
+		tok.State = TokenWaiting
 	}
 	return cmds, false, nil
 }
@@ -487,7 +487,7 @@ func forceTerminate(c *stepCtx, ev event.EndEvent) ([]Command, bool, error) {
 	// Close every open visit and drop all tokens (including this end-event token).
 	for i := range c.s.Tokens {
 		tok := &c.s.Tokens[i]
-		c.s.closeVisit(tok.ID, tok.NodeID, c.at)
+		c.s.closeVisitAs(tok.ID, tok.NodeID, c.at, CloseKindTerminated)
 	}
 	c.s.Tokens = nil
 
@@ -525,7 +525,7 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 	if sp.Subprocess == nil {
 		// Defensive: a KindSubProcess without a Subprocess definition cannot
 		// execute; park to avoid infinite drive loop. model.Validate prevents this.
-		tok.State = TokenWaitingCommand
+		tok.State = TokenWaiting
 		return cmds, false, nil
 	}
 	innerStarts := sp.Subprocess.StartNodes()
@@ -556,7 +556,7 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 	}
 	cmds = append(cmds, espCmdsScope...)
 	// outer token consumed, inner token active: stopped=true.
-	tok.State = TokenWaitingCommand
+	tok.State = TokenWaiting
 	return cmds, false, nil
 }
 
@@ -565,7 +565,7 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 // Recurrence is native to the scheduler: it re-fires on the interval on its own,
 // so the engine arms once here and handleReminderFired only runs the reminder
 // action per fire. cancelKey is the token whose resume/interrupt cancels the
-// reminder — the human-task token for a UserTask, the parked token id for a
+// reminder — the human-task id for a UserTask, the parked token id for a
 // ReceiveTask or IntermediateCatchEvent.
 func armWaitReminder(c *stepCtx, tok *Token, node model.Node, cancelKey string, cmds []Command) ([]Command, error) {
 	rawSpec, _ := model.WaitActionOf(node)
@@ -584,12 +584,12 @@ func armWaitReminder(c *stepCtx, tok *Token, node model.Node, cancelKey string, 
 		Kind:    TimerInWait,
 	})
 	c.s.Timers = append(c.s.Timers, timerRecord{
-		TimerID:   reminderTimerID,
-		Kind:      TimerInWait,
-		Token:     tok.ID,
-		TaskToken: cancelKey,
-		NodeID:    node.ID(),
-		ScopeID:   tok.ScopeID,
+		TimerID: reminderTimerID,
+		Kind:    TimerInWait,
+		Token:   tok.ID,
+		TaskID:  cancelKey,
+		NodeID:  node.ID(),
+		ScopeID: tok.ScopeID,
 	})
 	return cmds, nil
 }
@@ -600,20 +600,33 @@ type userTaskStrategy struct{}
 func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
 	ut := node.(activity.UserTask)
 	var cmds []Command
-	taskToken := c.s.nextTaskToken()
+	taskID := c.s.nextTaskID()
 	spec := authz.AuthzSpec{
 		Roles:      ut.EligibleRoles,
 		Privileges: ut.EligiblePrivileges,
 		Attribute:  ut.EligibleExpr,
 	}
 	ht := humantask.HumanTask{
-		TaskToken:   taskToken,
+		TaskID:      taskID,
 		InstanceID:  c.s.InstanceID,
 		NodeID:      node.ID(),
 		Eligibility: spec,
 		State:       humantask.Unclaimed,
 		CreatedAt:   c.at,
+		// Snapshot the variables the task's attribute-based eligibility predicate
+		// is evaluated against (e.g. vars["region"] == "EU"). The engine owns task
+		// creation and already holds the variables, so it fills this rather than
+		// leaving it to the runtime: every UpdateTask command round-trips this
+		// task through the task store, so a task minted without Vars erases them
+		// from the store on the first update and breaks authorization thereafter.
+		// copyVars is a shallow copy — nested maps stay shared, matching the rule
+		// documented on the field.
+		Vars: copyVars(c.s.Variables),
 	}
+	// Link the open visit to the task so the rendered history can resolve the
+	// task's claim/completion audit (ADR-0145). Done for the immediate-manual
+	// case too: that visit closes in the same step but still names its task.
+	c.s.setVisitTask(tok.ID, node.ID(), taskID)
 	if ut.Manual && ut.ManualImmediate {
 		// Immediate manual task: no actor acts on it, so it never parks. Record a
 		// completed task for audit (mirrors the state handleHumanCompleted sets)
@@ -644,12 +657,12 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			Kind:    TimerDeadline,
 		})
 		c.s.Timers = append(c.s.Timers, timerRecord{
-			TimerID:   deadlineTimerID,
-			Kind:      TimerDeadline,
-			Token:     tok.ID,
-			TaskToken: taskToken,
-			NodeID:    node.ID(),
-			ScopeID:   tok.ScopeID,
+			TimerID: deadlineTimerID,
+			Kind:    TimerDeadline,
+			Token:   tok.ID,
+			TaskID:  taskID,
+			NodeID:  node.ID(),
+			ScopeID: tok.ScopeID,
 		})
 		// Surface the human-task due date ONLY when the resolved deadline reduces
 		// to a concrete one-shot: an absolute time is the due date directly, and a
@@ -664,23 +677,23 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 		}
 	}
 	// Arm the node's in-wait reminder, if configured. For a UserTask the reminder
-	// is cancelled by the human-task token (cancelKey = taskToken), preserving the
+	// is cancelled by the human-task id (cancelKey = taskID), preserving the
 	// original behaviour.
-	cmds, err = armWaitReminder(c, tok, node, taskToken, cmds)
+	cmds, err = armWaitReminder(c, tok, node, taskID, cmds)
 	if err != nil {
 		return cmds, false, err
 	}
 	c.s.Tasks = append(c.s.Tasks, ht)
-	cmds = append(cmds, AwaitHuman{TaskToken: taskToken, Eligibility: spec})
-	tok.State = TokenWaitingCommand
-	tok.AwaitCommand = taskToken
+	cmds = append(cmds, AwaitHuman{TaskID: taskID, Eligibility: spec})
+	tok.State = TokenWaiting
+	tok.AwaitCommand = taskID
 	// Arm any boundary events attached to this host activity.
 	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID(), c.at, c.eval)
 	if err != nil {
 		return cmds, false, err
 	}
 	cmds = append(cmds, bndCmds...)
-	// token parked: stopped=true (tok.State == TokenWaitingCommand != TokenActive).
+	// token parked: stopped=true (tok.State == TokenWaiting != TokenActive).
 	return cmds, false, nil
 }
 
@@ -702,12 +715,12 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 			Trigger: timerSpec,
 			Kind:    TimerIntermediate,
 		})
-		tok.State = TokenWaitingCommand
+		tok.State = TokenWaiting
 		tok.AwaitCommand = timerID
 	} else if ice.SignalName != "" {
 		// Signal intermediate catch event: park the token awaiting the signal.
 		// The SignalReceived trigger (broadcast) will resume it later.
-		tok.State = TokenWaitingCommand
+		tok.State = TokenWaiting
 		tok.AwaitSignal = ice.SignalName
 	} else if ice.MessageName != "" {
 		// Message intermediate catch event: park the token awaiting the message.
@@ -717,13 +730,13 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 		if err != nil {
 			return cmds, false, fmt.Errorf("workflow-engine: message node %q correlation key: %w", node.ID(), err)
 		}
-		tok.State = TokenWaitingCommand
+		tok.State = TokenWaiting
 		tok.AwaitMessage = ice.MessageName
 		tok.AwaitMessageKey = resolvedKey
 	} else {
 		// Non-timer, non-signal, non-message intermediate catch event: park.
 		// Further event variants arrive in later plans.
-		tok.State = TokenWaitingCommand
+		tok.State = TokenWaiting
 	}
 	// Arm the node's in-wait reminder, if configured. It is cancelled by the
 	// parked token (cancelKey = tok.ID) when the awaited signal/message/timer
@@ -733,7 +746,7 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 	if err != nil {
 		return cmds, false, err
 	}
-	// token parked: stopped=true (tok.State == TokenWaitingCommand != TokenActive).
+	// token parked: stopped=true (tok.State == TokenWaiting != TokenActive).
 	return cmds, false, nil
 }
 
@@ -759,14 +772,14 @@ type parallelGatewayStrategy struct{}
 func (parallelGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
 	if len(c.tdef.Incoming(node.ID())) > 1 {
 		c.s.tryParallelJoin(c.tdef, tok, node, tok.ScopeID, c.at)
-		// tryParallelJoin always sets tok.State = TokenAtJoin first, then
+		// tryParallelJoin always sets tok.State = TokenJoining first, then
 		// conditionally removes all join-side tokens if the join fires.
 		// Stopped semantics must match the original switch arm:
-		//   - Join pending: token still in slice with State==TokenAtJoin → stopped=true.
+		//   - Join pending: token still in slice with State==TokenJoining → stopped=true.
 		//   - Join fired: token removed from slice → stopped=false (auto-advance).
 		// Re-read the token from the slice to distinguish the two cases:
-		if t := c.s.tokenByID(tok.ID); t != nil && t.State == TokenAtJoin {
-			// Pending: tok.State is already TokenAtJoin → drive() sees stopped=true.
+		if t := c.s.tokenByID(tok.ID); t != nil && t.State == TokenJoining {
+			// Pending: tok.State is already TokenJoining → drive() sees stopped=true.
 		} else {
 			// Fired: all join tokens consumed; reset tok.State to TokenActive so
 			// drive() derives stopped=false and keeps advancing.
@@ -788,14 +801,14 @@ type inclusiveGatewayStrategy struct{}
 func (inclusiveGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
 	if len(c.tdef.Incoming(node.ID())) > 1 {
 		c.s.tryInclusiveJoin(c.tdef, tok, node, tok.ScopeID, c.at)
-		// tryInclusiveJoin always sets tok.State = TokenAtJoin first, then
+		// tryInclusiveJoin always sets tok.State = TokenJoining first, then
 		// conditionally removes all join-side tokens if the join fires.
 		// Stopped semantics must match the original switch arm:
-		//   - Join pending: token still in slice with State==TokenAtJoin → stopped=true.
+		//   - Join pending: token still in slice with State==TokenJoining → stopped=true.
 		//   - Join fired: token removed from slice → stopped=false (auto-advance).
 		// Re-read the token from the slice to distinguish the two cases:
-		if t := c.s.tokenByID(tok.ID); t != nil && t.State == TokenAtJoin {
-			// Pending: signal stop to drive() by leaving tok.State == TokenAtJoin.
+		if t := c.s.tokenByID(tok.ID); t != nil && t.State == TokenJoining {
+			// Pending: signal stop to drive() by leaving tok.State == TokenJoining.
 			// (tok and t are the same pointer; already set by tryInclusiveJoin.)
 		} else {
 			// Fired: all join tokens consumed; reset tok.State to TokenActive so
@@ -831,7 +844,7 @@ func (eventBasedGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) 
 	// identifiable as a gateway-parked token. The ArmedEvents slice is the
 	// primary correlation table — the gateway token is found via armedEvent.GatewayToken.
 	sentinel := "evtgw:" + tok.ID
-	tok.State = TokenWaitingCommand
+	tok.State = TokenWaiting
 	tok.AwaitCommand = sentinel
 	for _, f := range c.tdef.Outgoing(node.ID()) {
 		catchNodeRaw, ok := c.tdef.Node(f.Target)
@@ -872,7 +885,7 @@ func (eventBasedGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) 
 		}
 		c.s.ArmedEvents = append(c.s.ArmedEvents, ae)
 	}
-	// gateway token parked: tok.State == TokenWaitingCommand → stopped=true.
+	// gateway token parked: tok.State == TokenWaiting → stopped=true.
 	return cmds, false, nil
 }
 
@@ -897,9 +910,9 @@ func (callActivityStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Co
 		DefRef:    ca.DefRef,
 		Input:     copyVars(c.s.Variables),
 	})
-	tok.State = TokenWaitingCommand
+	tok.State = TokenWaiting
 	tok.AwaitCommand = cmdID
-	// token parked: tok.State == TokenWaitingCommand → stopped=true.
+	// token parked: tok.State == TokenWaiting → stopped=true.
 	return cmds, false, nil
 }
 
@@ -926,8 +939,8 @@ func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 	} else {
 		// Non-signal intermediate throw: park for future plans (e.g. message
 		// throw, error throw). Parking avoids an infinite drive loop.
-		tok.State = TokenWaitingCommand
-		// token parked: tok.State == TokenWaitingCommand → stopped=true.
+		tok.State = TokenWaiting
+		// token parked: tok.State == TokenWaiting → stopped=true.
 	}
 	return cmds, false, nil
 }
@@ -982,7 +995,7 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 			c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
 		} else if c.s.Compensating.ActiveCmdID != "" {
 			// SERIALIZE (ADR-0071): a walk is already in flight — defer this throw.
-			tok.State = TokenWaitingCommand
+			tok.State = TokenWaiting
 			c.s.DeferredCompensationThrows = append(c.s.DeferredCompensationThrows, tok.ID)
 		} else {
 			// Start the throw compensation walk (resumeNode is non-empty here).
@@ -1001,7 +1014,7 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 				Name:      records[len(records)-1].Action,
 				Input:     copyVars(records[len(records)-1].Input),
 			})
-			tok.State = TokenWaitingCommand
+			tok.State = TokenWaiting
 		}
 	} else {
 		// Scope-wide throw (ADR-0120): compensate the throwing scope's completed
@@ -1025,7 +1038,7 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 			// token is re-driven through this strategy when the current walk finishes
 			// (popOneDeferredThrow → drive), so consolidation happens then, on the
 			// committing path below.
-			tok.State = TokenWaitingCommand
+			tok.State = TokenWaiting
 			c.s.DeferredCompensationThrows = append(c.s.DeferredCompensationThrows, tok.ID)
 		default:
 			// Committing to a walk. Whole-instance default (BPMN conformant): merge
@@ -1060,7 +1073,7 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 					Name:      records[len(records)-1].Action,
 					Input:     copyVars(records[len(records)-1].Input),
 				})
-				tok.State = TokenWaitingCommand
+				tok.State = TokenWaiting
 			}
 		}
 	}

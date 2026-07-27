@@ -17,7 +17,7 @@ var (
 	// infrastructure/programming error, not a wrong-state transition.
 	ErrUnknownTrigger = errors.New("workflow-engine: unknown trigger")
 
-	// ErrTokenNotFound is returned when a trigger targets a command/task token that
+	// ErrTokenNotFound is returned when a trigger targets a command/task id that
 	// is not awaiting. It is one kind of invalid transition and wraps
 	// ErrInvalidTransition so errors.Is holds for both sentinels.
 	ErrTokenNotFound = fmt.Errorf("workflow-engine: no token awaiting command: %w", ErrInvalidTransition)
@@ -27,8 +27,24 @@ var (
 	ErrNoMatchingFlow = errors.New("workflow-engine: no matching outgoing flow")
 
 	// ErrManualTaskPayload is returned when a wait-mode manual UserTask is completed
-	// with a non-empty output. A manual task is a form-less checkpoint; supplying a
-	// payload is a caller error. Immediate-mode manual tasks never take a trigger.
-	// See ADR-0118.
+	// with a non-empty output, outcome, or note. A manual task is a form-less
+	// checkpoint; supplying a payload is a caller error. Immediate-mode manual tasks
+	// never take a trigger. See ADR-0118.
 	ErrManualTaskPayload = errors.New("workflow-engine: manual user task cannot carry a completion payload")
+
+	// ErrInvalidOutcome is returned when a UserTask completion carries an outcome
+	// the node does not declare. Validation fails closed: once a node declares
+	// outcomes, only those are accepted. A node declaring none is unconstrained —
+	// any outcome at all completes it. See ADR-0146.
+	ErrInvalidOutcome = errors.New("workflow-engine: completion outcome is not declared by the user task")
+
+	// ErrOutcomeRequired is returned when a UserTask that declares outcomes is
+	// completed without one. A declared set is a closed, mandatory value domain:
+	// the outcome typically routes a downstream exclusive gateway, so accepting a
+	// blank one would publish no routing variable and fail the step later with
+	// ErrNoMatchingFlow. It is deliberately distinct from ErrInvalidOutcome so a
+	// caller can tell "you sent nothing" from "you sent a value I do not accept".
+	// A manual UserTask is exempt — it is forbidden from declaring outcomes
+	// (model.ErrManualTaskOutcome) and completes on a bare trigger. See ADR-0146.
+	ErrOutcomeRequired = errors.New("workflow-engine: user task requires a completion outcome")
 )

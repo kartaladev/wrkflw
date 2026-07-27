@@ -50,6 +50,11 @@ type TaskManager interface {
 	// ReassignTask authorizes the reassigner via TaskService.Reassign, then
 	// delivers the resulting trigger to the engine, returning the new ProcessInstance.
 	ReassignTask(ctx context.Context, req ReassignTaskRequest) (ProcessInstance, error)
+
+	// RefreshTaskCandidates re-resolves an open task's candidate actors via
+	// TaskService.RefreshCandidates, then delivers the resulting trigger to the
+	// engine, returning the new ProcessInstance.
+	RefreshTaskCandidates(ctx context.Context, req RefreshTaskCandidatesRequest) (ProcessInstance, error)
 }
 
 // Messaging delivers signals and messages to running instances.
@@ -128,6 +133,9 @@ type ProcessEngine struct {
 	// was injected via WithProcessDriver). It gates Start/Shutdown so a
 	// consumer-injected driver is never started or torn down by the ProcessEngine.
 	ownsDriver bool
+	// omitDefinition is the WithoutEmbeddedDefinition setting, applied to every
+	// ProcessInstance this engine returns. Marshalling policy only.
+	omitDefinition bool
 }
 
 // NewProcessEngine constructs a ProcessEngine facade from functional options over a coherent
@@ -189,7 +197,8 @@ func NewProcessEngine(opts ...Option) (*ProcessEngine, error) {
 		return nil, err
 	}
 
-	tasks, err := task.NewTaskService(c.taskStore, c.authz, task.WithClock(c.clk))
+	tasks, err := task.NewTaskService(c.taskStore, c.authz,
+		task.WithClock(c.clk), task.WithActorResolver(c.resolver))
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: task service: %w", err)
 	}
@@ -220,15 +229,16 @@ func NewProcessEngine(opts ...Option) (*ProcessEngine, error) {
 	}
 
 	e := &ProcessEngine{
-		driver:     driver,
-		tasks:      tasks,
-		reg:        c.reg,
-		store:      c.store,
-		lister:     c.lister,
-		taskStore:  c.taskStore,
-		clk:        c.clk,
-		idgen:      c.idgen,
-		ownsDriver: ownsDriver,
+		driver:         driver,
+		tasks:          tasks,
+		reg:            c.reg,
+		store:          c.store,
+		lister:         c.lister,
+		taskStore:      c.taskStore,
+		clk:            c.clk,
+		idgen:          c.idgen,
+		ownsDriver:     ownsDriver,
+		omitDefinition: c.omitDefinition,
 	}
 	e.logConstructionSummary(c)
 	return e, nil
@@ -322,7 +332,7 @@ func (e *ProcessEngine) StartInstance(ctx context.Context, req StartInstanceRequ
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: start instance: run: %w", err)
 	}
-	return NewProcessInstance(def, st), nil
+	return e.instance(def, st), nil
 }
 
 // GetInstance loads and returns the current ProcessInstance for an existing
@@ -335,7 +345,7 @@ func (e *ProcessEngine) GetInstance(ctx context.Context, instanceID string) (Pro
 		return nil, fmt.Errorf("workflow-service: get instance: %w", err)
 	}
 	def, _ := e.reg.Lookup(ctx, model.Version(st.DefID, st.DefVersion))
-	return NewProcessInstance(def, st), nil
+	return e.instance(def, st), nil
 }
 
 // DeliverSignal resumes a process instance that is parked at a signal-catch
@@ -358,7 +368,7 @@ func (e *ProcessEngine) DeliverSignal(ctx context.Context, req DeliverSignalRequ
 		// to reclassify on this path (see ADR-0026).
 		return nil, fmt.Errorf("workflow-service: deliver signal: %w", err)
 	}
-	return NewProcessInstance(def, newSt), nil
+	return e.instance(def, newSt), nil
 }
 
 // DeliverMessage routes a message to a waiting instance via the driver's
@@ -384,11 +394,11 @@ func (e *ProcessEngine) ClaimTask(ctx context.Context, req ClaimTaskRequest) (Pr
 	if e.driver.IsShuttingDown() {
 		return nil, fmt.Errorf("workflow-service: claim task: %w", runtime.ErrDriverShuttingDown)
 	}
-	trg, err := e.tasks.Claim(ctx, req.TaskToken, req.Actor)
+	trg, err := e.tasks.Claim(ctx, req.TaskID, req.Actor)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: claim task: %w", err)
 	}
-	return e.deliverTaskTrigger(ctx, req.TaskToken, trg)
+	return e.deliverTaskTrigger(ctx, req.TaskID, trg)
 }
 
 // CompleteTask authorizes the actor, issues a HumanCompleted trigger, and advances the instance.
@@ -398,11 +408,12 @@ func (e *ProcessEngine) CompleteTask(ctx context.Context, req CompleteTaskReques
 	if e.driver.IsShuttingDown() {
 		return nil, fmt.Errorf("workflow-service: complete task: %w", runtime.ErrDriverShuttingDown)
 	}
-	trg, err := e.tasks.Complete(ctx, req.TaskToken, req.Actor, req.Output)
+	trg, err := e.tasks.Complete(ctx, req.TaskID, req.Actor,
+		engine.CompletionInput{Outcome: req.Outcome, Note: req.Note, Output: req.Output})
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: complete task: %w", err)
 	}
-	return e.deliverTaskTrigger(ctx, req.TaskToken, trg)
+	return e.deliverTaskTrigger(ctx, req.TaskID, trg)
 }
 
 // ReassignTask authorizes the reassigner, issues a HumanReassigned trigger, and advances the instance.
@@ -412,11 +423,44 @@ func (e *ProcessEngine) ReassignTask(ctx context.Context, req ReassignTaskReques
 	if e.driver.IsShuttingDown() {
 		return nil, fmt.Errorf("workflow-service: reassign task: %w", runtime.ErrDriverShuttingDown)
 	}
-	trg, err := e.tasks.Reassign(ctx, req.TaskToken, req.From, req.To, req.By)
+	trg, err := e.tasks.Reassign(ctx, req.TaskID, req.From, req.To, req.By)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: reassign task: %w", err)
 	}
-	return e.deliverTaskTrigger(ctx, req.TaskToken, trg)
+	return e.deliverTaskTrigger(ctx, req.TaskID, trg)
+}
+
+// RefreshTaskCandidates re-resolves the eligible actors of an open human task,
+// issues a HumanCandidatesResolved trigger, and returns the updated instance
+// (ADR-0150).
+//
+// A task's candidates are resolved once, when the task is created, but the actor
+// registry behind the [humantask.ActorResolver] is not static: people join and
+// leave roles while a task sits open. The resolved set REPLACES the previous one,
+// so a departed actor disappears; re-applying is idempotent.
+//
+// Candidates are a projection, not an access-control list — authorization is
+// evaluated live against the task's eligibility spec on every ClaimTask and
+// CompleteTask, so refreshing grants nothing and skipping it denies nothing. It
+// keeps the rendered list and the candidate-ID arm of
+// [humantask.TaskStore.ClaimableBy] current.
+//
+// req.By must satisfy the task's eligibility spec, the same policy ReassignTask
+// applies. Returns [task.ErrNoActorResolver] when the engine was built without
+// [WithActorResolver], [task.ErrTaskNotOpen] for a completed or cancelled task
+// (whose candidate list is frozen audit record), and
+// [humantask.ErrTaskNotFound] for an unknown task.
+func (e *ProcessEngine) RefreshTaskCandidates(ctx context.Context, req RefreshTaskCandidatesRequest) (ProcessInstance, error) {
+	// Reject before the resolver lookup so a shutdown race cannot spend a
+	// directory round-trip on a trigger the draining driver then refuses.
+	if e.driver.IsShuttingDown() {
+		return nil, fmt.Errorf("workflow-service: refresh task candidates: %w", runtime.ErrDriverShuttingDown)
+	}
+	trg, err := e.tasks.RefreshCandidates(ctx, req.TaskID, req.By)
+	if err != nil {
+		return nil, fmt.Errorf("workflow-service: refresh task candidates: %w", err)
+	}
+	return e.deliverTaskTrigger(ctx, req.TaskID, trg)
 }
 
 // ListInstances delegates to the InstanceLister.
@@ -444,7 +488,7 @@ func (e *ProcessEngine) ResolveIncident(ctx context.Context, req ResolveIncident
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: resolve incident: %w", err)
 	}
-	return NewProcessInstance(def, st), nil
+	return e.instance(def, st), nil
 }
 
 // CancelInstance resolves the instance's definition, rejects an already-terminal
@@ -461,7 +505,15 @@ func (e *ProcessEngine) CancelInstance(ctx context.Context, req CancelInstanceRe
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: cancel instance: %w", err)
 	}
-	return NewProcessInstance(def, st), nil
+	return e.instance(def, st), nil
+}
+
+// instance fuses def and st into the ProcessInstance this engine hands out. It
+// is the single construction seam for every Service method, so the engine's
+// marshalling policy — currently WithoutEmbeddedDefinition — applies uniformly
+// to the start, read, task and admin paths.
+func (e *ProcessEngine) instance(def *model.ProcessDefinition, st engine.InstanceState) ProcessInstance {
+	return newProcessInstance(def, st, e.omitDefinition)
 }
 
 // resolveDefinition loads the instance state by instanceID, then looks up its
@@ -486,13 +538,13 @@ func (e *ProcessEngine) resolveDefinition(ctx context.Context, instanceID string
 // ReassignTask. It looks up the task by token to get the owning instance ID,
 // checks that both the task and its instance are in a state that accepts the
 // operation, resolves the definition, and delivers the trigger.
-func (e *ProcessEngine) deliverTaskTrigger(ctx context.Context, taskToken string, trg engine.Trigger) (ProcessInstance, error) {
-	task, err := e.taskStore.Get(ctx, taskToken)
+func (e *ProcessEngine) deliverTaskTrigger(ctx context.Context, taskID string, trg engine.Trigger) (ProcessInstance, error) {
+	task, err := e.taskStore.Get(ctx, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: deliver task trigger: get task: %w", err)
 	}
 	if !task.IsOpen() {
-		return nil, fmt.Errorf("%w: task %q is not open", ErrConflict, taskToken)
+		return nil, fmt.Errorf("%w: task %q is not open", ErrConflict, taskID)
 	}
 	def, st, err := e.resolveDefinition(ctx, task.InstanceID)
 	if err != nil {
@@ -508,5 +560,5 @@ func (e *ProcessEngine) deliverTaskTrigger(ctx context.Context, taskToken string
 		}
 		return nil, fmt.Errorf("workflow-service: deliver task trigger: deliver: %w", err)
 	}
-	return NewProcessInstance(def, newSt), nil
+	return e.instance(def, newSt), nil
 }

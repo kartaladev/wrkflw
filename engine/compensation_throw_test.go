@@ -316,7 +316,7 @@ func TestCompensationThrowTargetedParity(t *testing.T) {
 	// beyond the archive. Complete afterThrow → StatusCompleted.
 	ah := firstAwaitHuman(r3.Commands)
 	r4, err := engine.Step(t.Context(), def, r3.State,
-		engine.NewHumanCompleted(at.Add(3*time.Second), ah.TaskToken, nil, authz.Actor{}),
+		engine.NewHumanCompleted(at.Add(3*time.Second), ah.TaskID, engine.CompletionInput{}, authz.Actor{}),
 		engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, r4.State.Status)

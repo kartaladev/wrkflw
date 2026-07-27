@@ -3,6 +3,8 @@ package model
 import (
 	"errors"
 	"fmt"
+	"strings"
+	"unicode"
 )
 
 // activityKinds is the set of NodeKinds that park execution and may host a
@@ -176,6 +178,38 @@ var (
 	// on a bare trigger with no payload, so there is no output to validate — the
 	// combination is contradictory and rejected at authoring time. See ADR-0118.
 	ErrManualTaskValidation = errors.New("workflow-definition: manual user task cannot carry completion validation")
+	// ErrEmptyOutcome is returned when a UserTask declares a blank (empty or
+	// whitespace-only) completion outcome. A blank outcome can never be selected
+	// — the engine treats an empty outcome as "none given" — so it is dead
+	// config rejected at authoring time. See ADR-0146.
+	ErrEmptyOutcome = errors.New("workflow-definition: user task declares a blank outcome")
+	// ErrDuplicateOutcome is returned when a UserTask declares the same
+	// completion outcome twice. The declaration is a set; a duplicate entry
+	// signals an authoring mistake. See ADR-0146.
+	ErrDuplicateOutcome = errors.New("workflow-definition: user task declares a duplicate outcome")
+	// ErrInvalidOutcomeVariable is returned when a UserTask's explicit outcome
+	// variable name (WithOutcomeVariable) is not a valid expr identifier. The
+	// exposed variable exists to be referenced from gateway conditions, which
+	// are expr expressions, so a name expr cannot resolve is dead config.
+	// See ADR-0146.
+	ErrInvalidOutcomeVariable = errors.New("workflow-definition: outcome variable is not a valid identifier")
+	// ErrManualTaskOutcome is returned when a UserTask marked Manual
+	// (WithManual) also declares completion outcomes or opts into outcome
+	// exposure. A manual task completes on a bare trigger carrying no outcome —
+	// the engine fails closed on one — so the declaration could never be
+	// satisfied. See ADR-0146 and ADR-0118.
+	ErrManualTaskOutcome = errors.New("workflow-definition: manual user task cannot declare completion outcomes")
+	// ErrOutcomeExposureWithoutOutcomes is returned when a UserTask opts into
+	// outcome exposure (WithExposeOutcome or WithOutcomeVariable) without
+	// declaring the outcome set it exposes. Exposure publishes the outcome into
+	// the process-variable space, where it can feed gateway conditions and
+	// eligibility expressions; without a declared set that variable's value is
+	// whatever free-text string an actor happened to send. Exposing a value
+	// domain requires closing it first, so the combination is rejected at
+	// authoring time rather than yielding an unbounded routing input at runtime.
+	// A manual task is diagnosed by ErrManualTaskOutcome instead — it may not
+	// declare outcomes at all. See ADR-0146.
+	ErrOutcomeExposureWithoutOutcomes = errors.New("workflow-definition: outcome exposure requires a declared outcome set")
 	// ErrEventSubprocessOnFlow is returned when a KindSubProcess node whose
 	// nested definition has an event-triggered (signal/message/timer) start
 	// also carries an incoming or outgoing sequence flow. An event sub-process
@@ -585,18 +619,32 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		}
 	}
 
-	// Manual UserTask must not carry completion validation: a manual task
-	// completes with no payload, so a validation strategy would never receive
-	// input to check. model cannot import the activity package, so Manual is
-	// read via the wire projection. See ADR-0118.
+	// UserTask rules, in a single pass over the nodes so each task is projected
+	// to its wire form exactly once:
+	//
+	//   - Manual UserTask must not carry completion validation: a manual task
+	//     completes with no payload, so a validation strategy would never
+	//     receive input to check (ADR-0118).
+	//   - The completion-outcome declaration must be well-formed (ADR-0146).
+	//
+	// model cannot import the activity package, so both Manual and the outcome
+	// declaration are read via the wire projection.
+	//
+	// Outcome errors are collected separately and appended after the pass so the
+	// joined error still reports every ErrManualTaskValidation ahead of every
+	// outcome error, exactly as when the two rules ran as consecutive loops.
+	var outcomeErrs []error
 	for _, n := range d.Nodes {
 		if n.Kind() != KindUserTask {
 			continue
 		}
-		if toWire(n).Manual && ValidationStrategyFor(n) != nil {
+		w := toWire(n)
+		if w.Manual && ValidationStrategyFor(n) != nil {
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrManualTaskValidation, n.ID()))
 		}
+		outcomeErrs = append(outcomeErrs, validateOutcomes(n.ID(), &w)...)
 	}
+	errs = append(errs, outcomeErrs...)
 
 	// CancelActions: reject empty action names.
 	for i, name := range d.CancelActions {
@@ -712,4 +760,66 @@ func recoveryFlowOf(n Node) string {
 		return a.recoveryFlow()
 	}
 	return ""
+}
+
+// isIdentifier reports whether s is a valid expr identifier — the form a
+// gateway condition can reference. Mirrors expr's lexer: a leading letter or
+// underscore followed by letters, digits, or underscores.
+func isIdentifier(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case r == '_', unicode.IsLetter(r):
+		case i > 0 && unicode.IsDigit(r):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// validateOutcomes checks a UserTask's completion-outcome declaration: the
+// declared set must be usable (no blank or duplicate entries), an explicit
+// outcome variable must be an expr identifier, and a manual task must not
+// declare outcomes at all (ADR-0146).
+//
+// It takes the caller's already-computed wire projection rather than
+// re-deriving one, so a UserTask is flattened once per Validate call. nodeID is
+// passed explicitly (not read off w.ID) because a kind's registered ToWire spec
+// owns the wire struct and is not obliged to leave the id intact.
+func validateOutcomes(nodeID string, w *NodeWire) []error {
+	var errs []error
+
+	seen := make(map[string]bool, len(w.Outcomes))
+	for i, o := range w.Outcomes {
+		if strings.TrimSpace(o) == "" {
+			errs = append(errs, fmt.Errorf("%w: node %q outcomes[%d]", ErrEmptyOutcome, nodeID, i))
+			continue
+		}
+		if seen[o] {
+			errs = append(errs, fmt.Errorf("%w: node %q outcome %q", ErrDuplicateOutcome, nodeID, o))
+			continue
+		}
+		seen[o] = true
+	}
+
+	if w.OutcomeVariable != "" && !isIdentifier(w.OutcomeVariable) {
+		errs = append(errs, fmt.Errorf("%w: node %q variable %q", ErrInvalidOutcomeVariable, nodeID, w.OutcomeVariable))
+	}
+
+	if w.Manual && (len(w.Outcomes) > 0 || w.ExposeOutcome || w.OutcomeVariable != "") {
+		errs = append(errs, fmt.Errorf("%w: node %q", ErrManualTaskOutcome, nodeID))
+	}
+
+	// Exposure publishes the outcome as a process variable, so the value domain
+	// must be closed first: without a declared set, any free-text string an actor
+	// sends becomes a routing input. A manual task is exempt because the rule
+	// above already rejects it with the more precise ErrManualTaskOutcome.
+	if !w.Manual && len(w.Outcomes) == 0 && (w.ExposeOutcome || w.OutcomeVariable != "") {
+		errs = append(errs, fmt.Errorf("%w: node %q", ErrOutcomeExposureWithoutOutcomes, nodeID))
+	}
+
+	return errs
 }

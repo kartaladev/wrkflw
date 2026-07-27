@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"fmt"
 	"sort"
 	"time"
 )
@@ -217,8 +216,7 @@ func (s *InstanceState) recordCompensation(scopeID, nodeID, action string, compl
 // which is incremented before use. The new scope is appended to s.Scopes.
 // Returns the new scope's ID.
 func (s *InstanceState) openScope(nodeID, parentScopeID string) string {
-	s.ScopeSeq++
-	id := fmt.Sprintf("%s-s%d", s.InstanceID, s.ScopeSeq)
+	id := s.nextID("s", &s.ScopeSeq)
 	s.Scopes = append(s.Scopes, Scope{
 		ID:       id,
 		NodeID:   nodeID,

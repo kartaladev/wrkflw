@@ -122,7 +122,7 @@ func main() {
 	fmt.Printf("parked at %q (status=%s, live tokens=%d)\n",
 		parked.Tokens[0].NodeID, view.StatusString(parked.Status), len(parked.Tokens))
 
-	// Capture the parked task token so we can observe it transition to Cancelled.
+	// Capture the parked task id so we can observe it transition to Cancelled.
 	claimable, err := taskStore.ClaimableBy(ctx, fulfiller)
 	if err != nil {
 		log.Fatal("claimable:", err)
@@ -130,7 +130,7 @@ func main() {
 	if len(claimable) == 0 {
 		log.Fatal("expected a claimable task before cancel")
 	}
-	taskToken := claimable[0].TaskToken
+	taskID := claimable[0].TaskID
 
 	// 2. The order is retracted before anyone works it — cancel the instance.
 	//    CancelActions run best-effort; the failing "notify-customer" is swallowed.
@@ -147,11 +147,11 @@ func main() {
 		view.StatusString(final.Status), len(final.Tokens))
 	fmt.Printf("cancel actions attempted (in order): %v\n", ran)
 
-	task, err := taskStore.Get(ctx, taskToken)
+	task, err := taskStore.Get(ctx, taskID)
 	if err != nil {
 		log.Fatal("get task:", err)
 	}
-	fmt.Printf("human task %q state: %s\n", task.TaskToken, task.State.String())
+	fmt.Printf("human task %q state: %s\n", task.TaskID, task.State.String())
 
 	if final.Status == engine.StatusTerminated &&
 		len(final.Tokens) == 0 &&

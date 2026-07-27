@@ -460,8 +460,8 @@ func TestParity_PostTasksClaim_200(t *testing.T) {
 	makeApprovalAndClaimReq := func(instanceID string) (service.Service, reqFactory) {
 		def := transporttest.ApprovalProcess()
 		h, svcLocal := transporttest.NewHarness(t, def)
-		taskToken := transporttest.StartedApprovalInstance(t, h, instanceID)
-		mkReq := jsonReqFactory(http.MethodPost, "/tasks/"+taskToken+"/claim", map[string]any{
+		taskID := transporttest.StartedApprovalInstance(t, h, instanceID)
+		mkReq := jsonReqFactory(http.MethodPost, "/tasks/"+taskID+"/claim", map[string]any{
 			"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
 		})
 		return svcLocal, mkReq

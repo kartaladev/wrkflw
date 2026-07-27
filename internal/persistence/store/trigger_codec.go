@@ -16,6 +16,7 @@ const (
 	kindActionFailed         = "action_failed"
 	kindHumanCompleted       = "human_completed"
 	kindHumanClaimed         = "human_claimed"
+	kindHumanCandidatesRes   = "human_candidates_resolved"
 	kindHumanReassigned      = "human_reassigned"
 	kindTimerFired           = "timer_fired"
 	kindSignalReceived       = "signal_received"
@@ -35,6 +36,7 @@ var AllTriggerKinds = []string{
 	kindActionFailed,
 	kindHumanCompleted,
 	kindHumanClaimed,
+	kindHumanCandidatesRes,
 	kindHumanReassigned,
 	kindTimerFired,
 	kindSignalReceived,
@@ -57,7 +59,10 @@ type triggerEnvelope struct {
 	CommandID         string         `json:"command_id,omitempty"`
 	Err               string         `json:"err,omitempty"`
 	Retryable         bool           `json:"retryable,omitempty"`
-	TaskToken         string         `json:"task_token,omitempty"`
+	TaskID            string         `json:"task_id,omitempty"`
+	Outcome           string         `json:"outcome,omitempty"`
+	Note              string         `json:"note,omitempty"`
+	Candidates        []authz.Actor  `json:"candidates,omitempty"`
 	Actor             authz.Actor    `json:"actor,omitempty"`
 	From              string         `json:"from,omitempty"`
 	To                string         `json:"to,omitempty"`
@@ -92,11 +97,14 @@ func MarshalTrigger(t engine.Trigger) ([]byte, string, error) {
 	case engine.ActionFailed:
 		kind, env.CommandID, env.Err, env.Retryable, env.Jitter = kindActionFailed, v.CommandID, v.Err, v.Retryable, v.JitterFraction
 	case engine.HumanCompleted:
-		kind, env.TaskToken, env.Output, env.Actor = kindHumanCompleted, v.TaskToken, v.Output, v.Actor
+		kind, env.TaskID, env.Output, env.Actor = kindHumanCompleted, v.TaskID, v.Output, v.Actor
+		env.Outcome, env.Note = v.Outcome, v.Note
+	case engine.HumanCandidatesResolved:
+		kind, env.TaskID, env.Candidates = kindHumanCandidatesRes, v.TaskID, v.Candidates
 	case engine.HumanClaimed:
-		kind, env.TaskToken, env.Actor = kindHumanClaimed, v.TaskToken, v.Actor
+		kind, env.TaskID, env.Actor = kindHumanClaimed, v.TaskID, v.Actor
 	case engine.HumanReassigned:
-		kind, env.TaskToken, env.From, env.To, env.By = kindHumanReassigned, v.TaskToken, v.From, v.To, v.By
+		kind, env.TaskID, env.From, env.To, env.By = kindHumanReassigned, v.TaskID, v.From, v.To, v.By
 	case engine.TimerFired:
 		kind, env.TimerID = kindTimerFired, v.TimerID
 	case engine.SignalReceived:
@@ -139,11 +147,14 @@ func UnmarshalTrigger(kind string, data []byte) (engine.Trigger, error) {
 	case kindActionFailed:
 		return engine.NewActionFailed(env.At, env.CommandID, env.Err, env.Retryable, engine.WithJitter(env.Jitter)), nil
 	case kindHumanCompleted:
-		return engine.NewHumanCompleted(env.At, env.TaskToken, env.Output, env.Actor), nil
+		return engine.NewHumanCompleted(env.At, env.TaskID,
+			engine.CompletionInput{Outcome: env.Outcome, Note: env.Note, Output: env.Output}, env.Actor), nil
+	case kindHumanCandidatesRes:
+		return engine.NewHumanCandidatesResolved(env.At, env.TaskID, env.Candidates), nil
 	case kindHumanClaimed:
-		return engine.NewHumanClaimed(env.At, env.TaskToken, env.Actor), nil
+		return engine.NewHumanClaimed(env.At, env.TaskID, env.Actor), nil
 	case kindHumanReassigned:
-		return engine.NewHumanReassigned(env.At, env.TaskToken, env.From, env.To, env.By), nil
+		return engine.NewHumanReassigned(env.At, env.TaskID, env.From, env.To, env.By), nil
 	case kindTimerFired:
 		return engine.NewTimerFired(env.At, env.TimerID), nil
 	case kindSignalReceived:

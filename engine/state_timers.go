@@ -2,10 +2,10 @@ package engine
 
 // timerRecord is the engine's internal bookkeeping entry for a scheduled timer.
 // It allows the engine to route a TimerFired back to the correct token and task
-// without relying on the token's AwaitCommand (which is set to the TaskToken for
+// without relying on the token's AwaitCommand (which is set to the TaskID for
 // user-task nodes, not the deadline timer ID).
 //
-// For intermediate-catch-event timers the TaskToken field is empty because the
+// For intermediate-catch-event timers the TaskID field is empty because the
 // token parks on the TimerID itself and the tokenAwaiting lookup still works.
 // Recording them here provides a single, unified dispatch table.
 type timerRecord struct {
@@ -15,8 +15,8 @@ type timerRecord struct {
 	Kind TimerKind
 	// Token is the ID of the parked engine token this timer guards.
 	Token string
-	// TaskToken is the human-task correlation token ("" for intermediate timers).
-	TaskToken string
+	// TaskID is the human-task correlation token ("" for intermediate timers).
+	TaskID string
 	// NodeID is the BPMN node that owns the timer (needed to resolve DeadlineFlow/DeadlineAction).
 	NodeID string
 	// ScopeID is the execution scope of the token that owns this timer. Empty
@@ -48,15 +48,15 @@ func (s *InstanceState) removeTimer(timerID string) {
 	s.Timers = out
 }
 
-// cancelTimersByTaskToken removes all timer records associated with the given
-// taskToken (excluding the one already being handled), returning their TimerIDs
+// cancelTimersByTaskID removes all timer records associated with the given
+// taskID (excluding the one already being handled), returning their TimerIDs
 // so the caller can emit CancelTimer commands. Used to cancel in-wait/reminder
 // timers when a deadline breach or task completion supersedes them.
-func (s *InstanceState) cancelTimersByTaskToken(taskToken, excludeTimerID string) []string {
+func (s *InstanceState) cancelTimersByTaskID(taskID, excludeTimerID string) []string {
 	var toCancel []string
 	out := make([]timerRecord, 0, len(s.Timers))
 	for _, tr := range s.Timers {
-		if tr.TaskToken == taskToken && tr.TimerID != excludeTimerID {
+		if tr.TaskID == taskID && tr.TimerID != excludeTimerID {
 			toCancel = append(toCancel, tr.TimerID)
 			continue
 		}
@@ -69,7 +69,7 @@ func (s *InstanceState) cancelTimersByTaskToken(taskToken, excludeTimerID string
 // cancelTimersForToken removes all timer records whose Token matches the given
 // parked-token id (excluding excludeTimerID), returning their TimerIDs so the
 // caller can emit CancelTimer commands. It is the token-keyed counterpart of
-// cancelTimersByTaskToken, used to cancel a parked token's in-wait reminder when
+// cancelTimersByTaskID, used to cancel a parked token's in-wait reminder when
 // its wait resolves or its scope is interrupted (ReceiveTask / IntermediateCatchEvent
 // have no human-task correlation token).
 func (s *InstanceState) cancelTimersForToken(tokenID, excludeTimerID string) []string {

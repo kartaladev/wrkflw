@@ -121,7 +121,7 @@ func reportSweep(final engine.InstanceState) {
 		log.Fatalf("expected exactly one recorded task, got %d", len(final.Tasks))
 	}
 	tsk := final.Tasks[0]
-	fmt.Printf("sibling task %q (node=%s) reconciled to state=%s\n", tsk.TaskToken, tsk.NodeID, tsk.State)
+	fmt.Printf("sibling task %q (node=%s) reconciled to state=%s\n", tsk.TaskID, tsk.NodeID, tsk.State)
 	if tsk.State != humantask.Cancelled {
 		log.Fatalf("expected sibling task Cancelled, got %s", tsk.State)
 	}

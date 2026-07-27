@@ -45,9 +45,13 @@ func (sqliteDialect) UpsertDefinition() string {
 // UpsertTask returns the ON CONFLICT clause for the human-task upsert site.
 // Mirrors the Postgres dialect with lowercase "excluded." per SQLite convention.
 func (sqliteDialect) UpsertTask() string {
-	return " ON CONFLICT (task_token) DO UPDATE SET" +
+	return " ON CONFLICT (task_id) DO UPDATE SET" +
 		" instance_id = excluded.instance_id, node_id = excluded.node_id," +
 		" state = excluded.state, claimed_by = excluded.claimed_by," +
+		" claimed_at = excluded.claimed_at, claim_actor = excluded.claim_actor," +
+		" completed_by = excluded.completed_by, completed_at = excluded.completed_at," +
+		" outcome = excluded.outcome, note = excluded.note," +
+		" completion_actor = excluded.completion_actor," +
 		" eligibility = excluded.eligibility, candidates = excluded.candidates," +
 		" vars = excluded.vars, created_at = excluded.created_at, due_at = excluded.due_at"
 }
@@ -129,8 +133,10 @@ func (sqliteDialect) IncidentCountExpr() string {
 // KeysetCursorPredicate returns the SQLite keyset cursor predicate. SQLite does
 // not guarantee correct row-value comparison semantics for mixed-type columns,
 // so the predicate uses the same explicit OR decomposition as MySQL.
-// Note: started_at is stored as RFC3339Nano TEXT, so lexicographic < and =
-// comparisons work correctly when timestamps are normalised to UTC (ADR-0080).
+// Note: started_at is stored as fixed-width RFC3339 TEXT, so lexicographic < and
+// = comparisons work correctly. Both properties are required: UTC normalisation
+// (ADR-0080) and a fixed-width fraction (ADR-0151). A trimmed fraction — what
+// time.RFC3339Nano emits — would silently mis-order this cursor.
 func (sqliteDialect) KeysetCursorPredicate() string {
 	return "AND (started_at < ? OR (started_at = ? AND instance_id < ?)) "
 }
@@ -139,8 +145,10 @@ func (sqliteDialect) KeysetCursorPredicate() string {
 // twice (once for < and once for =) then cursorID.
 func (sqliteDialect) KeysetCursorArgCount() int { return 3 }
 
-// TimestampsAsText reports that SQLite stores timestamp columns as RFC3339Nano
-// TEXT strings (ADR-0080). The modernc.org/sqlite driver does not natively
-// encode time.Time to ISO8601; callers must format values with
-// time.RFC3339Nano before binding and parse them back when scanning.
+// TimestampsAsText reports that SQLite stores timestamp columns as fixed-width
+// RFC3339 TEXT strings (ADR-0080, ADR-0151). The modernc.org/sqlite driver does
+// not natively encode time.Time to ISO8601; callers must format values as UTC
+// RFC3339 with nine fractional digits before binding — never time.RFC3339Nano,
+// whose trimmed fraction breaks lexicographic ordering — and parse them back
+// when scanning.
 func (sqliteDialect) TimestampsAsText() bool { return true }

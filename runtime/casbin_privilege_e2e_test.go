@@ -73,19 +73,19 @@ func TestCasbinPrivilegeViaBuilderE2E_Allow(t *testing.T) {
 	parked, runErr := driver.Drive(ctx, def, "finance-allow-001", nil)
 	require.NoError(t, runErr)
 
-	// The task token is in the parked token's AwaitCommand.
+	// The task id is in the parked token's AwaitCommand.
 	require.Len(t, parked.Tokens, 1)
-	taskToken := parked.Tokens[0].AwaitCommand
+	taskID := parked.Tokens[0].AwaitCommand
 
 	// Verify the stored task carries Privileges by fetching it directly.
-	storedTask, getErr := taskStore.Get(ctx, taskToken)
+	storedTask, getErr := taskStore.Get(ctx, taskID)
 	require.NoError(t, getErr)
 	assert.Equal(t, []string{"finance-task claim"}, storedTask.Eligibility.Privileges,
 		"task.Eligibility.Privileges must carry the builder-set privilege")
 
 	// Claim must succeed for the approver.
 	svc := runtimetest.MustTaskService(t, taskStore, casbinAz)
-	_, claimErr := svc.Claim(ctx, taskToken, approver)
+	_, claimErr := svc.Claim(ctx, taskID, approver)
 	assert.NoError(t, claimErr, "approver with matching casbin policy should be ALLOWED")
 }
 
@@ -112,11 +112,11 @@ func TestCasbinPrivilegeViaBuilderE2E_Deny(t *testing.T) {
 	parked, runErr := driver.Drive(ctx, def, "finance-deny-001", nil)
 	require.NoError(t, runErr)
 	require.Len(t, parked.Tokens, 1)
-	taskToken := parked.Tokens[0].AwaitCommand
+	taskID := parked.Tokens[0].AwaitCommand
 
 	// Claim must be denied for the viewer.
 	svc := runtimetest.MustTaskService(t, taskStore, casbinAz)
-	_, claimErr := svc.Claim(ctx, taskToken, viewer)
+	_, claimErr := svc.Claim(ctx, taskID, viewer)
 	require.Error(t, claimErr, "viewer without matching casbin policy should be DENIED")
 	assert.True(t, errors.Is(claimErr, authz.ErrNotAuthorized),
 		"error must be (or wrap) authz.ErrNotAuthorized, got: %v", claimErr)

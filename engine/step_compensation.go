@@ -131,7 +131,15 @@ func stepCompensateRequested(ctx context.Context, def *model.ProcessDefinition, 
 		return StepResult{}, fmt.Errorf("workflow-engine: cannot reverse a terminal instance (status %v)", s.Status)
 	}
 	s.Status = StatusCompensating
+	// A rollback that resumes execution (full reverse, or a partial rollback to a
+	// target node) is a reverse; a walk that just compensates and terminates is a
+	// plain compensation (ADR-0145).
+	closeKind := CloseKindCompensated
+	if t.ReverseNode != "" || t.ToNode != "" || t.RestoreTargetVars {
+		closeKind = CloseKindReversed
+	}
 	return beginCompensation(ctx, def, s, t.OccurredAt(), mode, eval, compensationOutcome{
+		CloseKind:         closeKind,
 		ToNode:            t.ToNode,
 		FinalStatus:       0,
 		FinalErr:          "",
@@ -164,6 +172,12 @@ type compensationOutcome struct {
 	// is unchanged.
 	ReverseNode      string
 	ReverseResetVars bool
+	// CloseKind is why the in-flight tokens are being torn down, stamped on
+	// every visit this walk closes (ADR-0145): CloseKindInstanceCancelled for a
+	// cancel, CloseKindErrored for a terminal error, CloseKindReversed for a
+	// ReverseInstance rollback, CloseKindCompensated for a plain administrative
+	// compensation walk.
+	CloseKind CloseKind
 	// RestoreTargetVars carries the FU#1 target-reverse intent (ADR-0116):
 	// when true (only the NewReverseToNode path sets it, always alongside a
 	// non-empty ToNode), the PARTIAL-rollback finish restores Variables to
@@ -209,7 +223,7 @@ func beginCompensation(ctx context.Context, def *model.ProcessDefinition, s *Ins
 		// (cancelAllTimers below also sweeps any remaining timers, but emitting the
 		// CancelTimer here keeps the per-token cleanup explicit and order-consistent
 		// with the other interrupt sites.)
-		preCmds = append(preCmds, cancelTokenWaits(s, &tok, at)...)
+		preCmds = append(preCmds, cancelTokenWaits(s, &tok, at, outcome.CloseKind)...)
 	}
 	// Cancel any remaining timers and event-subprocess arms.
 	preCmds = append(preCmds, s.cancelAllTimers()...)
@@ -692,7 +706,7 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 		// compensated ALL of RootCompensations and clears the whole list the same way.
 		applyPlanRecordClearing(s, plan)
 		s.Status = StatusCompensating
-		return beginCompensation(ctx, def, s, at, mode, eval, compensationOutcome{FinalStatus: StatusTerminated, FinalErr: "cancelled"})
+		return beginCompensation(ctx, def, s, at, mode, eval, compensationOutcome{CloseKind: CloseKindInstanceCancelled, FinalStatus: StatusTerminated, FinalErr: "cancelled"})
 	}
 
 	if !plan.resume {

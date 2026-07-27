@@ -40,21 +40,24 @@ func TestMapConflictPassThrough(t *testing.T) {
 	}
 }
 
-// TestTimeArgDialect asserts the write-side time codec: SQLite formats to an
-// RFC3339Nano UTC string (julianday-compatible, ADR-0080); Postgres and MySQL
-// bind the time.Time natively.
+// TestTimeArgDialect asserts the write-side time codec: SQLite formats to a
+// fixed-width RFC3339 UTC string with nine fractional digits (julianday-compatible
+// and lexicographically sortable, ADR-0080/ADR-0151); Postgres and MySQL bind the
+// time.Time natively.
 func TestTimeArgDialect(t *testing.T) {
-	// A non-UTC instant to prove UTC normalization on the SQLite path.
+	// A non-UTC instant to prove UTC normalization on the SQLite path. The
+	// fraction ends in zeros on purpose: time.RFC3339Nano would trim them and
+	// break the lexicographic ordering the TEXT comparisons depend on.
 	loc, err := time.LoadLocation("Asia/Jakarta")
 	require.NoError(t, err)
-	ts := time.Date(2023, 11, 14, 22, 13, 20, 123456789, loc)
+	ts := time.Date(2023, 11, 14, 22, 13, 20, 123400000, loc)
 
-	t.Run("sqlite formats RFC3339Nano UTC", func(t *testing.T) {
+	t.Run("sqlite formats fixed-width RFC3339 UTC", func(t *testing.T) {
 		s, err := store.New(struct{}{}, dialect.NewSQLite())
 		require.NoError(t, err)
 		got, ok := s.TimeArgForTest(ts).(string)
 		require.True(t, ok, "sqlite timeArg must be a string")
-		require.Equal(t, ts.UTC().Format(time.RFC3339Nano), got)
+		require.Equal(t, "2023-11-14T15:13:20.123400000Z", got)
 	})
 
 	for _, name := range []string{"postgres", "mysql"} {

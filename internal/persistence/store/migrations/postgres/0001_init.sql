@@ -125,20 +125,31 @@ CREATE TABLE wrkflw_chain_links (
 );
 CREATE INDEX wrkflw_chain_links_successor_idx ON wrkflw_chain_links (successor_instance_id);
 
--- Human task state table (ADR-0098). task_token is the primary key;
+-- Human task state table (ADR-0098). task_id is the primary key;
 -- eligibility/candidates/vars stored as JSONB for predicate evaluation.
+-- claim/completion carry the ADR-0148 audit as nullable JSONB
+-- ({actor, timestamp} / {actor, timestamp, outcome?, note?}); NULL means the
+-- lifecycle event has not happened. claimed_by is the application-maintained
+-- scalar projection of claim.actor.id that keeps AssignedTo's lookup indexed.
 CREATE TABLE wrkflw_human_task (
-    task_token  TEXT        NOT NULL,
+    task_id  TEXT        NOT NULL,
     instance_id TEXT        NOT NULL,
     node_id     TEXT        NOT NULL,
     state       TEXT        NOT NULL,
     claimed_by  TEXT        NOT NULL DEFAULT '',
+    claimed_at  TIMESTAMPTZ,
+    claim_actor JSONB,
+    completed_by TEXT,
+    completed_at TIMESTAMPTZ,
+    outcome      TEXT,
+    note         TEXT,
+    completion_actor JSONB,
     eligibility JSONB       NOT NULL,
     candidates  JSONB       NOT NULL,
     vars        JSONB       NOT NULL,
     created_at  TIMESTAMPTZ NOT NULL,
     due_at      TIMESTAMPTZ,
-    PRIMARY KEY (task_token)
+    PRIMARY KEY (task_id)
 );
 CREATE INDEX idx_wrkflw_human_task_instance   ON wrkflw_human_task (instance_id);
 CREATE INDEX idx_wrkflw_human_task_state      ON wrkflw_human_task (state);

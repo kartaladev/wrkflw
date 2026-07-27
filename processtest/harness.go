@@ -154,7 +154,11 @@ func New(opts ...Option) (*Harness, error) {
 	}
 	tasks := humantask.NewMemTaskStore()
 
-	taskSvc, err := task.NewTaskService(tasks, az, task.WithClock(clk))
+	// The resolver goes to the TaskService as well as the driver: the driver uses
+	// it to mint candidates at task creation, the TaskService to re-resolve them
+	// on RefreshCandidates. Sharing one instance keeps both derivations identical.
+	taskSvc, err := task.NewTaskService(tasks, az,
+		task.WithClock(clk), task.WithActorResolver(cfg.resolver))
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +296,7 @@ func (e harnessEnv) classify(state engine.InstanceState) Park {
 		return p
 	}
 	for _, tok := range state.Tokens {
-		if tok.State != engine.TokenWaitingCommand || tok.AwaitCommand == "" {
+		if tok.State != engine.TokenWaiting || tok.AwaitCommand == "" {
 			continue
 		}
 		if _, ok := e.h.sched.Pending(tok.AwaitCommand); !ok {

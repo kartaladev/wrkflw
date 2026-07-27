@@ -32,6 +32,10 @@ func (s *Store) TimeArgForTest(t time.Time) any { return timeArg(s.dialect, t) }
 // for use by black-box tests that do not hold a *Store (e.g. relay conformance helpers).
 func TimeArgForDialect(s *Store, t time.Time) any { return timeArg(s.dialect, t) }
 
+// TimeArgForDialectValue exposes timeArg keyed directly on a dialect, so tests can
+// assert the encoding contract without opening a database connection.
+func TimeArgForDialectValue(d dialect.Dialect, t time.Time) any { return timeArg(d, t) }
+
 // MySQLHashKeyForTest exposes the unexported mysqlHashKey helper so
 // ownership_conformance_test.go can verify the 64-char SHA-256 key contract.
 var MySQLHashKeyForTest = mysqlHashKey

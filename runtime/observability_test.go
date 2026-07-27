@@ -464,11 +464,11 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 			claimable, err := taskStore.ClaimableBy(t.Context(), manager)
 			require.NoError(t, err)
 			require.Len(t, claimable, 1)
-			taskToken := claimable[0].TaskToken
+			taskID := claimable[0].TaskID
 
 			if tc.event == "claimed" || tc.event == "reassigned" || tc.event == "completed" {
 				// Claim → emits {event=claimed}.
-				claimTrg, err := svc.Claim(t.Context(), taskToken, manager)
+				claimTrg, err := svc.Claim(t.Context(), taskID, manager)
 				require.NoError(t, err)
 				_, err = driver.ApplyTrigger(t.Context(), def, instID, claimTrg)
 				require.NoError(t, err)
@@ -476,7 +476,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 
 			if tc.event == "reassigned" || tc.event == "completed" {
 				// Reassign → emits {event=reassigned}.
-				reassignTrg, err := svc.Reassign(t.Context(), taskToken, manager.ID, admin.ID, admin)
+				reassignTrg, err := svc.Reassign(t.Context(), taskID, manager.ID, admin.ID, admin)
 				require.NoError(t, err)
 				_, err = driver.ApplyTrigger(t.Context(), def, instID, reassignTrg)
 				require.NoError(t, err)
@@ -484,7 +484,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 
 			if tc.event == "completed" {
 				// Complete → emits {event=completed}.
-				completeTrg, err := svc.Complete(t.Context(), taskToken, admin, map[string]any{"approved": true})
+				completeTrg, err := svc.Complete(t.Context(), taskID, admin, engine.CompletionInput{Output: map[string]any{"approved": true}})
 				require.NoError(t, err)
 				_, err = driver.ApplyTrigger(t.Context(), def, instID, completeTrg)
 				require.NoError(t, err)

@@ -120,7 +120,7 @@ func TestSignalCatchResumesOnSignal(t *testing.T) {
 	require.Len(t, r1.State.Tokens, 1)
 	tok := r1.State.Tokens[0]
 	assert.Equal(t, "catch-approved", tok.NodeID)
-	assert.Equal(t, engine.TokenWaitingCommand, tok.State)
+	assert.Equal(t, engine.TokenWaiting, tok.State)
 	assert.Equal(t, "approved", tok.AwaitSignal)
 	assert.Equal(t, "", tok.AwaitCommand)
 
@@ -163,7 +163,7 @@ func TestMessageCatchCorrelates(t *testing.T) {
 	require.Len(t, r1.State.Tokens, 1)
 	tok := r1.State.Tokens[0]
 	assert.Equal(t, "catch-order", tok.NodeID)
-	assert.Equal(t, engine.TokenWaitingCommand, tok.State)
+	assert.Equal(t, engine.TokenWaiting, tok.State)
 	assert.Equal(t, "order", tok.AwaitMessage)
 	// The correlation key was evaluated against variables: orderId="ORD-42"
 	assert.Equal(t, "ORD-42", tok.AwaitMessageKey)
@@ -280,7 +280,7 @@ func TestBroadcastSignalResumesAllTokens(t *testing.T) {
 	require.Len(t, r1.Commands, 0)
 	require.Len(t, r1.State.Tokens, 2)
 	for _, tok := range r1.State.Tokens {
-		assert.Equal(t, engine.TokenWaitingCommand, tok.State)
+		assert.Equal(t, engine.TokenWaiting, tok.State)
 		assert.Equal(t, "wake", tok.AwaitSignal)
 	}
 
@@ -399,7 +399,7 @@ func TestEventGatewayFirstTimerWins(t *testing.T) {
 
 	// The gateway token must be parked (no active tokens, no regular catch-event tokens).
 	require.Len(t, r1.State.Tokens, 1, "gateway token should be parked")
-	assert.Equal(t, engine.TokenWaitingCommand, r1.State.Tokens[0].State)
+	assert.Equal(t, engine.TokenWaiting, r1.State.Tokens[0].State)
 	assert.Equal(t, "evtgw", r1.State.Tokens[0].NodeID)
 
 	// ArmedEvents must have two entries: one timer arm, one signal arm.
@@ -757,7 +757,7 @@ func TestInterruptingBoundaryTimerCancelsHost(t *testing.T) {
 	// One token: parked at "approve".
 	require.Len(t, r1.State.Tokens, 1)
 	assert.Equal(t, "approve", r1.State.Tokens[0].NodeID)
-	assert.Equal(t, engine.TokenWaitingCommand, r1.State.Tokens[0].State)
+	assert.Equal(t, engine.TokenWaiting, r1.State.Tokens[0].State)
 	// Boundary arm recorded.
 	require.Len(t, r1.State.Boundaries, 1, "boundary arm must be recorded")
 
@@ -787,7 +787,7 @@ func TestInterruptingBoundaryTimerCancelsHost(t *testing.T) {
 	// Step 3: Late HumanCompleted for the now-consumed host token is a no-op (error).
 	// The token is gone, so the engine returns ErrTokenNotFound.
 	_, err = engine.Step(t.Context(), def, r2.State,
-		engine.NewHumanCompleted(tFired, awaitHuman.TaskToken, nil, authz.Actor{ID: "user1"}), engine.StepOptions{})
+		engine.NewHumanCompleted(tFired, awaitHuman.TaskID, engine.CompletionInput{}, authz.Actor{ID: "user1"}), engine.StepOptions{})
 	assert.Error(t, err, "late HumanCompleted for consumed host must return error (token gone)")
 }
 
@@ -895,7 +895,7 @@ func TestNonInterruptingBoundarySpawnsParallelToken(t *testing.T) {
 	// keeps running because the notify-svc token (from the non-interrupting boundary)
 	// is still pending.
 	r3, err := engine.Step(t.Context(), def, r2b.State,
-		engine.NewHumanCompleted(t0, awaitHuman.TaskToken, nil, authz.Actor{ID: "user1"}), engine.StepOptions{})
+		engine.NewHumanCompleted(t0, awaitHuman.TaskID, engine.CompletionInput{}, authz.Actor{ID: "user1"}), engine.StepOptions{})
 	require.NoError(t, err)
 	// Instance still running: notify-svc token is pending its action.
 	assert.Equal(t, engine.StatusRunning, r3.State.Status)
@@ -1191,7 +1191,7 @@ func TestNonInterruptingBoundarySignalNoSelfCascade(t *testing.T) {
 	// The inner-catch token must be parked (not consumed/advanced), confirming no self-cascade.
 	for _, tok := range r2.State.Tokens {
 		if tok.NodeID == "inner-catch" {
-			assert.Equal(t, engine.TokenWaitingCommand, tok.State,
+			assert.Equal(t, engine.TokenWaiting, tok.State,
 				"inner-catch token must be parked (AwaitSignal), not active/consumed")
 			assert.Equal(t, "pulse", tok.AwaitSignal,
 				"inner-catch token must still be awaiting 'pulse'")

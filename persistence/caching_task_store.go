@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"time"
 
 	"github.com/kartaladev/wrkflw/authz"
@@ -100,7 +99,7 @@ func (s *CachingTaskStore) Upsert(ctx context.Context, t humantask.HumanTask) er
 	if err := s.backing.Upsert(ctx, t); err != nil {
 		return err
 	}
-	_ = s.codec.Set(ctx, t.TaskToken, t, s.ttl)
+	_ = s.codec.Set(ctx, t.TaskID, t, s.ttl)
 	return nil
 }
 
@@ -121,17 +120,9 @@ func unmarshalTask(b []byte) (humantask.HumanTask, error) {
 }
 
 // cloneTask deep-copies the mutable fields so a live value in a [ValueCache]
-// substrate cannot be aliased by a caller.
+// substrate cannot be aliased by a caller. It delegates to
+// [humantask.HumanTask.Clone], the single deep-copy definition for a task, so a
+// newly added mutable field is isolated here without a second edit.
 func cloneTask(t humantask.HumanTask) humantask.HumanTask {
-	t.Candidates = append([]string(nil), t.Candidates...)
-	t.Eligibility.Roles = append([]string(nil), t.Eligibility.Roles...)
-	t.Eligibility.Privileges = append([]string(nil), t.Eligibility.Privileges...)
-	if t.Vars != nil {
-		t.Vars = maps.Clone(t.Vars)
-	}
-	if t.DueAt != nil {
-		d := *t.DueAt
-		t.DueAt = &d
-	}
-	return t
+	return t.Clone()
 }

@@ -24,8 +24,8 @@ func TestCompleteTasksWithSkipsDeclined(t *testing.T) {
 	require.NoError(t, err)
 	ctx := t.Context()
 
-	taskA := humantask.HumanTask{TaskToken: "tkA", NodeID: "reviewA", State: humantask.Unclaimed}
-	taskB := humantask.HumanTask{TaskToken: "tkB", NodeID: "reviewB", State: humantask.Unclaimed}
+	taskA := humantask.HumanTask{TaskID: "tkA", NodeID: "reviewA", State: humantask.Unclaimed}
+	taskB := humantask.HumanTask{TaskID: "tkB", NodeID: "reviewB", State: humantask.Unclaimed}
 	require.NoError(t, h.tasks.Upsert(ctx, taskA))
 	require.NoError(t, h.tasks.Upsert(ctx, taskB))
 
@@ -71,7 +71,7 @@ func TestHarnessEnvClassifyPrecise(t *testing.T) {
 		{
 			name:     "own timer id armed -> promoted to ReasonTimer",
 			schedule: map[string]time.Time{"tm1": base.Add(time.Hour)},
-			token:    engine.Token{ID: "t", NodeID: "wait", State: engine.TokenWaitingCommand, AwaitCommand: "tm1"},
+			token:    engine.Token{ID: "t", NodeID: "wait", State: engine.TokenWaiting, AwaitCommand: "tm1"},
 			assert: func(t *testing.T, p Park) {
 				assert.Equal(t, ReasonTimer, p.Reason)
 				assert.True(t, p.HasArmedTimers)
@@ -81,7 +81,7 @@ func TestHarnessEnvClassifyPrecise(t *testing.T) {
 		{
 			name:     "unrelated timer armed -> stays async-child, not promoted",
 			schedule: map[string]time.Time{"other-tm": base.Add(time.Hour)},
-			token:    engine.Token{ID: "t", NodeID: "call", State: engine.TokenWaitingCommand, AwaitCommand: "child-cmd"},
+			token:    engine.Token{ID: "t", NodeID: "call", State: engine.TokenWaiting, AwaitCommand: "child-cmd"},
 			assert: func(t *testing.T, p Park) {
 				assert.Equal(t, ReasonAsyncChild, p.Reason, "an unrelated pending timer must not promote an async-child park")
 				assert.False(t, p.HasArmedTimers)

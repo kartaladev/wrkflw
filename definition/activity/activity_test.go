@@ -8,6 +8,8 @@ import (
 	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/definition/schedule"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestServiceTaskOptions(t *testing.T) {
@@ -60,7 +62,7 @@ func TestCallActivityWireDefRefString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"defRef":"order:3"`) {
+	if !strings.Contains(string(data), `"def_ref":"order:3"`) {
 		t.Fatalf("wire not string-form: %s", data)
 	}
 	var got model.ProcessDefinition
@@ -194,5 +196,70 @@ func TestUserTaskManualImmediateWireRoundTrip(t *testing.T) {
 	ut := got.Nodes[0].(activity.UserTask)
 	if !ut.Manual || !ut.ManualImmediate {
 		t.Fatalf("Manual=%v ManualImmediate=%v, want both true", ut.Manual, ut.ManualImmediate)
+	}
+}
+
+// TestUserTaskOutcomeWireRoundTrip verifies the completion-outcome declaration
+// (ADR-0146) survives a JSON wire round-trip under its snake_case keys.
+func TestUserTaskOutcomeWireRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		node   model.Node
+		assert func(t *testing.T, encoded string, got activity.UserTask)
+	}
+
+	cases := []testCase{
+		{
+			name: "outcomes with explicit variable",
+			node: activity.NewUserTask("review",
+				activity.WithOutcomes("approve", "reject"),
+				activity.WithOutcomeVariable("review_decision"),
+			),
+			assert: func(t *testing.T, encoded string, got activity.UserTask) {
+				assert.Contains(t, encoded, `"outcomes":["approve","reject"]`)
+				assert.Contains(t, encoded, `"outcome_variable":"review_decision"`)
+				assert.NotContains(t, encoded, "expose_outcome")
+				assert.Equal(t, []string{"approve", "reject"}, got.Outcomes)
+				assert.Equal(t, "review_decision", got.OutcomeVariable)
+				assert.False(t, got.ExposeOutcome)
+			},
+		},
+		{
+			name: "conventional exposure",
+			node: activity.NewUserTask("review", activity.WithExposeOutcome()),
+			assert: func(t *testing.T, encoded string, got activity.UserTask) {
+				assert.Contains(t, encoded, `"expose_outcome":true`)
+				assert.True(t, got.ExposeOutcome)
+			},
+		},
+		{
+			name: "unconstrained task omits every outcome key",
+			node: activity.NewUserTask("review"),
+			assert: func(t *testing.T, encoded string, got activity.UserTask) {
+				assert.NotContains(t, encoded, "outcome")
+				assert.Empty(t, got.Outcomes)
+				assert.False(t, got.ExposeOutcome)
+				assert.Empty(t, got.OutcomeVariable)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			def := &model.ProcessDefinition{ID: "p", Version: 1, Nodes: []model.Node{tc.node}}
+			data, err := json.Marshal(def)
+			require.NoError(t, err)
+
+			var back model.ProcessDefinition
+			require.NoError(t, json.Unmarshal(data, &back))
+			got, ok := back.Nodes[0].(activity.UserTask)
+			require.True(t, ok, "node is %T, want activity.UserTask", back.Nodes[0])
+
+			tc.assert(t, string(data), got)
+		})
 	}
 }

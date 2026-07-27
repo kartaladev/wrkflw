@@ -193,7 +193,7 @@ func main() {
 		fmt.Println("FAIL: escalation path did not execute")
 		log.Fatal("escalation path not taken")
 	}
-	// The human task token must be gone (UserTask was Cancelled by the interrupting
+	// The human task id must be gone (UserTask was Cancelled by the interrupting
 	// boundary); final state should have no active tokens.
 	if len(final.Tokens) != 0 {
 		fmt.Printf("FAIL: expected 0 active tokens, got %d\n", len(final.Tokens))

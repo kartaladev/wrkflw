@@ -294,16 +294,21 @@ parked, err := r.Run(ctx, def, "inst-1", nil)
 
 // List tasks claimable by the manager.
 claimable, err := taskStore.ClaimableBy(ctx, manager)
-taskToken := claimable[0].TaskToken
+taskID := claimable[0].TaskID
 
 // Authorize and produce a HumanClaimed trigger.
 svc, _ := task.NewTaskService(taskStore, az)
 
-claimTrg, err := svc.Claim(ctx, taskToken, manager)
+claimTrg, err := svc.Claim(ctx, taskID, manager)
 r.Deliver(ctx, def, "inst-1", claimTrg)
 
-// Complete the task (output is merged into process variables).
-completeTrg, err := svc.Complete(ctx, taskToken, manager, map[string]any{"approved": true})
+// Complete the task. Output is merged into process variables; Outcome and Note
+// are recorded on the task's completion audit (both optional).
+completeTrg, err := svc.Complete(ctx, taskID, manager, engine.Completion{
+    Outcome: "approve",
+    Note:    "looks good",
+    Output:  map[string]any{"approved": true},
+})
 final, err := r.Deliver(ctx, def, "inst-1", completeTrg)
 // final.Status == engine.StatusCompleted
 // final.Variables["approved"] == true
@@ -443,11 +448,11 @@ Each `ActionableTask` (note: `AllowedActions` lives here, **per task**, not on t
 
 | Field | JSON key | Type | Description |
 |---|---|---|---|
-| `TaskToken` | `task_token` | `string` | Unique task instance identifier. |
+| `TaskID` | `task_id` | `string` | Unique task instance identifier. |
 | `NodeID` | `node_id` | `string` | BPMN node that generated the task. |
 | `State` | `state` | `string` | Task lifecycle state. |
-| `ClaimedBy` | `claimed_by` | `string` | Actor ID that claimed the task; empty when unclaimed. |
-| `Candidates` | `candidates` | `[]string` | Resolved actor IDs eligible to act on the task. |
+| `Claim` | `claim` | `*humantask.Claim` | Who claimed the task and when (`{actor, timestamp}`); omitted when unclaimed. |
+| `Candidates` | `candidates` | `[]authz.Actor` | Resolved actors eligible to act on the task, rendered verbatim as `{id, roles, attributes}`. |
 | `AllowedActions` | `allowed_actions` | `[]NextAction` | Outgoing sequence flows from this task's node; `nil` when no definition is available. Each `NextAction` is `{FlowID, Target, Condition, IsDefault}`. |
 
 Both DTOs are also exposed over the HTTP transport (`transport/http/{stdlib,gin,fiber}`) at

@@ -36,7 +36,7 @@ func TestCachingTaskStore(t *testing.T) {
 			name: "second Get is a cache hit",
 			assert: func(t *testing.T, cs *persistence.CachingTaskStore, backing *countingTaskStore) {
 				ctx := t.Context()
-				_ = cs.Upsert(ctx, humantask.HumanTask{TaskToken: "t1", State: humantask.Unclaimed})
+				_ = cs.Upsert(ctx, humantask.HumanTask{TaskID: "t1", State: humantask.Unclaimed})
 				if _, err := cs.Get(ctx, "t1"); err != nil {
 					t.Fatalf("get1: %v", err)
 				}
@@ -53,14 +53,14 @@ func TestCachingTaskStore(t *testing.T) {
 			name: "Upsert refreshes the cached entry (write-through)",
 			assert: func(t *testing.T, cs *persistence.CachingTaskStore, backing *countingTaskStore) {
 				ctx := t.Context()
-				_ = cs.Upsert(ctx, humantask.HumanTask{TaskToken: "t1", State: humantask.Unclaimed})
+				_ = cs.Upsert(ctx, humantask.HumanTask{TaskID: "t1", State: humantask.Unclaimed})
 				_, _ = cs.Get(ctx, "t1")
-				_ = cs.Upsert(ctx, humantask.HumanTask{TaskToken: "t1", State: humantask.Claimed, ClaimedBy: "alice"})
+				_ = cs.Upsert(ctx, humantask.HumanTask{TaskID: "t1", State: humantask.Claimed, Claim: &humantask.Claim{Actor: authz.Actor{ID: "alice"}}})
 				got, err := cs.Get(ctx, "t1")
 				if err != nil {
 					t.Fatalf("get: %v", err)
 				}
-				if got.State != humantask.Claimed || got.ClaimedBy != "alice" {
+				if got.State != humantask.Claimed || got.Claim == nil || got.Claim.Actor.ID != "alice" {
 					t.Fatalf("stale after upsert: %+v", got)
 				}
 			},
@@ -121,9 +121,9 @@ func TestCachingTaskStorePassThroughMethods(t *testing.T) {
 	}
 	ctx := t.Context()
 	task := humantask.HumanTask{
-		TaskToken: "tok1",
-		State:     humantask.Claimed,
-		ClaimedBy: "bob",
+		TaskID: "tok1",
+		State:  humantask.Claimed,
+		Claim:  &humantask.Claim{Actor: authz.Actor{ID: "bob"}},
 	}
 	if err := cs.Upsert(ctx, task); err != nil {
 		t.Fatalf("upsert: %v", err)
@@ -133,7 +133,7 @@ func TestCachingTaskStorePassThroughMethods(t *testing.T) {
 	if err != nil {
 		t.Fatalf("assigned-to: %v", err)
 	}
-	if len(assigned) != 1 || assigned[0].TaskToken != "tok1" {
+	if len(assigned) != 1 || assigned[0].TaskID != "tok1" {
 		t.Fatalf("unexpected AssignedTo result: %v", assigned)
 	}
 
@@ -159,11 +159,11 @@ func TestCachingTaskStoreByteSubstrate(t *testing.T) {
 
 	ctx := t.Context()
 	want := humantask.HumanTask{
-		TaskToken:  "byte-tok-1",
+		TaskID:     "byte-tok-1",
 		InstanceID: "inst-99",
 		State:      humantask.Claimed,
-		ClaimedBy:  "alice",
-		Candidates: []string{"alice", "bob"},
+		Claim:      &humantask.Claim{Actor: authz.Actor{ID: "alice"}},
+		Candidates: []authz.Actor{{ID: "alice"}, {ID: "bob"}},
 		Eligibility: authz.AuthzSpec{
 			Roles: []string{"reviewer", "approver"},
 		},
@@ -174,12 +174,13 @@ func TestCachingTaskStoreByteSubstrate(t *testing.T) {
 
 	// First Get: should be served from the byte cache (write-through), not the backing.
 	backingGetsBefore := backing.gets
-	got, err := cs.Get(ctx, want.TaskToken)
+	got, err := cs.Get(ctx, want.TaskID)
 	require.NoError(t, err)
 	assert.Equal(t, backingGetsBefore, backing.gets, "first Get after Upsert should be a cache hit (byte path)")
 
 	// Non-trivial field assertions — prove JSON unmarshal fidelity.
 	assert.Equal(t, humantask.Claimed, got.State, "State must survive JSON round-trip")
-	assert.Equal(t, "alice", got.ClaimedBy, "ClaimedBy must survive JSON round-trip")
+	require.NotNil(t, got.Claim, "Claim must survive JSON round-trip")
+	assert.Equal(t, "alice", got.Claim.Actor.ID, "Claim must survive JSON round-trip")
 	assert.Equal(t, want.Candidates, got.Candidates, "Candidates slice must survive JSON round-trip")
 }

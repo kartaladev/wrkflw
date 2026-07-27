@@ -207,7 +207,7 @@ func main() {
 ```
 
 For signal/message delivery use `driver.Deliver(ctx, def, instanceID, trigger)`. See
-`runtime/kernel/caching_store_example_test.go` for a park-then-resume pattern.
+`runtime/events_example_test.go` for a park-then-resume pattern.
 
 ---
 
@@ -1041,10 +1041,13 @@ parked, _ := driver.Drive(ctx, def, instanceID, map[string]any{"amount": 4200}) 
 claimable, _ := taskStore.ClaimableBy(ctx, manager)        // discover tasks
 svc, _ := task.NewTaskService(taskStore, az, runtime.WithClock(clk))
 
-claimTrg, _ := svc.Claim(ctx, claimable[0].TaskToken, manager)
+claimTrg, _ := svc.Claim(ctx, claimable[0].TaskID, manager)
 driver.Deliver(ctx, def, instanceID, claimTrg)                  // → Claimed
 
-completeTrg, _ := svc.Complete(ctx, claimable[0].TaskToken, manager, map[string]any{"approved": true})
+completeTrg, _ := svc.Complete(ctx, claimable[0].TaskID, manager, engine.Completion{
+    Outcome: "approve",                              // recorded on the completion audit
+    Output:  map[string]any{"approved": true},       // merged into process variables
+})
 final, _ := driver.Deliver(ctx, def, instanceID, completeTrg)   // → Completed
 ```
 

@@ -6,72 +6,72 @@
       "id": "start",
       "kind": "startEvent",
       "name": "Start",
-      "timerTrigger": {
+      "timer_trigger": {
         "kind": "expr",
         "expr": "1h"
       },
-      "signalName": "go",
-      "messageName": "kickoff",
-      "correlationKey": "orderId"
+      "signal_name": "go",
+      "message_name": "kickoff",
+      "correlation_key": "orderId"
     },
     {
       "id": "charge",
       "kind": "serviceTask",
       "name": "Charge",
       "action": "charge-card",
-      "deadlineTrigger": {
+      "deadline_trigger": {
         "kind": "expr",
         "expr": "2h"
       },
-      "waitTrigger": {
+      "wait_trigger": {
         "kind": "everyExpr",
         "expr": "30m"
       },
-      "deadlineFlow": "sla-flow",
-      "deadlineAction": "notify-ops",
-      "waitAction": "ping",
-      "retryPolicy": {
-        "MaxAttempts": 5,
-        "InitialInterval": 2000000000,
-        "BackoffCoef": 2,
-        "MaxInterval": 90000000000,
-        "MaxElapsed": 600000000000,
-        "NonRetryableErrors": [
+      "deadline_flow": "sla-flow",
+      "deadline_action": "notify-ops",
+      "wait_action": "ping",
+      "retry_policy": {
+        "max_attempts": 5,
+        "initial_interval": 2000000000,
+        "backoff_coef": 2,
+        "max_interval": 90000000000,
+        "max_elapsed": 600000000000,
+        "non_retryable_errors": [
           "fatal",
           "denied"
         ]
       },
-      "recoveryFlow": "charge-\u003efallback",
-      "compensateAction": "refund-card",
-      "cancelAction": "abort-charge"
+      "recovery_flow": "charge-\u003efallback",
+      "compensate_action": "refund-card",
+      "cancel_action": "abort-charge"
     },
     {
       "id": "approve",
       "kind": "userTask",
       "name": "Approve",
-      "eligibleRoles": [
+      "eligible_roles": [
         "manager",
         "director"
       ],
-      "eligiblePrivileges": [
+      "eligible_privileges": [
         "finance-task claim",
         "finance-task complete"
       ],
-      "eligibleExpr": "vars[\"region\"] == \"EU\""
+      "eligible_expr": "vars[\"region\"] == \"EU\""
     },
     {
       "id": "await",
       "kind": "receiveTask",
       "name": "Await Payment",
-      "messageName": "payment-confirmed",
-      "correlationKey": "orderId"
+      "message_name": "payment-confirmed",
+      "correlation_key": "orderId"
     },
     {
       "id": "notify",
       "kind": "sendTask",
       "name": "Notify",
-      "messageName": "shipment-ready",
-      "correlationKey": "orderId"
+      "message_name": "shipment-ready",
+      "correlation_key": "orderId"
     },
     {
       "id": "score",
@@ -98,11 +98,9 @@
         ],
         "flows": [
           {
-            "ID": "sf1",
-            "Source": "sub-start",
-            "Target": "sub-end",
-            "Condition": "",
-            "IsDefault": false
+            "id": "sf1",
+            "source": "sub-start",
+            "target": "sub-end"
           }
         ]
       }
@@ -111,7 +109,7 @@
       "id": "fulfil",
       "kind": "callActivity",
       "name": "Fulfil",
-      "defRef": "fulfilment-def"
+      "def_ref": "fulfilment-def"
     },
     {
       "id": "compensator",
@@ -124,8 +122,8 @@
           {
             "id": "sub-start",
             "kind": "startEvent",
-            "signalName": "recover",
-            "nonInterrupting": true
+            "signal_name": "recover",
+            "non_interrupting": true
           },
           {
             "id": "sub-end",
@@ -134,11 +132,9 @@
         ],
         "flows": [
           {
-            "ID": "sf1",
-            "Source": "sub-start",
-            "Target": "sub-end",
-            "Condition": "",
-            "IsDefault": false
+            "id": "sf1",
+            "source": "sub-start",
+            "target": "sub-end"
           }
         ]
       }
@@ -147,51 +143,51 @@
       "id": "wait",
       "kind": "intermediateCatchEvent",
       "name": "Wait",
-      "timerTrigger": {
+      "timer_trigger": {
         "kind": "expr",
         "expr": "15m"
       },
-      "deadlineTrigger": {
+      "deadline_trigger": {
         "kind": "expr",
         "expr": "4h"
       },
-      "waitTrigger": {
+      "wait_trigger": {
         "kind": "everyExpr",
         "expr": "1h"
       },
-      "deadlineFlow": "wait-\u003eesc",
-      "deadlineAction": "escalate",
-      "waitAction": "nudge",
-      "signalName": "resume",
-      "messageName": "go-on",
-      "correlationKey": "orderId"
+      "deadline_flow": "wait-\u003eesc",
+      "deadline_action": "escalate",
+      "wait_action": "nudge",
+      "signal_name": "resume",
+      "message_name": "go-on",
+      "correlation_key": "orderId"
     },
     {
       "id": "emit",
       "kind": "intermediateThrowEvent",
       "name": "Emit",
-      "signalName": "done"
+      "signal_name": "done"
     },
     {
       "id": "compensate",
       "kind": "compensationThrowEvent",
       "name": "Compensate",
-      "compensateRef": "charge"
+      "compensate_ref": "charge"
     },
     {
       "id": "timeout",
       "kind": "boundaryEvent",
       "name": "Timeout",
-      "timerTrigger": {
+      "timer_trigger": {
         "kind": "expr",
         "expr": "5m"
       },
-      "signalName": "abort",
-      "messageName": "cancel",
-      "correlationKey": "orderId",
-      "errorCode": "E_TIMEOUT",
-      "attachedTo": "charge",
-      "nonInterrupting": true
+      "signal_name": "abort",
+      "message_name": "cancel",
+      "correlation_key": "orderId",
+      "error_code": "E_TIMEOUT",
+      "attached_to": "charge",
+      "non_interrupting": true
     },
     {
       "id": "xor",
@@ -217,16 +213,16 @@
       "id": "kill",
       "kind": "endEvent",
       "name": "Kill",
-      "endBehavior": "terminate",
-      "terminationReason": "operator-initiated kill",
-      "terminationOutcome": "abort"
+      "end_behavior": "terminate",
+      "termination_reason": "operator-initiated kill",
+      "termination_outcome": "abort"
     },
     {
       "id": "boom",
       "kind": "endEvent",
       "name": "Boom",
-      "errorCode": "E_BOOM",
-      "endBehavior": "error"
+      "error_code": "E_BOOM",
+      "end_behavior": "error"
     },
     {
       "id": "end",
@@ -236,35 +232,29 @@
   ],
   "flows": [
     {
-      "ID": "f1",
-      "Source": "start",
-      "Target": "charge",
-      "Condition": "",
-      "IsDefault": false
+      "id": "f1",
+      "source": "start",
+      "target": "charge"
     },
     {
-      "ID": "f2",
-      "Source": "charge",
-      "Target": "xor",
-      "Condition": "",
-      "IsDefault": false
+      "id": "f2",
+      "source": "charge",
+      "target": "xor"
     },
     {
-      "ID": "f3",
-      "Source": "xor",
-      "Target": "approve",
-      "Condition": "amount \u003e 100",
-      "IsDefault": false
+      "id": "f3",
+      "source": "xor",
+      "target": "approve",
+      "condition": "amount \u003e 100"
     },
     {
-      "ID": "f4",
-      "Source": "xor",
-      "Target": "end",
-      "Condition": "",
-      "IsDefault": true
+      "id": "f4",
+      "source": "xor",
+      "target": "end",
+      "is_default": true
     }
   ],
-  "cancelActions": [
+  "cancel_actions": [
     "cancel-a",
     "cancel-b"
   ]

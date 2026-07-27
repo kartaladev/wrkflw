@@ -198,7 +198,7 @@ func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefi
 		// token — its AwaitCommand starts with the "evtgw:" sentinel — so their timers do not
 		// fire as stale orphans later.)
 		for _, tok := range tokensToCancel {
-			cmds = append(cmds, cancelTokenWaits(s, &tok, at)...)
+			cmds = append(cmds, cancelTokenWaits(s, &tok, at, CloseKindBoundaryInterrupted)...)
 		}
 
 		// Cancel sibling event-subprocess arms for the same enclosing scope (all arms,

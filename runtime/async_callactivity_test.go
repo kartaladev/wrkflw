@@ -92,11 +92,13 @@ func TestAsyncCallActivityParentParks(t *testing.T) {
 	assert.Equal(t, engine.StatusRunning, st.Status,
 		"parent must be StatusRunning (parked) when child is async and parks")
 
-	// Derive expected child instance ID using the existing scheme:
-	// "<parentID>-sub-<suffix>" where suffix is the short command ID segment.
-	// The first command in the parent will be something like "async-parent-i1-c1",
-	// so suffix is "c1" and child ID is "async-parent-i1-sub-c1".
-	childID := parentID + "-sub-c1"
+	// The child id is derived from the call command's id, which the driver's
+	// IDGenerator mints (ADR-0149) and is opaque — resolve it through the call
+	// link the parent recorded rather than predicting an id shape.
+	children, childrenErr := cl.ChildrenOf(ctx, parentID)
+	require.NoError(t, childrenErr)
+	require.Len(t, children, 1, "the parent must have recorded exactly one child link")
+	childID := children[0].ChildInstanceID
 
 	// The child instance must exist in the store and must be StatusRunning.
 	childSt, _, loadErr := store.Load(ctx, childID)
@@ -260,8 +262,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 		require.Len(t, pending, 1, "exactly one pending notify expected — the completed child")
 
 		n := pending[0]
-		childID := parentID + "-sub-c1"
-		assert.Equal(t, childID, n.Link.ChildInstanceID)
+		assert.Equal(t, parentID, n.Link.ParentInstanceID, "the notify must belong to this parent's child")
 		assert.True(t, n.Outcome.Completed, "Outcome.Completed must be true for a StatusCompleted child")
 		assert.Equal(t, "ok", n.Outcome.Output["result"], "child output must be propagated")
 		assert.Empty(t, n.Outcome.Err, "Outcome.Err must be empty on success")
@@ -295,8 +296,7 @@ func TestAsyncCallActivityChildTerminalFlipsLink(t *testing.T) {
 		require.Len(t, pending, 1, "exactly one pending notify expected — the failed child")
 
 		n := pending[0]
-		childID := parentID + "-sub-c1"
-		assert.Equal(t, childID, n.Link.ChildInstanceID)
+		assert.Equal(t, parentID, n.Link.ParentInstanceID, "the notify must belong to this parent's child")
 		assert.False(t, n.Outcome.Completed, "Outcome.Completed must be false for a StatusFailed child")
 		assert.NotEmpty(t, n.Outcome.Err, "Outcome.Err must be set for a failed child")
 		assert.Nil(t, n.Outcome.Output, "Outcome.Output must be nil on failure")

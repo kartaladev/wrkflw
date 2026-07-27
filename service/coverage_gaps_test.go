@@ -209,17 +209,17 @@ func TestClaimTaskStoreGetError(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
-		name      string
-		taskToken string
-		assert    func(t *testing.T, pi service.ProcessInstance, err error)
+		name   string
+		taskID string
+		assert func(t *testing.T, pi service.ProcessInstance, err error)
 	}
 
 	cases := []testCase{
 		{
 			// taskStore.Get returns ErrTaskNotFound for an unknown token; this
 			// exercises the "get task" error branch in deliverTaskTrigger.
-			name:      "unknown task token returns ErrTaskNotFound",
-			taskToken: "no-such-token",
+			name:   "unknown task id returns ErrTaskNotFound",
+			taskID: "no-such-token",
 			assert: func(t *testing.T, _ service.ProcessInstance, err error) {
 				require.Error(t, err)
 				assert.ErrorIs(t, err, humantask.ErrTaskNotFound)
@@ -237,8 +237,8 @@ func TestClaimTaskStoreGetError(t *testing.T) {
 
 			manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 			st, err := svc.ClaimTask(t.Context(), service.ClaimTaskRequest{
-				TaskToken: tc.taskToken,
-				Actor:     manager,
+				TaskID: tc.taskID,
+				Actor:  manager,
 			})
 			tc.assert(t, st, err)
 		})
@@ -338,14 +338,14 @@ func TestClaimTaskAuthorizationFailure(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, engine.StatusRunning, parked.Status)
 			require.Len(t, parked.Tokens, 1)
-			taskToken := parked.Tokens[0].AwaitCommand
-			require.NotEmpty(t, taskToken)
+			taskID := parked.Tokens[0].AwaitCommand
+			require.NotEmpty(t, taskID)
 
 			svc := h.newProcessEngine(t)
 
 			st, err := svc.ClaimTask(t.Context(), service.ClaimTaskRequest{
-				TaskToken: taskToken,
-				Actor:     tc.actor,
+				TaskID: taskID,
+				Actor:  tc.actor,
 			})
 			tc.assert(t, st, err)
 		})

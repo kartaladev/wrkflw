@@ -60,7 +60,7 @@ func TestReceiveTaskReminderFiresAndCancelsOnMessage(t *testing.T) {
 	require.Len(t, r1.State.Tokens, 1)
 	tok := r1.State.Tokens[0]
 	assert.Equal(t, "receive", tok.NodeID)
-	assert.Equal(t, engine.TokenWaitingCommand, tok.State)
+	assert.Equal(t, engine.TokenWaiting, tok.State)
 	assert.Equal(t, "PaymentReceived", tok.AwaitMessage)
 
 	reminderID := reminderST.TimerID

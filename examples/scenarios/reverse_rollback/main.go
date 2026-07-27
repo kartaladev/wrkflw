@@ -220,17 +220,17 @@ func completeParkedTask(
 	actor authz.Actor,
 	output map[string]any,
 ) engine.InstanceState {
-	taskToken := ""
+	taskID := ""
 	for _, t := range parked.Tasks {
 		if t.IsOpen() {
-			taskToken = t.TaskToken
+			taskID = t.TaskID
 		}
 	}
-	if taskToken == "" {
+	if taskID == "" {
 		log.Fatalf("complete task %s: no open task on instance %q", actor.ID, instanceID)
 	}
 
-	claimTrg, err := svc.Claim(ctx, taskToken, actor)
+	claimTrg, err := svc.Claim(ctx, taskID, actor)
 	if err != nil {
 		log.Fatal("claim:", err)
 	}
@@ -238,7 +238,7 @@ func completeParkedTask(
 		log.Fatal("deliver claim:", err)
 	}
 
-	completeTrg, err := svc.Complete(ctx, taskToken, actor, output)
+	completeTrg, err := svc.Complete(ctx, taskID, actor, engine.CompletionInput{Output: output})
 	if err != nil {
 		log.Fatal("complete:", err)
 	}

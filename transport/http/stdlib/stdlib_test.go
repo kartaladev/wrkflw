@@ -462,12 +462,12 @@ func TestTaskRoutes_Customize(t *testing.T) {
 	def := transporttest.ApprovalProcess()
 	h, svc := transporttest.NewHarness(t, def)
 
-	taskToken := transporttest.StartedApprovalInstance(t, h, "task-claim-stdlib-1")
+	taskID := transporttest.StartedApprovalInstance(t, h, "task-claim-stdlib-1")
 
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc)
 
-	req := newPostRequest(t, "/tasks/"+taskToken+"/claim", map[string]any{
+	req := newPostRequest(t, "/tasks/"+taskID+"/claim", map[string]any{
 		"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
 	})
 	rr := do(mux, req)

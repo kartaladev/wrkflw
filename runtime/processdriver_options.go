@@ -60,6 +60,28 @@ func WithActionTimeout(d time.Duration) Option {
 	return func(driver *ProcessDriver) { driver.actionTimeout = d }
 }
 
+// defaultCandidateResolveTimeout bounds a single [humantask.ActorResolver]
+// lookup unless overridden via [WithCandidateResolveTimeout]. Candidate
+// resolution runs before the commit that parks a human task, so an unresponsive
+// directory service would otherwise hold the step — and the instance's commit —
+// open indefinitely.
+//
+// It is shorter than defaultActionTimeout because a resolver expands a group
+// membership rather than performing business work, and it sits on the critical
+// path of every user-task entry.
+const defaultCandidateResolveTimeout = 10 * time.Second
+
+// WithCandidateResolveTimeout sets the maximum duration a single
+// [humantask.ActorResolver] lookup may run before its context is cancelled. The
+// default is 10s. A non-positive d disables the bound (no deadline is applied).
+//
+// The resolver's Candidates must honour ctx cancellation for the timeout to take
+// effect; a timed-out resolution fails the step before anything is committed, so
+// no instance is left parked on a task the task store never received.
+func WithCandidateResolveTimeout(d time.Duration) Option {
+	return func(driver *ProcessDriver) { driver.candidateResolveTimeout = d }
+}
+
 // WithHumanTasks wires the human-task capability into the ProcessDriver. Without this
 // option, any process that reaches a user-task node will return a descriptive
 // error rather than panic.

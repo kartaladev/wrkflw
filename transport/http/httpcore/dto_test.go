@@ -6,6 +6,7 @@ import (
 
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/transport/http/httpcore"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStartInputJSONTags(t *testing.T) {
@@ -128,5 +129,49 @@ func TestResolveIncidentInputJSONTags(t *testing.T) {
 	}
 	if got.AddAttempts != 3 {
 		t.Fatalf("wire tags mismatch: %+v", got)
+	}
+}
+
+// TestCompleteInputCarriesOutcomeAndNote pins the completion request body's wire
+// contract (ADR-0146): the outcome and note travel beside the output variables,
+// so an actor's business disposition and remark are first-class rather than
+// smuggled through output by convention. Both are optional.
+func TestCompleteInputCarriesOutcomeAndNote(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		body   string
+		assert func(t *testing.T, in httpcore.CompleteInput)
+	}
+
+	cases := []testCase{
+		{
+			name: "outcome and note decode alongside output",
+			body: `{"actor":{"id":"u-jane"},"outcome":"approve","note":"budget confirmed","output":{"amount":100}}`,
+			assert: func(t *testing.T, in httpcore.CompleteInput) {
+				require.Equal(t, "u-jane", in.Actor.ID)
+				require.Equal(t, "approve", in.Outcome)
+				require.Equal(t, "budget confirmed", in.Note)
+				require.Equal(t, map[string]any{"amount": float64(100)}, in.Output)
+			},
+		},
+		{
+			name: "a body without an outcome decodes to empty strings",
+			body: `{"actor":{"id":"u-jane"},"output":{}}`,
+			assert: func(t *testing.T, in httpcore.CompleteInput) {
+				require.Empty(t, in.Outcome)
+				require.Empty(t, in.Note)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var in httpcore.CompleteInput
+			require.NoError(t, json.Unmarshal([]byte(tc.body), &in))
+			tc.assert(t, in)
+		})
 	}
 }

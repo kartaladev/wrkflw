@@ -70,15 +70,17 @@ earlier flows are summarized for cross-reference.
 
 **Why this seam exists.** The engine must never do I/O: it cannot call a user
 directory, persist a task record, or evaluate a policy. Instead it emits `AwaitHuman`
-carrying only a typed value (`TaskToken`, `Eligibility`) and parks the token.
+carrying only a typed value (`TaskID`, `Eligibility`) and parks the token.
 `runtime.ProcessDriver` owns all the side effects: it resolves candidates, writes the task
 record, and later reads it back to authorize the claim. `runtime.TaskService` is the
 authorization adapter exposed to transport layers so the engine core remains untouched
 by any authorization SDK.
 
-**Files to read:** `runtime/runner.go` (`AwaitHuman`/`UpdateTask` cases in
-`perform`), `runtime/taskservice.go` (claim/complete/reassign lifecycle),
-`humantask/taskstore.go` (port interface), `authz/authz.go` (Authorizer interface).
+**Files to read:** `runtime/processdriver_action.go` (`resolveHumanCandidates` plus the
+`AwaitHuman`/`UpdateTask` cases in `perform`), `runtime/task/service.go`
+(claim/complete/reassign/refresh lifecycle), `humantask/humantask.go` (the `TaskStore`
+and `ActorResolver` ports and the `HumanTask`/`Claim`/`Completion` types),
+`authz/authz.go` (`Authorizer` interface and `Actor`).
 
 `humantask/` holds pure types + ports; `runtime.TaskService` is the behavioural
 adapter. The `ProcessDriver` writes tasks into a `humantask.TaskStore`; `TaskService`
@@ -90,30 +92,45 @@ sequenceDiagram
     participant R as runtime
     participant AR as humantask.ActorResolver
     participant TS as humantask.TaskStore
+    participant TSVC as runtime/task.TaskService
     participant AZ as authz.Authorizer
 
     Note over E: KindUserTask node
-    E->>R: AwaitHuman {TaskToken, Eligibility}
-    R->>AR: resolver.Candidates(...)
-    AR-->>R: candidates
-    R->>TS: tasks.Upsert(HumanTask{})
+    E->>R: AwaitHuman {TaskID, Eligibility}
+    Note over R: engine snapshots Vars onto the task
+    R->>AR: resolveHumanCandidates → resolver.Candidates(...)
+    AR-->>R: []authz.Actor
+    Note over R: PRE-COMMIT: candidates ride the same<br/>commit that parks the task (ADR-0147)
+    R->>TS: tasks.Upsert(HumanTask{Candidates, Vars})
     Note over R,TS: token parked — waiting for actor
 
-    Note over R: actor claims task
-    R->>TS: store.Get(token)
-    TS-->>R: HumanTask
-    R->>AZ: authz.Authorize(task.Eligibility, actor, task.Vars)
-    AZ-->>R: authorized
-    R->>R: engine.NewHumanClaimed(...)
-    Note over R: Trigger
-    R->>E: ProcessDriver.Deliver(trigger) → Step advances token
+    Note over TSVC: actor claims task
+    TSVC->>TS: store.Get(taskID)
+    TS-->>TSVC: HumanTask
+    TSVC->>AZ: authz.Authorize(task.Eligibility, actor, task.Vars)
+    AZ-->>TSVC: authorized
+    TSVC-->>R: engine.NewHumanClaimed(...)
+    R->>E: ProcessDriver.Deliver(trigger) → Step stamps Claim{actor, at}
+
+    Note over TSVC: actor completes task
+    TSVC->>AZ: authz.Authorize(...)
+    TSVC-->>R: engine.NewHumanCompleted(at, taskID, Completion{Outcome, Note, Output}, actor)
+    R->>E: Deliver → validates Outcome, stamps Completion, advances token
 ```
 
 **Guarantees and ownership:**
 - `humantask.TaskStore` is the meeting point: `ProcessDriver` writes through it
-  (`runner.go` `AwaitHuman` case), `TaskService` reads through it
-  (`runtime/taskservice.go`). The store owns persistence; the runner never re-reads
+  (`runtime/processdriver_action.go` `AwaitHuman` case), `TaskService` reads through it
+  (`runtime/task/service.go`). The store owns persistence; the driver never re-reads
   its own write — the next read happens during claim/complete.
+- **Candidates are resolved before the commit**, not after. `perform` runs *after*
+  `commitFn`, so anything written there would be lost on reload;
+  `resolveHumanCandidates` therefore runs ahead of the snapshot and a resolver failure
+  aborts the step before anything is committed (ADR-0147). The call is bounded by
+  `WithCandidateResolveTimeout` (default 10s; non-positive disables it).
+- `Claim` and `Completion` are the task's audit trail — both nil until the
+  corresponding lifecycle event, and both carry the full `authz.Actor` the engine
+  observed rather than a bare ID (ADR-0147).
 - `task.Vars` is a variable snapshot taken at task-creation time so attribute-based
   authorization predicates (`vars["region"] == "EU"`) evaluate deterministically
   even if process variables later change.
@@ -156,7 +173,7 @@ sequenceDiagram
 ```
 
 **Guarantees and ownership (ADR-0134 direct-save):**
-- The `Drive` commit path (`processdriver.go`'s `commitFn`) writes each armed/cancelled
+- The `Drive` commit path (`runtime/processdriver.go`'s `commitFn`) writes each armed/cancelled
   timer's durable row itself — via `driver.jobStore.Save`/`deleteTimer`, routed through
   the `kernel.TimerWriter` capability — **inside the same state-commit transaction**
   as the step write (`kernel.TxRunner.RunInTx`, joined via `JoinOrBegin`). The
@@ -178,7 +195,7 @@ sequenceDiagram
   instance has already advanced.
 - `CancelTimer` commands are deleted via `jobStore.deleteTimer` inside the same
   commit transaction as above; the in-memory `Deactivate` follows post-commit.
-- **`Kind` determines routing** inside `step_timers.go`: `TimerRetry` re-invokes
+- **`Kind` determines routing** inside `engine/step_timers.go`: `TimerRetry` re-invokes
   the parked service action; `TimerDeadline` routes the token down the deadline's
   escape flow; `TimerInWait` runs the reminder action fire-and-forget (no trigger
   fed back); `TimerIntermediate` resumes the catch-event token.
@@ -191,8 +208,10 @@ an `AwaitMessage` / `AwaitSignal` field. The runtime owns the correlation table
 (`msgWaiters`) and the fan-out bus (`SignalBus`) so a single trigger path covers
 both external transport calls and inter-instance signals.
 
-**Files to read:** `runtime/runner.go` (`deliverMessage`, `armSignal`, `Sync`
-for the `msgWaiters` update), `runtime/broadcast.go` (`SignalBus`),
+**Files to read:** `runtime/processdriver_message.go` and
+`runtime/processdriver_signal.go` (message/signal delivery),
+`runtime/processdriver_waiters.go` (the `msgWaiters` update),
+`runtime/signal/signalbus.go` (`SignalBus`),
 `engine/step_triggers.go` (`handleMessageReceived`, `handleSignalReceived`).
 
 Two directions, two ports.
@@ -317,7 +336,8 @@ external trigger (`ResolveIncident`) from an admin flow (the HTTP admin route or
 
 **Files to read:** `engine/step_timers.go` (`handleTimerFired`, `reinvokeServiceAction`),
 `engine/step_triggers.go` (`handleActionFailed`, `handleResolveIncident`),
-`runtime/runner.go` (`perform` error-branch, `ResolveIncident`).
+`runtime/processdriver_action.go` (`perform` error-branch),
+`runtime/processdriver_incident.go` (`ResolveIncident`).
 
 A retry is a self-scheduled `TimerRetry`; an incident is a parked token awaiting
 an operator. Both converge on the shared `reinvokeServiceAction` primitive.
@@ -342,7 +362,7 @@ InvokeAction fails → ActionFailed{Retryable} ─► handleActionFailed:
   `engine.WithJitter`) de-synchronizes concurrent retry schedules. Construct via
   `engine.NewActionFailed(at, commandID, errMsg, retryable, engine.WithJitter(fraction))`;
   `fraction` is dimensionless (0–1) and multiplied against the computed backoff
-  interval inside `step_timers.go`.
+  interval inside `engine/step_timers.go`.
 - `ResolveIncident` is idempotent: unknown/cleared incident is a no-op; a missing
   token clears the record without re-invoking.
 - The **DLQ is a separate poison channel** in the *eventing relay* (flow 7), for
@@ -357,8 +377,9 @@ child definition and (in async mode) a `CallLinkStore` to durably correlate the
 child's terminal event back to the parked parent token.
 
 **Files to read:** `engine/step_nodes.go` (sub-process strategy, call-activity
-strategy), `runtime/runner.go` (`startSubInstance`, `callActivityAsync`),
-`runtime/call_notifier.go` (`DrainOnce`, `ClaimPending`, `MarkNotified`).
+strategy), `runtime/processdriver_child.go` (child-instance start and async
+call-activity), `runtime/calllink/notifier.go` (`DrainOnce`, `ClaimPending`,
+`MarkNotified`).
 
 |  | Sub-process (`KindSubProcess`) | Call activity (`KindCallActivity`) |
 |---|---|---|

@@ -150,20 +150,20 @@ func main() {
 	if len(claimable) == 0 {
 		log.Fatal("expected a claimable task")
 	}
-	taskToken := claimable[0].TaskToken
+	taskID := claimable[0].TaskID
 
 	svc, err := task.NewTaskService(taskStore, az, task.WithClock(clk))
 	if err != nil {
 		log.Fatal("task service:", err)
 	}
-	claimTrg, err := svc.Claim(ctx, taskToken, reviewer)
+	claimTrg, err := svc.Claim(ctx, taskID, reviewer)
 	if err != nil {
 		log.Fatal("claim:", err)
 	}
 	if _, err := driver.ApplyTrigger(ctx, def, instanceID, claimTrg); err != nil {
 		log.Fatal("deliver claim:", err)
 	}
-	completeTrg, err := svc.Complete(ctx, taskToken, reviewer, map[string]any{"approved": true})
+	completeTrg, err := svc.Complete(ctx, taskID, reviewer, engine.CompletionInput{Output: map[string]any{"approved": true}})
 	if err != nil {
 		log.Fatal("complete:", err)
 	}

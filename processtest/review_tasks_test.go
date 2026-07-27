@@ -19,7 +19,7 @@ import (
 
 // TestReview_CompleteTasksMemoizesDecision covers finding #8: a parallel flow with
 // two concurrent user tasks drives to completion, and decide is invoked at most
-// once per task token (claim and completion reuse the memoized decision) — not
+// once per task id (claim and completion reuse the memoized decision) — not
 // twice per token.
 func TestReview_CompleteTasksMemoizesDecision(t *testing.T) {
 	t.Parallel()
@@ -47,7 +47,7 @@ func TestReview_CompleteTasksMemoizesDecision(t *testing.T) {
 	calls := map[string]int{}
 	decide := func(tsk humantask.HumanTask) (authz.Actor, map[string]any, bool) {
 		mu.Lock()
-		calls[tsk.TaskToken]++
+		calls[tsk.TaskID]++
 		mu.Unlock()
 		return authz.Actor{ID: "alice", Roles: []string{"r"}}, map[string]any{"ok": true}, true
 	}

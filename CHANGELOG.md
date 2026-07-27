@@ -17,6 +17,81 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **ProcessInstance audit view: snake_case wire format, node-visit history, and a
+  human-task audit trail (ADR-0144–0151).** The instance JSON is now a single coherent,
+  snake_case document. Concretely:
+  - **All wire tags are snake_case** (ADR-0144), including `model.RetryPolicy` and
+    `schedule.ClockTime`. Consumers parsing the old mixed-case JSON must update their
+    field names. `scoped_actions` is marshal-only (dropped on unmarshal).
+  - **`TaskToken` → `TaskID`** across the engine, and node execution history is exposed
+    as `NodeVisit` records with a `close_kind` discriminator
+    (`instance_cancelled`, `boundary_interrupted`, `terminated`, `errored`,
+    `compensated`, `reversed`, `deadline_expired`; unset for normal advances) (ADR-0145).
+  - **`TaskService.Complete` takes an `engine.CompletionInput`** (`{Outcome, Note, Output}`)
+    instead of a bare `map[string]any`; `service.CompleteTaskRequest` gains `Outcome`
+    and `Note` (ADR-0146). A user-task node may declare an outcome set, and a completion
+    outside it is rejected with `engine.ErrInvalidOutcome` (see the outcome-rules entry
+    below for the mandatory-outcome and exposure rules added in review).
+  - **`HumanTask.ClaimedBy string` → `Claim *humantask.Claim`**, plus
+    `Completion *humantask.Completion`, and `Candidates` changes from `[]string` to
+    `[]authz.Actor` (ADR-0147). Both audit records carry the full observed actor rather
+    than a bare ID. `runtime/view.ActionableTask` follows the same shape.
+  - Candidate actors are now resolved **before** the commit that parks the task, so they
+    are persisted with it; bounded by `runtime.WithCandidateResolveTimeout` (default 10s,
+    non-positive disables). Fixes a latent bug where `UpdateTask` round-trips erased
+    `HumanTask.Vars` and silently broke attribute-based authorization (ADR-0147).
+  - Engine-minted ids move behind an injected `IDGenerator` port (ADR-0149), and
+    `TaskService.RefreshCandidates` re-resolves an open task's candidates
+    (`service.RefreshTaskCandidates`, requires `service.WithActorResolver`) (ADR-0150).
+
+  **Upgrade note — the instance response got wider.** `ProcessInstance` now embeds the
+  full `*model.ProcessDefinition` (replacing the derived `action_bindings` summary;
+  `def_id` and `def_version` are retained and are now always emitted), and
+  candidate/claim/completion actors render as full `authz.Actor`
+  (`{id, roles, attributes}`) rather than bare ID strings. `Actor.Attributes` is
+  consumer-populated (via your `ActorResolver`) and may hold directory data such as
+  username or email; the embedded definition carries each node's `eligible_roles` /
+  `eligible_privileges` / `eligible_expr`. If you mount `GET /instances/{id}/snapshot`
+  or `GET /instances/{id}/actionable`, re-check that their audience should see this —
+  unlike `GET /instances/{id}`, those two routes currently have no `InstanceMapper`
+  redaction seam (extending it to them is queued).
+
+- **User-task outcome rules are now fail-closed both ways (ADR-0146 amendments 1–3).**
+  Declaring `WithOutcomes(...)` makes the outcome **mandatory**: completing such a node
+  with no outcome is rejected with the new `engine.ErrOutcomeRequired` (previously it was
+  silently accepted, published no routing variable, and blew up downstream as
+  `ErrNoMatchingFlow`). Separately, `WithExposeOutcome()` / `WithOutcomeVariable(...)` now
+  **require** a non-empty `Outcomes` set, enforced at authoring time by the new
+  `model.ErrOutcomeExposureWithoutOutcomes` — publishing a completer-supplied string into
+  the process variables demands a declared, closed value domain. Manual tasks are exempt
+  from both rules (they are already forbidden from declaring outcomes). Both
+  `engine.ErrInvalidOutcome` and `engine.ErrOutcomeRequired` now classify as HTTP
+  **400 bad_request** instead of falling through to an opaque 500.
+
+- **Renamed `engine.Completion` → `engine.CompletionInput` (ADR-0146 amendment 4).** The
+  delivery otherwise shipped two exported types named `Completion` — the payload a caller
+  submits and the persisted audit record `humantask.Completion` — with overlapping
+  `Outcome`/`Note` fields. The input side now carries the `Input` suffix; the record side
+  is unchanged. No deprecation alias (pre-v0.1.0 hard-rename convention).
+  Migration: replace `engine.Completion{...}` with `engine.CompletionInput{...}`.
+
+- **`engine.CloseKind` is a defined type (ADR-0145 amendment 1).** The `NodeVisit`
+  close-reason constants were untyped strings, so `v.CloseKind = "cancelled"` compiled.
+  `CloseKind` is now `type CloseKind string` with typed constants and a `String()` method,
+  matching the sibling `TokenState`/`Status` discriminators. The JSON wire value is
+  unchanged, and an empty close kind still means a normal advance. Migration: a consumer
+  storing the field in a `string` needs `string(v.CloseKind)` or `v.CloseKind.String()`.
+
+- **SQLite TEXT timestamps are now written with a fixed-width nine-digit fraction
+  (ADR-0151).** `time.RFC3339Nano` trims trailing zeros, so the lexicographic `TEXT`
+  comparison SQLite performs did not match chronological order — a genuinely due row
+  could be skipped by `WHERE <col> <= ?`. This silently affected the relay outbox claim,
+  call-link lease reclaim, retention pruning, and keyset pagination ordering. Reads are
+  backward compatible (parsing still accepts any fraction width), and Postgres/MySQL are
+  unaffected. **A pre-existing SQLite database file keeps the old encoding for rows
+  already written and should be rebuilt** — no data migration ships, per the pre-1.0
+  single-migration-file convention (ADR-0132).
+
 - **Renamed `service.Engine` → `service.ProcessEngine` and `NewEngine` → `NewProcessEngine`
   (ADR-0141).** The public facade type and constructor read more clearly against the pure
   `engine` package and `runtime.ProcessDriver`. No deprecation alias (pre-v0.1.0 hard-rename
@@ -265,14 +340,30 @@ release.
 
 - **`service.ProcessInstance` gains two methods** — `ActiveTask(nodeID string) (humantask.HumanTask, bool)`
   and `ActiveTasks() []humantask.HumanTask` — returning the open (Unclaimed|Claimed)
-  human tasks of an instance, sorted ascending by `TaskToken` (ADR-0142). Consumers
+  human tasks of an instance, sorted ascending by `TaskID` (ADR-0142; the field was
+  named `TaskToken` until ADR-0145 renamed it). Consumers
   who **embed** a ProcessInstance obtained from the engine need no code change but
   must **recompile**; consumers with a **hand-rolled** implementation must add the
   two methods, filtering `State().Tasks` by `humantask.IsOpen()`, returning a
-  **non-nil** slice **sorted by `TaskToken`** (`ActiveTasks`) and the **first** such
+  **non-nil** slice **sorted by `TaskID`** (`ActiveTasks`) and the **first** such
   match (`ActiveTask`).
 
 ### Added
+
+- **`service.WithoutEmbeddedDefinition()` — opt out of the `definition` embed (ADR-0144
+  follow-up).** The embed stays the default: a marshalled `service.ProcessInstance` is
+  self-contained, carrying the whole `*model.ProcessDefinition` under `definition`. That
+  subtree is byte-identical for every instance of a definition and, on a ten-node graph, is
+  the *larger* half of the document — so a UI polling a single instance, or a consumer
+  assembling an aggregate from N `GetInstance` calls, re-ships the same template on every
+  read. Building the engine with `service.WithoutEmbeddedDefinition()` drops the `definition`
+  key from every document the facade hands out (start, get, signal, task and admin paths
+  alike) while keeping `def_id` / `def_version`, so a slimmed document still identifies its
+  template and the consumer can cache templates keyed by `(def_id, def_version)`. It is a
+  marshalling policy only: `ProcessInstance.Definition()` still returns the resolved template
+  in-process, and `service.NewProcessInstance` (hand-fabricated instances) always embeds.
+  Note the shipped list endpoint is unaffected either way — `ListInstances` returns
+  `kernel.InstanceSummary`, which never embedded a definition.
 
 - **Optional human `label` on every node (ADR-0139).** Each node kind now carries an optional
   display label, set with `WithLabel("…")` (`activity.WithLabel`, `event.WithLabel` /

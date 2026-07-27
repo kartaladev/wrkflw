@@ -91,14 +91,14 @@ func TestRecurringReminderSurvivesFireAndCancelsOnComplete(t *testing.T) {
 	claimable, err := taskStore.ClaimableBy(ctx, manager)
 	require.NoError(t, err)
 	require.Len(t, claimable, 1)
-	taskToken := claimable[0].TaskToken
+	taskID := claimable[0].TaskID
 
-	claimTrg, err := svc.Claim(ctx, taskToken, manager)
+	claimTrg, err := svc.Claim(ctx, taskID, manager)
 	require.NoError(t, err)
 	_, err = r.ApplyTrigger(ctx, def, instanceID, claimTrg)
 	require.NoError(t, err)
 
-	completeTrg, err := svc.Complete(ctx, taskToken, manager, map[string]any{"approved": true})
+	completeTrg, err := svc.Complete(ctx, taskID, manager, engine.CompletionInput{Output: map[string]any{"approved": true}})
 	require.NoError(t, err)
 	final, err := r.ApplyTrigger(ctx, def, instanceID, completeTrg)
 	require.NoError(t, err)

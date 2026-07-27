@@ -115,18 +115,29 @@ CREATE TABLE wrkflw_chain_links (
 CREATE INDEX wrkflw_chain_links_successor_idx ON wrkflw_chain_links (successor_instance_id);
 
 -- Human task state table (ADR-0098). Indexes declared inline (MySQL style).
+-- claim/completion carry the ADR-0148 audit as nullable JSON
+-- ({actor, timestamp} / {actor, timestamp, outcome?, note?}); NULL means the
+-- lifecycle event has not happened. claimed_by is the application-maintained
+-- scalar projection of claim.actor.id that keeps AssignedTo's lookup indexed.
 CREATE TABLE wrkflw_human_task (
-    task_token  VARCHAR(255) NOT NULL,
+    task_id  VARCHAR(255) NOT NULL,
     instance_id VARCHAR(255) NOT NULL,
     node_id     VARCHAR(255) NOT NULL,
     state       VARCHAR(64)  NOT NULL,
     claimed_by  VARCHAR(255) NOT NULL DEFAULT '',
+    claimed_at  DATETIME(6)  NULL,
+    claim_actor JSON         NULL,
+    completed_by VARCHAR(255) NULL,
+    completed_at DATETIME(6)  NULL,
+    outcome      VARCHAR(255) NULL,
+    note         TEXT         NULL,
+    completion_actor JSON     NULL,
     eligibility JSON         NOT NULL,
     candidates  JSON         NOT NULL,
     vars        JSON         NOT NULL,
     created_at  DATETIME(6)  NOT NULL,
     due_at      DATETIME(6)  NULL,
-    PRIMARY KEY (task_token),
+    PRIMARY KEY (task_id),
     INDEX idx_wrkflw_human_task_instance   (instance_id),
     INDEX idx_wrkflw_human_task_state      (state),
     INDEX idx_wrkflw_human_task_claimed_by (claimed_by)

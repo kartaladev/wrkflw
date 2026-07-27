@@ -47,7 +47,7 @@ func TestStepStartInstanceReachesServiceTask(t *testing.T) {
 	require.Len(t, res.State.Tokens, 1)
 	tok := res.State.Tokens[0]
 	assert.Equal(t, "greet", tok.NodeID)
-	assert.Equal(t, engine.TokenWaitingCommand, tok.State)
+	assert.Equal(t, engine.TokenWaiting, tok.State)
 	assert.Equal(t, ia.CommandID, tok.AwaitCommand)
 	assert.Equal(t, engine.StatusRunning, res.State.Status)
 	assert.Equal(t, at, res.State.StartedAt)

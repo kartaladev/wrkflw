@@ -10,6 +10,7 @@ import (
 	"github.com/kartaladev/wrkflw/definition/model/validate"
 	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // stubStrategy is a no-op validate.ValidationStrategy used to exercise the
@@ -185,6 +186,68 @@ func TestWithLabel(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			tc.assert(t, tc.newNode())
+		})
+	}
+}
+
+// TestUserTaskOutcomeOptions covers the completion-outcome declaration options
+// (ADR-0146): the accepted outcome set and the two mutually-exclusive
+// variable-exposure forms.
+func TestUserTaskOutcomeOptions(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		opts   []activity.UserTaskOption
+		assert func(t *testing.T, u activity.UserTask)
+	}
+
+	cases := []testCase{
+		{
+			name: "no outcome options leave the node unconstrained",
+			opts: nil,
+			assert: func(t *testing.T, u activity.UserTask) {
+				assert.Empty(t, u.Outcomes)
+				assert.False(t, u.ExposeOutcome)
+				assert.Empty(t, u.OutcomeVariable)
+			},
+		},
+		{
+			name: "WithOutcomes declares the accepted set and is additive",
+			opts: []activity.UserTaskOption{
+				activity.WithOutcomes("approve"),
+				activity.WithOutcomes("reject", "escalate"),
+			},
+			assert: func(t *testing.T, u activity.UserTask) {
+				assert.Equal(t, []string{"approve", "reject", "escalate"}, u.Outcomes)
+			},
+		},
+		{
+			name: "WithExposeOutcome opts into the conventional variable name",
+			opts: []activity.UserTaskOption{activity.WithExposeOutcome()},
+			assert: func(t *testing.T, u activity.UserTask) {
+				assert.True(t, u.ExposeOutcome)
+				assert.Empty(t, u.OutcomeVariable)
+			},
+		},
+		{
+			name: "WithOutcomeVariable names the exposed variable explicitly",
+			opts: []activity.UserTaskOption{activity.WithOutcomeVariable("review_decision")},
+			assert: func(t *testing.T, u activity.UserTask) {
+				assert.Equal(t, "review_decision", u.OutcomeVariable)
+				assert.False(t, u.ExposeOutcome)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			n := activity.NewUserTask("review", tc.opts...)
+			u, ok := n.(activity.UserTask)
+			require.True(t, ok, "node is %T, want activity.UserTask", n)
+			tc.assert(t, u)
 		})
 	}
 }

@@ -73,10 +73,10 @@ func (d *Deduper) Seen(ctx context.Context, subscriber, messageID string) (first
 	// processed_at is written explicitly via timeArg so the value is stored in
 	// the same format that Prune uses for its cutoff comparison. On SQLite the
 	// table's DEFAULT uses strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), which omits
-	// sub-second precision, while Prune formats its cutoff as RFC3339Nano. Writing
-	// processed_at explicitly here ensures the stored string is always in the same
-	// RFC3339Nano form as the cutoff, so lexicographic comparison in Prune is
-	// correct on all backends.
+	// sub-second precision, while Prune formats its cutoff as fixed-width RFC3339.
+	// Writing processed_at explicitly here ensures the stored string is always in
+	// the same fixed-width form as the cutoff, so lexicographic comparison in
+	// Prune is correct on all backends (ADR-0151).
 	stmt := d.dialect.Rebind(
 		d.dialect.InsertIgnorePrefix() +
 			` INTO wrkflw_processed_message (subscriber, message_id, processed_at)

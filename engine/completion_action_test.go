@@ -53,12 +53,12 @@ func TestUserTaskCompletionAction_ParksThenAdvancesOnActionCompleted(t *testing.
 	require.NoError(t, err)
 	tok := r1.State.Tokens[0]
 	require.Equal(t, "u1", tok.NodeID)
-	taskToken := r1.State.Tasks[0].TaskToken // task record created alongside the parked UserTask token
+	taskID := r1.State.Tasks[0].TaskID // task record created alongside the parked UserTask id
 
 	// Complete the human task: expect an InvokeAction for the completion action,
 	// and the instance NOT yet complete (token parked on the action).
 	r2, err := engine.Step(t.Context(), def, r1.State,
-		engine.NewHumanCompleted(t0, taskToken, map[string]any{"approved": true}, authz.Actor{ID: "alice"}),
+		engine.NewHumanCompleted(t0, taskID, engine.CompletionInput{Output: map[string]any{"approved": true}}, authz.Actor{ID: "alice"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
 	var cmdID string
@@ -112,7 +112,7 @@ func receiveCompletionDef() *model.ProcessDefinition {
 }
 
 // TestReceiveTaskCompletionAction_ParksThenAdvances verifies that a message
-// resolving a parked ReceiveTask token whose node carries a CompletionAction
+// resolving a parked ReceiveTask id whose node carries a CompletionAction
 // does NOT advance the token immediately. Instead it emits an InvokeAction for
 // the completion action and parks the token on the command round-trip; the
 // instance only completes once the corresponding ActionCompleted arrives.
@@ -217,16 +217,16 @@ func TestUserTaskCompletionAction_ScopedCatalog_ResolvesLocally(t *testing.T) {
 	require.Len(t, r1.State.Tokens, 1)
 	require.Equal(t, "inner-u1", r1.State.Tokens[0].NodeID)
 
-	var taskToken string
+	var taskID string
 	for _, cmd := range r1.Commands {
 		if ah, ok := cmd.(engine.AwaitHuman); ok {
-			taskToken = ah.TaskToken
+			taskID = ah.TaskID
 		}
 	}
-	require.NotEmpty(t, taskToken, "expected AwaitHuman for inner-u1")
+	require.NotEmpty(t, taskID, "expected AwaitHuman for inner-u1")
 
 	r2, err := engine.Step(t.Context(), def, r1.State,
-		engine.NewHumanCompleted(t0, taskToken, nil, authz.Actor{ID: "alice"}), engine.StepOptions{})
+		engine.NewHumanCompleted(t0, taskID, engine.CompletionInput{}, authz.Actor{ID: "alice"}), engine.StepOptions{})
 	require.NoError(t, err)
 
 	var cmd engine.InvokeAction

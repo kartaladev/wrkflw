@@ -26,8 +26,10 @@ import (
 // SQL is written once with ? placeholders and run through
 // [dialect.Dialect.Rebind] for the backend's native placeholder style. Timestamp
 // codec for the next_run column is dialect-aware: Postgres and MySQL bind and
-// scan time.Time natively; SQLite stores TEXT as RFC3339Nano and needs the
-// [parseTimeText] helper on the read side (ADR-0080). The codec is gated on
+// scan time.Time natively; SQLite stores TEXT written by [timeArg] as UTC
+// RFC3339 with a FIXED-WIDTH nine-digit fraction — never time.RFC3339Nano, whose
+// trimmed fraction does not sort lexicographically (ADR-0080, ADR-0151) — and
+// reads it back via [parseTimeText]. The codec is gated on
 // [dialect.Dialect.TimestampsAsText] — NEVER compare [dialect.Dialect.Name]
 // to "sqlite" directly.
 //
@@ -234,9 +236,11 @@ func (s *TimerStore) statsNative(ctx context.Context, q database.Querier) (kerne
 	return kernel.TimerStats{Armed: armed, NextFireAt: nextFireAt}, nil
 }
 
-// statsText handles the Stats query for SQLite, where next_run is an
-// RFC3339Nano TEXT column. MIN(next_run) is scanned into a *string and then
-// parsed via [parseTimeText] (ADR-0080).
+// statsText handles the Stats query for SQLite, where next_run is a fixed-width
+// RFC3339 TEXT column (ADR-0151). MIN(next_run) is therefore a correct
+// chronological minimum — the fixed width is what makes the TEXT comparison
+// order match time order. It is scanned into a *string and parsed via
+// [parseTimeText] (ADR-0080).
 func (s *TimerStore) statsText(ctx context.Context, q database.Querier) (kernel.TimerStats, error) {
 	var armed int64
 	var nextStr *string
@@ -258,7 +262,8 @@ func (s *TimerStore) statsText(ctx context.Context, q database.Querier) (kernel.
 
 // scanArmedTimer reads one row from the query result into an [kernel.ArmedTimer].
 // The next_run column is handled via the time codec: TEXT-timestamp (SQLite) is
-// parsed from the RFC3339Nano string; native paths (Postgres/MySQL) scan into
+// parsed from the fixed-width RFC3339 string (ADR-0151); native paths
+// (Postgres/MySQL) scan into
 // time.Time directly and are then normalised to UTC (ADR-0080). The
 // trigger_payload column (JSONB/JSON/TEXT, nullable) is unmarshalled into a
 // [model.TriggerWire] and decoded back to a [schedule.TriggerSpec] via

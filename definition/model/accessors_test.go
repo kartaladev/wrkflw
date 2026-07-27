@@ -234,39 +234,39 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 	assert.Equal(t, 4*time.Hour, reminderDur)
 }
 
-// TestProcessDefinitionJSONBackwardCompat verifies that hand-authored flat-shaped
+// TestProcessDefinitionJSONFlatDecode verifies that hand-authored flat-shaped
 // JSON decodes into the correct concrete node types.
-func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
-	// Hand-written flat JSON in the NodeWire layout.
-	legacyJSON := `{
+func TestProcessDefinitionJSONFlatDecode(t *testing.T) {
+	// Hand-written flat JSON in the snake_case NodeWire layout (ADR-0144).
+	flatJSON := `{
 		"id": "legacy",
 		"version": 1,
 		"nodes": [
 			{"id": "start", "kind": "startEvent", "name": "Start"},
-			{"id": "charge", "kind": "serviceTask", "action": "charge-card", "compensateAction": "refund-card", "cancelAction": "cancel-charge"},
-			{"id": "approve", "kind": "userTask", "eligibleRoles": ["manager"], "eligibleExpr": "amount > 1000"},
-			{"id": "wait", "kind": "intermediateCatchEvent", "timerDuration": "PT1H"},
-			{"id": "throw", "kind": "intermediateThrowEvent", "signalName": "done"},
-			{"id": "bnd", "kind": "boundaryEvent", "attachedTo": "charge", "errorCode": "ERR", "nonInterrupting": false},
+			{"id": "charge", "kind": "serviceTask", "action": "charge-card", "compensate_action": "refund-card", "cancel_action": "cancel-charge"},
+			{"id": "approve", "kind": "userTask", "eligible_roles": ["manager"], "eligible_expr": "amount > 1000"},
+			{"id": "wait", "kind": "intermediateCatchEvent", "timer_duration": "PT1H"},
+			{"id": "throw", "kind": "intermediateThrowEvent", "signal_name": "done"},
+			{"id": "bnd", "kind": "boundaryEvent", "attached_to": "charge", "error_code": "ERR", "non_interrupting": false},
 			{"id": "sp", "kind": "subProcess", "subprocess": {"id": "inner", "version": 1, "nodes": [{"id": "ns", "kind": "startEvent"}, {"id": "ne", "kind": "endEvent"}], "flows": [{"id": "nf1", "source": "ns", "target": "ne"}]}},
-			{"id": "ca", "kind": "callActivity", "defRef": "ext-process"},
+			{"id": "ca", "kind": "callActivity", "def_ref": "ext-process"},
 			{"id": "xor", "kind": "exclusiveGateway"},
 			{"id": "par", "kind": "parallelGateway"},
 			{"id": "inc", "kind": "inclusiveGateway"},
 			{"id": "ebg", "kind": "eventBasedGateway"},
 			{"id": "end", "kind": "endEvent"},
-			{"id": "errend", "kind": "endEvent", "endBehavior": "error", "errorCode": "FATAL"},
-			{"id": "send", "kind": "sendTask", "messageName": "msg.send"},
-			{"id": "recv", "kind": "receiveTask", "messageName": "msg.recv", "correlationKey": "order.id"},
+			{"id": "errend", "kind": "endEvent", "end_behavior": "error", "error_code": "FATAL"},
+			{"id": "send", "kind": "sendTask", "message_name": "msg.send"},
+			{"id": "recv", "kind": "receiveTask", "message_name": "msg.recv", "correlation_key": "order.id"},
 			{"id": "brt", "kind": "businessRuleTask", "action": "apply-discount"},
-			{"id": "esp", "kind": "subProcess", "subprocess": {"id": "esp-inner", "version": 1, "nodes": [{"id": "es", "kind": "startEvent", "signalName": "cancel"}, {"id": "ee", "kind": "endEvent"}], "flows": [{"id": "ef1", "source": "es", "target": "ee"}]}},
-			{"id": "comp-throw", "kind": "compensationThrowEvent", "compensateRef": "charge"}
+			{"id": "esp", "kind": "subProcess", "subprocess": {"id": "esp-inner", "version": 1, "nodes": [{"id": "es", "kind": "startEvent", "signal_name": "cancel"}, {"id": "ee", "kind": "endEvent"}], "flows": [{"id": "ef1", "source": "es", "target": "ee"}]}},
+			{"id": "comp-throw", "kind": "compensationThrowEvent", "compensate_ref": "charge"}
 		],
 		"flows": []
 	}`
 
 	var def model.ProcessDefinition
-	require.NoError(t, json.Unmarshal([]byte(legacyJSON), &def))
+	require.NoError(t, json.Unmarshal([]byte(flatJSON), &def))
 
 	assert.Equal(t, "legacy", def.ID)
 	require.Len(t, def.Nodes, 19)
@@ -290,8 +290,8 @@ func TestProcessDefinitionJSONBackwardCompat(t *testing.T) {
 	require.True(t, ok, "nodes[3] should be IntermediateCatchEvent")
 	assert.False(t, ice.Timer.IsZero(), "Timer should be set")
 	iceExpr, _, iceExprOk := ice.Timer.Expr()
-	require.True(t, iceExprOk, "legacy timerDuration should decode as expr form")
-	assert.Equal(t, "PT1H", iceExpr, "legacy timerDuration PT1H should be preserved as expr value")
+	require.True(t, iceExprOk, "flat timer_duration should decode as expr form")
+	assert.Equal(t, "PT1H", iceExpr, "flat timer_duration PT1H should be preserved as expr value")
 
 	ite, ok := def.Nodes[4].(event.IntermediateThrowEvent)
 	require.True(t, ok, "nodes[4] should be IntermediateThrowEvent")

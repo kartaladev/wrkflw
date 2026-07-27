@@ -45,18 +45,28 @@ type DeliverMessageRequest struct {
 
 // ClaimTaskRequest carries the parameters for claiming a human task.
 type ClaimTaskRequest struct {
-	// TaskToken is the opaque token that identifies the human task.
-	TaskToken string
+	// TaskID is the opaque token that identifies the human task.
+	TaskID string
 	// Actor is the principal claiming the task.
 	Actor authz.Actor
 }
 
 // CompleteTaskRequest carries the parameters for completing a human task.
 type CompleteTaskRequest struct {
-	// TaskToken is the opaque token that identifies the human task.
-	TaskToken string
+	// TaskID is the opaque token that identifies the human task.
+	TaskID string
 	// Actor is the principal completing the task.
 	Actor authz.Actor
+	// Outcome is the business outcome the actor chose (e.g. "approve"). It is
+	// recorded on the task's completion audit and, when the user-task node
+	// declares an outcome set, validated against it — a value outside the set is
+	// rejected with [engine.ErrInvalidOutcome] and an EMPTY value with
+	// [engine.ErrOutcomeRequired], since declaring a set makes the outcome
+	// mandatory. Empty means no outcome, which is valid only when the node
+	// declares none.
+	Outcome string
+	// Note is the actor's free-text remark accompanying the completion; optional.
+	Note string
 	// Output is the set of output variables produced by the task.
 	Output map[string]any
 }
@@ -64,14 +74,24 @@ type CompleteTaskRequest struct {
 // ReassignTaskRequest carries the parameters for reassigning a human task
 // from one actor to another.
 type ReassignTaskRequest struct {
-	// TaskToken is the opaque token that identifies the human task.
-	TaskToken string
+	// TaskID is the opaque token that identifies the human task.
+	TaskID string
 	// From is the actor ID of the current claimant.
 	From string
 	// To is the actor ID of the new claimant.
 	To string
 	// By is the principal performing the reassignment (must satisfy the
 	// task's eligibility spec).
+	By authz.Actor
+}
+
+// RefreshTaskCandidatesRequest carries the parameters for re-resolving the
+// candidate actors of an open human task (ADR-0150).
+type RefreshTaskCandidatesRequest struct {
+	// TaskID is the opaque token that identifies the human task.
+	TaskID string
+	// By is the principal requesting the refresh. It must satisfy the task's
+	// eligibility spec — the same policy ReassignTaskRequest.By is held to.
 	By authz.Actor
 }
 
