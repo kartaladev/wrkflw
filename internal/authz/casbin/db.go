@@ -8,6 +8,7 @@ import (
 	casbinv2 "github.com/casbin/casbin/v2"
 	"github.com/casbin/casbin/v2/model"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jonboulle/clockwork"
 )
 
 // DBConfig configures [NewDBEnforcer].
@@ -81,7 +82,7 @@ func NewDBEnforcer(ctx context.Context, pool *pgxpool.Pool, cfg DBConfig) (*casb
 		return enforcer, noopCloser{}, nil
 	}
 
-	w := newPGWatcher(pool, cfg.WatcherChannel, cfg.NodeID, cfg.ListenReady)
+	w := newPGWatcher(pool, cfg.WatcherChannel, cfg.NodeID, cfg.ListenReady, clockwork.NewRealClock())
 
 	// SetWatcher (on the base Enforcer) internally calls
 	// w.SetUpdateCallback(func(string){ _ = e.LoadPolicy() }) where e is the

@@ -130,9 +130,9 @@ func TestSagaCompensationRollback(t *testing.T) {
 		"refund":         &recordingAction{name: "refund", rec: rec},
 	})
 
-	// Use a fake clock per ADR-0003 / project test policy. The saga has no
+	// Use a fake clock per ADR-0138 / project test policy. The saga has no
 	// timer-driven nodes, so behaviour is identical to a real clock. clockwork.FakeClock
-	// structurally satisfies clock.Clock (it implements Now() time.Time).
+	// structurally satisfies clockwork.Clock (it implements Now() time.Time).
 	fakeClock := clockwork.NewFakeClockAt(time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC))
 
 	store := runtimetest.MustMemStore(t)

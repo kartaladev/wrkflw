@@ -1,8 +1,9 @@
 package service
 
 import (
+	"github.com/jonboulle/clockwork"
+
 	"github.com/kartaladev/wrkflw/authz"
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/humantask"
 	"github.com/kartaladev/wrkflw/runtime"
 	"github.com/kartaladev/wrkflw/runtime/idgen"
@@ -23,7 +24,7 @@ type engineConfig struct {
 	authz         authz.Authorizer
 	timerStore    kernel.TimerStore
 	callLinkStore kernel.CallLinkStore
-	clk           clock.Clock
+	clk           clockwork.Clock
 	idgen         idgen.Generator
 	durable       bool
 }
@@ -81,7 +82,7 @@ func WithHumanTasks(taskStore humantask.TaskStore, az authz.Authorizer) Option {
 
 // WithClock overrides the clock used by the engine and the internal task
 // service (and the default driver).
-func WithClock(clk clock.Clock) Option {
+func WithClock(clk clockwork.Clock) Option {
 	return func(c *engineConfig) {
 		if clk != nil {
 			c.clk = clk

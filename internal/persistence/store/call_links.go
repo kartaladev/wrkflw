@@ -9,7 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kartaladev/wrkflw/clock"
+	"github.com/jonboulle/clockwork"
+
 	"github.com/kartaladev/wrkflw/internal/database"
 	"github.com/kartaladev/wrkflw/internal/database/transaction"
 	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
@@ -44,9 +45,9 @@ func WithCallLinkLease(owner string, ttl time.Duration) CallLinkOption {
 }
 
 // WithCallLinkClock overrides the clock used for lease timestamps. The default
-// is [clock.System]. Inject a fake clock in tests for deterministic behaviour.
+// is [clockwork.NewRealClock]. Inject a fake clock in tests for deterministic behaviour.
 // A nil clock is ignored (the default is kept).
-func WithCallLinkClock(clk clock.Clock) CallLinkOption {
+func WithCallLinkClock(clk clockwork.Clock) CallLinkOption {
 	return func(s *CallLinkStore) {
 		if clk != nil {
 			s.clk = clk
@@ -71,7 +72,7 @@ type CallLinkStore struct {
 	dialect    dialect.Dialect
 	leaseOwner string
 	leaseTTL   time.Duration
-	clk        clock.Clock
+	clk        clockwork.Clock
 }
 
 // NewCallLinkStore constructs a CallLinkStore over conn using dialect d. conn
@@ -96,7 +97,7 @@ func NewCallLinkStore(conn any, d dialect.Dialect, opts ...CallLinkOption) (*Cal
 	if isNilDep(d) {
 		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
 	}
-	s := &CallLinkStore{conn: conn, dialect: d, clk: clock.System()}
+	s := &CallLinkStore{conn: conn, dialect: d, clk: clockwork.NewRealClock()}
 	for _, o := range opts {
 		o(s)
 	}

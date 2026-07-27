@@ -23,10 +23,10 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/jonboulle/clockwork"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/internal/database"
 	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 	"github.com/kartaladev/wrkflw/internal/persistence/store"
@@ -146,10 +146,10 @@ func MySQLWithRelayBackoff(base, maxInterval time.Duration) MySQLRelayOption {
 }
 
 // MySQLWithRelayClock sets the clock the MySQL relay uses to stamp published_at
-// / next_attempt_at and to evaluate which rows are due. Default: clock.System().
-// Inject a fake clock in tests for deterministic behaviour (ADR-0003).
+// / next_attempt_at and to evaluate which rows are due. Default: clockwork.NewRealClock().
+// Inject a fake clock in tests for deterministic behaviour (ADR-0138).
 // Mirrors WithRelayClock for the Postgres relay.
-func MySQLWithRelayClock(clk clock.Clock) MySQLRelayOption {
+func MySQLWithRelayClock(clk clockwork.Clock) MySQLRelayOption {
 	return storeRelayOption(store.WithRelayClock(clk))
 }
 
@@ -218,10 +218,10 @@ func MySQLWithCallLinkLease(owner string, ttl time.Duration) MySQLCallLinkOption
 }
 
 // MySQLWithCallLinkClock sets the clock the MySQL CallLinkStore uses for lease
-// timestamps. Default: clock.System(). Inject a fake clock in tests for
-// deterministic behaviour (ADR-0003).
+// timestamps. Default: clockwork.NewRealClock(). Inject a fake clock in tests for
+// deterministic behaviour (ADR-0138).
 // Mirrors WithCallLinkClock for the Postgres facade.
-func MySQLWithCallLinkClock(clk clock.Clock) MySQLCallLinkOption {
+func MySQLWithCallLinkClock(clk clockwork.Clock) MySQLCallLinkOption {
 	return store.WithCallLinkClock(clk)
 }
 

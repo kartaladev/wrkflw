@@ -6,7 +6,8 @@ import (
 	"iter"
 	"time"
 
-	"github.com/kartaladev/wrkflw/clock"
+	"github.com/jonboulle/clockwork"
+
 	"github.com/kartaladev/wrkflw/scheduler"
 )
 
@@ -24,9 +25,9 @@ var _ scheduler.Scheduler = (*RecordingScheduler)(nil)
 //
 // Clock is the time source used to resolve the trigger's next occurrence
 // (e.g. now+duration for a fixed-delay trigger); when nil it defaults to
-// clock.System(). Inject a fake clock to make duration triggers deterministic.
+// clockwork.NewRealClock(). Inject a fake clock to make duration triggers deterministic.
 type RecordingScheduler struct {
-	Clock  clock.Clock
+	Clock  clockwork.Clock
 	FireAt time.Time
 	Armed  bool
 }
@@ -35,7 +36,7 @@ type RecordingScheduler struct {
 func (s *RecordingScheduler) now() time.Time {
 	clk := s.Clock
 	if clk == nil {
-		clk = clock.System()
+		clk = clockwork.NewRealClock()
 	}
 	return clk.Now()
 }

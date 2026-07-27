@@ -45,13 +45,13 @@ func TestMemStoreRecordsCallLinkOnCreate(t *testing.T) {
 }
 
 // TestWithMemCallLinkClockNilFallsBackToSystem asserts that passing a nil clock
-// to WithMemCallLinkClock does NOT overwrite the default clock.System(). The
+// to WithMemCallLinkClock does NOT overwrite the default clockwork.NewRealClock(). The
 // guard is verified via ClaimPending in lease mode — that path calls clk.Now()
 // to evaluate the lease cutoff. A nil clock would panic there.
 func TestWithMemCallLinkClockNilFallsBackToSystem(t *testing.T) {
 	cl := kernel.NewMemCallLinkStore(
 		kernel.WithMemCallLinkLease("replica-X", 30*time.Second),
-		kernel.WithMemCallLinkClock(nil), // must be ignored; clock.System() must survive
+		kernel.WithMemCallLinkClock(nil), // must be ignored; clockwork.NewRealClock() must survive
 	)
 
 	// Insert a terminal-but-unnotified link to exercise the clock path.

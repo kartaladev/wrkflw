@@ -8,7 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kartaladev/wrkflw/clock"
+	"github.com/jonboulle/clockwork"
+
 	"github.com/kartaladev/wrkflw/scheduler"
 )
 
@@ -49,7 +50,7 @@ type pendingTimer struct {
 // that same Tick; they fire only on a subsequent Tick call. This prevents
 // surprising infinite loops when a reminder reschedules itself.
 type MemScheduler struct {
-	clk     clock.Clock
+	clk     clockwork.Clock
 	mu      sync.Mutex
 	pending map[string]pendingTimer
 	stores  map[scheduler.JobKind]scheduler.JobStore
@@ -59,9 +60,9 @@ type MemScheduler struct {
 type MemSchedulerOption func(*MemScheduler)
 
 // WithMemSchedulerClock sets the time source used to evaluate timer due-ness.
-// Default: clock.System(). A nil clock is ignored. Inject a fake clock (e.g.
+// Default: clockwork.NewRealClock(). A nil clock is ignored. Inject a fake clock (e.g.
 // [FakeClock]) in tests.
-func WithMemSchedulerClock(clk clock.Clock) MemSchedulerOption {
+func WithMemSchedulerClock(clk clockwork.Clock) MemSchedulerOption {
 	return func(s *MemScheduler) {
 		if clk != nil {
 			s.clk = clk
@@ -70,11 +71,11 @@ func WithMemSchedulerClock(clk clock.Clock) MemSchedulerOption {
 }
 
 // NewMemScheduler constructs a [MemScheduler]. The time source defaults to
-// clock.System(); override it with [WithMemSchedulerClock] (e.g. a [FakeClock]
+// clockwork.NewRealClock(); override it with [WithMemSchedulerClock] (e.g. a [FakeClock]
 // in tests).
 func NewMemScheduler(opts ...MemSchedulerOption) *MemScheduler {
 	s := &MemScheduler{
-		clk:     clock.System(),
+		clk:     clockwork.NewRealClock(),
 		pending: make(map[string]pendingTimer),
 	}
 	for _, o := range opts {

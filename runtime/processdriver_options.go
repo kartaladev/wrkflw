@@ -4,12 +4,12 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jonboulle/clockwork"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/kartaladev/wrkflw/action"
 	"github.com/kartaladev/wrkflw/authz"
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/humantask"
@@ -198,9 +198,9 @@ func WithConditionEvaluator(eval engine.ConditionEvaluator) Option {
 }
 
 // WithClock sets the time source the ProcessDriver uses to stamp triggers,
-// step-duration metrics, and armed-timer times. Default: clock.System().
-// A nil clock is ignored. Inject a fake clock in tests for determinism (ADR-0003).
-func WithClock(clk clock.Clock) Option {
+// step-duration metrics, and armed-timer times. Default: clockwork.NewRealClock().
+// A nil clock is ignored. Inject a fake clock in tests for determinism (ADR-0138).
+func WithClock(clk clockwork.Clock) Option {
 	return func(driver *ProcessDriver) {
 		if clk != nil {
 			driver.clk = clk

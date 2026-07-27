@@ -208,7 +208,7 @@ func TestMemSchedulerRecurringReArmNotRefiredSameTick(t *testing.T) {
 }
 
 func TestNewMemSchedulerDefaultUsesSystemClock(t *testing.T) {
-	// No clock option → uses clock.System(); a past-due timer fires on Tick.
+	// No clock option → uses clockwork.NewRealClock(); a past-due timer fires on Tick.
 	s := processtest.NewMemScheduler()
 	ctx := t.Context()
 	fired := false

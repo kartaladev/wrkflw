@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jonboulle/clockwork"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/internal/observability"
@@ -38,7 +38,7 @@ type CallNotifier struct {
 	cl      kernel.CallLinkStore
 	deliver CallDeliverFunc
 	reg     kernel.DefinitionRegistry
-	clk     clock.Clock
+	clk     clockwork.Clock
 	batch   int
 	poll    time.Duration
 
@@ -75,9 +75,9 @@ func WithCallNotifierPollInterval(d time.Duration) CallNotifierOption {
 	}
 }
 
-// WithClock sets the time source for trigger timestamps (ADR-0003).
-// Default: clock.System(). A nil clock is ignored. Inject a fake clock in tests.
-func WithClock(clk clock.Clock) CallNotifierOption {
+// WithClock sets the time source for trigger timestamps (ADR-0138).
+// Default: clockwork.NewRealClock(). A nil clock is ignored. Inject a fake clock in tests.
+func WithClock(clk clockwork.Clock) CallNotifierOption {
 	return func(n *CallNotifier) {
 		if clk != nil {
 			n.clk = clk
@@ -111,7 +111,7 @@ func WithCallNotifierMeterProvider(mp metric.MeterProvider) CallNotifierOption {
 //   - deliver: wraps ProcessDriver.ApplyTrigger (the parent def is pre-resolved by DrainOnce via reg).
 //   - reg: resolves parent definition references (format "defID:version").
 //   - opts: optional configuration overrides (use [WithClock] to set the
-//     time source; default is clock.System() per ADR-0003).
+//     time source; default is clockwork.NewRealClock() per ADR-0138).
 //
 // REQUIRED registration contract: every parent definition MUST be resolvable from
 // reg under the exact key "<defID>:<version>" (the format DrainOnce uses to look it
@@ -132,7 +132,7 @@ func NewCallNotifier(cl kernel.CallLinkStore, deliver CallDeliverFunc, reg kerne
 		cl:      cl,
 		deliver: deliver,
 		reg:     reg,
-		clk:     clock.System(),
+		clk:     clockwork.NewRealClock(),
 		batch:   100,
 		poll:    time.Second,
 	}
@@ -224,7 +224,7 @@ func (n *CallNotifier) DrainOnce(ctx context.Context) (int, error) {
 // attempted before the first tick, and DrainOnce errors are logged and do not
 // terminate the loop (unlike infrastructure errors).
 func (n *CallNotifier) Run(ctx context.Context) error {
-	ticker := time.NewTicker(n.poll)
+	ticker := n.clk.NewTicker(n.poll)
 	defer ticker.Stop()
 
 	// Immediate drain before waiting for the first tick.
@@ -239,7 +239,7 @@ func (n *CallNotifier) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ticker.C:
+		case <-ticker.Chan():
 			if _, err := n.DrainOnce(ctx); err != nil {
 				if ctx.Err() != nil { // Canceled or DeadlineExceeded: honor the Run contract.
 					return ctx.Err()

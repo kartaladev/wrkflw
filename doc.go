@@ -90,9 +90,11 @@
 //     the abstraction). Provides the gocron-backed Scheduler; the in-memory
 //     MemScheduler test double lives in the processtest harness package.
 //   - observability Metrics, traces, and slog wiring at the runtime boundary.
-//   - clock        The clock.Clock time abstraction; supply clock.System() in
-//     production; inject a fake clock (clockwork.NewFakeClock) in tests.
-//     Engine and runtime never read the wall clock directly.
+//   - (clockwork)  Time abstraction: [github.com/jonboulle/clockwork.Clock]
+//     (ADR-0138) is injected directly into every stateful component — no local
+//     wrapper package. Default: clockwork.NewRealClock(); inject a fake clock
+//     (clockwork.NewFakeClock) in tests. Engine and runtime never read the wall
+//     clock directly.
 //
 // Implementation details a consumer must not import live under internal/.
 // Reference wiring examples live under examples/.

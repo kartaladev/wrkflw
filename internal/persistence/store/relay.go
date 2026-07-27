@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jonboulle/clockwork"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/internal/database"
 	"github.com/kartaladev/wrkflw/internal/database/transaction"
 	"github.com/kartaladev/wrkflw/internal/observability"
@@ -46,7 +46,7 @@ type Relay struct {
 	conn    any
 	d       dialect.Dialect
 	pub     kernel.OutboxPublisher
-	clk     clock.Clock
+	clk     clockwork.Clock
 	poll    time.Duration
 	batch   int
 	maxDel  int
@@ -97,8 +97,8 @@ func WithRelayBatchSize(n int) RelayOption { return func(r *Relay) { r.batch = n
 
 // WithRelayClock sets the clock used to stamp published_at / next_attempt_at
 // and to evaluate which rows are due. A nil clock is ignored; the default
-// (clock.System()) is kept.
-func WithRelayClock(clk clock.Clock) RelayOption {
+// (clockwork.NewRealClock()) is kept.
+func WithRelayClock(clk clockwork.Clock) RelayOption {
 	return func(r *Relay) {
 		if clk != nil {
 			r.clk = clk
@@ -192,7 +192,7 @@ func NewRelay(conn any, d dialect.Dialect, pub kernel.OutboxPublisher, opts ...R
 		conn:   conn,
 		d:      d,
 		pub:    pub,
-		clk:    clock.System(),
+		clk:    clockwork.NewRealClock(),
 		poll:   time.Second,
 		batch:  100,
 		maxDel: 10,
@@ -479,7 +479,7 @@ func (r *Relay) drainUntilEmpty(ctx context.Context) error {
 // polling. Only infrastructure errors (claim / commit failures) propagate and
 // terminate the loop.
 func (r *Relay) Run(ctx context.Context) error {
-	ticker := time.NewTicker(r.poll)
+	ticker := r.clk.NewTicker(r.poll)
 	defer ticker.Stop()
 
 	// When a Notifier is present, start the listenLoop in a background goroutine.
@@ -513,7 +513,7 @@ func (r *Relay) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ticker.C:
+		case <-ticker.Chan():
 			if err := r.drainUntilEmpty(ctx); err != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()

@@ -556,7 +556,7 @@ func TestDeliverSignalDefinitionNotFound(t *testing.T) {
 }
 
 // TestNewEngineDefaultClockNoPanic verifies that NewEngine works without a clock
-// option and returns a non-nil Engine (default clock.System() is applied).
+// option and returns a non-nil Engine (default clockwork.NewRealClock() is applied).
 func TestNewEngineDefaultClockNoPanic(t *testing.T) {
 	h := newHarness(t)
 	e, err := service.NewEngine(

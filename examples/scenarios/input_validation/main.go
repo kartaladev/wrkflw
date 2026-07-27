@@ -45,8 +45,9 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/jonboulle/clockwork"
+
 	"github.com/kartaladev/wrkflw/authz"
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/definition"
 	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/event"
@@ -84,7 +85,7 @@ func main() {
 		"manager": {manager},
 	})
 	az := authz.RoleAuthorizer{}
-	clk := clock.System()
+	clk := clockwork.NewRealClock()
 
 	memSt, err := kernel.NewMemInstanceStore()
 	if err != nil {

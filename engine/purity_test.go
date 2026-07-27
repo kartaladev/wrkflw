@@ -92,7 +92,7 @@ func TestCorePurityImportDenylist(t *testing.T) {
 // TestCorePurityNoWallClock asserts no non-test file of the engine package reads
 // the wall clock (time.Now/time.Since/time.Tick/time.After/time.Sleep/time.Until/
 // time.NewTimer/time.NewTicker/time.AfterFunc). The core takes time from an
-// injected clock.Clock so a fake clock drives it deterministically in tests.
+// injected clockwork.Clock so a fake clock drives it deterministically in tests.
 func TestCorePurityNoWallClock(t *testing.T) {
 	for _, path := range nonTestGoFiles(t, ".") {
 		f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
@@ -100,7 +100,7 @@ func TestCorePurityNoWallClock(t *testing.T) {
 			t.Fatalf("parse %s: %v", path, err)
 		}
 		for _, call := range wallClockCalls(f) {
-			t.Errorf("%s calls time.%s: the pure engine core must take time from clock.Clock, not the wall clock", path, call)
+			t.Errorf("%s calls time.%s: the pure engine core must take time from clockwork.Clock, not the wall clock", path, call)
 		}
 	}
 }
