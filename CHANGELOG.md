@@ -263,6 +263,15 @@ release.
   sequence flow. Known limitation: `DeliverMessage` does not route to a message-triggered
   event-sub arm (pre-existing) — use `ApplyTrigger`.
 
+- **`service.ProcessInstance` gains two methods** — `ActiveTask(nodeID string) (humantask.HumanTask, bool)`
+  and `ActiveTasks() []humantask.HumanTask` — returning the open (Unclaimed|Claimed)
+  human tasks of an instance, sorted ascending by `TaskToken` (ADR-0142). Consumers
+  who **embed** a ProcessInstance obtained from the engine need no code change but
+  must **recompile**; consumers with a **hand-rolled** implementation must add the
+  two methods, filtering `State().Tasks` by `humantask.IsOpen()`, returning a
+  **non-nil** slice **sorted by `TaskToken`** (`ActiveTasks`) and the **first** such
+  match (`ActiveTask`).
+
 ### Added
 
 - **Optional human `label` on every node (ADR-0139).** Each node kind now carries an optional
