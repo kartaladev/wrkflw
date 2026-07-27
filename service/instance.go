@@ -1,12 +1,15 @@
 package service
 
 import (
+	"cmp"
 	"encoding/json"
+	"slices"
 	"sort"
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
 )
 
 // ProcessInstance is the read-only, fused view of a running instance: its
@@ -18,6 +21,19 @@ type ProcessInstance interface {
 	Definition() *model.ProcessDefinition // raw template (nil if unresolved)
 	State() engine.InstanceState          // raw running state
 	json.Marshaler                        // MarshalJSON() ([]byte, error)
+
+	// ActiveTasks returns every open human task (Unclaimed or Claimed;
+	// humantask.IsOpen) in the instance, sorted by TaskToken in ascending
+	// lexicographic order. Never nil: an instance with no open tasks yields a
+	// non-nil empty slice.
+	ActiveTasks() []humantask.HumanTask
+
+	// ActiveTask returns the open human task at nodeID and true, or the zero
+	// HumanTask and false if the node has no open task. "Open" means Unclaimed or
+	// Claimed (humantask.IsOpen). A well-formed graph has at most one open task
+	// per node; if a pathological definition produces more than one, the first in
+	// ascending TaskToken order is returned.
+	ActiveTask(nodeID string) (humantask.HumanTask, bool)
 }
 
 // NewProcessInstance fuses a definition (may be nil) and instance state into a
@@ -33,6 +49,28 @@ type processInstance struct {
 
 func (p processInstance) Definition() *model.ProcessDefinition { return p.def }
 func (p processInstance) State() engine.InstanceState          { return p.st }
+
+func (p processInstance) ActiveTasks() []humantask.HumanTask {
+	out := make([]humantask.HumanTask, 0, len(p.st.Tasks))
+	for _, t := range p.st.Tasks {
+		if t.IsOpen() {
+			out = append(out, t)
+		}
+	}
+	slices.SortFunc(out, func(a, b humantask.HumanTask) int {
+		return cmp.Compare(a.TaskToken, b.TaskToken)
+	})
+	return out
+}
+
+func (p processInstance) ActiveTask(nodeID string) (humantask.HumanTask, bool) {
+	for _, t := range p.ActiveTasks() { // already open-filtered and token-sorted
+		if t.NodeID == nodeID {
+			return t, true
+		}
+	}
+	return humantask.HumanTask{}, false
+}
 
 func (p processInstance) MarshalJSON() ([]byte, error) {
 	return json.Marshal(newInstanceJSON(p.def, p.st))
