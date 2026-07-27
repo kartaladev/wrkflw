@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/kartaladev/wrkflw/action"
 	"github.com/kartaladev/wrkflw/authz"
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/flow"
@@ -93,7 +93,7 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 		"set-output": setOutputAction{},
 	})
 
-	clk := clock.System()
+	clk := clockwork.NewRealClock()
 	store := runtimetest.MustMemStore(t)
 
 	// Build the definition registry with the child def.
@@ -143,7 +143,7 @@ func TestCallActivityChildFailureFailsParent(t *testing.T) {
 		"failing-action": failingAction{},
 	})
 
-	clk := clock.System()
+	clk := clockwork.NewRealClock()
 	store := runtimetest.MustMemStore(t)
 
 	// Child def uses a failing action.
@@ -240,7 +240,7 @@ func parkingParentDef() *model.ProcessDefinition {
 func TestCallActivityParkedChildFailsParentWithClearError(t *testing.T) {
 	ctx := t.Context()
 
-	clk := clock.System()
+	clk := clockwork.NewRealClock()
 	store := runtimetest.MustMemStore(t)
 
 	parkingChild := parkingChildDef()
@@ -325,7 +325,7 @@ func selfRefDef() *model.ProcessDefinition {
 func TestCallActivityRecursionDepthLimited(t *testing.T) {
 	ctx := t.Context()
 
-	clk := clock.System()
+	clk := clockwork.NewRealClock()
 	store := runtimetest.MustMemStore(t)
 
 	def := selfRefDef()
@@ -365,7 +365,7 @@ func TestCallActivityRecursionDepthLimited(t *testing.T) {
 func TestStartSubInstanceNoRegistry(t *testing.T) {
 	ctx := t.Context()
 
-	clk := clock.System()
+	clk := clockwork.NewRealClock()
 	store := runtimetest.MustMemStore(t)
 
 	// No WithDefinitions option.

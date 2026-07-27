@@ -3,11 +3,11 @@ package runtime_test
 import (
 	"testing"
 
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/kartaladev/wrkflw/authz"
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/flow"
@@ -129,7 +129,7 @@ func TestDeliverLoadError(t *testing.T) {
 	ctx := t.Context()
 	driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t))
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
-	trg := engine.NewHumanClaimed(clock.System().Now(), "no-token", manager)
+	trg := engine.NewHumanClaimed(clockwork.NewRealClock().Now(), "no-token", manager)
 	_, err := driver.ApplyTrigger(ctx, runtimetest.ApprovalDef(), "non-existent", trg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "workflow-runtime: deliver: load:")

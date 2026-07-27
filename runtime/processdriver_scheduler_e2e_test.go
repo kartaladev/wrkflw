@@ -43,7 +43,8 @@ func timerIntermediateE2EDef() *model.ProcessDefinition {
 
 // TestGocronSchedulerDrivesRunnerToCompletion proves the gocron-backed scheduler
 // drives a real Runner identically to MemScheduler: ONE shared fake clock is the
-// runner's clock.Clock AND the scheduler's clockwork.Clock. Advancing the shared
+// runner's clockwork.Clock AND the scheduler's clockwork.Clock — the same type,
+// injected as one shared instance. Advancing the shared
 // clock past FireAt fires the timer on gocron's executor goroutine, which calls
 // runner.ApplyTrigger(TimerFired); the instance must reach StatusCompleted.
 //
@@ -75,7 +76,7 @@ func TestGocronSchedulerDrivesRunnerToCompletion(t *testing.T) {
 
 	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
-	driver, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store), runtime.WithClock(fc), runtime.WithScheduler(sched)) // same fc, as clock.Clock
+	driver, err := runtime.NewProcessDriver(runtime.WithActionCatalog(cat), runtime.WithInstanceStore(store), runtime.WithClock(fc), runtime.WithScheduler(sched)) // same fc, as clockwork.Clock
 	require.NoError(t, err)
 
 	def := timerIntermediateE2EDef()

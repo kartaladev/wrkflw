@@ -14,6 +14,7 @@ import (
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/file"
 	"github.com/expr-lang/expr/vm"
+	"github.com/jonboulle/clockwork"
 )
 
 // DefaultTimeout bounds a single expression evaluation. It is generous enough
@@ -35,6 +36,7 @@ type Evaluator struct {
 	mu      sync.Mutex
 	cache   map[string]*vm.Program
 	timeout time.Duration
+	clk     clockwork.Clock
 }
 
 // Option configures an Evaluator.
@@ -47,10 +49,17 @@ func WithTimeout(d time.Duration) Option {
 	return func(e *Evaluator) { e.timeout = d }
 }
 
+// WithClock sets the clock backing the evaluation-timeout timer. Defaults to a
+// real clock; pass a clockwork fake to drive timeouts deterministically in tests.
+func WithClock(c clockwork.Clock) Option {
+	return func(e *Evaluator) { e.clk = c }
+}
+
 // New returns an Evaluator. By default a DefaultTimeout guard is enabled; pass
 // WithTimeout to override it (including WithTimeout(0) to disable).
 func New(opts ...Option) *Evaluator {
 	e := &Evaluator{cache: make(map[string]*vm.Program), timeout: DefaultTimeout}
+	e.clk = clockwork.NewRealClock()
 	for _, o := range opts {
 		o(e)
 	}
@@ -80,12 +89,12 @@ func (e *Evaluator) run(p *vm.Program, env map[string]any) (any, error) {
 		out, err := expr.Run(p, env)
 		ch <- result{out, err}
 	}()
-	timer := time.NewTimer(e.timeout)
+	timer := e.clk.NewTimer(e.timeout)
 	defer timer.Stop()
 	select {
 	case r := <-ch:
 		return r.out, r.err
-	case <-timer.C:
+	case <-timer.Chan():
 		return nil, ErrEvalTimeout
 	}
 }

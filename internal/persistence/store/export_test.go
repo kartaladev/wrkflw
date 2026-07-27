@@ -50,3 +50,11 @@ func (s *Store) NotifyForTest() dialect.Notifier { return s.notify }
 // pgxNotifierReconnectBackoff constant so tests can calculate the minimum wait
 // needed before asserting that a reconnect attempt has occurred.
 const PgxNotifierReconnectBackoffForTest = pgxNotifierReconnectBackoff
+
+// WaitBackoffForTest exposes the unexported pgxNotifier.waitBackoff method to
+// black-box tests, given the [dialect.Notifier] returned by [NewPgxNotifier]
+// (which is always backed by a *pgxNotifier). It MUST NOT be called from
+// non-test code.
+func WaitBackoffForTest(n dialect.Notifier, ctx context.Context) error {
+	return n.(*pgxNotifier).waitBackoff(ctx)
+}

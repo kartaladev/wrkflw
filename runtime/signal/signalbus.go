@@ -7,7 +7,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/kartaladev/wrkflw/clock"
+	"github.com/jonboulle/clockwork"
+
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
@@ -41,10 +42,10 @@ type DeliverFunc func(ctx context.Context, instanceID string, trg engine.Trigger
 // concurrent use from multiple goroutines (scheduler callbacks, HTTP handlers).
 //
 // Timestamp: Publish stamps each SignalReceived with the time from the injected
-// [clock.Clock] (ADR-0003). Pass the same fake clock used by the ProcessDriver in tests
+// [clockwork.Clock] (ADR-0138). Pass the same fake clock used by the ProcessDriver in tests
 // so that downstream timers anchored to the signal timestamp are deterministic.
 type SignalBus struct {
-	clk     clock.Clock
+	clk     clockwork.Clock
 	mu      sync.Mutex
 	waiters map[string]map[string]struct{} // signalName → set of instanceIDs
 	deliver DeliverFunc
@@ -54,9 +55,9 @@ type SignalBus struct {
 type SignalBusOption func(*SignalBus)
 
 // WithClock sets the time source used to stamp SignalReceived triggers.
-// Default: clock.System(). A nil clock is ignored. Pass the ProcessDriver's fake clock in
+// Default: clockwork.NewRealClock(). A nil clock is ignored. Pass the ProcessDriver's fake clock in
 // tests so downstream timers anchored to the signal timestamp stay deterministic.
-func WithClock(clk clock.Clock) SignalBusOption {
+func WithClock(clk clockwork.Clock) SignalBusOption {
 	return func(b *SignalBus) {
 		if clk != nil {
 			b.clk = clk
@@ -66,13 +67,13 @@ func WithClock(clk clock.Clock) SignalBusOption {
 
 // NewSignalBus constructs a SignalBus backed by the given delivery function.
 // deliver is called once per registered waiter for each Publish. The time source
-// defaults to clock.System(); override it with WithClock (ADR-0003).
+// defaults to clockwork.NewRealClock(); override it with WithClock (ADR-0138).
 func NewSignalBus(deliver DeliverFunc, opts ...SignalBusOption) (*SignalBus, error) {
 	if deliver == nil {
 		return nil, fmt.Errorf("%w: deliver", kernel.ErrNilDependency)
 	}
 	b := &SignalBus{
-		clk:     clock.System(),
+		clk:     clockwork.NewRealClock(),
 		waiters: make(map[string]map[string]struct{}),
 		deliver: deliver,
 	}

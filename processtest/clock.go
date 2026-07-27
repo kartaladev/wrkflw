@@ -1,57 +1,29 @@
 package processtest
 
 import (
-	"sync"
 	"time"
 
-	"github.com/kartaladev/wrkflw/clock"
+	"github.com/jonboulle/clockwork"
 )
 
-// FakeClock is a manually-advanced [clock.Clock] for deterministic tests. It
-// holds a single instant that only changes when the test calls [FakeClock.Advance]
-// or [FakeClock.Set], so timers driven by a [MemScheduler] fire exactly
-// when the test decides.
-//
-// A [Harness] shares one FakeClock between its driver and scheduler; construct a
-// standalone one with [NewFakeClock] when wiring a driver by hand. FakeClock is
-// safe for concurrent use.
-//
-// It intentionally implements only [clock.Clock] (Now) — the engine never reads
-// wall-clock time and the MemScheduler needs nothing more — so the harness keeps
-// its public API free of any third-party clock dependency.
+// FakeClock is a manually-advanced clock for deterministic tests. It embeds a
+// clockwork.FakeClock (so it satisfies clockwork.Clock and drives fake tickers,
+// timers, and after-channels) and adds Set for absolute jumps. A Harness shares
+// one FakeClock between its driver and scheduler.
 type FakeClock struct {
-	mu  sync.Mutex
-	now time.Time
+	*clockwork.FakeClock
 }
 
 // Compile-time assertion.
-var _ clock.Clock = (*FakeClock)(nil)
+var _ clockwork.Clock = (*FakeClock)(nil)
 
 // NewFakeClock returns a FakeClock positioned at start.
 func NewFakeClock(start time.Time) *FakeClock {
-	return &FakeClock{now: start}
+	return &FakeClock{clockwork.NewFakeClockAt(start)}
 }
 
-// Now returns the clock's current instant.
-func (c *FakeClock) Now() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.now
-}
-
-// Advance moves the clock forward by d. A non-positive d leaves the clock
-// unchanged.
-func (c *FakeClock) Advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if d > 0 {
-		c.now = c.now.Add(d)
-	}
-}
-
-// Set jumps the clock to t (forward or backward).
+// Set jumps Now to t (forward or backward) by advancing the embedded fake by the
+// delta. Forward jumps fire any timers/tickers scheduled in the interval.
 func (c *FakeClock) Set(t time.Time) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.now = t
+	c.Advance(t.Sub(c.Now()))
 }

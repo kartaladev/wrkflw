@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/flow"
 	"github.com/kartaladev/wrkflw/definition/model"
@@ -170,7 +170,7 @@ func TestRelayOptionsConstructors(t *testing.T) {
 	relay, err := persistence.NewRelay(pool, pub,
 		persistence.WithPollInterval(50*time.Millisecond),
 		persistence.WithBatchSize(10),
-		persistence.WithRelayClock(clock.System()),
+		persistence.WithRelayClock(clockwork.NewRealClock()),
 		persistence.WithMaxDeliveryAttempts(5),
 		persistence.WithRelayBackoff(time.Second, time.Minute),
 	)

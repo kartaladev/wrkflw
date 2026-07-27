@@ -8,6 +8,7 @@ import (
 
 	"github.com/casbin/casbin/v2/persist"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jonboulle/clockwork"
 )
 
 // Compile-time assertion: pgWatcher satisfies casbin persist.Watcher.
@@ -36,9 +37,14 @@ type pgWatcher struct {
 	// synchronise on the actual listen state instead of guessing with a sleep,
 	// closing the NOTIFY-before-LISTEN race.
 	listenReady chan struct{}
+
+	// clk drives the reconnect backoff wait (ADR-0138), letting a
+	// clockwork.FakeClock make it deterministic in tests. Production callers
+	// pass clockwork.NewRealClock().
+	clk clockwork.Clock
 }
 
-func newPGWatcher(pool *pgxpool.Pool, channel, nodeID string, listenReady chan struct{}) *pgWatcher {
+func newPGWatcher(pool *pgxpool.Pool, channel, nodeID string, listenReady chan struct{}, clk clockwork.Clock) *pgWatcher {
 	ctx, cancel := context.WithCancel(context.Background())
 	w := &pgWatcher{
 		pool:        pool,
@@ -47,6 +53,7 @@ func newPGWatcher(pool *pgxpool.Pool, channel, nodeID string, listenReady chan s
 		cancel:      cancel,
 		done:        make(chan struct{}),
 		listenReady: listenReady,
+		clk:         clk,
 	}
 	go w.listen(ctx)
 	return w
@@ -130,6 +137,6 @@ func (w *pgWatcher) listen(ctx context.Context) {
 func (w *pgWatcher) backoff(ctx context.Context) {
 	select {
 	case <-ctx.Done():
-	case <-time.After(watcherReconnectDelay):
+	case <-w.clk.After(watcherReconnectDelay):
 	}
 }

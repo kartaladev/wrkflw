@@ -46,7 +46,7 @@ decision, and the Architecture section expands the rest:
 | Expressions | `github.com/expr-lang/expr` | all in-definition / in-execution expressions |
 | Eventing | [`watermill`](https://github.com/ThreeDotsLabs/watermill), **outbox publishing** | **never import watermill from workflow code** — go through the eventing abstraction (no vendor lock-in) |
 | Scheduling | [`go-co-op/gocron`](https://github.com/go-co-op/gocron) **pinned to v2.22.0** (ADR-0135) | hard pin; timers, deadline waiters, in-wait actions |
-| Time source | [`jonboulle/clockwork`](https://github.com/jonboulle/clockwork) | implements the in-repo `clock.Clock` interface (ADR-0003) — **never import clockwork from engine/workflow code**, depend on `clock.Clock`; shared with gocron so a fake clock drives both engine + scheduler in tests; core never reads the wall clock |
+| Time source | [`jonboulle/clockwork`](https://github.com/jonboulle/clockwork) | outer stateful layers depend on `clockwork.Clock` **directly** (ADR-0138, supersedes ADR-0003); the pure engine core stays clockwork-free — time enters it only as `Trigger.OccurredAt`; one fake clock still drives both engine + scheduler in tests; core never reads the wall clock |
 | Authorization | pluggable; **casbin** as the baseline | role, resource-privilege, **and attribute-based** (data/process-variable) evaluation |
 | DI container | [`samber/do` v2](https://github.com/samber/do) | application-layer wiring only — see Dependency Injection below |
 | Tests w/ external resources | [`testcontainers-go`](https://github.com/testcontainers/testcontainers-go) | real Postgres/MySQL containers in tests, never mocked; SQLite runs pure-Go (no container) |
@@ -267,7 +267,7 @@ On completion of any change, verify:
 
 1. Don't ignore pre-existing errors in packages you aren't working on. Never excuse them as "not caused by this session." Queue them as follow-up tasks and address by priority.
 2. Stick to skills explicitly listed under "Rule of Thumbs". If a skill outside that list seems applicable, ask before using it.
-3. Never import watermill, casbin, gocron, or clockwork directly from workflow/engine code — go through the in-repo abstraction (the eventing interface, the `Authorizer`, the scheduler port, the `clock.Clock` interface) so vendors stay swappable.
+3. Never import watermill, casbin, or gocron directly from workflow/engine code — go through the in-repo abstraction (the eventing interface, the `Authorizer`, the scheduler port) so vendors stay swappable. The engine *core* additionally must not import `clockwork` at all — enforced by `engine/purity_test.go`.
 
 ## Git Discipline
 

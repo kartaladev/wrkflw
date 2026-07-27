@@ -8,6 +8,7 @@ import (
 
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/file"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -301,6 +302,32 @@ func TestEvalString(t *testing.T) {
 			tc.assert(t, got, err)
 		})
 	}
+}
+
+func TestEvaluator_TimeoutIsClockDriven(t *testing.T) {
+	fc := clockwork.NewFakeClock()
+	e := expreval.New(expreval.WithTimeout(time.Hour), expreval.WithClock(fc))
+
+	// A releasable blocker: the expr goroutine parks here until the test ends, so
+	// it exits cleanly instead of leaking (expr.Run cannot be interrupted, so the
+	// timeout only bounds latency — the goroutine must be freed at cleanup).
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+
+	done := make(chan struct{})
+	var err error
+	go func() {
+		_, err = e.EvalBool("block()", map[string]any{
+			"block": func() bool { <-release; return true },
+		})
+		close(done)
+	}()
+
+	// exactly one waiter: run()'s timeout timer
+	require.NoError(t, fc.BlockUntilContext(t.Context(), 1))
+	fc.Advance(time.Hour) // fire the timeout deterministically
+	<-done
+	require.ErrorIs(t, err, expreval.ErrEvalTimeout)
 }
 
 func TestEvalBoolMemoizes(t *testing.T) {

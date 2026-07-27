@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jonboulle/clockwork"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
@@ -17,7 +18,6 @@ import (
 
 	"github.com/kartaladev/wrkflw/action"
 	"github.com/kartaladev/wrkflw/authz"
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/humantask"
@@ -32,7 +32,7 @@ import (
 // ProcessDriver is the reference single-process driver loop.
 type ProcessDriver struct {
 	cat        action.Catalog
-	clk        clock.Clock
+	clk        clockwork.Clock
 	idgen      idgen.Generator
 	store      kernel.InstanceStore
 	resolver   humantask.ActorResolver
@@ -145,7 +145,7 @@ type ProcessDriver struct {
 //   - Store: [kernel.NewMemInstanceStore] — a transactional in-memory instance
 //     store suitable for single-process and test deployments. Override via
 //     [WithInstanceStore] to supply a persistent SQL-backed store.
-//   - Time source: [clock.System]. Override via [WithClock] (ADR-0003).
+//   - Time source: [clockwork.NewRealClock]. Override via [WithClock] (ADR-0138).
 //
 // Optional capabilities are supplied via functional options; the full set of
 // With* functions returning [Option] is (see each for details):
@@ -154,7 +154,7 @@ type ProcessDriver struct {
 //     [WithDefinitions], [WithCallLinkStore], [WithTimerStore].
 //   - Execution policy: [WithDefaultRetryPolicy], [WithActionTimeout],
 //     [WithExpressionTimeout], [WithConditionEvaluator], [WithJitterSource].
-//   - Time source: [WithClock] (default [clock.System]).
+//   - Time source: [WithClock] (default [clockwork.NewRealClock]).
 //   - Observability: [WithLogger], [WithTracerProvider], [WithMeterProvider].
 func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 	memStore, err := kernel.NewMemInstanceStore()
@@ -167,7 +167,7 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 
 	driver := &ProcessDriver{
 		cat:           action.DefaultCatalog(),
-		clk:           clock.System(),
+		clk:           clockwork.NewRealClock(),
 		idgen:         idgen.XID(),
 		store:         memStore,
 		defsReg:       defaultDefinitionRegistry,

@@ -32,26 +32,6 @@ func (c *countingRegistry) Lookup(_ context.Context, _ model.Qualifier) (*model.
 	return c.def, c.err
 }
 
-// fakeClock is a controllable clock for TTL testing.
-type fakeClock struct {
-	mu  sync.Mutex
-	now time.Time
-}
-
-func newFakeClock(t time.Time) *fakeClock { return &fakeClock{now: t} }
-
-func (f *fakeClock) Now() time.Time {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.now
-}
-
-func (f *fakeClock) Advance(d time.Duration) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.now = f.now.Add(d)
-}
-
 // mustCachingDefinitionRegistry is a local helper to avoid pulling in runtimetest
 // (which imports runtime and calllink, both broken until Tasks 3/4).
 func mustCachingDefinitionRegistry(t *testing.T, backing kernel.DefinitionRegistry, ttl time.Duration, opts ...kernel.CachingDefinitionRegistryOption) *kernel.CachingDefinitionRegistry {
@@ -69,10 +49,10 @@ func TestCachingDefinitionRegistry(t *testing.T) {
 	ttl := time.Minute
 
 	tests := map[string]struct {
-		assert func(t *testing.T, backing *countingRegistry, clk *fakeClock, c *kernel.CachingDefinitionRegistry)
+		assert func(t *testing.T, backing *countingRegistry, clk *clockwork.FakeClock, c *kernel.CachingDefinitionRegistry)
 	}{
 		"second lookup served from cache": {
-			assert: func(t *testing.T, backing *countingRegistry, _ *fakeClock, c *kernel.CachingDefinitionRegistry) {
+			assert: func(t *testing.T, backing *countingRegistry, _ *clockwork.FakeClock, c *kernel.CachingDefinitionRegistry) {
 				got1, err := c.Lookup(t.Context(), model.Version("d", 1))
 				require.NoError(t, err)
 				require.Equal(t, "d", got1.ID)
@@ -85,7 +65,7 @@ func TestCachingDefinitionRegistry(t *testing.T) {
 			},
 		},
 		"ttl expiry triggers a fresh backing call": {
-			assert: func(t *testing.T, backing *countingRegistry, clk *fakeClock, c *kernel.CachingDefinitionRegistry) {
+			assert: func(t *testing.T, backing *countingRegistry, clk *clockwork.FakeClock, c *kernel.CachingDefinitionRegistry) {
 				_, err := c.Lookup(t.Context(), model.Version("d", 1))
 				require.NoError(t, err)
 				require.Equal(t, int64(1), backing.calls.Load())
@@ -99,7 +79,7 @@ func TestCachingDefinitionRegistry(t *testing.T) {
 			},
 		},
 		"concurrent misses collapse to one backing call": {
-			assert: func(t *testing.T, backing *countingRegistry, _ *fakeClock, c *kernel.CachingDefinitionRegistry) {
+			assert: func(t *testing.T, backing *countingRegistry, _ *clockwork.FakeClock, c *kernel.CachingDefinitionRegistry) {
 				// Single-flight: all 50 goroutines race on the same uncached key;
 				// only one backing call must happen.
 				block := make(chan struct{})
@@ -128,7 +108,7 @@ func TestCachingDefinitionRegistry(t *testing.T) {
 			},
 		},
 		"miss propagation — ErrDefinitionNotFound is returned and not cached": {
-			assert: func(t *testing.T, backing *countingRegistry, _ *fakeClock, c *kernel.CachingDefinitionRegistry) {
+			assert: func(t *testing.T, backing *countingRegistry, _ *clockwork.FakeClock, c *kernel.CachingDefinitionRegistry) {
 				backing.def = nil
 				backing.err = kernel.ErrDefinitionNotFound
 
@@ -142,7 +122,7 @@ func TestCachingDefinitionRegistry(t *testing.T) {
 			},
 		},
 		"different defRefs cached independently": {
-			assert: func(t *testing.T, backing *countingRegistry, _ *fakeClock, c *kernel.CachingDefinitionRegistry) {
+			assert: func(t *testing.T, backing *countingRegistry, _ *clockwork.FakeClock, c *kernel.CachingDefinitionRegistry) {
 				_, err := c.Lookup(t.Context(), model.Version("d", 1))
 				require.NoError(t, err)
 
@@ -161,7 +141,7 @@ func TestCachingDefinitionRegistry(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			clk := newFakeClock(baseTime)
+			clk := clockwork.NewFakeClockAt(baseTime)
 			backing := &countingRegistry{def: baseDef}
 			c := mustCachingDefinitionRegistry(t, backing, ttl, kernel.WithCachingDefinitionRegistryClock(clk))
 			tc.assert(t, backing, clk, c)
@@ -192,7 +172,7 @@ func TestCachingDefinitionRegistry_NonErrNotCached(t *testing.T) {
 }
 
 // TestNewCachingDefinitionRegistryDefaultUsesSystemClock verifies that omitting the clock
-// option defaults to clock.System() and the registry still caches correctly.
+// option defaults to clockwork.NewRealClock() and the registry still caches correctly.
 func TestNewCachingDefinitionRegistryDefaultUsesSystemClock(t *testing.T) {
 	t.Parallel()
 	backing := &countingRegistry{def: &model.ProcessDefinition{ID: "d", Version: 1}}

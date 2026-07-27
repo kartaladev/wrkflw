@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kartaladev/wrkflw/authz"
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/flow"
@@ -74,7 +73,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	ctx := t.Context()
 
 	// ── wiring ───────────────────────────────────────────────────────────────
-	clk := clock.System()
+	clk := clockwork.NewRealClock()
 	cl := kernel.NewMemCallLinkStore()
 	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
@@ -159,7 +158,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 }
 
 // TestNewCallNotifierDefaultClockNoPanic verifies that NewCallNotifier works
-// without a positional clock argument (ADR-0003: clock defaults to clock.System()).
+// without a positional clock argument (ADR-0138: clock defaults to clockwork.NewRealClock()).
 func TestNewCallNotifierDefaultClockNoPanic(t *testing.T) {
 	cl := kernel.NewMemCallLinkStore()
 	deliver := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
@@ -172,7 +171,7 @@ func TestNewCallNotifierDefaultClockNoPanic(t *testing.T) {
 }
 
 // TestNewCallNotifierWithClockOption verifies that WithClock injects
-// a fake clock whose time flows into delivered trigger timestamps (ADR-0003).
+// a fake clock whose time flows into delivered trigger timestamps (ADR-0138).
 func TestNewCallNotifierWithClockOption(t *testing.T) {
 	ctx := t.Context()
 
@@ -214,6 +213,63 @@ func TestNewCallNotifierWithClockOption(t *testing.T) {
 	// The trigger timestamp must equal the fake clock's time.
 	assert.Equal(t, fakeTime, capturedTrigger.OccurredAt(),
 		"trigger timestamp must reflect the injected fake clock time")
+}
+
+// drainSignalingCallLinkStore wraps a *kernel.MemCallLinkStore and signals on
+// drained after every ClaimPending call, so a test can synchronize on each
+// drain (immediate + ticker-driven) without sleeping or bare-counting.
+type drainSignalingCallLinkStore struct {
+	*kernel.MemCallLinkStore
+	drained chan struct{}
+}
+
+func (s *drainSignalingCallLinkStore) ClaimPending(ctx context.Context, limit int) ([]kernel.PendingNotify, error) {
+	pending, err := s.MemCallLinkStore.ClaimPending(ctx, limit)
+	s.drained <- struct{}{}
+	return pending, err
+}
+
+// TestCallNotifier_TickIsClockDriven proves Run's poll ticker is routed
+// through the injected clock (ADR-0138): under a clockwork.FakeClock, no wall
+// time passes, so only fc.Advance(poll) — not real time — can produce the
+// second drain.
+func TestCallNotifier_TickIsClockDriven(t *testing.T) {
+	const poll = time.Second
+	fc := clockwork.NewFakeClock()
+	cl := &drainSignalingCallLinkStore{
+		MemCallLinkStore: kernel.NewMemCallLinkStore(),
+		drained:          make(chan struct{}, 1),
+	}
+	reg := kernel.NewMapDefinitionRegistry()
+	deliver := calllink.CallDeliverFunc(func(context.Context, *model.ProcessDefinition, string, engine.Trigger) error {
+		return nil
+	})
+
+	n, err := calllink.NewCallNotifier(cl, deliver, reg,
+		calllink.WithClock(fc),
+		calllink.WithCallNotifierPollInterval(poll),
+	)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() { _ = n.Run(ctx) }()
+
+	// Immediate drain, before the first tick.
+	<-cl.drained
+
+	// Confirm the ticker waiter is armed (registered at NewTicker, i.e. from
+	// Run's start), then advance the fake clock by exactly one poll interval.
+	require.NoError(t, fc.BlockUntilContext(t.Context(), 1))
+	fc.Advance(poll)
+
+	// This receive IS the assertion: a stdlib time.NewTicker never fires under
+	// fc.Advance, so an unrouted Run would never deliver this second drain.
+	select {
+	case <-cl.drained:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no clock-driven tick")
+	}
 }
 
 func TestNewCallNotifierFailsFast(t *testing.T) {

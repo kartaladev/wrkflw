@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/jonboulle/clockwork"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/internal/observability"
@@ -66,7 +66,7 @@ type Chainer struct {
 	starter InstanceStarter
 	policy  SuccessorPolicy
 	links   kernel.ChainLinkStore // optional; nil disables lineage recording (deterministic-id idempotency only)
-	clk     clock.Clock
+	clk     clockwork.Clock
 	tel     observability.Telemetry
 	started metric.Int64Counter
 }
@@ -76,7 +76,7 @@ type ChainerOption func(*chainerConfig)
 
 type chainerConfig struct {
 	links   kernel.ChainLinkStore
-	clk     clock.Clock
+	clk     clockwork.Clock
 	obsOpts []observability.Option
 }
 
@@ -89,8 +89,8 @@ func WithChainLinks(links kernel.ChainLinkStore) ChainerOption {
 }
 
 // WithClock sets the clock used to stamp ChainLink.CreatedAt.
-// Default: clock.System(). A nil clock is ignored (the default is kept).
-func WithClock(clk clock.Clock) ChainerOption {
+// Default: clockwork.NewRealClock(). A nil clock is ignored (the default is kept).
+func WithClock(clk clockwork.Clock) ChainerOption {
 	return func(c *chainerConfig) {
 		if clk != nil {
 			c.clk = clk
@@ -125,7 +125,7 @@ func NewChainer(starter InstanceStarter, policy SuccessorPolicy, opts ...Chainer
 	if policy == nil {
 		return nil, fmt.Errorf("%w: policy", kernel.ErrNilDependency)
 	}
-	cfg := chainerConfig{clk: clock.System()}
+	cfg := chainerConfig{clk: clockwork.NewRealClock()}
 	for _, o := range opts {
 		o(&cfg)
 	}

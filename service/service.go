@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/jonboulle/clockwork"
+
 	"github.com/kartaladev/wrkflw/authz"
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/humantask"
@@ -115,7 +116,7 @@ type Engine struct {
 	store     kernel.InstanceStore
 	lister    kernel.InstanceLister
 	taskStore humantask.TaskStore
-	clk       clock.Clock
+	clk       clockwork.Clock
 	idgen     idgen.Generator
 	// ownsDriver is true only when NewEngine built the driver itself (no driver
 	// was injected via WithProcessDriver). It gates Start/Shutdown so a
@@ -159,7 +160,7 @@ func NewEngine(opts ...Option) (*Engine, error) {
 		}
 	}
 	if c.clk == nil {
-		c.clk = clock.System()
+		c.clk = clockwork.NewRealClock()
 	}
 	if c.idgen == nil {
 		c.idgen = idgen.XID()

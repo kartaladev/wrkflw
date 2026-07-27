@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/processtest"
 )
 
@@ -17,8 +17,8 @@ func TestFakeClock(t *testing.T) {
 
 	fc := processtest.NewFakeClock(clockBase)
 
-	// Satisfies clock.Clock.
-	var _ clock.Clock = fc
+	// Satisfies clockwork.Clock.
+	var _ clockwork.Clock = fc
 
 	assert.Equal(t, clockBase, fc.Now(), "Now returns the base time")
 

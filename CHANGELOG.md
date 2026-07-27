@@ -17,6 +17,23 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **The public `clock` package is removed; every `With…Clock` option now takes
+  `clockwork.Clock` directly (ADR-0138, supersedes ADR-0003).** Outer stateful layers
+  (the expression-evaluation timeout, the call-link ticker, the outbox relay ticker, the
+  pgx-notifier backoff, and the casbin-watcher backoff) depend on
+  [`jonboulle/clockwork`](https://github.com/jonboulle/clockwork)'s `Clock` interface in
+  place of the deleted in-repo `clock.Clock`, **including
+  `processtest.WithMemSchedulerClock`**. Consumers passing a `clock.Clock` value to any
+  `With…Clock` option must migrate to a `clockwork.Clock` (e.g.
+  `clockwork.NewRealClock()` / `clockwork.NewFakeClock()`). The pure engine core is
+  unaffected — it stays clockwork-free and continues to receive time only via
+  `Trigger.OccurredAt`. `processtest.FakeClock` itself is **not** a breaking change: the
+  wrapper still exposes `Now`/`Advance`/`Set`. **Behavioral note:**
+  `processtest.FakeClock.Advance` no longer no-ops on a non-positive duration (the old
+  narrow fake guarded `d>0`); it now follows clockwork semantics — `Advance(0)` fires
+  already-due waiters, and a negative duration moves time backward. All in-tree callers
+  pass strictly positive durations, so nothing changes today.
+
 - **Gateway constructors and `Builder` gateway methods now take functional options (ADR-0139).**
   `gateway.NewExclusive`/`NewParallel`/`NewInclusive`/`NewEventBased` change from
   `(id string, name ...string)` to `(id string, opts ...gateway.Option)`, and

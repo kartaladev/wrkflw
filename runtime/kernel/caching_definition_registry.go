@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jonboulle/clockwork"
 	"golang.org/x/sync/singleflight"
 
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/definition/model"
 )
 
@@ -30,7 +30,7 @@ type cacheEntry struct {
 //     via [singleflight.Group].
 //   - Error responses (including [ErrDefinitionNotFound]) are NOT cached so that
 //     transient failures do not persist beyond the next call.
-//   - TTL is measured using the injected [clock.Clock] (per ADR-0003); callers
+//   - TTL is measured using the injected [clockwork.Clock] (per ADR-0138); callers
 //     may pass a fake clock in tests to advance time deterministically.
 //
 // Definitions are immutable per (defID, version), so caching them without
@@ -38,7 +38,7 @@ type cacheEntry struct {
 type CachingDefinitionRegistry struct {
 	backing DefinitionRegistry
 	ttl     time.Duration
-	clk     clock.Clock
+	clk     clockwork.Clock
 
 	mu      sync.Mutex
 	entries map[string]cacheEntry
@@ -49,8 +49,8 @@ type CachingDefinitionRegistry struct {
 type CachingDefinitionRegistryOption func(*CachingDefinitionRegistry)
 
 // WithCachingDefinitionRegistryClock sets the time source used to evaluate TTL.
-// Default: [clock.System]. A nil clock is ignored. Inject a fake clock in tests.
-func WithCachingDefinitionRegistryClock(clk clock.Clock) CachingDefinitionRegistryOption {
+// Default: [clockwork.NewRealClock]. A nil clock is ignored. Inject a fake clock in tests.
+func WithCachingDefinitionRegistryClock(clk clockwork.Clock) CachingDefinitionRegistryOption {
 	return func(c *CachingDefinitionRegistry) {
 		if clk != nil {
 			c.clk = clk
@@ -60,7 +60,7 @@ func WithCachingDefinitionRegistryClock(clk clock.Clock) CachingDefinitionRegist
 
 // NewCachingDefinitionRegistry wraps backing with a TTL-bounded, single-flight
 // read-through cache. ttl is the maximum age of a cached definition. The time
-// source used to evaluate TTL defaults to [clock.System]; override it with
+// source used to evaluate TTL defaults to [clockwork.NewRealClock]; override it with
 // [WithCachingDefinitionRegistryClock] (a fake clock in tests).
 func NewCachingDefinitionRegistry(backing DefinitionRegistry, ttl time.Duration, opts ...CachingDefinitionRegistryOption) (*CachingDefinitionRegistry, error) {
 	if backing == nil {
@@ -69,7 +69,7 @@ func NewCachingDefinitionRegistry(backing DefinitionRegistry, ttl time.Duration,
 	c := &CachingDefinitionRegistry{
 		backing: backing,
 		ttl:     ttl,
-		clk:     clock.System(),
+		clk:     clockwork.NewRealClock(),
 		entries: make(map[string]cacheEntry),
 	}
 	for _, o := range opts {

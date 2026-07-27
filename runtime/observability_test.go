@@ -21,7 +21,6 @@ import (
 
 	"github.com/kartaladev/wrkflw/action"
 	"github.com/kartaladev/wrkflw/authz"
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/flow"
@@ -444,7 +443,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 				"manager": {manager, admin},
 			})
 			az := authz.RoleAuthorizer{}
-			clk := clock.System()
+			clk := clockwork.NewRealClock()
 
 			driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),
 				runtime.WithClock(clk),

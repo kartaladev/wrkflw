@@ -1,6 +1,6 @@
 # 3. Time flows through an in-repo Clock interface, implemented by clockwork
 
-- Status: Accepted
+- Status: Superseded by [ADR-0138](0138-remove-clock-interface-adopt-clockwork-directly.md)
 - Date: 2026-06-20
 
 ## Context

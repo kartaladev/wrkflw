@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jonboulle/clockwork"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/kartaladev/wrkflw/authz"
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/humantask"
 	"github.com/kartaladev/wrkflw/internal/observability"
@@ -29,13 +29,13 @@ import (
 type TaskService struct {
 	store      humantask.TaskStore
 	authz      authz.Authorizer
-	clk        clock.Clock
+	clk        clockwork.Clock
 	humanTasks metric.Int64Counter
 }
 
 // taskServiceConfig holds the optional configuration for [TaskService].
 type taskServiceConfig struct {
-	clk clock.Clock
+	clk clockwork.Clock
 	mp  metric.MeterProvider
 }
 
@@ -64,8 +64,8 @@ func WithTaskServiceMeterProvider(mp metric.MeterProvider) TaskServiceOption {
 }
 
 // WithClock sets the time source used to stamp task-lifecycle triggers.
-// Default: clock.System(). A nil clock is ignored. Inject a fake clock in tests.
-func WithClock(clk clock.Clock) TaskServiceOption {
+// Default: clockwork.NewRealClock(). A nil clock is ignored. Inject a fake clock in tests.
+func WithClock(clk clockwork.Clock) TaskServiceOption {
 	return func(c *taskServiceConfig) {
 		if clk != nil {
 			c.clk = clk
@@ -74,7 +74,7 @@ func WithClock(clk clock.Clock) TaskServiceOption {
 }
 
 // NewTaskService constructs a TaskService with the given task store, authorizer,
-// and optional [TaskServiceOption] values. The clock defaults to [clock.System];
+// and optional [TaskServiceOption] values. The clock defaults to [clockwork.NewRealClock];
 // inject a fake clock via [WithClock] in tests.
 //
 // The variadic opts are additive; callers that do not need custom observability
@@ -86,7 +86,7 @@ func NewTaskService(store humantask.TaskStore, az authz.Authorizer, opts ...Task
 	if az == nil {
 		return nil, fmt.Errorf("%w: authorizer", kernel.ErrNilDependency)
 	}
-	cfg := taskServiceConfig{clk: clock.System()}
+	cfg := taskServiceConfig{clk: clockwork.NewRealClock()}
 	for _, o := range opts {
 		o(&cfg)
 	}

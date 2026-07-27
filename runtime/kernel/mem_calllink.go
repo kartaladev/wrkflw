@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kartaladev/wrkflw/clock"
+	"github.com/jonboulle/clockwork"
 )
 
 // memLink is the in-memory record for one call link + its terminal outcome.
@@ -34,9 +34,9 @@ func WithMemCallLinkLease(owner string, ttl time.Duration) MemCallLinkOption {
 }
 
 // WithMemCallLinkClock overrides the clock used for lease timestamps. The
-// default is clock.System(). Inject a fake clock in tests.
+// default is clockwork.NewRealClock(). Inject a fake clock in tests.
 // A nil clock is ignored (the default is kept).
-func WithMemCallLinkClock(clk clock.Clock) MemCallLinkOption {
+func WithMemCallLinkClock(clk clockwork.Clock) MemCallLinkOption {
 	return func(s *MemCallLinkStore) {
 		if clk != nil {
 			s.clk = clk
@@ -50,7 +50,7 @@ type MemCallLinkStore struct {
 	links      map[string]*memLink // keyed by ChildInstanceID
 	leaseOwner string
 	leaseTTL   time.Duration
-	clk        clock.Clock
+	clk        clockwork.Clock
 }
 
 var _ CallLinkStore = (*MemCallLinkStore)(nil)
@@ -62,7 +62,7 @@ var _ CallLineageReader = (*MemCallLinkStore)(nil)
 func NewMemCallLinkStore(opts ...MemCallLinkOption) *MemCallLinkStore {
 	s := &MemCallLinkStore{
 		links: make(map[string]*memLink),
-		clk:   clock.System(),
+		clk:   clockwork.NewRealClock(),
 	}
 	for _, o := range opts {
 		o(s)

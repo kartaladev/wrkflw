@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
@@ -77,7 +77,7 @@ func TestCallNotifierOptionsAndDrainBranches(t *testing.T) {
 	n, err := calllink.NewCallNotifier(cl, deliver, reg,
 		calllink.WithCallNotifierBatchSize(10),
 		calllink.WithCallNotifierPollInterval(time.Millisecond),
-		calllink.WithClock(clock.System()),
+		calllink.WithClock(clockwork.NewRealClock()),
 		calllink.WithCallNotifierLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 	)
 	require.NoError(t, err)

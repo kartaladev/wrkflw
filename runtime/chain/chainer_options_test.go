@@ -6,12 +6,12 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/runtime/chain"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
@@ -29,7 +29,7 @@ func TestChainerObservabilityOptionsHandleSuccessor(t *testing.T) {
 
 	c, err := chain.NewChainer(starter, policy,
 		chain.WithChainLinks(links),
-		chain.WithClock(clock.System()),
+		chain.WithClock(clockwork.NewRealClock()),
 		chain.WithChainLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
 		chain.WithChainTracerProvider(tracenoop.NewTracerProvider()),
 		chain.WithChainMeterProvider(metricnoop.NewMeterProvider()),

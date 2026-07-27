@@ -27,10 +27,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jonboulle/clockwork"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/internal/database"
 	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
@@ -287,8 +287,8 @@ func WithBatchSize(n int) RelayOption {
 }
 
 // WithRelayClock sets the clock the relay uses to stamp published_at /
-// next_attempt_at and to evaluate which rows are due. Default: clock.System().
-func WithRelayClock(clk clock.Clock) RelayOption {
+// next_attempt_at and to evaluate which rows are due. Default: clockwork.NewRealClock().
+func WithRelayClock(clk clockwork.Clock) RelayOption {
 	return storeRelayOption(store.WithRelayClock(clk))
 }
 
@@ -382,9 +382,9 @@ func WithCallLinkLease(owner string, ttl time.Duration) CallLinkOption {
 }
 
 // WithCallLinkClock sets the clock the CallLinkStore uses for lease timestamps.
-// Default: clock.System(). Inject a fake clock in tests for deterministic
-// behaviour (ADR-0003, ADR-0031).
-func WithCallLinkClock(clk clock.Clock) CallLinkOption {
+// Default: clockwork.NewRealClock(). Inject a fake clock in tests for deterministic
+// behaviour (ADR-0138, ADR-0031).
+func WithCallLinkClock(clk clockwork.Clock) CallLinkOption {
 	return store.WithCallLinkClock(clk)
 }
 

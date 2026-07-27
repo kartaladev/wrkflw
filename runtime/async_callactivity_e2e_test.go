@@ -18,12 +18,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/kartaladev/wrkflw/action"
 	"github.com/kartaladev/wrkflw/authz"
-	"github.com/kartaladev/wrkflw/clock"
 	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/flow"
@@ -106,7 +106,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	ctx := t.Context()
 
 	// ── wiring ───────────────────────────────────────────────────────────────
-	clk := clock.System()
+	clk := clockwork.NewRealClock()
 	cl := kernel.NewMemCallLinkStore()
 	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
@@ -221,7 +221,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 func TestFailurePathCallActivity(t *testing.T) {
 	ctx := t.Context()
 
-	clk := clock.System()
+	clk := clockwork.NewRealClock()
 	cl := kernel.NewMemCallLinkStore()
 	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
@@ -319,7 +319,7 @@ func selfCallDef() *model.ProcessDefinition {
 func TestRunawayGuardCallActivity(t *testing.T) {
 	ctx := t.Context()
 
-	clk := clock.System()
+	clk := clockwork.NewRealClock()
 	cl := kernel.NewMemCallLinkStore()
 	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
 
@@ -454,7 +454,7 @@ func countCallLinks(ctx context.Context, t *testing.T, cl *kernel.MemCallLinkSto
 func TestOptOutCallActivityPreservesError(t *testing.T) {
 	ctx := t.Context()
 
-	clk := clock.System()
+	clk := clockwork.NewRealClock()
 	// Standard MemInstanceStore — NO call-link tracking.
 	store := runtimetest.MustMemStore(t)
 
