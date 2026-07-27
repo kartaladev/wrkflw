@@ -6,6 +6,8 @@
 *.out
 cover.out
 coverage.*
+# coverage.sh is source, not a coverage artifact (would otherwise match coverage.*)
+!/scripts/coverage.sh
 
 # Go workspace
 go.work

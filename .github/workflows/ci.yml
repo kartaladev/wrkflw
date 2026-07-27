@@ -32,8 +32,8 @@ jobs:
       - name: Test (race + coverage)
         run: go test -race -coverprofile=cover.out ./...
 
-      - name: Coverage summary
-        run: go tool cover -func=cover.out | tail -1
+      - name: Coverage summary (excludes generated files — ADR-0143)
+        run: scripts/coverage.sh cover.out
 
       - name: Upload coverage artifact
         if: always()
