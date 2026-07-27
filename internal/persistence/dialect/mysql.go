@@ -44,6 +44,10 @@ func (mysql) UpsertTask() string {
 	return " ON DUPLICATE KEY UPDATE" +
 		" instance_id=VALUES(instance_id), node_id=VALUES(node_id)," +
 		" state=VALUES(state), claimed_by=VALUES(claimed_by)," +
+		" claimed_at=VALUES(claimed_at), claim_actor=VALUES(claim_actor)," +
+		" completed_by=VALUES(completed_by), completed_at=VALUES(completed_at)," +
+		" outcome=VALUES(outcome), note=VALUES(note)," +
+		" completion_actor=VALUES(completion_actor)," +
 		" eligibility=VALUES(eligibility), candidates=VALUES(candidates)," +
 		" vars=VALUES(vars), created_at=VALUES(created_at), due_at=VALUES(due_at)"
 }

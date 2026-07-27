@@ -48,7 +48,7 @@ func TestHandleReminderFiredStaleness(t *testing.T) {
 			Tokens: []Token{{
 				ID:          "tok1",
 				NodeID:      "await",
-				State:       TokenWaitingCommand,
+				State:       TokenWaiting,
 				AwaitSignal: "approved",
 			}},
 			Timers: []timerRecord{rec},

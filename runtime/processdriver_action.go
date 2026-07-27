@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -15,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/kartaladev/wrkflw/action"
+	"github.com/kartaladev/wrkflw/authz"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/humantask"
@@ -49,6 +52,90 @@ func copyVarsForOutcome(vars map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+// Child-instance id derivation (see [childInstanceIDFor]).
+const (
+	// childInstanceIDInfix separates a parent instance id from the segment that
+	// names one of its call-activity children.
+	childInstanceIDInfix = "-sub-"
+	// childCommandSuffixLen is the length of the hex digest that stands in for an
+	// opaque command id. 32 bits is ample: the suffix only has to be unique among
+	// the call-activity commands of ONE parent instance (a handful), and the child
+	// id is never security-sensitive.
+	childCommandSuffixLen = 8
+	// childInstanceIDMaxLen bounds every derived child id, leaving headroom under
+	// the 255-character instance_id column of the SQL stores.
+	childInstanceIDMaxLen = 200
+	// childInstanceIDFoldedLen is the digest length used when a derivation would
+	// exceed childInstanceIDMaxLen. 128 bits keeps folded ids collision-free in
+	// practice while staying far shorter than the bound.
+	childInstanceIDFoldedLen = 32
+)
+
+// childInstanceIDFor derives the instance id of the child spawned by a
+// StartSubInstance command from the parent instance id and the command id.
+//
+// The derivation is a PURE function of its two inputs, because the id doubles as
+// the call link's identity: re-driving the same command (a retry, a crash
+// recovery) must address the child that was already started rather than spawn a
+// second one.
+//
+// The shape is "<parentInstanceID>-sub-<suffix>", where <suffix> is:
+//
+//   - the parent's own engine counter segment ("c3") when commandID has the
+//     engine's built-in "<parentInstanceID>-c<N>" form — the id shape [engine.Step]
+//     mints when no IDGenerator is injected. Kept verbatim so ids derived before
+//     ADR-0149 still resolve to the same child.
+//   - otherwise a short fixed-length digest of the whole command id. The runtime
+//     injects an opaque generator (xid by default, ADR-0149), whose ids carry no
+//     counter segment; embedding one verbatim would grow the child id by ~25
+//     characters per nesting level, so a chain far shallower than maxCallDepth
+//     would overflow the instance_id column with an opaque driver error instead of
+//     failing on the depth guard.
+//
+// Growth per nesting level is therefore constant, and an id that would still
+// exceed childInstanceIDMaxLen (an extremely deep chain, or a pathologically long
+// parent id) is folded into a bounded digest form so the depth guard — not the
+// database — is what stops a runaway chain.
+func childInstanceIDFor(parentInstanceID, commandID string) string {
+	id := parentInstanceID + childInstanceIDInfix + childCommandSuffix(parentInstanceID, commandID)
+	if len(id) <= childInstanceIDMaxLen {
+		return id
+	}
+	return "sub-" + shortHash(id, childInstanceIDFoldedLen)
+}
+
+// childCommandSuffix returns the short, stable segment that names the child of
+// parentInstanceID spawned by commandID. See [childInstanceIDFor] for the rules.
+func childCommandSuffix(parentInstanceID, commandID string) string {
+	if seq, ok := strings.CutPrefix(commandID, parentInstanceID+"-"); ok && isEngineCommandCounter(seq) {
+		return seq
+	}
+	return shortHash(commandID, childCommandSuffixLen)
+}
+
+// isEngineCommandCounter reports whether s is the engine's built-in command
+// counter segment: "c" followed by at least one decimal digit.
+func isEngineCommandCounter(s string) bool {
+	digits, ok := strings.CutPrefix(s, "c")
+	if !ok || digits == "" {
+		return false
+	}
+	for _, r := range digits {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// shortHash returns the first n hex characters of the SHA-256 digest of s. It is
+// used for id derivation only — never as a security primitive — but SHA-256 keeps
+// the truncated output uniformly distributed, which is what bounds collisions.
+func shortHash(s string, n int) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])[:n]
 }
 
 // actionContextFor derives the context an action runs under for an effective
@@ -141,10 +228,81 @@ func (driver *ProcessDriver) overrideRetryPolicy(def *model.ProcessDefinition, s
 	return &mp
 }
 
+// resolveHumanCandidates expands the eligibility spec of every AwaitHuman command
+// emitted by a step into concrete actors and writes them onto the matching task
+// in st, so the candidates ride the SAME commit that parks the task.
+//
+// This runs before the step's snapshot is captured, unlike [ProcessDriver.perform],
+// which runs after the commit: the instance view is a pure projection over the
+// persisted snapshot, so a post-commit write would be invisible to every later
+// reader (ADR-0147 amendment #1). Resolving here also means a resolver failure
+// aborts the step cleanly instead of leaving a committed instance parked on a
+// task the store never received.
+//
+// It is a no-op when the step emitted no AwaitHuman command, so the resolver is
+// required only by definitions that actually contain user tasks.
+func (driver *ProcessDriver) resolveHumanCandidates(ctx context.Context, st *engine.InstanceState, cmds []engine.Command) error {
+	for _, c := range cmds {
+		cmd, ok := c.(engine.AwaitHuman)
+		if !ok {
+			continue
+		}
+		if driver.resolver == nil {
+			return fmt.Errorf("workflow-runtime: resolve candidates for task %s: no ActorResolver configured", cmd.TaskID)
+		}
+		actors, err := driver.resolveCandidates(ctx, cmd.Eligibility, st.Variables)
+		if err != nil {
+			return fmt.Errorf("workflow-runtime: resolve candidates: %w", err)
+		}
+		task := st.TaskByID(cmd.TaskID)
+		if task == nil {
+			// The engine creates the task and the AwaitHuman command together, so a
+			// missing record is an invariant violation rather than a routine miss.
+			return fmt.Errorf("workflow-runtime: resolve candidates: no task record for %q: %w",
+				cmd.TaskID, humantask.ErrTaskNotFound)
+		}
+		// Deep-copy on ingest: the resolver owns the returned slice and the actors
+		// inside it — a registry-backed resolver typically hands back values that
+		// alias its own state. Aliasing here would let a later registry update
+		// rewrite the candidate list of an already-committed instance, and that
+		// list is audit data (ADR-0147). The engine's own ingest path
+		// (handleHumanCandidatesResolved) clones for the same reason.
+		task.Candidates = cloneActors(actors)
+	}
+	return nil
+}
+
+// cloneActors returns a deep copy of the actor slice, isolating each actor's
+// Roles slice and Attributes map via [authz.Actor.Clone]. nil in, nil out.
+func cloneActors(actors []authz.Actor) []authz.Actor {
+	if actors == nil {
+		return nil
+	}
+	out := make([]authz.Actor, len(actors))
+	for i, a := range actors {
+		out[i] = a.Clone()
+	}
+	return out
+}
+
+// resolveCandidates performs one ActorResolver lookup under the driver's
+// candidate-resolve timeout. It exists so the bound is applied at exactly one
+// place, and reuses actionContextFor's convention: a non-positive timeout passes
+// the parent context through unchanged.
+func (driver *ProcessDriver) resolveCandidates(ctx context.Context, spec authz.AuthzSpec, vars map[string]any) ([]authz.Actor, error) {
+	rctx, cancel := actionContextFor(ctx, driver.candidateResolveTimeout)
+	defer cancel()
+	return driver.resolver.Candidates(rctx, spec, vars)
+}
+
 // perform executes one command and returns the resulting trigger, if any.
-// st is the current instance state, used for variable access when resolving
-// human-task candidates. def is the process definition, captured by timer
-// fire callbacks that need to call ApplyTrigger.
+// st is the current instance state, used for variable access and to project the
+// committed human task into the task store. def is the process definition,
+// captured by timer fire callbacks that need to call ApplyTrigger.
+//
+// perform runs AFTER the step's state has been committed, so it must not be used
+// to mutate state the caller expects to be persisted — see
+// [ProcessDriver.resolveHumanCandidates] for the pre-commit counterpart.
 //
 //nolint:cyclop // the command switch is intentionally exhaustive; each case is simple.
 func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinition, st engine.InstanceState, c engine.Command) (engine.Trigger, error) {
@@ -247,30 +405,17 @@ func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefi
 		return nil, nil
 
 	case engine.AwaitHuman:
-		if driver.resolver == nil {
-			return nil, fmt.Errorf("workflow-runtime: perform AwaitHuman: no ActorResolver configured")
-		}
 		if driver.tasks == nil {
 			return nil, fmt.Errorf("workflow-runtime: perform AwaitHuman: no TaskStore configured")
 		}
-		// Resolve candidates from the eligibility spec and process variables.
-		actors, err := driver.resolver.Candidates(ctx, cmd.Eligibility, st.Variables)
-		if err != nil {
-			return nil, fmt.Errorf("workflow-runtime: resolve candidates: %w", err)
-		}
-		candidateIDs := make([]string, len(actors))
-		for i, a := range actors {
-			candidateIDs[i] = a.ID
-		}
-
-		// Build and persist the HumanTask record. The task skeleton was already
-		// added to st.Tasks by the engine (drive → KindUserTask); we find it and
-		// enrich it with resolved candidates before upserting.
+		// Build and persist the HumanTask record. The task was already added to
+		// st.Tasks by the engine (drive → KindUserTask) and enriched with the
+		// resolved candidates by resolveHumanCandidates BEFORE the commit, so this
+		// projects the committed task into the queryable task store.
 		task := humantask.HumanTask{
-			TaskToken:   cmd.TaskToken,
+			TaskID:      cmd.TaskID,
 			InstanceID:  st.InstanceID,
 			Eligibility: cmd.Eligibility,
-			Candidates:  candidateIDs,
 			State:       humantask.Unclaimed,
 			CreatedAt:   driver.clk.Now(),
 			// Snapshot the process variables so attribute-based eligibility predicates
@@ -282,10 +427,23 @@ func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefi
 			// eligibility predicates should rely on top-level scalar variables only.
 			Vars: maps.Clone(st.Variables),
 		}
-		// Copy NodeID from the in-state task record if present.
-		if t := st.TaskByToken(cmd.TaskToken); t != nil {
+		// Copy the engine-owned fields from the committed task record if present.
+		if t := st.TaskByID(cmd.TaskID); t != nil {
 			task.NodeID = t.NodeID
 			task.CreatedAt = t.CreatedAt // preserve engine-stamped time
+			task.Vars = t.Vars           // engine-snapshotted at creation
+			// Resolved pre-commit and already durable. Clone anyway: handing the
+			// store the engine's own backing array would let a TaskStore that keeps
+			// the value verbatim share mutable actor state with live instance
+			// state — the same hazard cloneActors guards on the resolver side.
+			task.Candidates = cloneActors(t.Candidates)
+			// DueAt is engine-computed from the node's deadline trigger and is what
+			// inbox / SLA views render, so the projection must carry it. Copy the
+			// POINTEE: the store's record must not alias live engine state.
+			if t.DueAt != nil {
+				due := *t.DueAt
+				task.DueAt = &due
+			}
 		}
 		if err := driver.tasks.Upsert(ctx, task); err != nil {
 			return nil, fmt.Errorf("workflow-runtime: upsert task: %w", err)
@@ -336,18 +494,11 @@ func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefi
 				" (register it via runtime.RegisterDefinition or supply a registry via WithDefinitions): %w", cmd.DefRef.String(), err)
 		}
 
-		// Derive a deterministic child instance ID from the parent and command ID.
-		// Scheme: "<parentInstanceID>-sub-<suffix>" where <suffix> is only the
-		// trailing segment of cmd.CommandID after the last "-" (e.g. "c1", "c2").
-		// cmd.CommandID format is "<instanceID>-c<N>"; embedding the full commandID
-		// would cause child IDs to grow O(2^depth). Using just the short suffix
-		// keeps growth linear: each nesting level adds a constant-length segment.
-		// IDs remain unique because CmdSeq is monotonic within an instance.
-		suffix := cmd.CommandID
-		if idx := strings.LastIndex(cmd.CommandID, "-"); idx >= 0 {
-			suffix = cmd.CommandID[idx+1:]
-		}
-		childInstanceID := st.InstanceID + "-sub-" + suffix
+		// Derive the deterministic child instance id from the parent id and the
+		// command id. The derivation is length-bounded and grows by a constant per
+		// nesting level whatever id shape the injected generator mints — see
+		// [childInstanceIDFor] for the scheme and why it matters.
+		childInstanceID := childInstanceIDFor(st.InstanceID, cmd.CommandID)
 
 		// Async path: when a CallLinkStore is configured, the child is started
 		// non-blocking. The parent parks at the call node; a notifier delivers

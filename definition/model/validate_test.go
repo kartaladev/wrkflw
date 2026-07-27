@@ -2052,3 +2052,114 @@ func eventTriggeredSubprocessOutgoingFlowDef() *model.ProcessDefinition {
 		},
 	}
 }
+
+// TestValidateUserTaskOutcomes covers the structural rules on a UserTask's
+// completion-outcome declaration (ADR-0146): the declared set must be usable
+// (no blank or duplicate outcomes), an explicit outcome variable must be a
+// valid expr identifier so a gateway condition can reference it, and a manual
+// task — which completes on a bare trigger the engine fails closed on for any
+// outcome — must not declare one.
+func TestValidateUserTaskOutcomes(t *testing.T) {
+	def := func(opts ...activity.UserTaskOption) *model.ProcessDefinition {
+		return &model.ProcessDefinition{
+			ID: "p", Version: 1,
+			Nodes: []model.Node{
+				event.NewStart("start"),
+				activity.NewUserTask("review", opts...),
+				event.NewEnd("end"),
+			},
+			Flows: []flow.SequenceFlow{
+				{ID: "f1", Source: "start", Target: "review"},
+				{ID: "f2", Source: "review", Target: "end"},
+			},
+		}
+	}
+
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "declared outcomes with an explicit variable are accepted",
+			def: def(
+				activity.WithOutcomes("approve", "reject"),
+				activity.WithOutcomeVariable("review_decision"),
+			),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "no outcome declaration is accepted",
+			def:  def(),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "blank outcome is rejected",
+			def:  def(activity.WithOutcomes("approve", "  ")),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrEmptyOutcome)
+			},
+		},
+		{
+			name: "duplicate outcome is rejected",
+			def:  def(activity.WithOutcomes("approve", "approve")),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrDuplicateOutcome)
+			},
+		},
+		{
+			name: "outcome variable that is not an identifier is rejected",
+			def:  def(activity.WithOutcomes("approve"), activity.WithOutcomeVariable("review decision")),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrInvalidOutcomeVariable)
+			},
+		},
+		{
+			name: "manual task declaring outcomes is rejected",
+			def:  def(activity.WithManual(false), activity.WithOutcomes("approve")),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrManualTaskOutcome)
+			},
+		},
+		{
+			name: "manual task opting into outcome exposure is rejected",
+			def:  def(activity.WithManual(true), activity.WithExposeOutcome()),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrManualTaskOutcome)
+				assert.NotErrorIs(t, err, model.ErrOutcomeExposureWithoutOutcomes,
+					"the manual rule is the precise diagnosis; do not also demand a set a manual task may not declare")
+			},
+		},
+		{
+			name: "outcome exposure without a declared set is rejected",
+			def:  def(activity.WithExposeOutcome()),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrOutcomeExposureWithoutOutcomes)
+			},
+		},
+		{
+			name: "an outcome variable without a declared set is rejected",
+			def:  def(activity.WithOutcomeVariable("review_decision")),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrOutcomeExposureWithoutOutcomes)
+			},
+		},
+		{
+			name: "outcome exposure with a declared set is accepted",
+			def:  def(activity.WithOutcomes("approve", "reject"), activity.WithExposeOutcome()),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}

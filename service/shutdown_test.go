@@ -39,19 +39,25 @@ func TestEngineHumanTaskRejectedDuringShutdown(t *testing.T) {
 	tests := map[string]func(e *service.ProcessEngine) error{
 		"ClaimTask": func(e *service.ProcessEngine) error {
 			_, err := e.ClaimTask(context.Background(), service.ClaimTaskRequest{
-				TaskToken: "t", Actor: authz.Actor{ID: "a"},
+				TaskID: "t", Actor: authz.Actor{ID: "a"},
 			})
 			return err
 		},
 		"CompleteTask": func(e *service.ProcessEngine) error {
 			_, err := e.CompleteTask(context.Background(), service.CompleteTaskRequest{
-				TaskToken: "t", Actor: authz.Actor{ID: "a"},
+				TaskID: "t", Actor: authz.Actor{ID: "a"},
 			})
 			return err
 		},
 		"ReassignTask": func(e *service.ProcessEngine) error {
 			_, err := e.ReassignTask(context.Background(), service.ReassignTaskRequest{
-				TaskToken: "t", From: "a", To: "b", By: authz.Actor{ID: "a"},
+				TaskID: "t", From: "a", To: "b", By: authz.Actor{ID: "a"},
+			})
+			return err
+		},
+		"RefreshTaskCandidates": func(e *service.ProcessEngine) error {
+			_, err := e.RefreshTaskCandidates(context.Background(), service.RefreshTaskCandidatesRequest{
+				TaskID: "t", By: authz.Actor{ID: "a"},
 			})
 			return err
 		},

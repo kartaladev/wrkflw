@@ -38,7 +38,7 @@ func TargetNode(def *model.ProcessDefinition, st InstanceState, trg Trigger) (mo
 		}
 		return nodeInScope(def, &st, scopeID, nodeID)
 	case HumanCompleted:
-		tok := st.tokenAwaiting(t.TaskToken)
+		tok := st.tokenAwaiting(t.TaskID)
 		if tok == nil {
 			return nil, false
 		}

@@ -128,8 +128,8 @@ func TestTargetNode(t *testing.T) {
 		NewStartInstance(at, nil), StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, userTaskResult.State.Tokens, 1, "expected one parked token at the nested approve task")
-	taskToken := userTaskResult.State.Tokens[0].AwaitCommand
-	require.NotEmpty(t, taskToken, "parked user-task token must carry AwaitCommand")
+	taskID := userTaskResult.State.Tokens[0].AwaitCommand
+	require.NotEmpty(t, taskID, "parked user-task id must carry AwaitCommand")
 
 	// ---- Drive fixture 2 to a parked nested ReceiveTask ("recv"). ----
 	receiveTaskDef := nestedReceiveTaskDef()
@@ -151,7 +151,7 @@ func TestTargetNode(t *testing.T) {
 			name: "completion nested regression: resolves the nested UserTask, not unfindable via flat lookup",
 			def:  userTaskDef,
 			st:   userTaskResult.State,
-			trg:  NewHumanCompleted(at, taskToken, nil, authz.Actor{ID: "user1"}),
+			trg:  NewHumanCompleted(at, taskID, CompletionInput{}, authz.Actor{ID: "user1"}),
 			assert: func(t *testing.T, node model.Node, ok bool) {
 				require.True(t, ok)
 				require.NotNil(t, node)

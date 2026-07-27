@@ -170,7 +170,7 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 	final, _, err := store.Load(ctx, "recv-inst-1")
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, final.Status,
-		"receiver must complete after DeliverMessage resumes its parked ReceiveTask token")
+		"receiver must complete after DeliverMessage resumes its parked ReceiveTask id")
 	assert.Empty(t, final.Tokens,
 		"no tokens must remain after the receiver completes")
 }

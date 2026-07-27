@@ -39,17 +39,21 @@ are propagated **as-is** so the transport layer can classify them.
 
 | Method | Argument | Returns | Purpose |
 |---|---|---|---|
-| `StartInstance` | `StartInstanceRequest` | `(engine.InstanceState, error)` | Resolve the definition by `DefRef`, start a new instance, return the resulting state. |
-| `GetInstance` | `instanceID string` | `(engine.InstanceState, error)` | Load the current state of an existing instance. |
-| `GetInstanceWithDefinition` | `instanceID string` | `(engine.InstanceState, *model.ProcessDefinition, error)` | Load state **and** resolve its definition (for building a snapshot / actionable view). |
-| `DeliverSignal` | `DeliverSignalRequest` | `(engine.InstanceState, error)` | Deliver a `SignalReceived` trigger to a parked instance. `ErrConflict` if terminal. |
+| `StartInstance` | `StartInstanceRequest` | `(ProcessInstance, error)` | Resolve the definition by `DefRef`, start a new instance, return the resulting instance. |
+| `GetInstance` | `instanceID string` | `(ProcessInstance, error)` | Load the current state of an existing instance. |
+| `DeliverSignal` | `DeliverSignalRequest` | `(ProcessInstance, error)` | Deliver a `SignalReceived` trigger to a parked instance. `ErrConflict` if terminal. |
 | `DeliverMessage` | `DeliverMessageRequest` | `error` | Route a message to the waiting instance via the driver's waiter table. |
-| `ClaimTask` | `ClaimTaskRequest` | `(engine.InstanceState, error)` | Authorize + claim a human task, deliver the trigger, return state. |
-| `CompleteTask` | `CompleteTaskRequest` | `(engine.InstanceState, error)` | Authorize + complete a human task, deliver the trigger, return state. |
-| `ReassignTask` | `ReassignTaskRequest` | `(engine.InstanceState, error)` | Authorize + reassign a human task, deliver the trigger, return state. |
-| `ListInstances` | `runtime.InstanceFilter` | `(runtime.InstancePage, error)` | Keyset-paginated list of instance summaries matching the filter. |
-| `ResolveIncident` | `ResolveIncidentRequest` | `(engine.InstanceState, error)` | Clear an open incident, grant `AddAttempts` (≤ 0 → 1), and re-drive the instance. |
-| `CancelInstance` | `CancelInstanceRequest` | `(engine.InstanceState, error)` | Terminate a running instance (runs cancel actions best-effort). `ErrConflict` if terminal. |
+| `ClaimTask` | `ClaimTaskRequest` | `(ProcessInstance, error)` | Authorize + claim a human task, deliver the trigger, return the instance. |
+| `CompleteTask` | `CompleteTaskRequest` | `(ProcessInstance, error)` | Authorize + complete a human task, deliver the trigger, return the instance. |
+| `ReassignTask` | `ReassignTaskRequest` | `(ProcessInstance, error)` | Authorize + reassign a human task, deliver the trigger, return the instance. |
+| `RefreshTaskCandidates` | `RefreshTaskCandidatesRequest` | `(ProcessInstance, error)` | Re-resolve an open task's candidate actors through the `ActorResolver` and replace the stored list (ADR-0150). Requires `WithActorResolver`. |
+| `ListInstances` | `kernel.InstanceFilter` | `(kernel.InstancePage, error)` | Keyset-paginated list of instance summaries matching the filter. |
+| `ResolveIncident` | `ResolveIncidentRequest` | `(ProcessInstance, error)` | Clear an open incident, grant `AddAttempts` (≤ 0 → 1), and re-drive the instance. |
+| `CancelInstance` | `CancelInstanceRequest` | `(ProcessInstance, error)` | Terminate a running instance (runs cancel actions best-effort). `ErrConflict` if terminal. |
+
+`ProcessInstance` is the self-serializing instance view (ADR-0098/ADR-0144); a
+definition is no longer returned alongside it — the snapshot and actionable views are
+built from the instance itself.
 
 ---
 
@@ -84,6 +88,7 @@ default is kept), except the leaves set together by `WithDurableStore`.
 | `WithDefinitions(kernel.DefinitionRegistry)` | Override the default process-global definition registry. |
 | `WithLister(kernel.InstanceLister)` | Override the instance lister (defaults to the instance store when it satisfies `kernel.InstanceLister`). |
 | `WithHumanTasks(humantask.TaskStore, authz.Authorizer)` | Override the human-task store and authorizer used to build the internal task service. |
+| `WithActorResolver(humantask.ActorResolver)` | Resolver the internal task service uses to re-expand a task's eligibility spec into actors. Required only by `RefreshTaskCandidates`, which returns `task.ErrNoActorResolver` without it. No default — pass the same resolver the driver got via `runtime.WithHumanTasks`. |
 | `WithClock(clockwork.Clock)` | Override the time source used by the engine, the internal task service, and the default driver. Default `clockwork.NewRealClock()`; a nil clock is ignored. |
 | `WithIDGenerator(idgen.Generator)` | Strategy used to mint every new process-instance ID. Default `idgen.XID()`. |
 | `WithDurableStore(DurableProvider)` | Flip the whole graph durable in one call, setting every leaf from the provider and rebuilding the driver durable-coherent. A durable graph that uses human tasks or timers must also pass a fully-wired driver via `WithProcessDriver` — see the option's doc comment. |
@@ -161,18 +166,27 @@ Transport-neutral input DTOs (`service/request.go`):
 
 | Field | Type | Notes |
 |---|---|---|
-| `TaskToken` | `string` | |
+| `TaskID` | `string` | |
 | `Actor` | `authz.Actor` | |
-| `Output` | `map[string]any` | `CompleteTaskRequest` only |
+| `Outcome` | `string` | `CompleteTaskRequest` only. Business outcome the actor chose (e.g. `"approve"`); recorded on the completion audit and validated against the node's declared outcome set when it declares one (`engine.ErrInvalidOutcome`). Empty means none. |
+| `Note` | `string` | `CompleteTaskRequest` only. Actor's free-text remark; optional. |
+| `Output` | `map[string]any` | `CompleteTaskRequest` only. Output variables merged into the process variables. |
 
 **`ReassignTaskRequest`**
 
 | Field | Type |
 |---|---|
-| `TaskToken` | `string` |
+| `TaskID` | `string` |
 | `From` | `string` |
 | `To` | `string` |
 | `By` | `authz.Actor` |
+
+**`RefreshTaskCandidatesRequest`**
+
+| Field | Type | Notes |
+|---|---|---|
+| `TaskID` | `string` | |
+| `By` | `authz.Actor` | Must satisfy the task's eligibility spec — same policy as `ReassignTaskRequest.By`. |
 
 **`CancelInstanceRequest`**
 

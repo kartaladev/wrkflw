@@ -79,7 +79,7 @@ func main() {
 	var token string
 	for i := range parked.Tasks {
 		if parked.Tasks[i].IsOpen() {
-			token = parked.Tasks[i].TaskToken
+			token = parked.Tasks[i].TaskID
 			break
 		}
 	}
@@ -94,7 +94,7 @@ func main() {
 
 	// Bare completion of the wait-mode step — no claim, no payload. A
 	// non-nil output here would be rejected with engine.ErrManualTaskPayload.
-	trg, err := svc.Complete(ctx, token, authz.Actor{ID: "operator"}, nil)
+	trg, err := svc.Complete(ctx, token, authz.Actor{ID: "operator"}, engine.CompletionInput{})
 	if err != nil {
 		log.Fatal("complete:", err)
 	}

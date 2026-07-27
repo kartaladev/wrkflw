@@ -820,9 +820,9 @@ func TestCancelRequestedTerminates(t *testing.T) {
 		require.Len(t, r1.State.Tokens, 1)
 		assert.Equal(t, "userTask", r1.State.Tokens[0].NodeID)
 
-		// Collect task token for late-trigger test.
-		taskToken := r1.State.Tokens[0].AwaitCommand
-		require.NotEmpty(t, taskToken, "userTask token must have AwaitCommand set")
+		// Collect task id for late-trigger test.
+		taskID := r1.State.Tokens[0].AwaitCommand
+		require.NotEmpty(t, taskID, "userTask id must have AwaitCommand set")
 
 		// CancelRequested.
 		r2, err := engine.Step(t.Context(), def, r1.State,
@@ -848,7 +848,7 @@ func TestCancelRequestedTerminates(t *testing.T) {
 
 		// Late trigger: HumanCompleted after cancel → ErrTokenNotFound.
 		_, lateErr := engine.Step(t.Context(), def, r2.State,
-			engine.NewHumanCompleted(cancelAt.Add(time.Second), taskToken, nil,
+			engine.NewHumanCompleted(cancelAt.Add(time.Second), taskID, engine.CompletionInput{},
 				authz.Actor{ID: "u1"}), engine.StepOptions{})
 		require.Error(t, lateErr)
 		assert.ErrorIs(t, lateErr, engine.ErrTokenNotFound)

@@ -115,8 +115,8 @@ func DeliverMessage(ctx context.Context, svc service.Service, in MessageInput) (
 // mappedBody, nil) on success.
 func ClaimTask(ctx context.Context, svc service.Service, token string, in ClaimInput, mapper func(engine.InstanceState) any) (int, any, error) {
 	pi, err := svc.ClaimTask(ctx, service.ClaimTaskRequest{
-		TaskToken: token,
-		Actor:     authz.Actor{ID: in.Actor.ID, Roles: in.Actor.Roles},
+		TaskID: token,
+		Actor:  authz.Actor{ID: in.Actor.ID, Roles: in.Actor.Roles},
 	})
 	if err != nil {
 		return 0, nil, err
@@ -128,9 +128,11 @@ func ClaimTask(ctx context.Context, svc service.Service, token string, in ClaimI
 // mappedBody, nil) on success.
 func CompleteTask(ctx context.Context, svc service.Service, token string, in CompleteInput, mapper func(engine.InstanceState) any) (int, any, error) {
 	pi, err := svc.CompleteTask(ctx, service.CompleteTaskRequest{
-		TaskToken: token,
-		Actor:     authz.Actor{ID: in.Actor.ID, Roles: in.Actor.Roles},
-		Output:    in.Output,
+		TaskID:  token,
+		Actor:   authz.Actor{ID: in.Actor.ID, Roles: in.Actor.Roles},
+		Outcome: in.Outcome,
+		Note:    in.Note,
+		Output:  in.Output,
 	})
 	if err != nil {
 		return 0, nil, err
@@ -142,10 +144,10 @@ func CompleteTask(ctx context.Context, svc service.Service, token string, in Com
 // (200, mappedBody, nil) on success.
 func ReassignTask(ctx context.Context, svc service.Service, token string, in ReassignInput, mapper func(engine.InstanceState) any) (int, any, error) {
 	pi, err := svc.ReassignTask(ctx, service.ReassignTaskRequest{
-		TaskToken: token,
-		From:      in.From,
-		To:        in.To,
-		By:        authz.Actor{ID: in.By.ID, Roles: in.By.Roles},
+		TaskID: token,
+		From:   in.From,
+		To:     in.To,
+		By:     authz.Actor{ID: in.By.ID, Roles: in.By.Roles},
 	})
 	if err != nil {
 		return 0, nil, err

@@ -316,7 +316,7 @@ func TestNonInterruptingMessageBoundarySpawnsParallelToken(t *testing.T) {
 
 	// Step 3: Host can still be completed normally.
 	r3, err := engine.Step(t.Context(), def, r2b.State,
-		engine.NewHumanCompleted(t0, awaitHuman.TaskToken, nil, authz.Actor{ID: "user1"}), engine.StepOptions{})
+		engine.NewHumanCompleted(t0, awaitHuman.TaskID, engine.CompletionInput{}, authz.Actor{ID: "user1"}), engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r3.State.Status)
 }
@@ -394,7 +394,7 @@ func TestNonInterruptingRecurringTimerBoundaryRepeatsAndCancelsOnHostEnd(t *test
 
 	// Host completes → the surviving recurring-timer arm is cancelled (leak fix).
 	r4, err := engine.Step(t.Context(), def, r3.State,
-		engine.NewHumanCompleted(t0, awaitHuman.TaskToken, nil, authz.Actor{ID: "u1"}), engine.StepOptions{})
+		engine.NewHumanCompleted(t0, awaitHuman.TaskID, engine.CompletionInput{}, authz.Actor{ID: "u1"}), engine.StepOptions{})
 	require.NoError(t, err)
 	cancelled := false
 	for _, c := range r4.Commands {

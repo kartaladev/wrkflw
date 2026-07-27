@@ -77,12 +77,12 @@ func TestTaskRoutes_Complete(t *testing.T) {
 	def := transporttest.ApprovalProcess()
 	h, svc := transporttest.NewHarness(t, def)
 
-	taskToken := transporttest.StartedApprovalInstance(t, h, "task-complete-stdlib-1")
+	taskID := transporttest.StartedApprovalInstance(t, h, "task-complete-stdlib-1")
 
 	// First claim the task.
 	_, err := svc.ClaimTask(t.Context(), service.ClaimTaskRequest{
-		TaskToken: taskToken,
-		Actor:     authz.Actor{ID: "alice", Roles: []string{"manager"}},
+		TaskID: taskID,
+		Actor:  authz.Actor{ID: "alice", Roles: []string{"manager"}},
 	})
 	if err != nil {
 		t.Fatalf("claim: %v", err)
@@ -91,7 +91,7 @@ func TestTaskRoutes_Complete(t *testing.T) {
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc)
 
-	req := newPostRequest(t, "/tasks/"+taskToken+"/complete", map[string]any{
+	req := newPostRequest(t, "/tasks/"+taskID+"/complete", map[string]any{
 		"actor":  map[string]any{"id": "alice", "roles": []string{"manager"}},
 		"output": map[string]any{"approved": true},
 	})
@@ -109,12 +109,12 @@ func TestTaskRoutes_Reassign(t *testing.T) {
 	def := transporttest.ApprovalProcess()
 	h, svc := transporttest.NewHarness(t, def)
 
-	taskToken := transporttest.StartedApprovalInstance(t, h, "task-reassign-stdlib-1")
+	taskID := transporttest.StartedApprovalInstance(t, h, "task-reassign-stdlib-1")
 
 	// Claim first.
 	_, err := svc.ClaimTask(t.Context(), service.ClaimTaskRequest{
-		TaskToken: taskToken,
-		Actor:     authz.Actor{ID: "alice", Roles: []string{"manager"}},
+		TaskID: taskID,
+		Actor:  authz.Actor{ID: "alice", Roles: []string{"manager"}},
 	})
 	if err != nil {
 		t.Fatalf("claim: %v", err)
@@ -123,7 +123,7 @@ func TestTaskRoutes_Reassign(t *testing.T) {
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc)
 
-	req := newPostRequest(t, "/tasks/"+taskToken+"/reassign", map[string]any{
+	req := newPostRequest(t, "/tasks/"+taskID+"/reassign", map[string]any{
 		"from": "alice",
 		"to":   "carol",
 		"by":   map[string]any{"id": "alice", "roles": []string{"manager"}},
@@ -142,13 +142,13 @@ func TestTaskRoutes_BadJSON(t *testing.T) {
 	def := transporttest.ApprovalProcess()
 	h, svc := transporttest.NewHarness(t, def)
 
-	taskToken := transporttest.StartedApprovalInstance(t, h, "task-badjson-stdlib-1")
+	taskID := transporttest.StartedApprovalInstance(t, h, "task-badjson-stdlib-1")
 
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc)
 
 	// Malformed JSON on claim.
-	req, err := http.NewRequest(http.MethodPost, "/tasks/"+taskToken+"/claim", errReader{})
+	req, err := http.NewRequest(http.MethodPost, "/tasks/"+taskID+"/claim", errReader{})
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}
@@ -167,12 +167,12 @@ func TestTaskRoutes_Complete_BadJSON(t *testing.T) {
 
 	def := transporttest.ApprovalProcess()
 	h, svc := transporttest.NewHarness(t, def)
-	taskToken := transporttest.StartedApprovalInstance(t, h, "task-complete-badjson-1")
+	taskID := transporttest.StartedApprovalInstance(t, h, "task-complete-badjson-1")
 
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc)
 
-	req, err := http.NewRequest(http.MethodPost, "/tasks/"+taskToken+"/complete", errReader{})
+	req, err := http.NewRequest(http.MethodPost, "/tasks/"+taskID+"/complete", errReader{})
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}
@@ -191,12 +191,12 @@ func TestTaskRoutes_Reassign_BadJSON(t *testing.T) {
 
 	def := transporttest.ApprovalProcess()
 	h, svc := transporttest.NewHarness(t, def)
-	taskToken := transporttest.StartedApprovalInstance(t, h, "task-reassign-badjson-1")
+	taskID := transporttest.StartedApprovalInstance(t, h, "task-reassign-badjson-1")
 
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc)
 
-	req, err := http.NewRequest(http.MethodPost, "/tasks/"+taskToken+"/reassign", errReader{})
+	req, err := http.NewRequest(http.MethodPost, "/tasks/"+taskID+"/reassign", errReader{})
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}

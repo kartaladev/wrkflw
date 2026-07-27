@@ -4,13 +4,14 @@
 // flow.WithFlowID / flow.WithCondition / flow.AsDefault.
 package flow
 
-// SequenceFlow is a directed edge between two nodes.
+// SequenceFlow is a directed edge between two nodes. Its JSON/YAML encoding is
+// snake_case, matching the single canonical definition wire (ADR-0144).
 type SequenceFlow struct {
-	ID        string
-	Source    string
-	Target    string
-	Condition string // expr; empty means unconditional
-	IsDefault bool
+	ID        string `json:"id" yaml:"id"`
+	Source    string `json:"source" yaml:"source"`
+	Target    string `json:"target" yaml:"target"`
+	Condition string `json:"condition,omitempty" yaml:"condition,omitempty"` // expr; empty means unconditional
+	IsDefault bool   `json:"is_default,omitempty" yaml:"is_default,omitempty"`
 }
 
 // Option is a functional option for a SequenceFlow, applied by New.

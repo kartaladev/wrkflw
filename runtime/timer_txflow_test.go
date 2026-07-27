@@ -203,7 +203,9 @@ func assertSameTxAtomicity(t *testing.T, conn any, dlct dialect.Dialect) {
 	armed, err := fw.ListArmed(ctx)
 	require.NoError(t, err)
 	require.Len(t, armed, 1, "wait1's timer row must be durably armed")
-	require.Equal(t, instanceID+"-tm1", armed[0].TimerID)
+	// Timer ids are minted by the driver's IDGenerator (ADR-0149) and opaque —
+	// read wait1's id from the durable row rather than predicting its shape.
+	wait1TimerID := armed[0].TimerID
 
 	_, preVersion, err := sqlStore.Load(ctx, instanceID)
 	require.NoError(t, err)
@@ -213,7 +215,7 @@ func assertSameTxAtomicity(t *testing.T, conn any, dlct dialect.Dialect) {
 	fw.setFailUpsert(true)
 	fc.Advance(time.Hour + time.Second)
 	_, err = driver.ApplyTrigger(ctx, def, instanceID,
-		engine.NewTimerFired(fc.Now(), instanceID+"-tm1"))
+		engine.NewTimerFired(fc.Now(), wait1TimerID))
 	require.Error(t, err, "an injected in-tx Save failure must surface as a commit error")
 	require.ErrorIs(t, err, errInjected)
 
@@ -227,12 +229,15 @@ func assertSameTxAtomicity(t *testing.T, conn any, dlct dialect.Dialect) {
 	armed, err = fw.ListArmed(ctx)
 	require.NoError(t, err)
 	require.Len(t, armed, 1, "rollback must restore exactly the pre-step timer rows")
-	assert.Equal(t, instanceID+"-tm1", armed[0].TimerID, "wait1's row must survive the rollback")
+	assert.Equal(t, wait1TimerID, armed[0].TimerID, "wait1's row must survive the rollback")
 
-	// No in-memory arm for wait2: Activate must not have run post-error.
-	_, err = sched.Scheduled(ctx, instanceID+"-tm2")
-	require.ErrorIs(t, err, scheduler.ErrJobNotFound,
-		"a rolled-back arm must never reach the scheduler")
+	// No in-memory arm for wait2: Activate must not have run post-error. The
+	// rolled-back arm has no id to look up, so assert on the scheduler's whole
+	// set instead — nothing beyond wait1 may be scheduled.
+	for j := range sched.List(ctx) {
+		assert.Equal(t, wait1TimerID, j.ID(),
+			"a rolled-back arm must never reach the scheduler")
+	}
 }
 
 // TestTimerTxFlowSameTxAtomicity is hot-path test 1 on SQLite.
@@ -398,7 +403,7 @@ func TestTimerTxFlowRolledBackCancel(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status)
 	require.Len(t, parked.Tasks, 1)
-	taskToken := parked.Tasks[0].TaskToken
+	taskID := parked.Tasks[0].TaskID
 
 	armed, err := fw.ListArmed(ctx)
 	require.NoError(t, err)
@@ -408,7 +413,7 @@ func TestTimerTxFlowRolledBackCancel(t *testing.T) {
 	// the delete executed on the tx → the whole step must roll back.
 	fw.setFailAfterDelete(true)
 	_, err = driver.ApplyTrigger(ctx, def, instanceID,
-		engine.NewHumanCompleted(fc.Now(), taskToken, nil, manager))
+		engine.NewHumanCompleted(fc.Now(), taskID, engine.CompletionInput{}, manager))
 	require.Error(t, err, "the injected post-delete failure must fail the step")
 	require.ErrorIs(t, err, errInjected)
 
@@ -506,38 +511,55 @@ func TestTimerTxFlowPostCommitFlipFailureIsBenign(t *testing.T) {
 	armed, err := fw.ListArmed(ctx)
 	require.NoError(t, err)
 	require.Len(t, armed, 1, "the durable arm must survive the failed in-memory flip")
+	wait1TimerID := armed[0].TimerID
 
 	// Cancel flip (fired-timer consumption Deactivate) fails → the step still
 	// succeeds and the durable delete is committed.
 	fc.Advance(time.Hour + time.Second)
 	_, err = driver.ApplyTrigger(ctx, def, instanceID,
-		engine.NewTimerFired(fc.Now(), instanceID+"-tm1"))
+		engine.NewTimerFired(fc.Now(), wait1TimerID))
 	require.NoError(t, err, "a failing post-commit Deactivate must never fail the committed step")
 	armed, err = fw.ListArmed(ctx)
 	require.NoError(t, err)
-	require.Len(t, armed, 1, "tm1's consumption delete committed; wait2's arm committed")
-	assert.Equal(t, instanceID+"-tm2", armed[0].TimerID)
+	require.Len(t, armed, 1, "wait1's consumption delete committed; wait2's arm committed")
+	assert.NotEqual(t, wait1TimerID, armed[0].TimerID, "the surviving row is wait2's arm, not wait1's")
 }
 
 // gateScheduler wraps MemScheduler and blocks the FIRST Activate of gateID
 // until release is closed, signalling arrival via reached. It deterministically
 // forces the post-commit flip order Deactivate(T)-before-Activate(T) across
 // two steps of one instance.
+// gateScheduler blocks inside the FIRST post-commit Activate it sees, so a test
+// can interleave a second transaction between a commit and its post-commit
+// scheduler flip. It gates on arrival order rather than on a predicted job id:
+// engine-minted ids come from the injected IDGenerator (ADR-0149) and are opaque
+// in product configuration, so a test must never predict one. The gated job's id
+// is captured for later assertions and readable via GatedID once reached is
+// closed.
 type gateScheduler struct {
 	*processtest.MemScheduler
-	gateID  string
 	reached chan struct{}
 	release chan struct{}
 	once    sync.Once
+	gatedID string // written before reached is closed; read after
 }
 
 func (g *gateScheduler) Activate(ctx context.Context, j scheduler.ScheduledJob) error {
-	if j.ID() == g.gateID {
-		g.once.Do(func() { close(g.reached) })
+	gated := false
+	g.once.Do(func() {
+		gated = true
+		g.gatedID = j.ID()
+		close(g.reached)
+	})
+	if gated {
 		<-g.release
 	}
 	return g.MemScheduler.Activate(ctx, j)
 }
+
+// GatedID returns the id of the job whose Activate was gated. It is safe to call
+// once the reached channel is closed (the write happens-before that close).
+func (g *gateScheduler) GatedID() string { return g.gatedID }
 
 // TestTimerTxFlowArmCancelInterleave is hot-path test 6 (audit v2-A4): step A
 // commits an arm of the recurring reminder T but is gated BEFORE its
@@ -573,10 +595,8 @@ func TestTimerTxFlowArmCancelInterleave(t *testing.T) {
 	sqlStore, fw := newTxFlowStores(t, db, dialect.NewSQLite())
 
 	const instanceID = "txf-inter-1"
-	timerID := instanceID + "-tm1"
 	sched := &gateScheduler{
 		MemScheduler: processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc)),
-		gateID:       timerID,
 		reached:      make(chan struct{}),
 		release:      make(chan struct{}),
 	}
@@ -599,6 +619,7 @@ func TestTimerTxFlowArmCancelInterleave(t *testing.T) {
 		driveErr <- err
 	}()
 	<-sched.reached
+	timerID := sched.GatedID() // the reminder timer T, named by the driver's IDGenerator
 
 	// A's commit is durable: the timer row and the parked task exist.
 	armed, err := fw.ListArmed(ctx)
@@ -607,12 +628,12 @@ func TestTimerTxFlowArmCancelInterleave(t *testing.T) {
 	st, _, err := sqlStore.Load(ctx, instanceID)
 	require.NoError(t, err)
 	require.Len(t, st.Tasks, 1)
-	taskToken := st.Tasks[0].TaskToken
+	taskID := st.Tasks[0].TaskID
 
 	// Step B: completing the task cancels T — durable delete in-tx, then the
 	// post-commit Deactivate(T) (a no-op: T is not armed yet).
 	final, err := driver.ApplyTrigger(ctx, def, instanceID,
-		engine.NewHumanCompleted(fc.Now(), taskToken, nil, manager))
+		engine.NewHumanCompleted(fc.Now(), taskID, engine.CompletionInput{}, manager))
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, final.Status)
 	armed, err = fw.ListArmed(ctx)

@@ -92,7 +92,7 @@ func TestIntermediateCatchReminderFiresAndCancelsOnResolve(t *testing.T) {
 
 			require.Len(t, r1.State.Tokens, 1)
 			assert.Equal(t, "await", r1.State.Tokens[0].NodeID)
-			assert.Equal(t, engine.TokenWaitingCommand, r1.State.Tokens[0].State)
+			assert.Equal(t, engine.TokenWaiting, r1.State.Tokens[0].State)
 
 			reminderID := reminderST.TimerID
 

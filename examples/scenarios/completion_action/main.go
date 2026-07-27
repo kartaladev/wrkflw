@@ -107,7 +107,7 @@ func main() {
 	if len(claimable) == 0 {
 		log.Fatal("expected a claimable task")
 	}
-	taskToken := claimable[0].TaskToken
+	taskID := claimable[0].TaskID
 	fmt.Printf("manager %q sees %d claimable task(s)\n", manager.ID, len(claimable))
 
 	svc, err := task.NewTaskService(taskStore, az, task.WithClock(clk))
@@ -116,7 +116,7 @@ func main() {
 	}
 
 	// 3. Claim the task and deliver the trigger.
-	claimTrg, err := svc.Claim(ctx, taskToken, manager)
+	claimTrg, err := svc.Claim(ctx, taskID, manager)
 	if err != nil {
 		log.Fatal("claim:", err)
 	}
@@ -129,8 +129,7 @@ func main() {
 	// merges the completion input, invokes "recordApproval", merges its output,
 	// and advances the token to the end event — the instance completes in the
 	// same round-trip.
-	completeTrg, err := svc.Complete(ctx, taskToken, manager,
-		map[string]any{"approved": true})
+	completeTrg, err := svc.Complete(ctx, taskID, manager, engine.CompletionInput{Output: map[string]any{"approved": true}})
 	if err != nil {
 		log.Fatal("complete:", err)
 	}

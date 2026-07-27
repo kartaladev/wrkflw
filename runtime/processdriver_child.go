@@ -19,10 +19,14 @@ type callDepthKey struct{}
 // the ctx-threaded depth counter. For the async path (CallLinkStore present) it is
 // computed from stored link depths and blocks runaway call chains before they start.
 //
-// Child instance IDs use a SHORT suffix scheme (see StartSubInstance handling):
-// "<parentInstanceID>-sub-c<N>" where c<N> is only the command-sequence suffix,
-// not the full parent ID. This gives O(depth) growth rather than O(2^depth), so
-// depth 64 is safely bounded.
+// Child instance IDs use a SHORT suffix scheme (see childInstanceIDFor in
+// processdriver_action.go): "<parentInstanceID>-sub-<suffix>", where <suffix> is
+// the bare command-sequence counter ("c3") when the engine minted the command id
+// from its built-in counter, and a fixed-length digest of the command id when an
+// IDGenerator minted an opaque one (xid/uuid — ADR-0149). Either way the suffix
+// is short and constant-length, so growth is O(depth) rather than O(2^depth) and
+// each level adds a fixed number of characters. A total length cap folds a
+// runaway derivation, so depth 64 is bounded well inside the instance_id column.
 const maxCallDepth = 64
 
 // callDepth returns the current call-activity nesting depth stored in ctx.

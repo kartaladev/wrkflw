@@ -26,12 +26,12 @@ func TestErrConflict_ClosedTask(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "must park at user task")
 	require.Len(t, parked.Tokens, 1)
-	taskToken := parked.Tokens[0].AwaitCommand
-	require.NotEmpty(t, taskToken, "task token must be set")
+	taskID := parked.Tokens[0].AwaitCommand
+	require.NotEmpty(t, taskID, "task id must be set")
 
 	// Forcibly mark the task as Completed in the task store (simulates a
 	// race or a task that was already completed/cancelled).
-	task, err := h.taskStore.Get(ctx, taskToken)
+	task, err := h.taskStore.Get(ctx, taskID)
 	require.NoError(t, err)
 	task.State = humantask.Completed
 	require.NoError(t, h.taskStore.Upsert(ctx, task))
@@ -39,8 +39,8 @@ func TestErrConflict_ClosedTask(t *testing.T) {
 	// Claiming a closed (Completed) task must return ErrConflict.
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	_, err = svc.ClaimTask(ctx, service.ClaimTaskRequest{
-		TaskToken: taskToken,
-		Actor:     manager,
+		TaskID: taskID,
+		Actor:  manager,
 	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, service.ErrConflict, "claiming a closed task must return ErrConflict")
@@ -84,7 +84,7 @@ func TestErrConflict_CancelledTask(t *testing.T) {
 	// exist in the instance store so resolveDefinition can load it (the task-closed
 	// guard fires first, so we only need the taskStore entry to be closed).
 	closedTask := humantask.HumanTask{
-		TaskToken:  "cancelled-task-token",
+		TaskID:     "cancelled-task-token",
 		InstanceID: "any-instance-id",
 		NodeID:     "approve",
 		State:      humantask.Cancelled,
@@ -95,8 +95,8 @@ func TestErrConflict_CancelledTask(t *testing.T) {
 	// ClaimTask on a Cancelled task must return ErrConflict.
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	_, err := svc.ClaimTask(ctx, service.ClaimTaskRequest{
-		TaskToken: "cancelled-task-token",
-		Actor:     manager,
+		TaskID: "cancelled-task-token",
+		Actor:  manager,
 	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, service.ErrConflict, "claiming a cancelled task must return ErrConflict")
@@ -107,7 +107,7 @@ func TestErrConflict_CancelledTask(t *testing.T) {
 // classified as service.ErrConflict with the engine cause still inspectable.
 //
 // Mechanism: we seed a synthetic Open task into the shared taskStore whose
-// TaskToken does not exist in the engine's live token set. The pre-flight checks
+// TaskID does not exist in the engine's live token set. The pre-flight checks
 // pass (task.IsOpen() == true, instance.Status == Running), but the engine's
 // step handler cannot find the token and returns ErrTokenNotFound, which wraps
 // engine.ErrInvalidTransition via the Task 1 sentinel chain.
@@ -124,9 +124,9 @@ func TestErrConflict_EngineWrongStateClassified(t *testing.T) {
 	require.Equal(t, engine.StatusRunning, parked.Status, "must park at user task")
 
 	// Seed a synthetic Open task that references the running instance but whose
-	// TaskToken is unknown to the engine. Pre-flight passes; engine rejects it.
+	// TaskID is unknown to the engine. Pre-flight passes; engine rejects it.
 	syntheticTask := humantask.HumanTask{
-		TaskToken:   "synthetic-ghost-token",
+		TaskID:      "synthetic-ghost-token",
 		InstanceID:  "race-instance",
 		NodeID:      "approve",
 		State:       humantask.Unclaimed,
@@ -139,8 +139,8 @@ func TestErrConflict_EngineWrongStateClassified(t *testing.T) {
 	// with ErrTokenNotFound (wraps ErrInvalidTransition) → must be ErrConflict.
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	_, err = svc.ClaimTask(ctx, service.ClaimTaskRequest{
-		TaskToken: "synthetic-ghost-token",
-		Actor:     manager,
+		TaskID: "synthetic-ghost-token",
+		Actor:  manager,
 	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, service.ErrConflict,
@@ -163,14 +163,14 @@ func TestErrConflict_HappyPath_ClaimOpen(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "must park at user task")
 	require.Len(t, parked.Tokens, 1)
-	taskToken := parked.Tokens[0].AwaitCommand
-	require.NotEmpty(t, taskToken, "task token must be set")
+	taskID := parked.Tokens[0].AwaitCommand
+	require.NotEmpty(t, taskID, "task id must be set")
 
 	// Claiming the still-open task must succeed without conflict.
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	_, claimErr := svc.ClaimTask(ctx, service.ClaimTaskRequest{
-		TaskToken: taskToken,
-		Actor:     manager,
+		TaskID: taskID,
+		Actor:  manager,
 	})
 	require.NoError(t, claimErr, "claiming an Open task must succeed (no ErrConflict on the happy path)")
 }

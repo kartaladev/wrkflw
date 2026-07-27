@@ -152,7 +152,7 @@ func TestDrive_MissingNodePark_LogsWarn(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, cmds)
 	require.Len(t, s.Tokens, 1)
-	assert.Equal(t, TokenWaitingCommand, s.Tokens[0].State, "token must park rather than spin")
+	assert.Equal(t, TokenWaiting, s.Tokens[0].State, "token must park rather than spin")
 
 	rec, ok := h.find("token routed to a missing node")
 	require.True(t, ok, "expected a Warn log for a token parked on a missing node")

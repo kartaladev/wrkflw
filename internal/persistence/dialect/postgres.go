@@ -51,9 +51,13 @@ func (postgres) UpsertDefinition() string {
 
 // UpsertTask returns the ON CONFLICT clause for the human-task upsert site.
 func (postgres) UpsertTask() string {
-	return " ON CONFLICT (task_token) DO UPDATE SET" +
+	return " ON CONFLICT (task_id) DO UPDATE SET" +
 		" instance_id = EXCLUDED.instance_id, node_id = EXCLUDED.node_id," +
 		" state = EXCLUDED.state, claimed_by = EXCLUDED.claimed_by," +
+		" claimed_at = EXCLUDED.claimed_at, claim_actor = EXCLUDED.claim_actor," +
+		" completed_by = EXCLUDED.completed_by, completed_at = EXCLUDED.completed_at," +
+		" outcome = EXCLUDED.outcome, note = EXCLUDED.note," +
+		" completion_actor = EXCLUDED.completion_actor," +
 		" eligibility = EXCLUDED.eligibility, candidates = EXCLUDED.candidates," +
 		" vars = EXCLUDED.vars, created_at = EXCLUDED.created_at, due_at = EXCLUDED.due_at"
 }

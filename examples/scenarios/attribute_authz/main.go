@@ -129,19 +129,19 @@ func demoAttributeAuthz(ctx context.Context) {
 		if err != nil {
 			log.Fatal("run EU:", err)
 		}
-		taskToken := parked.Tokens[0].AwaitCommand
+		taskID := parked.Tokens[0].AwaitCommand
 
 		svc, err := task.NewTaskService(taskStore, az)
 		if err != nil {
 			log.Fatal("task service:", err)
 		}
-		claimTrg, err := svc.Claim(ctx, taskToken, approver)
+		claimTrg, err := svc.Claim(ctx, taskID, approver)
 		if err != nil {
 			fmt.Printf("  EU instance Claim: UNEXPECTED DENY — %v\n", err)
 		} else {
 			fmt.Println("  EU instance Claim: ALLOW (expected)")
 			// Complete the task to drive the instance to StatusCompleted.
-			completeTrg, cerr := svc.Complete(ctx, taskToken, approver, map[string]any{"decision": "approved"})
+			completeTrg, cerr := svc.Complete(ctx, taskID, approver, engine.CompletionInput{Output: map[string]any{"decision": "approved"}})
 			if cerr != nil {
 				log.Fatal("complete EU:", cerr)
 			}
@@ -173,13 +173,13 @@ func demoAttributeAuthz(ctx context.Context) {
 		if err != nil {
 			log.Fatal("run US:", err)
 		}
-		taskToken := parked.Tokens[0].AwaitCommand
+		taskID := parked.Tokens[0].AwaitCommand
 
 		svc, err := task.NewTaskService(taskStore, az)
 		if err != nil {
 			log.Fatal("task service:", err)
 		}
-		_, err = svc.Claim(ctx, taskToken, approver)
+		_, err = svc.Claim(ctx, taskID, approver)
 		if errors.Is(err, authz.ErrNotAuthorized) {
 			fmt.Println("  US instance Claim: DENY (expected) — authz.ErrNotAuthorized")
 		} else if err != nil {
@@ -244,12 +244,12 @@ func demoCasbinRBAC(ctx context.Context) {
 		if runErr != nil {
 			log.Fatal("run (allow):", runErr)
 		}
-		taskToken := parked.Tokens[0].AwaitCommand
+		taskID := parked.Tokens[0].AwaitCommand
 		svc, err := task.NewTaskService(taskStore, casbinAz)
 		if err != nil {
 			log.Fatal("task service:", err)
 		}
-		_, claimErr := svc.Claim(ctx, taskToken, withRole)
+		_, claimErr := svc.Claim(ctx, taskID, withRole)
 		if claimErr == nil {
 			fmt.Println("  Actor with 'approver' role: ALLOW (expected)")
 		} else {
@@ -267,12 +267,12 @@ func demoCasbinRBAC(ctx context.Context) {
 		if runErr != nil {
 			log.Fatal("run (deny):", runErr)
 		}
-		taskToken := parked.Tokens[0].AwaitCommand
+		taskID := parked.Tokens[0].AwaitCommand
 		svc, err := task.NewTaskService(taskStore, casbinAz)
 		if err != nil {
 			log.Fatal("task service:", err)
 		}
-		_, claimErr := svc.Claim(ctx, taskToken, withoutRole)
+		_, claimErr := svc.Claim(ctx, taskID, withoutRole)
 		if errors.Is(claimErr, authz.ErrNotAuthorized) {
 			fmt.Println("  Actor without 'approver' role: DENY (expected) — authz.ErrNotAuthorized")
 		} else if claimErr != nil {

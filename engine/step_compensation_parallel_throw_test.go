@@ -281,7 +281,7 @@ func TestParallelCompensationThrowsDrainOrdering(t *testing.T) {
 //   - When the first throw's compensation completes, stepCompensationFinish sees
 //     PendingCancel and runs a FULL cancel over the REMAINING records, terminating
 //     the instance instead of resuming.
-//   - The deferred SECOND throw token is parked (TokenWaitingCommand) and is NOT
+//   - The deferred SECOND throw token is parked (TokenWaiting) and is NOT
 //     left orphaned: the full cancel consumes all tokens (beginCompensation cancels
 //     in-flight tokens) and the instance terminates. The deferred queue id is moot
 //     because the instance never resumes to re-activate it.

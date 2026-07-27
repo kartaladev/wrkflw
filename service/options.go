@@ -22,11 +22,16 @@ type engineConfig struct {
 	lister        kernel.InstanceLister
 	taskStore     humantask.TaskStore
 	authz         authz.Authorizer
+	resolver      humantask.ActorResolver
 	timerStore    kernel.TimerStore
 	callLinkStore kernel.CallLinkStore
 	clk           clockwork.Clock
 	idgen         idgen.Generator
 	durable       bool
+	// omitDefinition suppresses the `definition` embed in the marshalled
+	// ProcessInstance document. Zero value false keeps the ADR-0144 embed, so the
+	// default is unchanged.
+	omitDefinition bool
 }
 
 // WithProcessDriver supplies a pre-built driver (escape hatch for tests /
@@ -80,6 +85,25 @@ func WithHumanTasks(taskStore humantask.TaskStore, az authz.Authorizer) Option {
 	}
 }
 
+// WithActorResolver supplies the resolver the internal task service uses to
+// re-expand a task's eligibility spec into concrete actors. It is required only
+// by [ProcessEngine.RefreshTaskCandidates], which returns
+// [task.ErrNoActorResolver] when none is configured; claiming, reassigning and
+// completing never consult it. A nil resolver is ignored.
+//
+// There is no default: candidate resolution is consumer-specific I/O (a
+// directory or group-membership lookup), so an engine built without this option
+// simply cannot refresh. Pass the SAME resolver the driver was built with via
+// runtime.WithHumanTasks, so a refreshed candidate list is derived identically
+// to the one minted when the task was created.
+func WithActorResolver(r humantask.ActorResolver) Option {
+	return func(c *engineConfig) {
+		if r != nil {
+			c.resolver = r
+		}
+	}
+}
+
 // WithClock overrides the clock used by the engine and the internal task
 // service (and the default driver).
 func WithClock(clk clockwork.Clock) Option {
@@ -99,6 +123,28 @@ func WithIDGenerator(gen idgen.Generator) Option {
 			c.idgen = gen
 		}
 	}
+}
+
+// WithoutEmbeddedDefinition drops the `definition` key from every
+// ProcessInstance document this engine marshals. The identity — `def_id` and
+// `def_version` — is read off the instance state and is NOT suppressed, so a
+// slimmed document still names the template it runs.
+//
+// The embed is the default (ADR-0144): it makes the document self-contained, so
+// a consumer that has never seen the template can render the instance from one
+// payload. The cost is duplication — the template is byte-identical for every
+// instance of a definition and, on a typical graph, is the LARGER half of the
+// document, re-shipped on every read. Opt out when the consumer already holds
+// the definition: a UI polling one instance, or an aggregate assembled from N
+// GetInstance calls that share a handful of templates. Such consumers can fetch
+// each template once and key it by (def_id, def_version).
+//
+// This is a marshalling policy only. [ProcessInstance.Definition] keeps
+// returning the resolved template to in-process consumers either way, and
+// [NewProcessInstance] — which fabricates an instance outside the engine —
+// always embeds.
+func WithoutEmbeddedDefinition() Option {
+	return func(c *engineConfig) { c.omitDefinition = true }
 }
 
 // WithDurableStore flips the whole graph durable in one call, setting every

@@ -21,53 +21,58 @@ type NodeWire struct {
 	// renames after a reload.
 	Label              string   `json:"label,omitempty"`
 	Action             string   `json:"action,omitempty"`
-	EligibleRoles      []string `json:"eligibleRoles,omitempty"`
-	EligiblePrivileges []string `json:"eligiblePrivileges,omitempty"`
-	EligibleExpr       string   `json:"eligibleExpr,omitempty"`
+	EligibleRoles      []string `json:"eligible_roles,omitempty"`
+	EligiblePrivileges []string `json:"eligible_privileges,omitempty"`
+	EligibleExpr       string   `json:"eligible_expr,omitempty"`
 	Manual             bool     `json:"manual,omitempty"`
-	ManualImmediate    bool     `json:"manualImmediate,omitempty"`
+	ManualImmediate    bool     `json:"manual_immediate,omitempty"`
+	// Outcomes/ExposeOutcome/OutcomeVariable carry a UserTask's completion-outcome
+	// declaration and its variable-exposure opt-in (ADR-0146).
+	Outcomes        []string `json:"outcomes,omitempty"`
+	ExposeOutcome   bool     `json:"expose_outcome,omitempty"`
+	OutcomeVariable string   `json:"outcome_variable,omitempty"`
 	// legacy flat forms (decoded via ReadTrigger's flatExpr path; not written by ToWire)
-	TimerDuration    string `json:"timerDuration,omitempty"`
-	DeadlineDuration string `json:"deadlineDuration,omitempty"`
-	WaitEvery        string `json:"waitEvery,omitempty"`
+	TimerDuration    string `json:"timer_duration,omitempty"`
+	DeadlineDuration string `json:"deadline_duration,omitempty"`
+	WaitEvery        string `json:"wait_every,omitempty"`
 	// nested trigger forms (canonical)
-	TimerTrigger     *TriggerWire `json:"timerTrigger,omitempty"`
-	DeadlineTrigger  *TriggerWire `json:"deadlineTrigger,omitempty"`
-	WaitTrigger      *TriggerWire `json:"waitTrigger,omitempty"`
-	DeadlineFlow     string       `json:"deadlineFlow,omitempty"`
-	DeadlineAction   string       `json:"deadlineAction,omitempty"`
-	WaitAction       string       `json:"waitAction,omitempty"`
-	RetryPolicy      *RetryPolicy `json:"retryPolicy,omitempty"`
-	RecoveryFlow     string       `json:"recoveryFlow,omitempty"`
-	CompensateAction string       `json:"compensateAction,omitempty"`
-	CompensateRef    string       `json:"compensateRef,omitempty"`
+	TimerTrigger     *TriggerWire `json:"timer_trigger,omitempty"`
+	DeadlineTrigger  *TriggerWire `json:"deadline_trigger,omitempty"`
+	WaitTrigger      *TriggerWire `json:"wait_trigger,omitempty"`
+	DeadlineFlow     string       `json:"deadline_flow,omitempty"`
+	DeadlineAction   string       `json:"deadline_action,omitempty"`
+	WaitAction       string       `json:"wait_action,omitempty"`
+	RetryPolicy      *RetryPolicy `json:"retry_policy,omitempty"`
+	RecoveryFlow     string       `json:"recovery_flow,omitempty"`
+	CompensateAction string       `json:"compensate_action,omitempty"`
+	CompensateRef    string       `json:"compensate_ref,omitempty"`
 	// CompensateScopeLocal narrows a scope-wide CompensationThrowEvent at the
 	// root scope to root-direct compensable activities (ADR-0120).
-	CompensateScopeLocal bool   `json:"compensateScopeLocal,omitempty"`
-	CancelAction         string `json:"cancelAction,omitempty"`
-	CompletionAction     string `json:"completionAction,omitempty"`
-	SignalName           string `json:"signalName,omitempty"`
-	MessageName          string `json:"messageName,omitempty"`
-	CorrelationKey       string `json:"correlationKey,omitempty"`
+	CompensateScopeLocal bool   `json:"compensate_scope_local,omitempty"`
+	CancelAction         string `json:"cancel_action,omitempty"`
+	CompletionAction     string `json:"completion_action,omitempty"`
+	SignalName           string `json:"signal_name,omitempty"`
+	MessageName          string `json:"message_name,omitempty"`
+	CorrelationKey       string `json:"correlation_key,omitempty"`
 	// MessageStartSingleton, when true on a StartEvent, makes a keyless
 	// message-start create at most one instance ever for its message name
 	// (name-only deterministic id). Default false = fresh instance per message
 	// (ADR-0121 review).
-	MessageStartSingleton bool   `json:"messageStartSingleton,omitempty"`
-	ErrorCode             string `json:"errorCode,omitempty"`
+	MessageStartSingleton bool   `json:"message_start_singleton,omitempty"`
+	ErrorCode             string `json:"error_code,omitempty"`
 	// EndBehavior is the name-based discriminator for an EndEvent's behavior
 	// (ADR-0127): "terminate" or "error"; empty means a normal end.
 	// TerminationReason/TerminationOutcome are written only for "terminate";
 	// ErrorCode only for "error".
-	EndBehavior        string             `json:"endBehavior,omitempty"`
-	TerminationReason  string             `json:"terminationReason,omitempty"`
-	TerminationOutcome string             `json:"terminationOutcome,omitempty"`
-	AttachedTo         string             `json:"attachedTo,omitempty"`
-	NonInterrupting    bool               `json:"nonInterrupting,omitempty"`
-	BoundaryAction     string             `json:"boundaryAction,omitempty"`
-	BoundaryErrorExpr  string             `json:"boundaryErrorExpr,omitempty"`
+	EndBehavior        string             `json:"end_behavior,omitempty"`
+	TerminationReason  string             `json:"termination_reason,omitempty"`
+	TerminationOutcome string             `json:"termination_outcome,omitempty"`
+	AttachedTo         string             `json:"attached_to,omitempty"`
+	NonInterrupting    bool               `json:"non_interrupting,omitempty"`
+	BoundaryAction     string             `json:"boundary_action,omitempty"`
+	BoundaryErrorExpr  string             `json:"boundary_error_expr,omitempty"`
 	Subprocess         *ProcessDefinition `json:"subprocess,omitempty"`
-	DefRef             string             `json:"defRef,omitempty"`
+	DefRef             string             `json:"def_ref,omitempty"`
 	// Validation is the descriptor for the node's validation-strategy slot, when
 	// it has one and the strategy is describable (validate.DescribableStrategy)
 	// or a pending reconstruction placeholder (PendingValidation). nil means
@@ -136,11 +141,17 @@ func fromWire(w NodeWire) (Node, error) {
 
 // definitionWire mirrors ProcessDefinition with Nodes as wire forms.
 type definitionWire struct {
-	ID            string              `json:"id"`
-	Version       int                 `json:"version"`
+	ID      string `json:"id"`
+	Version int    `json:"version"`
+	// ScopedActions carries the definition-scoped action NAMES so a marshalled
+	// definition is self-describing (ADR-0144). It is derived, MARSHAL-ONLY
+	// state: the scoped catalog holds live action implementations that have no
+	// serializable form, so UnmarshalJSON accepts the key and drops it — a
+	// reloaded definition falls back to the global catalog for those names.
+	ScopedActions []string            `json:"scoped_actions,omitempty"`
 	Nodes         []NodeWire          `json:"nodes"`
 	Flows         []flow.SequenceFlow `json:"flows"`
-	CancelActions []string            `json:"cancelActions,omitempty"`
+	CancelActions []string            `json:"cancel_actions,omitempty"`
 }
 
 // MarshalJSON serializes a ProcessDefinition to JSON using the flat NodeWire
@@ -149,6 +160,7 @@ func (d ProcessDefinition) MarshalJSON() ([]byte, error) {
 	dw := definitionWire{
 		ID:            d.ID,
 		Version:       d.Version,
+		ScopedActions: d.ScopedActionNames(),
 		Flows:         d.Flows,
 		CancelActions: d.CancelActions,
 	}

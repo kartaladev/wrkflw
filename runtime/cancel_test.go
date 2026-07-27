@@ -98,7 +98,7 @@ func TestProcessDriverCancelInstanceCancelsParkedTask(t *testing.T) {
 	before, err := tasks.ClaimableBy(t.Context(), actor)
 	require.NoError(t, err)
 	require.Len(t, before, 1, "task must be claimable before cancel")
-	token := before[0].TaskToken
+	token := before[0].TaskID
 
 	st, err := r.CancelInstance(t.Context(), def, "c3")
 	require.NoError(t, err)

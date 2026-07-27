@@ -270,9 +270,11 @@ type chainLinkScanner interface {
 // must be: predecessor_instance_id, outcome, successor_instance_id,
 // predecessor_definition_ref, successor_definition_ref, start_vars, created_at.
 //
-// The created_at column is handled via the time codec (ADR-0080): SQLite stores
-// TEXT as RFC3339Nano ([dialect.Dialect.TimestampsAsText] == true) and requires
-// [parseTimeText]; Postgres and MySQL scan into time.Time natively and are then
+// The created_at column is handled via the time codec (ADR-0080, ADR-0151):
+// SQLite stores fixed-width RFC3339 TEXT ([dialect.Dialect.TimestampsAsText] ==
+// true) — never time.RFC3339Nano, whose trimmed fraction breaks the ORDER BY
+// created_at this store relies on — and requires [parseTimeText]; Postgres and
+// MySQL scan into time.Time natively and are then
 // normalised to UTC.
 func (c *ChainLinkStore) scanChainLink(row chainLinkScanner) (kernel.ChainLink, error) {
 	var (

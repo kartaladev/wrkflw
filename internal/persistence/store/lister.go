@@ -179,8 +179,10 @@ func (l *Lister) List(ctx context.Context, filter kernel.InstanceFilter) (kernel
 
 // scanSummaryRow reads one row from the query result set into an InstanceSummary.
 // It handles the dialect split for time columns: when [dialect.Dialect.TimestampsAsText]
-// is true (SQLite), started_at / ended_at are stored as RFC3339Nano TEXT strings
-// and must be parsed; on Postgres / MySQL the driver returns time.Time natively.
+// is true (SQLite), started_at / ended_at are stored as fixed-width RFC3339 TEXT
+// strings (ADR-0151 — the fixed width is what makes ORDER BY started_at and the
+// keyset cursor predicate order correctly) and must be parsed; on Postgres /
+// MySQL the driver returns time.Time natively.
 func (l *Lister) scanSummaryRow(rows database.Rows) (kernel.InstanceSummary, error) {
 	var (
 		instanceID    string
@@ -194,8 +196,8 @@ func (l *Lister) scanSummaryRow(rows database.Rows) (kernel.InstanceSummary, err
 	var endedAt *time.Time
 
 	if l.dialect.TimestampsAsText() {
-		// TEXT-timestamp path (SQLite): timestamps are RFC3339Nano strings.
-		// Scan into strings and parse manually (ADR-0080).
+		// TEXT-timestamp path (SQLite): timestamps are fixed-width RFC3339 strings
+		// (ADR-0080, ADR-0151). Scan into strings and parse manually.
 		var startedAtStr string
 		var endedAtStr *string
 

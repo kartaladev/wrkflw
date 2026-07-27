@@ -13,7 +13,7 @@ package engine_test
 // already-Failed instance.
 //
 // Ordering: the error-end branch is placed FIRST in the fork's outgoing-flow
-// list so forkParallel positions its token before the ServiceTask token;
+// list so forkParallel positions its token before the ServiceTask id;
 // firstActive() picks the error-end first and propagateError fails the instance.
 // The test asserts svc-a is never invoked.
 
@@ -34,7 +34,7 @@ import (
 
 // parallelErrorEndFirstNoHandlerDef builds a process where the error-end
 // branch is the FIRST outgoing flow of the parallel fork, so forkParallel
-// places its token before the ServiceTask token.
+// places its token before the ServiceTask id.
 //
 //	start → fork (parallel gateway)
 //	          ├── [0] err-end (EndError "FATAL", no boundary handler)  ← FIRST
@@ -80,8 +80,8 @@ func parallelErrorEndFirstNoHandlerDef() *model.ProcessDefinition {
 //   - the error-end branch consumes the err-end token, calls propagateError.
 //   - propagateError: no handler → StatusFailed + FailInstance, but s.Tokens still
 //     contains svc-a with TokenActive.
-//   - the error-end branch sets tok.State = TokenWaitingCommand, returns.
-//   - drive: stopped = (TokenWaitingCommand != TokenActive) = true.
+//   - the error-end branch sets tok.State = TokenWaiting, returns.
+//   - drive: stopped = (TokenWaiting != TokenActive) = true.
 //   - Macro mode: loop does NOT break on stopped; calls firstActive() again.
 //   - firstActive() finds svc-a (still TokenActive) → drives it → InvokeAction("svc-a").
 //   - RESULT: InvokeAction("svc-a") appears AFTER FailInstance → BUG.

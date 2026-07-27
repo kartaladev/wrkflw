@@ -39,7 +39,7 @@ type DecideTaskFunc func(t humantask.HumanTask) (actor authz.Actor, output map[s
 // deliveries, so the handler returns the claim trigger on one step and the
 // completion trigger on the next (the drive loop re-invokes it).
 //
-// decide is invoked at most once per task token; the decision (actor, output,
+// decide is invoked at most once per task id; the decision (actor, output,
 // accept) is memoized and reused for that token's claim and completion, so the
 // completion always uses the same actor that claimed — the handler does not rely
 // on decide being idempotent.
@@ -53,11 +53,11 @@ func CompleteTasksWith(svc *task.TaskService, decide DecideTaskFunc) ParkHandler
 
 	return func(ctx context.Context, p Park) (Decision, error) {
 		for _, tsk := range p.OpenTasks {
-			v, seen := memo[tsk.TaskToken]
+			v, seen := memo[tsk.TaskID]
 			if !seen {
 				actor, output, ok := decide(tsk)
 				v = verdict{actor: actor, output: output, accept: ok}
-				memo[tsk.TaskToken] = v
+				memo[tsk.TaskID] = v
 			}
 			if !v.accept {
 				continue // decide declined this task; try the next open one
@@ -65,15 +65,15 @@ func CompleteTasksWith(svc *task.TaskService, decide DecideTaskFunc) ParkHandler
 
 			switch tsk.State {
 			case humantask.Unclaimed:
-				trg, err := svc.Claim(ctx, tsk.TaskToken, v.actor)
+				trg, err := svc.Claim(ctx, tsk.TaskID, v.actor)
 				if err != nil {
-					return Decision{}, fmt.Errorf("processtest: claim task %q: %w", tsk.TaskToken, err)
+					return Decision{}, fmt.Errorf("processtest: claim task %q: %w", tsk.TaskID, err)
 				}
 				return Deliver(trg), nil
 			case humantask.Claimed:
-				trg, err := svc.Complete(ctx, tsk.TaskToken, v.actor, v.output)
+				trg, err := svc.Complete(ctx, tsk.TaskID, v.actor, engine.CompletionInput{Output: v.output})
 				if err != nil {
-					return Decision{}, fmt.Errorf("processtest: complete task %q: %w", tsk.TaskToken, err)
+					return Decision{}, fmt.Errorf("processtest: complete task %q: %w", tsk.TaskID, err)
 				}
 				return Deliver(trg), nil
 			}

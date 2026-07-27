@@ -42,7 +42,13 @@ type ClaimInput struct {
 // CompleteInput is the request body for POST /tasks/{token}/complete.
 // No fields are required — actor and output are both optional.
 type CompleteInput struct {
-	Actor  Actor          `json:"actor"`
+	Actor Actor `json:"actor"`
+	// Outcome is the business outcome the actor chose (e.g. "approve"); optional.
+	// When the user-task node declares an outcome set, an outcome outside it is
+	// rejected by the engine.
+	Outcome string `json:"outcome,omitempty"`
+	// Note is the actor's free-text remark accompanying the completion; optional.
+	Note   string         `json:"note,omitempty"`
 	Output map[string]any `json:"output"`
 }
 

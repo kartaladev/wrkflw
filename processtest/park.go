@@ -125,11 +125,11 @@ func Classify(state engine.InstanceState) Park {
 		p.Node = firstNodeWhere(state.Tokens, func(t engine.Token) bool { return t.AwaitMessage != "" })
 	case p.HasArmedTimers:
 		p.Reason = ReasonTimer
-		p.Node = firstNodeWhere(state.Tokens, func(t engine.Token) bool { return t.State == engine.TokenWaitingCommand })
+		p.Node = firstNodeWhere(state.Tokens, func(t engine.Token) bool { return t.State == engine.TokenWaiting })
 	case hasCommandWait(state.Tokens):
 		p.Reason = ReasonAsyncChild
 		p.Node = firstNodeWhere(state.Tokens, func(t engine.Token) bool {
-			return t.State == engine.TokenWaitingCommand && t.AwaitCommand != ""
+			return t.State == engine.TokenWaiting && t.AwaitCommand != ""
 		})
 	default:
 		p.Reason = ReasonUnknown
@@ -173,7 +173,7 @@ func incidentNode(state engine.InstanceState) string {
 
 func hasCommandWait(tokens []engine.Token) bool {
 	for _, t := range tokens {
-		if t.State == engine.TokenWaitingCommand && t.AwaitCommand != "" {
+		if t.State == engine.TokenWaiting && t.AwaitCommand != "" {
 			return true
 		}
 	}

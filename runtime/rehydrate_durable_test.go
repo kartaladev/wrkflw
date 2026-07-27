@@ -89,6 +89,13 @@ func assertDurableTimerRehydration(t *testing.T, conn any, dlct dialect.Dialect)
 		require.NoError(t, err)
 	}
 
+	// The timer id is minted by the driver's IDGenerator (ADR-0149) and opaque —
+	// read it back from the durable row the crashed process left behind.
+	persisted, err := timerStore.ListArmed(t.Context())
+	require.NoError(t, err)
+	require.Len(t, persisted, 1, "the crashed process must leave exactly one armed timer row")
+	timerID := persisted[0].TimerID
+
 	// Simulate a long downtime: advance the clock PAST the original fire time.
 	// If rehydration restarted the delay from "now", the timer would fire at
 	// now+1h (much later) instead of the original startAt+1h.
@@ -104,7 +111,7 @@ func assertDurableTimerRehydration(t *testing.T, conn any, dlct dialect.Dialect)
 
 	// The rehydrated one-shot's next run must be the ORIGINAL absolute instant
 	// (startAt + 1h), which is already in the past — so a single Tick fires it.
-	sj, err := sched2.Scheduled(t.Context(), "rh-1-tm1")
+	sj, err := sched2.Scheduled(t.Context(), timerID)
 	require.NoError(t, err, "rehydrated timer must be pending on the fresh scheduler")
 	wantFire := startAt.Add(time.Hour)
 	assert.True(t, sj.NextRun().Equal(wantFire),

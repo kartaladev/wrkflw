@@ -49,6 +49,28 @@ type UserTask struct {
 	// auto-completes the task on entry (a documentation marker) — the engine
 	// records a completed task for audit and advances without waiting. See ADR-0118.
 	ManualImmediate bool
+	// Outcomes is the optional set of completion outcomes this task accepts
+	// (e.g. "approve", "reject"). Empty means unconstrained: a completion may
+	// carry any outcome or none. When non-empty the engine fails closed BOTH
+	// ways: a completion whose outcome is outside the set is rejected with
+	// engine.ErrInvalidOutcome, and a completion carrying NO outcome is rejected
+	// with engine.ErrOutcomeRequired — declaring a set makes the outcome
+	// mandatory. Set via WithOutcomes. See ADR-0146.
+	Outcomes []string
+	// ExposeOutcome opts into publishing the chosen completion outcome as the
+	// process variable "<node id>_outcome", so downstream gateways can route on
+	// it. Ignored when OutcomeVariable is set (the explicit name wins).
+	// Requires a non-empty Outcomes: publishing a completer-supplied string into
+	// the variable space demands a declared, closed value domain, so Build
+	// rejects exposure without one (model.ErrOutcomeExposureWithoutOutcomes).
+	// Set via WithExposeOutcome. See ADR-0146.
+	ExposeOutcome bool
+	// OutcomeVariable names the process variable the chosen completion outcome
+	// is published as, taking precedence over ExposeOutcome's convention. Empty
+	// means no explicit name. Like ExposeOutcome it requires a non-empty
+	// Outcomes (model.ErrOutcomeExposureWithoutOutcomes).
+	// Set via WithOutcomeVariable. See ADR-0146.
+	OutcomeVariable string
 }
 
 // Kind returns model.KindUserTask.
@@ -213,7 +235,12 @@ func init() {
 	model.RegisterKind(model.KindUserTask, model.NodeSpec{
 		Name: "userTask",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			n := UserTask{Base: b, ActivityFields: w.Activity(), EligibleRoles: w.EligibleRoles, EligiblePrivileges: w.EligiblePrivileges, EligibleExpr: w.EligibleExpr, Manual: w.Manual, ManualImmediate: w.ManualImmediate}
+			n := UserTask{
+				Base: b, ActivityFields: w.Activity(),
+				EligibleRoles: w.EligibleRoles, EligiblePrivileges: w.EligiblePrivileges, EligibleExpr: w.EligibleExpr,
+				Manual: w.Manual, ManualImmediate: w.ManualImmediate,
+				Outcomes: w.Outcomes, ExposeOutcome: w.ExposeOutcome, OutcomeVariable: w.OutcomeVariable,
+			}
 			if w.Validation != nil {
 				n.CompletionValidation = model.PendingValidation(*w.Validation)
 			}
@@ -224,6 +251,7 @@ func init() {
 			w.EligibleRoles, w.EligiblePrivileges, w.EligibleExpr = v.EligibleRoles, v.EligiblePrivileges, v.EligibleExpr
 			w.Manual = v.Manual
 			w.ManualImmediate = v.ManualImmediate
+			w.Outcomes, w.ExposeOutcome, w.OutcomeVariable = v.Outcomes, v.ExposeOutcome, v.OutcomeVariable
 			w.PutActivity(v.ActivityFields)
 			w.Validation = model.PutValidation(v.CompletionValidation)
 		},

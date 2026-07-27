@@ -11,6 +11,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/kartaladev/wrkflw/internal/expreval"
 )
@@ -25,10 +27,33 @@ var attrEval = expreval.New()
 var ErrNotAuthorized = errors.New("workflow-authz: not authorized")
 
 // Actor is a principal that can act on human tasks.
+//
+// The JSON tags are the actor's wire contract: human-task audit records render
+// actors by faithful passthrough (ADR-0147), so the shape is defined once here
+// rather than re-mapped by every view. There is no first-class username or
+// email — populate Attributes from your [ActorResolver] if you need them.
 type Actor struct {
-	ID         string
-	Roles      []string
-	Attributes map[string]any
+	ID         string         `json:"id"`
+	Roles      []string       `json:"roles,omitempty"`
+	Attributes map[string]any `json:"attributes,omitempty"`
+}
+
+// Clone returns a copy of the actor whose Roles slice and Attributes map are
+// independently allocated, so mutating the copy cannot affect the receiver. Nil
+// fields stay nil. Attributes are cloned one level deep: nested maps and slices
+// inside an attribute value remain shared, matching the shallow-snapshot rule
+// that applies to process variables elsewhere in the engine.
+//
+// Use it wherever an actor crosses an isolation boundary — a cached human-task
+// record, a cloned instance state — so callers cannot mutate stored audit data.
+func (a Actor) Clone() Actor {
+	// Guard on nil, not on length: a zero-length slice with spare capacity is
+	// still shared between clones. slices.Clone already maps nil to nil.
+	a.Roles = slices.Clone(a.Roles)
+	if a.Attributes != nil {
+		a.Attributes = maps.Clone(a.Attributes)
+	}
+	return a
 }
 
 // AuthzSpec describes who may act: any-of roles, any-of resource privileges,

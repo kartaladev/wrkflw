@@ -235,7 +235,7 @@ func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *
 	// happens inside beginCompensation.
 	if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
 		s.Status = StatusCompensating
-		res, err := beginCompensation(ctx, top, s, at, mode, eval, compensationOutcome{FinalStatus: StatusFailed, FinalErr: errorCode})
+		res, err := beginCompensation(ctx, top, s, at, mode, eval, compensationOutcome{CloseKind: CloseKindErrored, FinalStatus: StatusFailed, FinalErr: errorCode})
 		if err != nil {
 			return nil, err
 		}
@@ -362,7 +362,7 @@ func propagateError(ctx context.Context, top *model.ProcessDefinition, s *Instan
 					}
 				}
 				if failingTok != nil {
-					s.consumeToken(failingTok, at)
+					s.consumeTokenAs(failingTok, at, CloseKindBoundaryInterrupted)
 				}
 				return cmds
 			}
@@ -390,7 +390,7 @@ func propagateError(ctx context.Context, top *model.ProcessDefinition, s *Instan
 				// Cancel deadline/reminder timers, in-wait reminder, boundary arms,
 				// and (for an event-based-gateway token) armed events, then consume
 				// the token.
-				cmds = append(cmds, cancelTokenWaits(s, &tok, at)...)
+				cmds = append(cmds, cancelTokenWaits(s, &tok, at, CloseKindBoundaryInterrupted)...)
 			}
 			// Cancel ESP arms for the scope.
 			for _, timerID := range s.removeEventTriggeredSubprocessArmsForScope(errScopeID) {

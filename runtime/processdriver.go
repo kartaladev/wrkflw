@@ -63,6 +63,10 @@ type ProcessDriver struct {
 	// before its context is cancelled. Defaults to defaultActionTimeout; a
 	// non-positive value disables the bound. Set via [WithActionTimeout].
 	actionTimeout time.Duration
+	// candidateResolveTimeout bounds a single ActorResolver lookup. Resolution
+	// runs pre-commit, so an unbounded lookup would stall the commit itself.
+	// Non-positive disables the bound. Default: defaultCandidateResolveTimeout.
+	candidateResolveTimeout time.Duration
 
 	// defaultRetryPolicy is the fallback retry policy applied to any action-bearing
 	// node that declares no RetryPolicy of its own. When nil, retry is disabled by
@@ -166,15 +170,16 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 	defaultStore := memStore
 
 	driver := &ProcessDriver{
-		cat:           action.DefaultCatalog(),
-		clk:           clockwork.NewRealClock(),
-		idgen:         idgen.XID(),
-		store:         memStore,
-		defsReg:       defaultDefinitionRegistry,
-		jitter:        kernel.NewJitterSource(),
-		actionTimeout: defaultActionTimeout,
-		msgWaiters:    make(map[msgKey]string),
-		gate:          validation.NewGate(),
+		cat:                     action.DefaultCatalog(),
+		clk:                     clockwork.NewRealClock(),
+		idgen:                   idgen.XID(),
+		store:                   memStore,
+		defsReg:                 defaultDefinitionRegistry,
+		jitter:                  kernel.NewJitterSource(),
+		actionTimeout:           defaultActionTimeout,
+		candidateResolveTimeout: defaultCandidateResolveTimeout,
+		msgWaiters:              make(map[msgKey]string),
+		gate:                    validation.NewGate(),
 	}
 	for _, o := range opts {
 		o(driver)
@@ -588,6 +593,12 @@ func (driver *ProcessDriver) deliverLoop(
 			DefaultRetryPolicy:  driver.defaultRetryPolicy,
 			OverrideRetryPolicy: driver.overrideRetryPolicy(def, st, t),
 			Evaluator:           driver.conditionEval,
+			// One id strategy for the whole product surface: the same generator
+			// that mints instance ids also names the tokens, tasks, commands,
+			// timers, incidents, and scopes the engine creates (ADR-0149).
+			// idgen.Generator satisfies engine.IDGenerator structurally, so the
+			// engine core never imports the runtime.
+			IDGenerator: driver.idgen,
 		})
 		driver.obs.stepDuration.Record(stepCtx, driver.clk.Now().Sub(start).Seconds(),
 			metric.WithAttributes(attribute.String("trigger", triggerName(t))))
@@ -598,6 +609,22 @@ func (driver *ProcessDriver) deliverLoop(
 			return st, fmt.Errorf("workflow-runtime: step: %w", err)
 		}
 		st = res.State
+		// Resolve human-task candidates BEFORE the snapshot is captured below, so
+		// the committed state carries the eligible actors the instance view renders
+		// (ADR-0147 amendment #1). The view is a pure projection over the persisted
+		// snapshot, and perform() runs only AFTER the commit, so resolving there
+		// would be invisible to every later reader.
+		//
+		// Failing here aborts the step before anything is committed, which is
+		// strictly better than the post-commit alternative: a resolver outage can no
+		// longer leave a committed instance parked on a task that was never written
+		// to the task store.
+		if rerr := driver.resolveHumanCandidates(stepCtx, &st, res.Commands); rerr != nil {
+			span.RecordError(rerr)
+			span.SetStatus(codes.Error, rerr.Error())
+			span.End()
+			return st, rerr
+		}
 		span.SetAttributes(
 			attribute.Int("wrkflw.command_count", len(res.Commands)),
 			attribute.String("wrkflw.status", statusName(st.Status)),

@@ -104,8 +104,12 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	require.NoError(t, err, "runner.Run must not error")
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be StatusRunning (parked at call activity)")
 
-	// Derive child ID (scheme: "<parentID>-sub-c1").
-	childID := parentID + "-sub-c1"
+	// The child id is derived from the call command's id, which the driver's
+	// IDGenerator mints (ADR-0149) and is opaque — read it off the recorded link.
+	children, childrenErr := cl.ChildrenOf(ctx, parentID)
+	require.NoError(t, childrenErr)
+	require.Len(t, children, 1, "the parent must have recorded exactly one child link")
+	childID := children[0].ChildInstanceID
 
 	// The child must be parked at the human task.
 	childSt, _, loadErr := store.Load(ctx, childID)
@@ -116,11 +120,11 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	claimable, err := tasks.ClaimableBy(ctx, worker)
 	require.NoError(t, err)
 	require.Len(t, claimable, 1, "exactly one human task should be pending (child's task)")
-	taskToken := claimable[0].TaskToken
+	taskID := claimable[0].TaskID
 
 	// ── Step 2: complete the human task → child completes, link flips ────────
 	svc := runtimetest.MustTaskService(t, tasks, az)
-	completeTrg, err := svc.Complete(ctx, taskToken, worker, map[string]any{"childResult": "done"})
+	completeTrg, err := svc.Complete(ctx, taskID, worker, engine.CompletionInput{Output: map[string]any{"childResult": "done"}})
 	require.NoError(t, err)
 
 	childFinalSt, err := driver.ApplyTrigger(ctx, child, childID, completeTrg)

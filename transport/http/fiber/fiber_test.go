@@ -558,12 +558,12 @@ func TestTaskRoutes_Customize(t *testing.T) {
 	def := transporttest.ApprovalProcess()
 	h, svc := transporttest.NewHarness(t, def)
 
-	taskToken := transporttest.StartedApprovalInstance(t, h, "task-claim-fiber-1")
+	taskID := transporttest.StartedApprovalInstance(t, h, "task-claim-fiber-1")
 
 	app := newApp()
 	fiber.Mount(app, svc)
 
-	status, body := appDo(t, app, newPostRequest(t, "/tasks/"+taskToken+"/claim", map[string]any{
+	status, body := appDo(t, app, newPostRequest(t, "/tasks/"+taskID+"/claim", map[string]any{
 		"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
 	}))
 
@@ -579,20 +579,20 @@ func TestTaskRoutes_Complete(t *testing.T) {
 	def := transporttest.ApprovalProcess()
 	h, svc := transporttest.NewHarness(t, def)
 
-	taskToken := transporttest.StartedApprovalInstance(t, h, "task-complete-fiber-1")
+	taskID := transporttest.StartedApprovalInstance(t, h, "task-complete-fiber-1")
 
 	app := newApp()
 	fiber.Mount(app, svc)
 
 	// Claim first, then complete.
-	statusClaim, bodyClaim := appDo(t, app, newPostRequest(t, "/tasks/"+taskToken+"/claim", map[string]any{
+	statusClaim, bodyClaim := appDo(t, app, newPostRequest(t, "/tasks/"+taskID+"/claim", map[string]any{
 		"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
 	}))
 	if statusClaim != http.StatusOK {
 		t.Fatalf("claim want 200, got %d (body=%s)", statusClaim, bodyClaim)
 	}
 
-	status, body := appDo(t, app, newPostRequest(t, "/tasks/"+taskToken+"/complete", map[string]any{
+	status, body := appDo(t, app, newPostRequest(t, "/tasks/"+taskID+"/complete", map[string]any{
 		"actor":  map[string]any{"id": "alice", "roles": []string{"manager"}},
 		"output": map[string]any{"approved": true},
 	}))
@@ -609,20 +609,20 @@ func TestTaskRoutes_Reassign(t *testing.T) {
 	def := transporttest.ApprovalProcess()
 	h, svc := transporttest.NewHarness(t, def)
 
-	taskToken := transporttest.StartedApprovalInstance(t, h, "task-reassign-fiber-1")
+	taskID := transporttest.StartedApprovalInstance(t, h, "task-reassign-fiber-1")
 
 	app := newApp()
 	fiber.Mount(app, svc)
 
 	// Claim first so alice is the claimant.
-	statusClaim, bodyClaim := appDo(t, app, newPostRequest(t, "/tasks/"+taskToken+"/claim", map[string]any{
+	statusClaim, bodyClaim := appDo(t, app, newPostRequest(t, "/tasks/"+taskID+"/claim", map[string]any{
 		"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
 	}))
 	if statusClaim != http.StatusOK {
 		t.Fatalf("claim want 200, got %d (body=%s)", statusClaim, bodyClaim)
 	}
 
-	status, body := appDo(t, app, newPostRequest(t, "/tasks/"+taskToken+"/reassign", map[string]any{
+	status, body := appDo(t, app, newPostRequest(t, "/tasks/"+taskID+"/reassign", map[string]any{
 		"from": "alice",
 		"to":   "bob",
 		"by":   map[string]any{"id": "alice", "roles": []string{"manager"}},

@@ -23,7 +23,7 @@ type nodeStrategy interface {
 	// leave tok.State == TokenActive so stopped=false. Strategies that park or
 	// consume the token must ensure tok.State != TokenActive. For consumed tokens
 	// (where consumeToken already removed them from the slice), strategies that
-	// want stopped=true must set tok.State = TokenWaitingCommand explicitly.
+	// want stopped=true must set tok.State = TokenWaiting explicitly.
 	// Strategies that want stopped=false on a consumed token (e.g. EndEvent
 	// sub-process "break" paths where a continuation token was placed) must leave
 	// tok.State == TokenActive.

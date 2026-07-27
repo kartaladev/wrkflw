@@ -7,11 +7,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kartaladev/wrkflw/authz"
 	"github.com/kartaladev/wrkflw/definition"
+	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
 	"github.com/kartaladev/wrkflw/processtest"
 )
 
@@ -104,4 +107,42 @@ func TestHarness_DriveToCompletion(t *testing.T) {
 			tc.assert(t, final, err)
 		})
 	}
+}
+
+// TestHarness_TaskServiceRefreshesCandidates verifies the harness threads its
+// ActorResolver into the TaskService, not only into the driver — without it
+// RefreshCandidates (ADR-0150) is dead on every harness-built stack.
+func TestHarness_TaskServiceRefreshesCandidates(t *testing.T) {
+	t.Parallel()
+
+	def, err := definition.NewBuilder("refresh-candidates", 1).
+		Add(event.NewStart("start")).
+		Add(activity.NewUserTask("approve", activity.WithEligibleRoles("manager"))).
+		Add(event.NewEnd("end")).
+		Connect("start", "approve").
+		Connect("approve", "end").
+		Build()
+	require.NoError(t, err)
+
+	alice := authz.Actor{ID: "alice", Roles: []string{"manager"}}
+	h, err := processtest.New(processtest.WithActorResolver(
+		humantask.NewStaticActorResolver(map[string][]authz.Actor{"manager": {alice}}),
+	))
+	require.NoError(t, err)
+
+	ctx := t.Context()
+	parked, err := h.Start(ctx, def, "refresh-inst", nil)
+	require.NoError(t, err)
+	require.Len(t, parked.Tokens, 1, "must park at the user task")
+	taskID := parked.Tokens[0].AwaitCommand
+	require.NotEmpty(t, taskID)
+
+	trg, err := h.TaskService().RefreshCandidates(ctx, taskID, alice)
+	require.NoError(t, err, "harness TaskService must be built with the harness ActorResolver")
+
+	resolved, ok := trg.(engine.HumanCandidatesResolved)
+	require.True(t, ok, "want engine.HumanCandidatesResolved, got %T", trg)
+	assert.Equal(t, taskID, resolved.TaskID)
+	require.Len(t, resolved.Candidates, 1)
+	assert.Equal(t, "alice", resolved.Candidates[0].ID)
 }

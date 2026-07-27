@@ -454,8 +454,8 @@ func TestCompleteTask(t *testing.T) {
 			setupToken: func(h *transporttest.Harness, svc service.Service) string {
 				token := transporttest.StartedApprovalInstance(t, h, "complete-ok-1")
 				_, err := svc.ClaimTask(t.Context(), service.ClaimTaskRequest{
-					TaskToken: token,
-					Actor:     authz.Actor{ID: "alice", Roles: []string{"manager"}},
+					TaskID: token,
+					Actor:  authz.Actor{ID: "alice", Roles: []string{"manager"}},
 				})
 				if err != nil {
 					t.Fatalf("ClaimTask: %v", err)
@@ -517,8 +517,8 @@ func TestReassignTask(t *testing.T) {
 			setupToken: func(h *transporttest.Harness, svc service.Service) string {
 				token := transporttest.StartedApprovalInstance(t, h, "reassign-ok-1")
 				_, err := svc.ClaimTask(t.Context(), service.ClaimTaskRequest{
-					TaskToken: token,
-					Actor:     authz.Actor{ID: "alice", Roles: []string{"manager"}},
+					TaskID: token,
+					Actor:  authz.Actor{ID: "alice", Roles: []string{"manager"}},
 				})
 				if err != nil {
 					t.Fatalf("ClaimTask: %v", err)
@@ -546,8 +546,8 @@ func TestReassignTask(t *testing.T) {
 			setupToken: func(h *transporttest.Harness, svc service.Service) string {
 				token := transporttest.StartedApprovalInstance(t, h, "reassign-unauth-1")
 				_, err := svc.ClaimTask(t.Context(), service.ClaimTaskRequest{
-					TaskToken: token,
-					Actor:     authz.Actor{ID: "alice", Roles: []string{"manager"}},
+					TaskID: token,
+					Actor:  authz.Actor{ID: "alice", Roles: []string{"manager"}},
 				})
 				if err != nil {
 					t.Fatalf("ClaimTask: %v", err)

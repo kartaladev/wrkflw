@@ -149,7 +149,7 @@ func TestFailingActionNode(t *testing.T) {
 			name: "resolves action name (default-by-id owned by the engine) and scope def",
 			st: InstanceState{
 				InstanceID: "p",
-				Tokens:     []Token{{ID: "p-t1", NodeID: "task", AwaitCommand: "p-c1", State: TokenWaitingCommand}},
+				Tokens:     []Token{{ID: "p-t1", NodeID: "task", AwaitCommand: "p-c1", State: TokenWaiting}},
 			},
 			cmdID: "p-c1",
 			assert: func(t *testing.T, name string, scopeDef *model.ProcessDefinition, ok bool) {
@@ -162,7 +162,7 @@ func TestFailingActionNode(t *testing.T) {
 			name: "no token awaiting the command returns false",
 			st: InstanceState{
 				InstanceID: "p",
-				Tokens:     []Token{{ID: "p-t1", NodeID: "task", AwaitCommand: "p-cX", State: TokenWaitingCommand}},
+				Tokens:     []Token{{ID: "p-t1", NodeID: "task", AwaitCommand: "p-cX", State: TokenWaiting}},
 			},
 			cmdID: "p-c1",
 			assert: func(t *testing.T, _ string, _ *model.ProcessDefinition, ok bool) {

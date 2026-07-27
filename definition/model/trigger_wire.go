@@ -13,12 +13,12 @@ type TriggerWire struct {
 	At          *time.Time           `json:"at,omitempty"`
 	Expr        string               `json:"expr,omitempty"`
 	Cron        string               `json:"cron,omitempty"`
-	MinNanos    int64                `json:"minNanos,omitempty"`
-	MaxNanos    int64                `json:"maxNanos,omitempty"`
+	MinNanos    int64                `json:"min_nanos,omitempty"`
+	MaxNanos    int64                `json:"max_nanos,omitempty"`
 	Interval    uint                 `json:"interval,omitempty"`
-	AtTimes     []schedule.ClockTime `json:"atTimes,omitempty"`
+	AtTimes     []schedule.ClockTime `json:"at_times,omitempty"`
 	Weekdays    []int                `json:"weekdays,omitempty"`
-	DaysOfMonth []int                `json:"daysOfMonth,omitempty"`
+	DaysOfMonth []int                `json:"days_of_month,omitempty"`
 }
 
 // PutTrigger encodes s, or returns nil when s is unset.

@@ -30,7 +30,7 @@ func TestNewSQLiteTaskStore(t *testing.T) {
 	require.NotNil(t, ts)
 
 	err = ts.Upsert(t.Context(), humantask.HumanTask{
-		TaskToken:  "tok",
+		TaskID:     "tok",
 		InstanceID: "i",
 		NodeID:     "n",
 		State:      humantask.Unclaimed,

@@ -1,6 +1,7 @@
 package task_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -44,7 +45,7 @@ func TestTaskServiceRejectsIneligibleActor(t *testing.T) {
 	require.Len(t, claimable, 1)
 
 	svc := runtimetest.MustTaskService(t, taskStore, az)
-	_, err = svc.Claim(ctx, claimable[0].TaskToken, stranger)
+	_, err = svc.Claim(ctx, claimable[0].TaskID, stranger)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, authz.ErrNotAuthorized)
 }
@@ -79,22 +80,22 @@ func TestTaskServiceReassign(t *testing.T) {
 	claimable, err := taskStore.ClaimableBy(ctx, manager)
 	require.NoError(t, err)
 	require.Len(t, claimable, 1)
-	taskToken := claimable[0].TaskToken
+	taskID := claimable[0].TaskID
 
 	svc := runtimetest.MustTaskService(t, taskStore, az)
 
 	// The task must be CLAIMED by the from actor before reassignment is allowed.
 	// Claim it first so ClaimedBy == manager.ID, then reassign from manager to admin.
-	claimTrg, err := svc.Claim(ctx, taskToken, manager)
+	claimTrg, err := svc.Claim(ctx, taskID, manager)
 	require.NoError(t, err)
 	_, err = r.ApplyTrigger(ctx, def, "inst-3", claimTrg)
 	require.NoError(t, err)
 
-	trg, err := svc.Reassign(ctx, taskToken, manager.ID, admin.ID, admin)
+	trg, err := svc.Reassign(ctx, taskID, manager.ID, admin.ID, admin)
 	require.NoError(t, err)
 	reassigned, ok := trg.(engine.HumanReassigned)
 	require.True(t, ok)
-	assert.Equal(t, taskToken, reassigned.TaskToken)
+	assert.Equal(t, taskID, reassigned.TaskID)
 	assert.Equal(t, manager.ID, reassigned.From)
 	assert.Equal(t, admin.ID, reassigned.To)
 	assert.Equal(t, admin.ID, reassigned.By.ID)
@@ -102,7 +103,7 @@ func TestTaskServiceReassign(t *testing.T) {
 	// Verify: reassigning with a from that does NOT match the current claimant
 	// must be rejected before any trigger is issued, preventing a false From in
 	// the journal.
-	trg, err = svc.Reassign(ctx, taskToken, "wrong-claimant", "someone-else", admin)
+	trg, err = svc.Reassign(ctx, taskID, "wrong-claimant", "someone-else", admin)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "wrong-claimant")
 	assert.Nil(t, trg, "no trigger must be returned when from does not match the current claimant")
@@ -136,19 +137,19 @@ func TestTaskServiceReassignRejectsUnauthorized(t *testing.T) {
 	claimable, err := taskStore.ClaimableBy(ctx, manager)
 	require.NoError(t, err)
 	require.Len(t, claimable, 1)
-	taskToken := claimable[0].TaskToken
+	taskID := claimable[0].TaskID
 
 	svc := runtimetest.MustTaskService(t, taskStore, az)
 
 	// Claim the task first so ClaimedBy == manager.ID; only then does the
 	// authorization check become the failing gate (from == ClaimedBy passes,
 	// but stranger lacks the required role).
-	claimTrg, err := svc.Claim(ctx, taskToken, manager)
+	claimTrg, err := svc.Claim(ctx, taskID, manager)
 	require.NoError(t, err)
 	_, err = r.ApplyTrigger(ctx, runtimetest.ApprovalDef(), "inst-reassign-reject", claimTrg)
 	require.NoError(t, err)
 
-	trg, err := svc.Reassign(ctx, taskToken, manager.ID, stranger.ID, stranger)
+	trg, err := svc.Reassign(ctx, taskID, manager.ID, stranger.ID, stranger)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, authz.ErrNotAuthorized)
 	assert.Nil(t, trg, "no trigger must be returned when authorization is rejected")
@@ -179,17 +180,17 @@ func TestTaskServiceCompleteRejectsUnauthorized(t *testing.T) {
 	claimable, err := taskStore.ClaimableBy(ctx, manager)
 	require.NoError(t, err)
 	require.Len(t, claimable, 1)
-	taskToken := claimable[0].TaskToken
+	taskID := claimable[0].TaskID
 
 	svc := runtimetest.MustTaskService(t, taskStore, az)
-	trg, err := svc.Complete(ctx, taskToken, stranger, map[string]any{"approved": false})
+	trg, err := svc.Complete(ctx, taskID, stranger, engine.CompletionInput{Output: map[string]any{"approved": false}})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, authz.ErrNotAuthorized)
 	assert.Nil(t, trg, "no trigger must be returned when authorization is rejected")
 }
 
 // TestTaskServiceGetNotFound verifies that Claim/Complete return an error when the
-// task token does not exist in the store.
+// task id does not exist in the store.
 func TestTaskServiceGetNotFound(t *testing.T) {
 	ctx := t.Context()
 	store := humantask.NewMemTaskStore()
@@ -201,7 +202,7 @@ func TestTaskServiceGetNotFound(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, humantask.ErrTaskNotFound)
 
-	_, err = svc.Complete(ctx, "no-such-token", actor, nil)
+	_, err = svc.Complete(ctx, "no-such-token", actor, engine.CompletionInput{})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, humantask.ErrTaskNotFound)
 
@@ -235,7 +236,7 @@ func TestTaskService_Claim_AttributeOverVars(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			store := humantask.NewMemTaskStore()
 			require.NoError(t, store.Upsert(t.Context(), humantask.HumanTask{
-				TaskToken:   "tok-attr-1",
+				TaskID:      "tok-attr-1",
 				Eligibility: authz.AuthzSpec{Attribute: `vars["region"] == "EU"`},
 				Vars:        tc.vars,
 				State:       humantask.Unclaimed,
@@ -266,7 +267,7 @@ func TestNewTaskServiceWithClockOption(t *testing.T) {
 
 	store := humantask.NewMemTaskStore()
 	require.NoError(t, store.Upsert(ctx, humantask.HumanTask{
-		TaskToken:   "tok-clock-1",
+		TaskID:      "tok-clock-1",
 		Eligibility: authz.AuthzSpec{},
 		State:       humantask.Unclaimed,
 	}))
@@ -325,6 +326,341 @@ func TestNewTaskServiceFailsFast(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			svc, err := task.NewTaskService(tc.store, tc.az)
 			tc.assert(t, svc, err)
+		})
+	}
+}
+
+// TestTaskServiceRefreshCandidates verifies the candidate-refresh operation
+// (ADR-0147): candidates are a projection resolved at task-creation time, and the
+// underlying actor registry is not static, so a caller must be able to re-resolve
+// an open task's eligible actors. Refresh re-runs the ActorResolver against the
+// task's stored eligibility and variables and returns the trigger that replaces
+// the list; it never mutates the store directly.
+func TestTaskServiceRefreshCandidates(t *testing.T) {
+	t.Parallel()
+
+	fakeTime := time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC)
+	jane := authz.Actor{ID: "u-jane", Roles: []string{"manager"}, Attributes: map[string]any{"email": "jane@acme.com"}}
+	mike := authz.Actor{ID: "u-mike", Roles: []string{"manager"}}
+
+	openTask := humantask.HumanTask{
+		TaskID:      "tok-refresh",
+		InstanceID:  "i1",
+		NodeID:      "approve",
+		Eligibility: authz.AuthzSpec{Roles: []string{"manager"}},
+		Candidates:  []authz.Actor{jane},
+		State:       humantask.Unclaimed,
+	}
+
+	type testCase struct {
+		name     string
+		task     humantask.HumanTask
+		resolver humantask.ActorResolver
+		az       authz.Authorizer
+		taskID   string
+		// by defaults to an actor holding the task's "manager" role when zero.
+		by     authz.Actor
+		assert func(t *testing.T, trg engine.Trigger, err error)
+	}
+
+	cases := []testCase{
+		{
+			name: "re-resolves the eligible actors and returns the replacing trigger",
+			task: openTask,
+			// The registry has grown since the task was created: mike now holds the role.
+			resolver: humantask.NewStaticActorResolver(map[string][]authz.Actor{
+				"manager": {jane, mike},
+			}),
+			az:     authz.AllowAll{},
+			taskID: "tok-refresh",
+			assert: func(t *testing.T, trg engine.Trigger, err error) {
+				require.NoError(t, err)
+				resolved, ok := trg.(engine.HumanCandidatesResolved)
+				require.True(t, ok, "expected HumanCandidatesResolved, got %T", trg)
+				require.Equal(t, "tok-refresh", resolved.TaskID)
+				require.Equal(t, []authz.Actor{jane, mike}, resolved.Candidates)
+				require.Equal(t, fakeTime, resolved.OccurredAt())
+			},
+		},
+		{
+			name: "a shrinking registry is reflected",
+			task: openTask,
+			resolver: humantask.NewStaticActorResolver(map[string][]authz.Actor{
+				"manager": {mike},
+			}),
+			az:     authz.AllowAll{},
+			taskID: "tok-refresh",
+			assert: func(t *testing.T, trg engine.Trigger, err error) {
+				require.NoError(t, err)
+				require.Equal(t, []authz.Actor{mike}, trg.(engine.HumanCandidatesResolved).Candidates)
+			},
+		},
+		{
+			name:     "an unknown task is rejected",
+			task:     openTask,
+			resolver: humantask.NewStaticActorResolver(nil),
+			az:       authz.AllowAll{},
+			taskID:   "no-such-task",
+			assert: func(t *testing.T, _ engine.Trigger, err error) {
+				require.ErrorIs(t, err, humantask.ErrTaskNotFound)
+			},
+		},
+		{
+			name: "a closed task is rejected so a completed audit is not rewritten",
+			task: func() humantask.HumanTask {
+				closed := openTask
+				closed.State = humantask.Completed
+				return closed
+			}(),
+			resolver: humantask.NewStaticActorResolver(map[string][]authz.Actor{"manager": {mike}}),
+			az:       authz.AllowAll{},
+			taskID:   "tok-refresh",
+			assert: func(t *testing.T, _ engine.Trigger, err error) {
+				require.ErrorIs(t, err, task.ErrTaskNotOpen)
+			},
+		},
+		{
+			name:     "an unauthorized caller is rejected",
+			task:     openTask,
+			resolver: humantask.NewStaticActorResolver(map[string][]authz.Actor{"manager": {mike}}),
+			az:       authz.RoleAuthorizer{},
+			taskID:   "tok-refresh",
+			by:       authz.Actor{ID: "outsider"},
+			assert: func(t *testing.T, _ engine.Trigger, err error) {
+				require.ErrorIs(t, err, authz.ErrNotAuthorized)
+			},
+		},
+		{
+			name:     "no resolver configured is rejected",
+			task:     openTask,
+			resolver: nil,
+			az:       authz.AllowAll{},
+			taskID:   "tok-refresh",
+			assert: func(t *testing.T, _ engine.Trigger, err error) {
+				require.ErrorIs(t, err, task.ErrNoActorResolver)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			store := humantask.NewMemTaskStore()
+			require.NoError(t, store.Upsert(ctx, tc.task))
+
+			opts := []task.TaskServiceOption{task.WithClock(clockwork.NewFakeClockAt(fakeTime))}
+			if tc.resolver != nil {
+				opts = append(opts, task.WithActorResolver(tc.resolver))
+			}
+			svc, err := task.NewTaskService(store, tc.az, opts...)
+			require.NoError(t, err)
+
+			by := tc.by
+			if by.ID == "" {
+				by = authz.Actor{ID: "admin", Roles: []string{"manager"}}
+			}
+			trg, err := svc.RefreshCandidates(ctx, tc.taskID, by)
+			tc.assert(t, trg, err)
+		})
+	}
+}
+
+// TestTaskServiceCompleteCarriesCompletion verifies that the completion payload —
+// outcome, note, and output — reaches the engine trigger intact (ADR-0146). The
+// outcome and note are audit-bearing, so a layer that silently dropped them would
+// leave the task's completion record incomplete with no visible failure.
+func TestTaskServiceCompleteCarriesCompletion(t *testing.T) {
+	t.Parallel()
+
+	fakeTime := time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC)
+	actor := authz.Actor{ID: "u-jane", Roles: []string{"manager"}}
+
+	type testCase struct {
+		name       string
+		completion engine.CompletionInput
+		assert     func(t *testing.T, got engine.HumanCompleted)
+	}
+
+	cases := []testCase{
+		{
+			name:       "outcome, note and output all reach the trigger",
+			completion: engine.CompletionInput{Outcome: "approve", Note: "budget confirmed", Output: map[string]any{"amount": 100}},
+			assert: func(t *testing.T, got engine.HumanCompleted) {
+				assert.Equal(t, "approve", got.Outcome)
+				assert.Equal(t, "budget confirmed", got.Note)
+				assert.Equal(t, map[string]any{"amount": 100}, got.Output)
+				assert.Equal(t, actor, got.Actor)
+			},
+		},
+		{
+			name:       "an empty completion produces an empty outcome and note",
+			completion: engine.CompletionInput{},
+			assert: func(t *testing.T, got engine.HumanCompleted) {
+				assert.Empty(t, got.Outcome)
+				assert.Empty(t, got.Note)
+				assert.Nil(t, got.Output)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			store := humantask.NewMemTaskStore()
+			require.NoError(t, store.Upsert(ctx, humantask.HumanTask{
+				TaskID: "tok-complete", InstanceID: "i1", NodeID: "approve",
+				Eligibility: authz.AuthzSpec{}, State: humantask.Unclaimed,
+			}))
+			svc, err := task.NewTaskService(store, authz.AllowAll{},
+				task.WithClock(clockwork.NewFakeClockAt(fakeTime)))
+			require.NoError(t, err)
+
+			trg, err := svc.Complete(ctx, "tok-complete", actor, tc.completion)
+			require.NoError(t, err)
+			completed, ok := trg.(engine.HumanCompleted)
+			require.True(t, ok, "expected HumanCompleted, got %T", trg)
+			tc.assert(t, completed)
+		})
+	}
+}
+
+// recordingActorResolver is an [humantask.ActorResolver] test double that captures
+// the deadline of the context it is invoked with. When block is true it never
+// returns until that context is done and then reports the context's error,
+// standing in for an unresponsive directory service.
+//
+// Its fields are written inside Candidates and read only after the call that drove
+// it has returned, on the same goroutine, so no synchronisation is needed.
+type recordingActorResolver struct {
+	block       bool
+	actors      []authz.Actor
+	deadline    time.Time
+	hadDeadline bool
+}
+
+// Candidates records the context's deadline and then either blocks until the
+// context is done or returns the configured actors immediately.
+func (r *recordingActorResolver) Candidates(ctx context.Context, _ authz.AuthzSpec, _ map[string]any) ([]authz.Actor, error) {
+	r.deadline, r.hadDeadline = ctx.Deadline()
+	if r.block {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return r.actors, nil
+}
+
+// TestTaskServiceRefreshCandidatesBoundsResolver verifies that the single
+// ActorResolver lookup performed by RefreshCandidates runs under the service's
+// candidate-resolve timeout, matching the bound the ProcessDriver applies to the
+// identical lookup (runtime.WithCandidateResolveTimeout).
+//
+// Without the bound an unresponsive directory service holds the calling goroutine
+// for as long as the caller's context allows — forever for a caller that passes a
+// background context — so the two derivations of the same candidate list would
+// fail on entirely different schedules.
+func TestTaskServiceRefreshCandidatesBoundsResolver(t *testing.T) {
+	t.Parallel()
+
+	fakeTime := time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC)
+	jane := authz.Actor{ID: "u-jane", Roles: []string{"manager"}}
+
+	openTask := humantask.HumanTask{
+		TaskID:      "tok-bound",
+		InstanceID:  "i1",
+		NodeID:      "approve",
+		Eligibility: authz.AuthzSpec{Roles: []string{"manager"}},
+		State:       humantask.Unclaimed,
+	}
+
+	type testCase struct {
+		name     string
+		resolver *recordingActorResolver
+		opts     []task.TaskServiceOption
+		ctx      func(ctx context.Context) context.Context // nil means identity
+		assert   func(t *testing.T, res *recordingActorResolver, trg engine.Trigger, err error)
+	}
+
+	cases := []testCase{
+		{
+			name:     "a prompt resolver is unaffected and runs under the default bound",
+			resolver: &recordingActorResolver{actors: []authz.Actor{jane}},
+			assert: func(t *testing.T, res *recordingActorResolver, trg engine.Trigger, err error) {
+				require.NoError(t, err)
+				resolved, ok := trg.(engine.HumanCandidatesResolved)
+				require.True(t, ok, "expected HumanCandidatesResolved, got %T", trg)
+				assert.Equal(t, []authz.Actor{jane}, resolved.Candidates)
+				require.True(t, res.hadDeadline, "the resolver must run under the default bound")
+				remaining := time.Until(res.deadline)
+				assert.Positive(t, remaining, "the default bound must not already have expired")
+				assert.LessOrEqual(t, remaining, 10*time.Second, "the default bound must match the ProcessDriver's 10s")
+			},
+		},
+		{
+			name:     "a resolver that outlives the bound fails with the deadline error",
+			resolver: &recordingActorResolver{block: true},
+			opts:     []task.TaskServiceOption{task.WithCandidateResolveTimeout(50 * time.Millisecond)},
+			assert: func(t *testing.T, res *recordingActorResolver, trg engine.Trigger, err error) {
+				require.ErrorIs(t, err, context.DeadlineExceeded)
+				assert.Nil(t, trg, "no trigger may be returned when resolution times out")
+				assert.True(t, res.hadDeadline, "the resolver must have been given the bounded context")
+			},
+		},
+		{
+			name:     "a non-positive timeout disables the bound",
+			resolver: &recordingActorResolver{block: true},
+			opts:     []task.TaskServiceOption{task.WithCandidateResolveTimeout(0)},
+			ctx: func(ctx context.Context) context.Context {
+				// Nothing but the caller's own cancellation can end the lookup once
+				// the bound is disabled, so drive it from the caller side.
+				cctx, cancel := context.WithCancel(ctx)
+				time.AfterFunc(50*time.Millisecond, cancel)
+				return cctx
+			},
+			assert: func(t *testing.T, res *recordingActorResolver, _ engine.Trigger, err error) {
+				require.ErrorIs(t, err, context.Canceled)
+				assert.NotErrorIs(t, err, context.DeadlineExceeded, "a non-positive timeout must not apply a deadline")
+				assert.False(t, res.hadDeadline, "no deadline may be attached when the bound is disabled")
+			},
+		},
+		{
+			name:     "an already-cancelled caller context is not masked by the bound",
+			resolver: &recordingActorResolver{block: true},
+			ctx: func(ctx context.Context) context.Context {
+				cctx, cancel := context.WithCancel(ctx)
+				cancel()
+				return cctx
+			},
+			assert: func(t *testing.T, _ *recordingActorResolver, _ engine.Trigger, err error) {
+				require.ErrorIs(t, err, context.Canceled)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			store := humantask.NewMemTaskStore()
+			require.NoError(t, store.Upsert(ctx, openTask))
+
+			opts := append([]task.TaskServiceOption{
+				task.WithClock(clockwork.NewFakeClockAt(fakeTime)),
+				task.WithActorResolver(tc.resolver),
+			}, tc.opts...)
+			svc, err := task.NewTaskService(store, authz.AllowAll{}, opts...)
+			require.NoError(t, err)
+
+			if tc.ctx != nil {
+				ctx = tc.ctx(ctx)
+			}
+
+			trg, err := svc.RefreshCandidates(ctx, openTask.TaskID, authz.Actor{ID: "admin", Roles: []string{"manager"}})
+			tc.assert(t, tc.resolver, trg, err)
 		})
 	}
 }

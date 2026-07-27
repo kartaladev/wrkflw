@@ -6,7 +6,10 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/kartaladev/wrkflw/authz"
+	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/kartaladev/wrkflw/runtime/validation"
 	"github.com/kartaladev/wrkflw/transport/http/httpcore"
@@ -63,6 +66,51 @@ func TestClassifyError(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
+			status, body := httpcore.ClassifyError(tc.err)
+			tc.assert(t, status, body)
+		})
+	}
+}
+
+// TestClassifyErrorOutcomeSentinels pins that the two user-task outcome sentinels
+// are client errors, not server errors. Both describe a bad completion payload the
+// caller can correct — an outcome outside the node's declared set, or a missing
+// outcome on a node that declares one — so answering 500 tells the client nothing
+// and hides a 4xx behind an opaque body (ADR-0146).
+func TestClassifyErrorOutcomeSentinels(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		err    error
+		assert func(t *testing.T, status int, body httpcore.ErrorBody)
+	}
+
+	cases := []testCase{
+		{
+			name: "an outcome outside the declared set is a bad request",
+			err:  fmt.Errorf("workflow-service: complete task: %w", engine.ErrInvalidOutcome),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusBadRequest, status)
+				assert.Equal(t, "bad_request", body.Error)
+				assert.Contains(t, body.Message, "outcome")
+			},
+		},
+		{
+			name: "a missing required outcome is a bad request",
+			err:  fmt.Errorf("workflow-service: complete task: %w", engine.ErrOutcomeRequired),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusBadRequest, status)
+				assert.Equal(t, "bad_request", body.Error)
+				assert.Contains(t, body.Message, "outcome")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			status, body := httpcore.ClassifyError(tc.err)
 			tc.assert(t, status, body)
 		})

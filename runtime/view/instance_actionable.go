@@ -1,8 +1,10 @@
 package view
 
 import (
+	"github.com/kartaladev/wrkflw/authz"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
 )
 
 // NextAction describes a single outgoing sequence flow from a task node —
@@ -21,16 +23,17 @@ type NextAction struct {
 // ActionableTask is the curated view of a single open human task together with
 // the allowed next actions derived from the process definition.
 type ActionableTask struct {
-	// TaskToken is the unique task instance identifier.
-	TaskToken string `json:"task_token"`
+	// TaskID is the unique task instance identifier.
+	TaskID string `json:"task_id"`
 	// NodeID is the BPMN node that generated this task.
 	NodeID string `json:"node_id"`
 	// State is the string representation of the task's lifecycle state.
 	State string `json:"state"`
-	// ClaimedBy is the actor ID that claimed the task; empty when unclaimed.
-	ClaimedBy string `json:"claimed_by,omitempty"`
-	// Candidates holds the resolved actor IDs eligible to act on this task.
-	Candidates []string `json:"candidates,omitempty"`
+	// Claim records who claimed the task and when; nil when unclaimed.
+	Claim *humantask.Claim `json:"claim,omitempty"`
+	// Candidates holds the resolved actors eligible to act on this task, rendered
+	// verbatim as {id, roles, attributes} (ADR-0147).
+	Candidates []authz.Actor `json:"candidates,omitempty"`
 	// AllowedActions lists the outgoing sequence flows from this task's node,
 	// derived from the process definition. When def is nil, this is nil (no
 	// routing information is available).
@@ -79,12 +82,16 @@ func NewActionableView(st engine.InstanceState, def *model.ProcessDefinition) Ac
 			}
 		}
 
+		// Clone before exposing: Claim is a pointer and Candidates a slice, both
+		// reachable into the caller's live InstanceState. A consumer mutating the
+		// returned view must not reach the engine's audit record.
+		audit := t.Clone()
 		openTasks = append(openTasks, ActionableTask{
-			TaskToken:      t.TaskToken,
-			NodeID:         t.NodeID,
-			State:          t.State.String(),
-			ClaimedBy:      t.ClaimedBy,
-			Candidates:     t.Candidates,
+			TaskID:         audit.TaskID,
+			NodeID:         audit.NodeID,
+			State:          audit.State.String(),
+			Claim:          audit.Claim,
+			Candidates:     audit.Candidates,
 			AllowedActions: allowedActions,
 		})
 	}

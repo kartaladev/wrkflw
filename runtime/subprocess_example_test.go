@@ -118,7 +118,8 @@ func TestCallActivityRunsChildAndResumesParent(t *testing.T) {
 		"original parent variable must be retained")
 
 	// The child instance should also have been saved to the store (observable).
-	// Child instance ID follows the "<parentID>-sub-<commandID>" scheme.
+	// Child instance ID follows the "<parentID>-sub-<suffix>" scheme (see
+	// childInstanceIDFor); resolve it through the store rather than predicting it.
 	// We check the parent completed and the outbox has the completion event.
 	events := store.Events()
 	require.NotEmpty(t, events, "at least one outbox event must be written")

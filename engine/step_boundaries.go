@@ -78,7 +78,7 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 // For interrupting boundaries (!ba.NonInterrupting):
 //  1. Verify the host token is still parked. If not, it's a late/stale fire → no-op.
 //  2. cancelTokenWaits sweeps the host: cancel deadline/reminder timers (UserTask,
-//     via cancelTimersByTaskToken using the host's taskToken), cancel its in-wait
+//     via cancelTimersByTaskID using the host's taskID), cancel its in-wait
 //     reminder, remove ALL boundary arms for this host (emit CancelTimer for timer
 //     siblings), and consume the host token (close its visit, remove from slice).
 //     A boundary host is never an event-based-gateway token, so the sweep's
@@ -94,7 +94,7 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 //  5. Drive forward (the new token).
 func fireBoundaryArm(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, ba boundaryArm, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
 	// Find the host token by ID (not by AwaitCommand — the host token parks on
-	// taskToken/cmdID, not on the boundary timer). If the token is gone (already
+	// taskID/cmdID, not on the boundary timer). If the token is gone (already
 	// consumed by another path), this is a late fire — clean no-op.
 	hostTok := s.tokenByID(ba.HostToken)
 	if hostTok == nil {
@@ -136,14 +136,14 @@ func fireBoundaryArm(ctx context.Context, def *model.ProcessDefinition, s *Insta
 		// Interrupting: consume the host, cancel its task timers and boundary siblings.
 		//
 		// cancelTokenWaits cancels deadline/reminder timers for the host (UserTask
-		// case: AwaitCommand == taskToken; for a ServiceTask host, AwaitCommand is a
-		// cmdID, not a taskToken, so cancelTimersByTaskToken finds no records — which
+		// case: AwaitCommand == taskID; for a ServiceTask host, AwaitCommand is a
+		// cmdID, not a taskID, so cancelTimersByTaskID finds no records — which
 		// is correct), the host's in-wait reminder, and ALL boundary arms for this
 		// host (emit CancelTimer for timer siblings — the fired arm's timerID, if
 		// any, is included; it already fired so the runtime's cancel is idempotent —
 		// no special handling needed), then consumes the host token (close its
 		// visit, remove from slice).
-		cmds = append(cmds, cancelTokenWaits(s, hostTok, at)...)
+		cmds = append(cmds, cancelTokenWaits(s, hostTok, at, CloseKindBoundaryInterrupted)...)
 
 		// Place a new Active token at the boundary's outgoing flow target, keeping
 		// the host token's scope so boundary-routed tokens stay in the same scope.

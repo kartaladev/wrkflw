@@ -28,7 +28,7 @@
 //     its scope) and rejects a bad completion output before it is ever
 //     committed — see the expr-lang strategy attached to the UserTask via
 //     [activity.WithCompletionValidation]. On rejection the task stays open:
-//     nothing was committed, so the same claimed task token can be retried.
+//     nothing was committed, so the same claimed task id can be retried.
 //
 // The message boundary (DeliverMessage) follows the same ApplyTrigger
 // pre-Step hook and is exercised in
@@ -131,9 +131,9 @@ func main() {
 	if len(claimable) == 0 {
 		log.Fatal("expected a claimable task")
 	}
-	taskToken := claimable[0].TaskToken
+	taskID := claimable[0].TaskID
 
-	claimTrg, err := svc.Claim(ctx, taskToken, manager)
+	claimTrg, err := svc.Claim(ctx, taskID, manager)
 	if err != nil {
 		log.Fatal("claim:", err)
 	}
@@ -152,8 +152,8 @@ func main() {
 	//    trigger's target node via the pure engine.TargetNode query, then
 	//    runs the node's declared strategy through the Gate BEFORE Step ever
 	//    commits. Nothing is committed on rejection, so the task stays open
-	//    and the same taskToken can be completed again below.
-	badCompleteTrg, err := svc.Complete(ctx, taskToken, manager, map[string]any{"decision": "maybe"})
+	//    and the same taskID can be completed again below.
+	badCompleteTrg, err := svc.Complete(ctx, taskID, manager, engine.CompletionInput{Output: map[string]any{"decision": "maybe"}})
 	if err != nil {
 		log.Fatal("complete (bad output) unexpectedly rejected by authz:", err)
 	}
@@ -164,10 +164,10 @@ func main() {
 	}
 
 	// 4. ACCEPTED completion: decision="approve" passes validation at
-	//    ApplyTrigger; the instance completes. Reuse the same taskToken —
+	//    ApplyTrigger; the instance completes. Reuse the same taskID —
 	//    the rejected attempt above never committed, so the task is still
 	//    open/claimed by manager.
-	completeTrg, err := svc.Complete(ctx, taskToken, manager, map[string]any{"decision": "approve"})
+	completeTrg, err := svc.Complete(ctx, taskID, manager, engine.CompletionInput{Output: map[string]any{"decision": "approve"}})
 	if err != nil {
 		log.Fatal("complete (valid output):", err)
 	}

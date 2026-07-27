@@ -81,13 +81,13 @@ func TestClassify(t *testing.T) {
 			state: engine.InstanceState{
 				Status: engine.StatusRunning,
 				Tasks: []humantask.HumanTask{
-					{TaskToken: "tk-1", NodeID: "approve", State: humantask.Unclaimed},
+					{TaskID: "tk-1", NodeID: "approve", State: humantask.Unclaimed},
 				},
 			},
 			assert: func(t *testing.T, p processtest.Park) {
 				assert.Equal(t, processtest.ReasonHumanTask, p.Reason)
 				require.Len(t, p.OpenTasks, 1)
-				assert.Equal(t, "tk-1", p.OpenTasks[0].TaskToken)
+				assert.Equal(t, "tk-1", p.OpenTasks[0].TaskID)
 				assert.Equal(t, "approve", p.Node)
 			},
 		},
@@ -133,7 +133,7 @@ func TestClassify(t *testing.T) {
 			name: "waiting on a command (async child)",
 			state: engine.InstanceState{
 				Status: engine.StatusRunning,
-				Tokens: []engine.Token{{ID: "t1", NodeID: "call-sub", State: engine.TokenWaitingCommand, AwaitCommand: "cmd-9"}},
+				Tokens: []engine.Token{{ID: "t1", NodeID: "call-sub", State: engine.TokenWaiting, AwaitCommand: "cmd-9"}},
 			},
 			assert: func(t *testing.T, p processtest.Park) {
 				assert.Equal(t, processtest.ReasonAsyncChild, p.Reason)
@@ -154,7 +154,7 @@ func TestClassify(t *testing.T) {
 			name: "human task with a concurrent signal is primary human-task",
 			state: engine.InstanceState{
 				Status: engine.StatusRunning,
-				Tasks:  []humantask.HumanTask{{TaskToken: "tk-1", NodeID: "review", State: humantask.Claimed}},
+				Tasks:  []humantask.HumanTask{{TaskID: "tk-1", NodeID: "review", State: humantask.Claimed}},
 				Tokens: []engine.Token{{ID: "t1", NodeID: "wait-sig", AwaitSignal: "escalate"}},
 			},
 			assert: func(t *testing.T, p processtest.Park) {

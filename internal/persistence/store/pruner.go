@@ -25,8 +25,9 @@ import (
 // Every timestamp cutoff is encoded via [timeArg] so the value is
 // format-compatible with the values written by the store layer on every
 // backend. On SQLite (TimestampsAsText) this ensures that the lexicographic
-// TEXT comparison is apples-to-apples with the RFC3339Nano strings stored in
-// the relevant columns (ADR-0080).
+// TEXT comparison is apples-to-apples with the fixed-width RFC3339 strings
+// stored in the relevant columns (ADR-0080, ADR-0151) — the fixed width is what
+// makes string order equal chronological order here.
 //
 // Processed-message dedup records are pruned through [Deduper.Prune];
 // [Pruner.PruneProcessedMessages] re-exposes that method for one-stop ergonomics.

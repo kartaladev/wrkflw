@@ -43,6 +43,12 @@ type StepOptions struct {
 	// against expression-DoS. Doing so trades the deterministic-replay guarantee
 	// for that protection (ADR-0049, ADR-0056) — an explicit, opt-in choice.
 	Evaluator ConditionEvaluator
+	// IDGenerator mints the ids the engine stamps on tokens, tasks, commands, timers,
+	// incidents, and scopes. nil (the default) keeps the deterministic
+	// "<instance id>-<prefix><n>" counter, so pure-engine tests and durable
+	// replay stay byte-for-byte reproducible; the runtime injects a real
+	// generator (xid) so product instances carry opaque ids. See [IDGenerator].
+	IDGenerator IDGenerator
 }
 
 // StepResult is the output of a single [Step] call. Commands is the ordered
@@ -71,7 +77,28 @@ type StepResult struct {
 func Step(ctx context.Context, def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error) {
 	s := cloneState(st)
 	sp := &s
+	// Install the id-generation seam on the working clone for the duration of
+	// this step (ADR-0149). The mint sites live in helpers that cannot return an
+	// error, so a generator failure is recorded on the state and converted into
+	// this call's error below — the partially-built state is never returned.
+	sp.ids = idSource{gen: opt.IDGenerator}
 
+	res, err := dispatch(ctx, def, sp, trg, opt)
+	if err != nil {
+		return StepResult{}, err
+	}
+	if idErr := sp.ids.err; idErr != nil {
+		return StepResult{}, idErr
+	}
+	// Scrub the transient seam so it never escapes into a caller's state.
+	res.State.ids = idSource{}
+	return res, nil
+}
+
+// dispatch routes a trigger to its handler. It is Step's body, split out so
+// Step can wrap every handler return with the id-generation seam's setup and
+// teardown in one place.
+func dispatch(ctx context.Context, def *model.ProcessDefinition, sp *InstanceState, trg Trigger, opt StepOptions) (StepResult, error) {
 	switch t := trg.(type) {
 	case StartInstance:
 		return handleStartInstance(ctx, def, sp, t, opt)
@@ -83,6 +110,8 @@ func Step(ctx context.Context, def *model.ProcessDefinition, st InstanceState, t
 		return handleCompensateRequested(ctx, def, sp, t, opt)
 	case ActionFailed:
 		return handleActionFailed(ctx, def, sp, t, opt)
+	case HumanCandidatesResolved:
+		return handleHumanCandidatesResolved(sp, t)
 	case HumanClaimed:
 		return handleHumanClaimed(sp, t)
 	case HumanReassigned:
@@ -141,7 +170,7 @@ func drive(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, 
 				"token_id", tok.ID,
 				"node_id", tok.NodeID,
 			)
-			tok.State = TokenWaitingCommand
+			tok.State = TokenWaiting
 			continue
 		}
 
@@ -175,7 +204,7 @@ func drive(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, 
 			// Unhandled node kinds: park the token so the loop terminates rather
 			// than spinning. These are intentionally not in the registry:
 			// KindBoundaryEvent, KindUnspecified.
-			tok.State = TokenWaitingCommand
+			tok.State = TokenWaiting
 			stopped = true // token parked: Micro stops here
 		} // end else (non-registry kinds)
 

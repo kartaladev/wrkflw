@@ -6,7 +6,7 @@ nodes:
   - id: charge
     kind: serviceTask
     action: charge-card
-    compensateAction: refund-card
+    compensate_action: refund-card
   - id: e
     kind: endEvent
 flows:

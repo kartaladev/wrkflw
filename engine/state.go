@@ -63,9 +63,16 @@ func (s Status) IsTerminal() bool {
 type TokenState int
 
 const (
+	// TokenActive marks a token the engine may advance on the next step.
 	TokenActive TokenState = iota
-	TokenWaitingCommand
-	TokenAtJoin
+	// TokenWaiting marks a token parked on an external trigger — an outstanding
+	// action command (AwaitCommand), a signal (AwaitSignal), a message
+	// (AwaitMessage), or a human task. It is the general "parked, not consumed"
+	// state; the Await* fields say what is awaited (ADR-0145).
+	TokenWaiting
+	// TokenJoining marks a token that has arrived at a join gateway and is
+	// waiting for its sibling branches to arrive (ADR-0145).
+	TokenJoining
 	// TokenIncident marks a token that has exhausted its retry budget (or hit a
 	// non-retryable error) and is now parked as an incident. The token remains in
 	// this state until an operator resolves the incident (re-invoking the action
@@ -136,11 +143,24 @@ type NodeVisit struct {
 	TokenID   string
 	EnteredAt time.Time
 	LeftAt    *time.Time
-	ActorID   *string // who completed a human-task visit (later plans)
+	// TaskID links a user-task visit to the human task minted for it, so a
+	// rendered history can resolve who claimed/completed it (and with which
+	// outcome) from the task record instead of duplicating that audit on the
+	// visit. Empty on every other node kind. See ADR-0145.
+	TaskID string
+	// CloseKind is why the visit closed, recorded only for an ABNORMAL close
+	// (see the CloseKind* constants). A normal advance — the token completed the
+	// node and moved on — leaves it empty. See ADR-0145.
+	CloseKind CloseKind
 }
 
 // InstanceState is the authoritative snapshot of a running instance.
 type InstanceState struct {
+	// ids is the transient, per-Step id-generation seam (ADR-0149). It is
+	// unexported: never serialized, never part of the durable snapshot, and
+	// scrubbed by Step before the state is returned.
+	ids idSource
+
 	InstanceID string
 	DefID      string
 	DefVersion int
@@ -234,7 +254,7 @@ type InstanceState struct {
 	// (Compensating.ActiveCmdID != ""). The single-cursor model permits at most
 	// one walk in flight, so concurrent throws (parallel branches processed in one
 	// Macro drive pass) are SERIALIZED: the second+ throw tokens are parked
-	// (TokenWaitingCommand, not consumed) and enqueued here. stepCompensationFinish
+	// (TokenWaiting, not consumed) and enqueued here. stepCompensationFinish
 	// re-activates exactly one per finish, draining the queue one walk at a time
 	// (ADR-0071). It is engine bookkeeping (persisted with the state, excluded from
 	// the service.ProcessInstance JSON projection like Compensating/PendingCancel).
@@ -253,11 +273,11 @@ type InstanceState struct {
 	IncidentSeq int
 }
 
-// TaskByToken returns a pointer to the HumanTask with the given taskToken, or
+// TaskByID returns a pointer to the HumanTask with the given taskID, or
 // nil if no such task exists in the state.
-func (s *InstanceState) TaskByToken(taskToken string) *humantask.HumanTask {
+func (s *InstanceState) TaskByID(taskID string) *humantask.HumanTask {
 	for i := range s.Tasks {
-		if s.Tasks[i].TaskToken == taskToken {
+		if s.Tasks[i].TaskID == taskID {
 			return &s.Tasks[i]
 		}
 	}

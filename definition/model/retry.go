@@ -14,30 +14,30 @@ type RetryPolicy struct {
 	// MaxAttempts is the total number of execution attempts including the first
 	// (non-retry) attempt. Default 3. A value of 0 means unlimited attempts.
 	// Negative values are treated as unset by [RetryPolicy.Normalize].
-	MaxAttempts int
+	MaxAttempts int `json:"max_attempts,omitempty" yaml:"max_attempts,omitempty"`
 
 	// InitialInterval is the delay before the first retry. Default 1s.
 	// A zero or negative value causes [RetryPolicy.Backoff] to return 0.
-	InitialInterval time.Duration
+	InitialInterval time.Duration `json:"initial_interval,omitempty" yaml:"initial_interval,omitempty"`
 
 	// BackoffCoef is the per-attempt exponential multiplier applied to
 	// InitialInterval. Default 2.0 (doubles each attempt). Values below 1.0
 	// are replaced with the default by [RetryPolicy.Normalize].
-	BackoffCoef float64
+	BackoffCoef float64 `json:"backoff_coef,omitempty" yaml:"backoff_coef,omitempty"`
 
 	// MaxInterval is the per-attempt cap on the delay returned by
 	// [RetryPolicy.Backoff]. Default 100s (100 × default InitialInterval).
 	// A zero or negative value disables the cap.
-	MaxInterval time.Duration
+	MaxInterval time.Duration `json:"max_interval,omitempty" yaml:"max_interval,omitempty"`
 
 	// MaxElapsed is the total time budget across all attempts. When the elapsed
 	// time exceeds this value no further retries are issued. Zero means no cap.
-	MaxElapsed time.Duration
+	MaxElapsed time.Duration `json:"max_elapsed,omitempty" yaml:"max_elapsed,omitempty"`
 
 	// NonRetryableErrors is a list of error-message substrings. When the error
 	// from a failed attempt contains any of these substrings, retrying is aborted
 	// and the error is propagated immediately.
-	NonRetryableErrors []string
+	NonRetryableErrors []string `json:"non_retryable_errors,omitempty" yaml:"non_retryable_errors,omitempty"`
 }
 
 // DefaultRetryPolicy returns a RetryPolicy with Temporal-style defaults and a

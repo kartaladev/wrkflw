@@ -45,8 +45,7 @@ func defForScope(top *model.ProcessDefinition, s *InstanceState, scopeID string)
 }
 
 func (s *InstanceState) placeToken(nodeID string, at time.Time) {
-	s.TokenSeq++
-	id := fmt.Sprintf("%s-t%d", s.InstanceID, s.TokenSeq)
+	id := s.nextID("t", &s.TokenSeq)
 	s.Tokens = append(s.Tokens, Token{ID: id, NodeID: nodeID, State: TokenActive, EnteredAt: at})
 	s.openVisit(id, nodeID, at)
 }
@@ -56,8 +55,7 @@ func (s *InstanceState) placeToken(nodeID string, at time.Time) {
 // sub-process scope so that inner tokens carry the correct ScopeID for
 // defForScope resolution.
 func (s *InstanceState) placeTokenInScope(nodeID, scopeID string, at time.Time) {
-	s.TokenSeq++
-	id := fmt.Sprintf("%s-t%d", s.InstanceID, s.TokenSeq)
+	id := s.nextID("t", &s.TokenSeq)
 	s.Tokens = append(s.Tokens, Token{ID: id, NodeID: nodeID, ScopeID: scopeID, State: TokenActive, EnteredAt: at})
 	s.openVisit(id, nodeID, at)
 }
@@ -119,49 +117,45 @@ func (s *InstanceState) tokenAwaitingMessage(name, correlationKey string) *Token
 	return nil
 }
 
-func (s *InstanceState) nextCommandID() string {
-	s.CmdSeq++
-	return fmt.Sprintf("%s-c%d", s.InstanceID, s.CmdSeq)
-}
+func (s *InstanceState) nextCommandID() string { return s.nextID("c", &s.CmdSeq) }
 
-func (s *InstanceState) nextTaskToken() string {
-	s.TaskSeq++
-	return fmt.Sprintf("%s-h%d", s.InstanceID, s.TaskSeq)
-}
+func (s *InstanceState) nextTaskID() string { return s.nextID("h", &s.TaskSeq) }
 
-func (s *InstanceState) nextTimerID() string {
-	s.TimerSeq++
-	return fmt.Sprintf("%s-tm%d", s.InstanceID, s.TimerSeq)
-}
+func (s *InstanceState) nextTimerID() string { return s.nextID("tm", &s.TimerSeq) }
 
-// nextIncidentID returns the next deterministic incident ID of the form
-// "<instanceID>-inc<IncidentSeq>", advancing the monotonic IncidentSeq counter.
-func (s *InstanceState) nextIncidentID() string {
-	s.IncidentSeq++
-	return fmt.Sprintf("%s-inc%d", s.InstanceID, s.IncidentSeq)
-}
+// nextIncidentID returns the next incident ID, advancing the monotonic
+// IncidentSeq counter. See [InstanceState.nextID] for the id strategy.
+func (s *InstanceState) nextIncidentID() string { return s.nextID("inc", &s.IncidentSeq) }
 
-// setVisitActor sets the ActorID on the most recent open NodeVisit for the
-// given (tokenID, nodeID) pair. Used to record who completed a human task.
+// setVisitTask links the most recent open NodeVisit for the given
+// (tokenID, nodeID) pair to the human task minted for it (ADR-0145).
 //
-// If no matching open visit exists the call is a no-op. On the HumanCompleted
-// path the visit is invariant-guaranteed to be open (a WaitingCommand token
-// always has a corresponding open visit), so the silent no-op is safe there.
-func (s *InstanceState) setVisitActor(tokenID, nodeID, actorID string) {
+// If no matching open visit exists the call is a no-op. On the user-task entry
+// path the visit is invariant-guaranteed to be open (the token opened it when
+// it arrived at the node), so the silent no-op is safe there.
+func (s *InstanceState) setVisitTask(tokenID, nodeID, taskID string) {
+	if v := s.openVisitFor(tokenID, nodeID); v != nil {
+		v.TaskID = taskID
+	}
+}
+
+// openVisitFor returns the most recent open (not-yet-left) NodeVisit for the
+// given (tokenID, nodeID) pair, or nil when none is open.
+func (s *InstanceState) openVisitFor(tokenID, nodeID string) *NodeVisit {
 	for i := len(s.History) - 1; i >= 0; i-- {
 		v := &s.History[i]
 		if v.TokenID == tokenID && v.NodeID == nodeID && v.LeftAt == nil {
-			v.ActorID = &actorID
-			return
+			return v
 		}
 	}
+	return nil
 }
 
 func (s *InstanceState) moveAlongSingleFlow(def *model.ProcessDefinition, tok *Token, at time.Time) {
 	out := def.Outgoing(tok.NodeID)
 	s.closeVisit(tok.ID, tok.NodeID, at)
 	if len(out) == 0 {
-		tok.State = TokenWaitingCommand // defensive; Validate forbids this
+		tok.State = TokenWaiting // defensive; Validate forbids this
 		return
 	}
 	tok.NodeID = out[0].Target
@@ -188,9 +182,14 @@ func resumeAndDrive(ctx context.Context, def *model.ProcessDefinition, tdef *mod
 	return append(preCmds, driveCmds...), nil
 }
 
+// consumeToken removes tok from the token set, closing its visit as a NORMAL
+// close (no CloseKind). Terminal/abnormal sites use consumeTokenAs instead.
 func (s *InstanceState) consumeToken(tok *Token, at time.Time) {
-	s.closeVisit(tok.ID, tok.NodeID, at)
-	id := tok.ID
+	s.consumeTokenAs(tok, at, "")
+}
+
+// removeToken drops the token with the given id from the token set.
+func (s *InstanceState) removeToken(id string) {
 	out := make([]Token, 0, len(s.Tokens))
 	for _, t := range s.Tokens {
 		if t.ID != id {
@@ -205,20 +204,22 @@ func (s *InstanceState) openVisit(tokenID, nodeID string, at time.Time) {
 }
 
 func (s *InstanceState) closeVisit(tokenID, nodeID string, at time.Time) {
-	for i := len(s.History) - 1; i >= 0; i-- {
-		v := &s.History[i]
-		if v.TokenID == tokenID && v.NodeID == nodeID && v.LeftAt == nil {
-			left := at
-			v.LeftAt = &left
-			return
-		}
+	if v := s.openVisitFor(tokenID, nodeID); v != nil {
+		left := at
+		v.LeftAt = &left
 	}
 }
 
-// moveTokenToTarget moves a token to targetID, closing the old visit and opening
-// a new one, leaving the token Active.
+// moveTokenToTarget moves a token to targetID, closing the old visit as a
+// NORMAL close and opening a new one, leaving the token Active.
 func (s *InstanceState) moveTokenToTarget(tok *Token, target string, at time.Time) {
-	s.closeVisit(tok.ID, tok.NodeID, at)
+	s.moveTokenToTargetAs(tok, target, at, "")
+}
+
+// moveTokenToTargetAs is moveTokenToTarget with an abnormal close reason
+// stamped on the visit being left (ADR-0145).
+func (s *InstanceState) moveTokenToTargetAs(tok *Token, target string, at time.Time, closeKind CloseKind) {
+	s.closeVisitAs(tok.ID, tok.NodeID, at, closeKind)
 	tok.NodeID = target
 	tok.EnteredAt = at
 	tok.State = TokenActive
@@ -319,17 +320,15 @@ func cloneState(st InstanceState) InstanceState {
 		e := *st.EndedAt
 		s.EndedAt = &e
 	}
-	// Deep-copy Tasks: each task's slice fields (Candidates, Eligibility.Roles,
-	// Eligibility.Privileges) are independently allocated so mutations to the clone
-	// do not affect the original — required for TestStepDoesNotMutateInput to hold.
+	// Deep-copy Tasks via HumanTask.Clone, the single deep-copy definition for a
+	// task: it independently allocates the candidate actors (including each
+	// actor's Roles/Attributes), the eligibility slices, and the Claim/Completion
+	// pointees, so mutations to the clone do not affect the original — required
+	// for TestStepDoesNotMutateInput to hold.
 	if len(st.Tasks) > 0 {
 		s.Tasks = make([]humantask.HumanTask, len(st.Tasks))
 		for i, t := range st.Tasks {
-			ct := t
-			ct.Candidates = append([]string(nil), t.Candidates...)
-			ct.Eligibility.Roles = append([]string(nil), t.Eligibility.Roles...)
-			ct.Eligibility.Privileges = append([]string(nil), t.Eligibility.Privileges...)
-			s.Tasks[i] = ct
+			s.Tasks[i] = t.Clone()
 		}
 	}
 	// Deep-copy Timers: timerRecord is a value type (no pointers), so a slice copy

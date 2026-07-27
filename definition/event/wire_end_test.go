@@ -89,10 +89,10 @@ func TestEndEventWireRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 
 			if c.wantWire != "" {
-				require.Contains(t, string(data), `"endBehavior":"`+c.wantWire+`"`)
+				require.Contains(t, string(data), `"end_behavior":"`+c.wantWire+`"`)
 			} else {
-				require.NotContains(t, string(data), "endBehavior")
-				require.NotContains(t, string(data), "forceTermination")
+				require.NotContains(t, string(data), "end_behavior")
+				require.NotContains(t, string(data), "force_termination")
 			}
 
 			var got model.ProcessDefinition

@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
+	"github.com/kartaladev/wrkflw/authz"
 	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/model"
@@ -202,7 +204,7 @@ func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s 
 		// and FinalErr="cancelled". stepCompensationFinish will emit
 		// FailInstance{"cancelled"} at walk end.
 		s.Status = StatusCompensating
-		res, err := beginCompensation(ctx, def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), compensationOutcome{FinalStatus: StatusTerminated, FinalErr: "cancelled"})
+		res, err := beginCompensation(ctx, def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), compensationOutcome{CloseKind: CloseKindInstanceCancelled, FinalStatus: StatusTerminated, FinalErr: "cancelled"})
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -220,7 +222,7 @@ func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s 
 	s.EndedAt = &ended
 	for i := range s.Tokens {
 		tok := &s.Tokens[i]
-		s.closeVisit(tok.ID, tok.NodeID, t.OccurredAt())
+		s.closeVisitAs(tok.ID, tok.NodeID, t.OccurredAt(), CloseKindInstanceCancelled)
 	}
 	s.Tokens = nil
 	// Ordering: [def.CancelActions…, per-node CancelActions…, FailInstance, timers, arms].
@@ -308,7 +310,7 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 			if tok.RetryStartedAt.IsZero() {
 				tok.RetryStartedAt = t.OccurredAt()
 			}
-			tok.State = TokenWaitingCommand
+			tok.State = TokenWaiting
 			tok.AwaitCommand = timerID
 			return StepResult{State: *s, Commands: append(preCmds, retryCmds...)}, nil
 		}
@@ -376,23 +378,75 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 // handleHumanClaimed processes a HumanClaimed trigger: updates the task state
 // to Claimed and emits an UpdateTask command.
 func handleHumanClaimed(s *InstanceState, t HumanClaimed) (StepResult, error) {
-	task := s.TaskByToken(t.TaskToken)
+	task := s.TaskByID(t.TaskID)
 	if task == nil {
-		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskToken)
+		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskID)
 	}
-	task.ClaimedBy = t.Actor.ID
+	// Record the full claiming actor and the claim time (ADR-0147): the instance
+	// view renders who claimed and when, not just an ID.
+	task.Claim = &humantask.Claim{Actor: t.Actor, At: t.OccurredAt()}
 	task.State = humantask.Claimed
 	return StepResult{State: *s, Commands: []Command{UpdateTask{Task: *task}}}, nil
+}
+
+// handleHumanCandidatesResolved processes a HumanCandidatesResolved trigger: it
+// replaces the task's candidate actors with the freshly resolved set and emits an
+// UpdateTask command so the task store follows the snapshot.
+//
+// The list is replaced wholesale, never merged, so re-applying a resolution is
+// idempotent and a shrinking candidate set (an actor who left the role) is
+// reflected. A closed task is left frozen and emits nothing: once a task is
+// completed or cancelled, its candidate list is part of the audit record and a
+// late refresh must not rewrite history.
+func handleHumanCandidatesResolved(s *InstanceState, t HumanCandidatesResolved) (StepResult, error) {
+	// A resolution arriving against an already-terminal instance is a clean no-op,
+	// mirroring handleTimerFired. Reached when a sibling branch terminates the
+	// instance in the same step that opened this task, or when a caller delivers a
+	// stale refresh; committing here would version a dead instance and re-publish
+	// its task to the store.
+	if s.Status.IsTerminal() {
+		return StepResult{State: *s, Commands: nil}, nil
+	}
+	task := s.TaskByID(t.TaskID)
+	if task == nil {
+		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskID)
+	}
+	if !task.IsOpen() {
+		return StepResult{State: *s, Commands: nil}, nil
+	}
+	// Copy on ingest: the trigger's slice belongs to the caller (and, on the
+	// refresh path, to the resolver), so aliasing it here would let a later
+	// mutation reach committed instance state.
+	task.Candidates = cloneActors(t.Candidates)
+	return StepResult{State: *s, Commands: []Command{UpdateTask{Task: *task}}}, nil
+}
+
+// cloneActors returns a deep copy of the actor slice, isolating each actor's
+// Roles and Attributes. nil in, nil out.
+func cloneActors(actors []authz.Actor) []authz.Actor {
+	if actors == nil {
+		return nil
+	}
+	out := make([]authz.Actor, len(actors))
+	for i, a := range actors {
+		out[i] = a.Clone()
+	}
+	return out
 }
 
 // handleHumanReassigned processes a HumanReassigned trigger: updates the task
 // assignment and emits an UpdateTask command.
 func handleHumanReassigned(s *InstanceState, t HumanReassigned) (StepResult, error) {
-	task := s.TaskByToken(t.TaskToken)
+	task := s.TaskByID(t.TaskID)
 	if task == nil {
-		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskToken)
+		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskID)
 	}
-	task.ClaimedBy = t.To
+	// A task carries at most one claim: reassignment overwrites it rather than
+	// appending, so there is no claim history (ADR-0147). The reassignment
+	// trigger identifies the new assignee by ID only — unlike a claim, which
+	// carries the actor the caller authorized — so the recorded actor has an ID
+	// and no roles or attributes.
+	task.Claim = &humantask.Claim{Actor: authz.Actor{ID: t.To}, At: t.OccurredAt()}
 	task.State = humantask.Claimed
 	return StepResult{State: *s, Commands: []Command{UpdateTask{Task: *task}}}, nil
 }
@@ -485,7 +539,7 @@ func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *Inst
 // parkOnCompletionAction checks whether tok's node (resolved against tdef, the
 // scope-effective definition) carries a CompletionAction and, if so, parks the
 // token on the action round-trip instead of advancing now: it appends an
-// InvokeAction to cmds, sets the token to TokenWaitingCommand awaiting the new
+// InvokeAction to cmds, sets the token to TokenWaiting awaiting the new
 // command, and returns (result, true) — the caller must return this result
 // immediately without falling through to its own moveAlongSingleFlow+drive.
 // When the node carries no CompletionAction, it returns (StepResult{}, false)
@@ -509,52 +563,103 @@ func parkOnCompletionAction(s *InstanceState, tdef *model.ProcessDefinition, tok
 		Scoped:    tdef.ScopedCatalog(),
 		Input:     copyVars(s.Variables),
 	})
-	tok.State = TokenWaitingCommand
+	tok.State = TokenWaiting
 	tok.AwaitCommand = cmdID
 	return StepResult{State: *s, Commands: cmds}, true
+}
+
+// applyOutcomeExposure publishes a completion outcome as a process variable when
+// the user task opts in (ADR-0146): an explicit OutcomeVariable name wins,
+// otherwise ExposeOutcome publishes under the "<node id>_outcome" convention. A
+// node opting into neither keeps the outcome audit-only, and an empty outcome is
+// never published. Call it after the completion output is merged so the outcome
+// wins when both target the same variable.
+func applyOutcomeExposure(s *InstanceState, ut activity.UserTask, outcome string) {
+	if outcome == "" {
+		return
+	}
+	name := ut.OutcomeVariable
+	if name == "" {
+		if !ut.ExposeOutcome {
+			return
+		}
+		name = ut.ID() + "_outcome"
+	}
+	mergeVars(s, map[string]any{name: outcome})
 }
 
 // handleHumanCompleted processes a HumanCompleted trigger: merges output,
 // completes the task, advances the token, cancels guarding timers, and drives forward.
 func handleHumanCompleted(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t HumanCompleted, opt StepOptions) (StepResult, error) {
-	tok := s.tokenAwaiting(t.TaskToken)
+	tok := s.tokenAwaiting(t.TaskID)
 	if tok == nil {
-		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskToken)
+		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskID)
 	}
 	// Fail-fast: a parked token without a matching HumanTask record is an
 	// invariant violation (token and task are always created together in
 	// KindUserTask). Advancing silently would corrupt state without emitting
 	// UpdateTask, so we reject the trigger with a descriptive error.
-	task := s.TaskByToken(t.TaskToken)
+	task := s.TaskByID(t.TaskID)
 	if task == nil {
-		return StepResult{}, fmt.Errorf("workflow-engine: human-completed for token %q has no task record: %w", t.TaskToken, humantask.ErrTaskNotFound)
+		return StepResult{}, fmt.Errorf("workflow-engine: human-completed for token %q has no task record: %w", t.TaskID, humantask.ErrTaskNotFound)
 	}
 	humanTdef, humanTdefErr := defForScope(def, s, tok.ScopeID)
 	if humanTdefErr != nil {
 		return StepResult{}, humanTdefErr
 	}
-	// A wait-mode manual UserTask (Manual && !ManualImmediate) is a form-less
-	// checkpoint: it completes on a bare trigger only. Reject a non-empty
-	// completion payload before any output is merged (ADR-0118).
+	// The node declaration drives both completion guards below. A node that is
+	// missing or is not a UserTask leaves ut at its zero value, i.e. unconstrained.
+	var ut activity.UserTask
 	if n, ok := humanTdef.Node(tok.NodeID); ok {
-		if ut, ok := n.(activity.UserTask); ok && ut.Manual && !ut.ManualImmediate && len(t.Output) > 0 {
-			return StepResult{}, fmt.Errorf("%w: node %q", ErrManualTaskPayload, tok.NodeID)
-		}
+		ut, _ = n.(activity.UserTask)
+	}
+	// A wait-mode manual UserTask (Manual && !ManualImmediate) is a form-less
+	// checkpoint: it completes on a bare trigger only. Reject any completion
+	// payload before any output is merged (ADR-0118). This runs BEFORE the
+	// outcome-set check because a manual task declares no outcomes, so that check
+	// would fail open and silently record an outcome/note (ADR-0146).
+	if ut.Manual && !ut.ManualImmediate && (len(t.Output) > 0 || t.Outcome != "" || t.Note != "") {
+		return StepResult{}, fmt.Errorf("%w: node %q", ErrManualTaskPayload, tok.NodeID)
+	}
+	// Outcome validation fails closed: a declared set is a closed AND mandatory
+	// value domain, so the completion must carry exactly one of its members
+	// (ADR-0146). Declaring none leaves the task unconstrained.
+	switch {
+	case ut.Manual:
+		// A manual task is forbidden from declaring outcomes at authoring time
+		// (model.ErrManualTaskOutcome) and completes on a bare trigger, so it can
+		// never be required to supply one. Reached only by an unvalidated
+		// definition; the payload guard above already rejected any outcome sent
+		// to a wait-mode manual task.
+	case len(ut.Outcomes) == 0:
+		// Unconstrained: any outcome, or none at all, completes the task.
+	case t.Outcome == "":
+		return StepResult{}, fmt.Errorf("%w: node %q", ErrOutcomeRequired, tok.NodeID)
+	case !slices.Contains(ut.Outcomes, t.Outcome):
+		return StepResult{}, fmt.Errorf("%w: node %q outcome %q", ErrInvalidOutcome, tok.NodeID, t.Outcome)
 	}
 	mergeVars(s, t.Output)
-	s.setVisitActor(tok.ID, tok.NodeID, t.Actor.ID)
+	applyOutcomeExposure(s, ut, t.Outcome)
 	task.State = humantask.Completed
+	// Record who completed the task, when, and with what disposition (ADR-0147).
+	// The outcome is audited whether or not the node exposes it as a variable.
+	task.Completion = &humantask.Completion{
+		Actor:   t.Actor,
+		At:      t.OccurredAt(),
+		Outcome: t.Outcome,
+		Note:    t.Note,
+	}
 	tok.State = TokenActive
 	tok.AwaitCommand = ""
 	cmds := []Command{UpdateTask{Task: *task}}
 	// Cancel any deadline or reminder timers that were guarding this task.
-	for _, timerID := range s.cancelTimersByTaskToken(t.TaskToken, "") {
+	for _, timerID := range s.cancelTimersByTaskID(t.TaskID, "") {
 		cmds = append(cmds, CancelTimer{TimerID: timerID})
 	}
 	// Cancel any boundary arms on this host token (token ID is the same as the
 	// HostToken recorded at arm time; at this point tok.ID is still valid since
 	// the token has not moved yet — tok.ID is already the token that was
-	// parked, looked up via tokenAwaiting(t.TaskToken) above).
+	// parked, looked up via tokenAwaiting(t.TaskID) above).
 	for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
 		cmds = append(cmds, CancelTimer{TimerID: timerID})
 	}
@@ -746,7 +851,7 @@ func handleSubInstanceFailed(ctx context.Context, def *model.ProcessDefinition, 
 			for _, timerID := range s.removeBoundaryArmsForHost(callActivityTok.ID) {
 				cmds = append(cmds, CancelTimer{TimerID: timerID})
 			}
-			s.consumeToken(callActivityTok, t.OccurredAt())
+			s.consumeTokenAs(callActivityTok, t.OccurredAt(), CloseKindBoundaryInterrupted)
 			return cmds
 		}
 		cmds, routeErr := routeToBoundary(ctx, def, s, hostDef, boundary, "call-activity boundary", tok.ScopeID,

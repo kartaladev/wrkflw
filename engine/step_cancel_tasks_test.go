@@ -221,7 +221,7 @@ func TestCancelWithCompensationReconcilesOpenTasks(t *testing.T) {
 	require.Len(t, uts, 1, "the parked task must be cancelled on cancel-with-compensation")
 	assert.Equal(t, humantask.Cancelled, uts[0].Task.State)
 
-	task := r2.State.TaskByToken(uts[0].Task.TaskToken)
+	task := r2.State.TaskByID(uts[0].Task.TaskID)
 	require.NotNil(t, task)
 	assert.Equal(t, humantask.Cancelled, task.State, "state must reflect the cancelled task")
 }

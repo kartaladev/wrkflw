@@ -104,45 +104,109 @@ func NewActionFailed(at time.Time, commandID, errMsg string, retryable bool, opt
 	return af
 }
 
-// HumanCompleted reports that a human-task node was completed by an actor.
+// CompletionInput is the payload an actor SUBMITS when finishing a human task.
+// It bundles the business disposition (Outcome), the actor's free-text remark
+// (Note), and the output variables merged into the process (Output).
+//
+// It is the request side of the completion. The RECORD side — what the engine
+// durably stamps on the task once the completion is accepted — is
+// [humantask.Completion], which additionally carries the completing actor and
+// the completion time. The two are deliberately named apart so a file importing
+// both does not have to disambiguate, and so a reader can tell at a glance which
+// one is being handled (ADR-0146 amendment 2).
+//
+// Outcome is recorded on the task's completion audit either way, and is
+// validated against the user task's declared outcomes when the node declares
+// any: a value outside the set fails with [ErrInvalidOutcome], and an EMPTY
+// value fails with [ErrOutcomeRequired], because declaring a set makes the
+// outcome mandatory. The zero value therefore completes a task only when its
+// node declares no outcomes; Note and Output remain optional throughout.
+type CompletionInput struct {
+	// Outcome is the business outcome chosen by the actor (e.g. "approve").
+	Outcome string
+	// Note is the actor's free-text remark accompanying the completion.
+	Note string
+	// Output holds variables merged into the process instance on completion.
+	Output map[string]any
+}
+
+// HumanCompleted reports that a human-task node was completed by an actor,
+// carrying the actor's [CompletionInput] payload flattened onto the trigger.
 type HumanCompleted struct {
 	baseTrigger
-	TaskToken string
-	Output    map[string]any
-	Actor     authz.Actor
+	TaskID string
+	// Outcome is the business outcome the actor chose; empty when none.
+	Outcome string
+	// Note is the actor's free-text remark; empty when none.
+	Note   string
+	Output map[string]any
+	Actor  authz.Actor
+}
+
+// HumanCandidatesResolved reports the set of actors the runtime resolved as
+// eligible for a human task, as of the trigger's occurrence time.
+//
+// The engine core cannot resolve candidates itself: expanding an
+// [authz.AuthzSpec] into concrete actors is I/O (a group-membership lookup), and
+// the core owns none. The runtime resolves and feeds the result back as a
+// trigger — the same round trip a service action takes via [ActionCompleted] —
+// so the resolved actors reach the committed snapshot the instance view renders.
+//
+// The trigger is not tied to task creation: applying it again re-states the
+// candidate set, which is how a stale list is refreshed when the underlying
+// actor registry changes.
+type HumanCandidatesResolved struct {
+	baseTrigger
+	TaskID     string
+	Candidates []authz.Actor
 }
 
 // HumanClaimed reports that an actor has claimed a human-task node.
 type HumanClaimed struct {
 	baseTrigger
-	TaskToken string
-	Actor     authz.Actor
+	TaskID string
+	Actor  authz.Actor
 }
 
 // HumanReassigned reports that a human-task node was reassigned from one actor
 // to another by a third party (e.g. an admin).
 type HumanReassigned struct {
 	baseTrigger
-	TaskToken string
-	From      string
-	To        string
-	By        authz.Actor
+	TaskID string
+	From   string
+	To     string
+	By     authz.Actor
 }
 
-// NewHumanCompleted builds a HumanCompleted trigger stamped with the given time.
-func NewHumanCompleted(at time.Time, taskToken string, output map[string]any, actor authz.Actor) HumanCompleted {
-	return HumanCompleted{baseTrigger: baseTrigger{at: at}, TaskToken: taskToken, Output: output, Actor: actor}
+// NewHumanCompleted builds a HumanCompleted trigger stamped with the given time,
+// carrying the actor's completion payload. Pass the zero [CompletionInput] to complete
+// a task with no outcome, note, or output.
+func NewHumanCompleted(at time.Time, taskID string, c CompletionInput, actor authz.Actor) HumanCompleted {
+	return HumanCompleted{
+		baseTrigger: baseTrigger{at: at},
+		TaskID:      taskID,
+		Outcome:     c.Outcome,
+		Note:        c.Note,
+		Output:      c.Output,
+		Actor:       actor,
+	}
+}
+
+// NewHumanCandidatesResolved builds a HumanCandidatesResolved trigger stamped
+// with the given time. candidates replaces the task's current list wholesale.
+func NewHumanCandidatesResolved(at time.Time, taskID string, candidates []authz.Actor) HumanCandidatesResolved {
+	return HumanCandidatesResolved{baseTrigger: baseTrigger{at: at}, TaskID: taskID, Candidates: candidates}
 }
 
 // NewHumanClaimed builds a HumanClaimed trigger stamped with the given time.
-func NewHumanClaimed(at time.Time, taskToken string, actor authz.Actor) HumanClaimed {
-	return HumanClaimed{baseTrigger: baseTrigger{at: at}, TaskToken: taskToken, Actor: actor}
+func NewHumanClaimed(at time.Time, taskID string, actor authz.Actor) HumanClaimed {
+	return HumanClaimed{baseTrigger: baseTrigger{at: at}, TaskID: taskID, Actor: actor}
 }
 
 // NewHumanReassigned builds a HumanReassigned trigger stamped with the given time.
 // From is the previous assignee, To is the new assignee, By is the actor performing the reassignment.
-func NewHumanReassigned(at time.Time, taskToken, from, to string, by authz.Actor) HumanReassigned {
-	return HumanReassigned{baseTrigger: baseTrigger{at: at}, TaskToken: taskToken, From: from, To: to, By: by}
+func NewHumanReassigned(at time.Time, taskID, from, to string, by authz.Actor) HumanReassigned {
+	return HumanReassigned{baseTrigger: baseTrigger{at: at}, TaskID: taskID, From: from, To: to, By: by}
 }
 
 // TimerFired reports that a previously scheduled timer has fired.

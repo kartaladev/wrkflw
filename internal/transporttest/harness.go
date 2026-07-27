@@ -28,7 +28,7 @@ import (
 
 // Harness holds the low-level components wired by NewHarness.
 // Tests that need direct access to kernel internals (e.g. to run a definition
-// and capture the resulting task token) can reach through it.
+// and capture the resulting task id) can reach through it.
 type Harness struct {
 	Driver    *runtime.ProcessDriver
 	Store     *kernel.MemInstanceStore
@@ -47,7 +47,7 @@ func (greetAction) Do(_ context.Context, in map[string]any) (map[string]any, err
 // NewHarness constructs a ready service.Service backed by in-memory stores and a
 // FakeClock. The returned *Harness exposes the underlying components for tests
 // that need to seed state directly (e.g. run a definition to park at a user task
-// and capture the task token).
+// and capture the task id).
 //
 // defs are registered immediately; pass them as variadic arguments so tests that
 // only need a subset avoid registering unnecessary definitions.
@@ -179,9 +179,9 @@ func MessageProcess(msgName string) *model.ProcessDefinition {
 }
 
 // StartedApprovalInstance runs a fresh approval process instance and parks at
-// the user-task node. It returns the task token for use in claim/complete/reassign
+// the user-task node. It returns the task id for use in claim/complete/reassign
 // tests. Calls t.Fatal when the instance does not park at a user task.
-func StartedApprovalInstance(t testing.TB, h *Harness, instanceID string) (taskToken string) {
+func StartedApprovalInstance(t testing.TB, h *Harness, instanceID string) (taskID string) {
 	t.Helper()
 	def := ApprovalProcess()
 	st, err := h.Driver.Drive(context.Background(), def, instanceID, nil)
@@ -189,6 +189,6 @@ func StartedApprovalInstance(t testing.TB, h *Harness, instanceID string) (taskT
 	require.Equal(t, engine.StatusRunning, st.Status, "approval instance must park at user task")
 	require.NotEmpty(t, st.Tokens, "approval instance must have at least one parked token")
 	token := st.Tokens[0].AwaitCommand
-	require.NotEmpty(t, token, "task token must not be empty")
+	require.NotEmpty(t, token, "task id must not be empty")
 	return token
 }

@@ -82,7 +82,7 @@ func TestEmbeddedSubProcessRunsAndContinues(t *testing.T) {
 	require.Len(t, r1.State.Tokens, 1)
 	innerTok := r1.State.Tokens[0]
 	assert.Equal(t, "inner-svc", innerTok.NodeID)
-	assert.Equal(t, engine.TokenWaitingCommand, innerTok.State)
+	assert.Equal(t, engine.TokenWaiting, innerTok.State)
 	assert.NotEmpty(t, innerTok.ScopeID, "inner token must carry a scope ID")
 
 	// Exactly one scope is open.
@@ -226,7 +226,7 @@ func TestParallelGatewayInsideSubProcess(t *testing.T) {
 	for _, tok := range r1.State.Tokens {
 		assert.Equal(t, scopeID, tok.ScopeID,
 			"forked token at %q must carry sub-process ScopeID %q, got %q", tok.NodeID, scopeID, tok.ScopeID)
-		assert.Equal(t, engine.TokenWaitingCommand, tok.State)
+		assert.Equal(t, engine.TokenWaiting, tok.State)
 	}
 
 	// Exactly two InvokeAction commands: one for action-a, one for action-b.
@@ -290,7 +290,7 @@ func callActivityDef() *model.ProcessDefinition {
 
 // TestCallActivityEmitsStartSubInstanceAndParks verifies that the engine:
 //  1. On StartInstance: drives to the call-activity node, emits a StartSubInstance
-//     command, and parks the token (TokenWaitingCommand, AwaitCommand == CommandID).
+//     command, and parks the token (TokenWaiting, AwaitCommand == CommandID).
 //  2. On SubInstanceCompleted: merges Output into vars, resumes the token past the
 //     call-activity node, drives to parent-end → CompleteInstance.
 func TestCallActivityEmitsStartSubInstanceAndParks(t *testing.T) {
@@ -317,7 +317,7 @@ func TestCallActivityEmitsStartSubInstanceAndParks(t *testing.T) {
 	require.Len(t, r1.State.Tokens, 1)
 	tok := r1.State.Tokens[0]
 	assert.Equal(t, "call", tok.NodeID)
-	assert.Equal(t, engine.TokenWaitingCommand, tok.State)
+	assert.Equal(t, engine.TokenWaiting, tok.State)
 	assert.Equal(t, ssi.CommandID, tok.AwaitCommand)
 
 	// No scope opened (call-activity is a separate instance, not an embedded scope).
@@ -1224,18 +1224,18 @@ func TestDeadlineUserTaskInsideSubProcess(t *testing.T) {
 
 	// AwaitHuman + ScheduleTimer(Deadline) emitted.
 	var deadlineTimerID string
-	var taskToken string
+	var taskID string
 	for _, cmd := range r1.Commands {
 		switch c := cmd.(type) {
 		case engine.AwaitHuman:
-			taskToken = c.TaskToken
+			taskID = c.TaskID
 		case engine.ScheduleTimer:
 			if c.Kind == engine.TimerDeadline {
 				deadlineTimerID = c.TimerID
 			}
 		}
 	}
-	require.NotEmpty(t, taskToken, "expected AwaitHuman for inner-user task")
+	require.NotEmpty(t, taskID, "expected AwaitHuman for inner-user task")
 	require.NotEmpty(t, deadlineTimerID, "expected ScheduleTimer(Deadline) for inner-user task")
 
 	// One token parked at inner-user, in the sub-process scope.
@@ -1262,7 +1262,7 @@ func TestDeadlineUserTaskInsideSubProcess(t *testing.T) {
 				foundNotify = true
 			}
 		case engine.UpdateTask:
-			if c.Task.TaskToken == taskToken {
+			if c.Task.TaskID == taskID {
 				foundUpdateTask = true
 			}
 		case engine.CompleteInstance:

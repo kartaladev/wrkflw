@@ -24,7 +24,7 @@ import (
 func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	// Find the parked token. If the token is gone (task completed, instance
 	// advanced), the deadline fired late → clean no-op.
-	tok := s.tokenAwaiting(rec.TaskToken)
+	tok := s.tokenAwaiting(rec.TaskID)
 	if tok == nil {
 		// Also clean up the stale timer record.
 		s.removeTimer(rec.TimerID)
@@ -35,7 +35,7 @@ func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *I
 	// task.IsOpen() returns true only for Unclaimed or Claimed states; both
 	// Completed and Cancelled are "already resolved", including a duplicate deadline
 	// fire after cancellation.
-	task := s.TaskByToken(rec.TaskToken)
+	task := s.TaskByID(rec.TaskID)
 	if task != nil && !task.IsOpen() {
 		s.removeTimer(rec.TimerID)
 		return StepResult{State: *s, Commands: nil}, nil
@@ -75,14 +75,14 @@ func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *I
 	cmds = append(cmds, emitFireOnceAction(s, deadlineAction)...)
 
 	// (b) Move the token to the alternative path target. The token was parked
-	//     (TokenWaitingCommand / AwaitCommand == TaskToken); reactivate it and
+	//     (TokenWaiting / AwaitCommand == TaskID); reactivate it and
 	//     route to the deadline path.
 	// Fix A: explicitly set TokenActive before moveTokenToTarget for symmetry
 	// with HumanCompleted and as a defensive measure (moveTokenToTarget also
 	// sets it, but being explicit here makes the intent unambiguous).
 	tok.AwaitCommand = ""
 	tok.State = TokenActive
-	s.moveTokenToTarget(tok, deadlineTarget, at)
+	s.moveTokenToTargetAs(tok, deadlineTarget, at, CloseKindDeadlineExpired)
 
 	// (c) Mark the task Cancelled and emit UpdateTask.
 	if task != nil {
@@ -91,7 +91,7 @@ func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *I
 	}
 
 	// (d) Cancel any other timers (e.g. reminder timers) for this task.
-	for _, reminderID := range s.cancelTimersByTaskToken(rec.TaskToken, rec.TimerID) {
+	for _, reminderID := range s.cancelTimersByTaskID(rec.TaskID, rec.TimerID) {
 		cmds = append(cmds, CancelTimer{TimerID: reminderID})
 	}
 
@@ -121,11 +121,11 @@ func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *I
 //     the reminder record stays in place and the token does NOT move.
 func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec timerRecord) (StepResult, error) {
 	// Locate the parked token this reminder guards. For a UserTask the reminder
-	// keys on the human-task token (rec.TaskToken == the token's AwaitCommand);
+	// keys on the human-task id (rec.TaskID == the token's AwaitCommand);
 	// for a ReceiveTask / IntermediateCatchEvent it keys on the parked token id
 	// (rec.Token), which awaits a message/signal/timer rather than a command.
 	// Resolve via AwaitCommand first (UserTask), then by token id (the others).
-	tok := s.tokenAwaiting(rec.TaskToken)
+	tok := s.tokenAwaiting(rec.TaskID)
 	if tok == nil {
 		tok = s.tokenByID(rec.Token)
 	}
@@ -140,7 +140,7 @@ func handleReminderFired(def *model.ProcessDefinition, s *InstanceState, rec tim
 	// state: a Completed/Cancelled task makes the reminder stale. For a token
 	// with no HumanTask (ReceiveTask / catch), the parked token still being
 	// present is itself sufficient — it is live.
-	if task := s.TaskByToken(rec.TaskToken); task != nil && !task.IsOpen() {
+	if task := s.TaskByID(rec.TaskID); task != nil && !task.IsOpen() {
 		s.removeTimer(rec.TimerID)
 		return StepResult{State: *s, Commands: nil}, nil
 	}

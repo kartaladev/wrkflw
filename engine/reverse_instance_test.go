@@ -375,12 +375,12 @@ func TestReverseCompletionActionReversibility(t *testing.T) {
 	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"}, engine.NewStartInstance(t0, nil), engine.StepOptions{})
 	require.NoError(t, err)
 	require.Len(t, r1.State.Tasks, 1)
-	taskToken := r1.State.Tasks[0].TaskToken
+	taskID := r1.State.Tasks[0].TaskID
 
 	// Complete the human task: the completion action ("record") fires as an
 	// InvokeAction and the token parks on it — the instance must not complete yet.
 	r2, err := engine.Step(t.Context(), def, r1.State,
-		engine.NewHumanCompleted(t0, taskToken, map[string]any{"approved": true}, authz.Actor{ID: "alice"}),
+		engine.NewHumanCompleted(t0, taskID, engine.CompletionInput{Output: map[string]any{"approved": true}}, authz.Actor{ID: "alice"}),
 		engine.StepOptions{})
 	require.NoError(t, err)
 	recordCmdID := findInvokeActionID(t, r2.Commands, "record")

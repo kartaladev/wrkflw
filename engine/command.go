@@ -117,7 +117,7 @@ type FailInstance struct {
 // AwaitHuman asks the runtime to create a human-task record and park the engine
 // until a HumanCompleted trigger arrives. Eligibility describes who may act.
 type AwaitHuman struct {
-	TaskToken   string
+	TaskID      string
 	Eligibility authz.AuthzSpec
 }
 

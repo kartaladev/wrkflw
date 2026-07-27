@@ -182,7 +182,7 @@ func TestCompensationThrowRunsCompensationAndResumes(t *testing.T) {
 	if awaitHumanCmd != nil {
 		completeUserAt := at.Add(4 * time.Second)
 		r4, err := engine.Step(t.Context(), def, r3.State,
-			engine.NewHumanCompleted(completeUserAt, awaitHumanCmd.TaskToken, nil, authz.Actor{}),
+			engine.NewHumanCompleted(completeUserAt, awaitHumanCmd.TaskID, engine.CompletionInput{}, authz.Actor{}),
 			engine.StepOptions{})
 		require.NoError(t, err)
 		assert.Equal(t, engine.StatusCompleted, r4.State.Status,

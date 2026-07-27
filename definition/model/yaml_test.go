@@ -110,7 +110,7 @@ nodes:
     kind: endEvent
 flows:
   - { id: f1, source: s, target: e }
-cancelActions:
+cancel_actions:
   - cleanup-a
   - cleanup-b
 `
@@ -147,7 +147,7 @@ nodes:
 flows:
   - { id: f1, source: s, target: gw }
   - { id: f2, source: gw, target: a, condition: "vars.x == 1" }
-  - { id: f3, source: gw, target: b, isDefault: true }
+  - { id: f3, source: gw, target: b, is_default: true }
   - { id: f4, source: a, target: e }
   - { id: f5, source: b, target: e }
 `
@@ -187,8 +187,8 @@ nodes:
     kind: startEvent
   - id: approve
     kind: userTask
-    eligibleRoles: ["manager"]
-    eligiblePrivileges: ["finance-task claim"]
+    eligible_roles: ["manager"]
+    eligible_privileges: ["finance-task claim"]
   - id: end
     kind: endEvent
 flows:
@@ -259,7 +259,7 @@ id: d
 version: 1
 nodes:
   - {id: s, kind: startEvent}
-  - {id: confirm, kind: userTask, manual: true, manualImmediate: true}
+  - {id: confirm, kind: userTask, manual: true, manual_immediate: true}
   - {id: e, kind: endEvent}
 flows:
   - {id: f1, source: s, target: confirm}
@@ -376,7 +376,7 @@ flows:
 	cases := []testCase{
 		{
 			name:   "terminate abort carries reason and outcome",
-			fields: "    endBehavior: terminate\n    terminationReason: fraud detected\n    terminationOutcome: abort",
+			fields: "    end_behavior: terminate\n    termination_reason: fraud detected\n    termination_outcome: abort",
 			assert: func(t *testing.T, end event.EndEvent) {
 				assert.Equal(t, event.EndTerminate, end.Behavior)
 				assert.Equal(t, "fraud detected", end.TerminationReason)
@@ -385,7 +385,7 @@ flows:
 		},
 		{
 			name:   "terminate complete outcome",
-			fields: "    endBehavior: terminate\n    terminationReason: done early\n    terminationOutcome: complete",
+			fields: "    end_behavior: terminate\n    termination_reason: done early\n    termination_outcome: complete",
 			assert: func(t *testing.T, end event.EndEvent) {
 				assert.Equal(t, event.EndTerminate, end.Behavior)
 				assert.Equal(t, "done early", end.TerminationReason)
@@ -394,7 +394,7 @@ flows:
 		},
 		{
 			name:   "error end carries code",
-			fields: "    endBehavior: error\n    errorCode: E_BOOM",
+			fields: "    end_behavior: error\n    error_code: E_BOOM",
 			assert: func(t *testing.T, end event.EndEvent) {
 				assert.Equal(t, event.EndError, end.Behavior)
 				assert.Equal(t, "E_BOOM", end.ErrorCode)
@@ -422,6 +422,79 @@ flows:
 			end, ok := def.Nodes[1].(event.EndEvent)
 			require.True(t, ok, "node[1] should be an EndEvent, got %T", def.Nodes[1])
 			tc.assert(t, end)
+		})
+	}
+}
+
+// TestParseYAMLUserTaskOutcomes covers the YAML authoring form of the
+// completion-outcome declaration (ADR-0146).
+func TestParseYAMLUserTaskOutcomes(t *testing.T) {
+	t.Parallel()
+
+	const tmpl = `
+id: approval-process
+version: 1
+nodes:
+  - id: start
+    kind: startEvent
+  - id: approve
+    kind: userTask
+%s
+  - id: end
+    kind: endEvent
+flows:
+  - { id: f1, source: start, target: approve }
+  - { id: f2, source: approve, target: end }
+`
+
+	type testCase struct {
+		name   string
+		fields string
+		assert func(t *testing.T, ut activity.UserTask)
+	}
+
+	cases := []testCase{
+		{
+			name:   "outcomes with conventional exposure",
+			fields: "    outcomes: [approve, reject]\n    expose_outcome: true",
+			assert: func(t *testing.T, ut activity.UserTask) {
+				assert.Equal(t, []string{"approve", "reject"}, ut.Outcomes)
+				assert.True(t, ut.ExposeOutcome)
+				assert.Empty(t, ut.OutcomeVariable)
+			},
+		},
+		{
+			name:   "explicit outcome variable",
+			fields: "    outcomes: [approve]\n    outcome_variable: review_decision",
+			assert: func(t *testing.T, ut activity.UserTask) {
+				assert.Equal(t, []string{"approve"}, ut.Outcomes)
+				assert.Equal(t, "review_decision", ut.OutcomeVariable)
+				assert.False(t, ut.ExposeOutcome)
+			},
+		},
+		{
+			name:   "no outcome keys leave the task unconstrained",
+			fields: "",
+			assert: func(t *testing.T, ut activity.UserTask) {
+				assert.Empty(t, ut.Outcomes)
+				assert.False(t, ut.ExposeOutcome)
+				assert.Empty(t, ut.OutcomeVariable)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ld, err := model.ParseYAML(strings.NewReader(fmt.Sprintf(tmpl, tc.fields)))
+			require.NoError(t, err)
+			parsed, err := ld.Build()
+			require.NoError(t, err)
+
+			ut, ok := parsed.Nodes[1].(activity.UserTask)
+			require.True(t, ok, "node[1] is %T, want activity.UserTask", parsed.Nodes[1])
+			tc.assert(t, ut)
 		})
 	}
 }

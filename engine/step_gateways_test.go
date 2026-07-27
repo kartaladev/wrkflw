@@ -102,7 +102,7 @@ func TestParallelGatewayForksAllBranches(t *testing.T) {
 	nodes := []string{res.State.Tokens[0].NodeID, res.State.Tokens[1].NodeID}
 	assert.ElementsMatch(t, []string{"a", "b"}, nodes)
 	for _, tk := range res.State.Tokens {
-		assert.Equal(t, engine.TokenWaitingCommand, tk.State)
+		assert.Equal(t, engine.TokenWaiting, tk.State)
 	}
 }
 
@@ -269,7 +269,7 @@ func TestParallelJoinIsScopeLocal(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r1.State.Status)
 
-	// ScopeA: inner-a token moved to ijoin (TokenAtJoin), inner-b still at inner-b.
+	// ScopeA: inner-a token moved to ijoin (TokenJoining), inner-b still at inner-b.
 	// ScopeB: inner-a and inner-b still at their nodes.
 	// Instance must still be running, 2 scopes still open.
 	require.Len(t, r1.State.Scopes, 2, "both scopes must still be open after completing scopeA/inner-a")

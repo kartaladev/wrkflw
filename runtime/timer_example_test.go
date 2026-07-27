@@ -145,7 +145,7 @@ func TestProcessDriverUserTaskDeadlineFiresUnderFakeClock(t *testing.T) {
 	claimable, err := taskStore.ClaimableBy(ctx, reviewer)
 	require.NoError(t, err)
 	require.Len(t, claimable, 1)
-	taskToken := claimable[0].TaskToken
+	taskID := claimable[0].TaskID
 	assert.False(t, escalationRan, "escalation must not run before deadline fires")
 
 	// Do NOT complete the task. Advance clock past the 30-minute deadline.
@@ -161,7 +161,7 @@ func TestProcessDriverUserTaskDeadlineFiresUnderFakeClock(t *testing.T) {
 	assert.True(t, escalationRan, "deadline action must have run on breach")
 
 	// The task must be Cancelled.
-	cancelledTask, err := taskStore.Get(ctx, taskToken)
+	cancelledTask, err := taskStore.Get(ctx, taskID)
 	require.NoError(t, err)
 	assert.Equal(t, humantask.Cancelled, cancelledTask.State,
 		"the human task must be Cancelled after deadline breach")

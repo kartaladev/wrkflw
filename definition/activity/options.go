@@ -235,6 +235,54 @@ func WithEligiblePrivileges(privs ...string) UserTaskOption {
 	return eligiblePrivilegesOpt{privs: privs}
 }
 
+type outcomesOpt struct{ outcomes []string }
+
+func (o outcomesOpt) applyUserTask(u *UserTask) {
+	u.Outcomes = append(u.Outcomes, o.outcomes...)
+}
+
+// WithOutcomes declares the completion outcomes a UserTask accepts (e.g.
+// "approve", "reject"). Multiple calls are additive. With none declared the
+// task is unconstrained — a completion may carry any outcome or none.
+//
+// Declaring a set makes it closed AND mandatory: the engine rejects a
+// completion carrying an outcome outside the set with engine.ErrInvalidOutcome,
+// and one carrying no outcome at all with engine.ErrOutcomeRequired.
+//
+// Declaring outcomes is audit-only unless the node also opts into exposure via
+// WithExposeOutcome or WithOutcomeVariable.
+// It may only be passed to NewUserTask. See ADR-0146.
+func WithOutcomes(outcomes ...string) UserTaskOption { return outcomesOpt{outcomes} }
+
+type exposeOutcomeOpt struct{}
+
+func (exposeOutcomeOpt) applyUserTask(u *UserTask) { u.ExposeOutcome = true }
+
+// WithExposeOutcome publishes the chosen completion outcome as the process
+// variable "<node id>_outcome" so downstream gateway conditions can route on
+// it (the exposed value is the outcome string). WithOutcomeVariable takes
+// precedence when both are set.
+//
+// It requires WithOutcomes: exposing an outcome into the variable space demands
+// a closed value domain, so Build rejects exposure without a declared set with
+// model.ErrOutcomeExposureWithoutOutcomes. It may only be passed to
+// NewUserTask. See ADR-0146.
+func WithExposeOutcome() UserTaskOption { return exposeOutcomeOpt{} }
+
+type outcomeVariableOpt struct{ name string }
+
+func (o outcomeVariableOpt) applyUserTask(u *UserTask) { u.OutcomeVariable = o.name }
+
+// WithOutcomeVariable publishes the chosen completion outcome as the named
+// process variable, overriding WithExposeOutcome's "<node id>_outcome"
+// convention. The name must be a valid expr identifier so gateway conditions
+// can reference it.
+//
+// Like WithExposeOutcome it requires WithOutcomes — Build rejects exposure
+// without a declared set with model.ErrOutcomeExposureWithoutOutcomes. It may
+// only be passed to NewUserTask. See ADR-0146.
+func WithOutcomeVariable(name string) UserTaskOption { return outcomeVariableOpt{name} }
+
 type manualOpt struct{ immediate bool }
 
 func (o manualOpt) applyUserTask(u *UserTask) {
