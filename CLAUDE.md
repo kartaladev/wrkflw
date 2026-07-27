@@ -132,7 +132,7 @@ go build ./...                                   # build everything
 go test ./...                                    # all tests (workspace-wide)
 go test ./<package>/...                          # one package (root-level, e.g. ./engine/...)
 go test -run '^TestName$' ./<package>/...        # a single test
-go test -race -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1
+go test -race -coverprofile=cover.out ./... && scripts/coverage.sh cover.out   # total excludes generated files (ADR-0143)
 golangci-lint run ./...                          # lint (clean before done)
 go generate ./...                                # regenerate mocks (mockgen) etc.
 ```
@@ -256,9 +256,9 @@ On completion of any change, verify:
 
 1. All tests for the touched package pass with ≥ 85% line coverage:
    ```bash
-   go test -race -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1
+   go test -race -coverprofile=cover.out ./... && scripts/coverage.sh cover.out
    ```
-   The 85% is a floor, not the goal — hot paths and their failure branches must ALL be covered first (Golang rule #8); a package can fail review at 95% if a hot path is untested.
+   `scripts/coverage.sh` reports the total **excluding generated files** (the `// Code generated … DO NOT EDIT.` mockgen `*_mock.go` doubles), so the 85% floor is measured over hand-written code only (ADR-0143, mirrors `.golangci.yml` `generated: lax`). The 85% is a floor, not the goal — hot paths and their failure branches must ALL be covered first (Golang rule #8); a package can fail review at 95% if a hot path is untested.
 2. `go test ./...` from the repo root passes — no regressions elsewhere.
 3. `golangci-lint run ./...` is clean. Use the `cc-skills-golang:golang-lint` skill if configuration is needed.
 4. **Before delivery** (merging to `main` or pushing a PR branch): run `/code-review` **and** `/security-review` on the pending change and fix **all** findings — see the **Delivery Gate** under Git Discipline. Review-driven fixes are folded into the feature commit via `--amend`, never stacked as new commits.
