@@ -264,6 +264,78 @@ func TestTrigger_Next(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:  "daily interval>1 jumps by interval once the current day is past (ADR-0140)",
+			after: time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC), // past the day's 09:00
+			trig:  scheduler.Daily(2, scheduler.ClockTime{Hour: 9}),
+			assert: func(t *testing.T, next time.Time, ok bool) {
+				// matches the live gocron first fire, not the interval-blind
+				// "next matching day" (which would be 07-11).
+				want := time.Date(2026, 7, 12, 9, 0, 0, 0, time.UTC)
+				if !ok || !next.Equal(want) {
+					t.Fatalf("next=%v ok=%v want %v", next, ok, want)
+				}
+			},
+		},
+		{
+			name:  "daily interval>1 same-period fire is unchanged (regression guard)",
+			after: time.Date(2026, 7, 10, 8, 0, 0, 0, time.UTC), // before the day's 09:00
+			trig:  scheduler.Daily(2, scheduler.ClockTime{Hour: 9}),
+			assert: func(t *testing.T, next time.Time, ok bool) {
+				want := time.Date(2026, 7, 10, 9, 0, 0, 0, time.UTC)
+				if !ok || !next.Equal(want) {
+					t.Fatalf("next=%v ok=%v want %v", next, ok, want)
+				}
+			},
+		},
+		{
+			name:  "weekly interval>1 multi-weekday jumps to the next interval-week (ADR-0140)",
+			after: time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC), // Wednesday, past this week's 09:00
+			trig:  scheduler.Weekly(2, []time.Weekday{time.Monday, time.Wednesday}, scheduler.ClockTime{Hour: 9}),
+			assert: func(t *testing.T, next time.Time, ok bool) {
+				// the very next Monday is only one interval-week out (ignored);
+				// the interval-2 grid lands on the Monday two weeks out instead.
+				want := time.Date(2026, 8, 3, 9, 0, 0, 0, time.UTC)
+				if !ok || !next.Equal(want) {
+					t.Fatalf("next=%v ok=%v want %v", next, ok, want)
+				}
+			},
+		},
+		{
+			name:  "monthly interval>1 jumps by interval months (ADR-0140)",
+			after: time.Date(2026, 1, 31, 10, 0, 0, 0, time.UTC), // past the day's 09:00
+			trig:  scheduler.Monthly(2, []int{31}, scheduler.ClockTime{Hour: 9}),
+			assert: func(t *testing.T, next time.Time, ok bool) {
+				// February (interval-blind next match) has no 31st; the
+				// interval-2 grid lands on March, which does.
+				want := time.Date(2026, 3, 31, 9, 0, 0, 0, time.UTC)
+				if !ok || !next.Equal(want) {
+					t.Fatalf("next=%v ok=%v want %v", next, ok, want)
+				}
+			},
+		},
+		{
+			name: "daily zero interval reports no future fire (mod-by-zero guard, ADR-0140)",
+			trig: scheduler.Daily(0, scheduler.ClockTime{Hour: 9}),
+			assert: func(t *testing.T, next time.Time, ok bool) {
+				if ok {
+					t.Fatalf("want ok=false, got next=%v", next)
+				}
+			},
+		},
+		{
+			name:  "monthly interval anchored on a day-less month exhausts the scan bound (ADR-0140)",
+			after: time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC), // February
+			trig:  scheduler.Monthly(12, []int{31}, scheduler.ClockTime{Hour: 9}),
+			assert: func(t *testing.T, next time.Time, ok bool) {
+				// interval=12 (yearly) always lands the grid back on February,
+				// which never has a 31st — every scanned candidate is rejected
+				// and the bounded scan exhausts without a match.
+				if ok {
+					t.Fatalf("want ok=false, got next=%v", next)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

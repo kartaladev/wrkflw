@@ -62,13 +62,14 @@ type Trigger struct {
 	cron string
 
 	// interval, days, weekdays, atTimes hold the calendar shape for
-	// triggerDaily, triggerWeekly, and triggerMonthly. calendarNext ignores
-	// interval on the first fire it computes — it always returns the next
-	// matching period-day regardless of interval — which can differ from the
-	// live scheduler's first fire for interval>1 (see the caveat on
-	// [Trigger.Next]). days is used by triggerMonthly (day-of-month); weekdays
-	// is used by triggerWeekly. atTimes is shared by all three calendar
-	// kinds; an empty atTimes defaults to midnight (00:00:00).
+	// triggerDaily, triggerWeekly, and triggerMonthly. calendarNext is
+	// interval-aware (ADR-0140): it accepts a scanned day only when its
+	// period index (day/week/month, anchored at the after instant given to
+	// [Trigger.Next]) is a multiple of interval, matching the live
+	// scheduler's first fire for any interval. days is used by
+	// triggerMonthly (day-of-month); weekdays is used by triggerWeekly.
+	// atTimes is shared by all three calendar kinds; an empty atTimes
+	// defaults to midnight (00:00:00).
 	interval uint
 	days     []int
 	weekdays []time.Weekday
@@ -191,13 +192,11 @@ func (t Trigger) Recurring() bool {
 // [Cron] additionally: robfig/cron resolves the expression in after's
 // location; note the live gocron scheduler resolves cron by zone name, so a
 // [Cron] trigger under a non-IANA time.FixedZone fails to schedule there
-// (ADR-0136) — use UTC/Local/IANA zones with cron. Interval caveat: for
-// interval>1 calendar triggers whose current-period at-times are already
-// past, Next returns the next matching period-day (interval ignored on the
-// first fire), whereas the live scheduler jumps by interval — so the two can
-// differ for the first fire of an interval>1 trigger (a pre-existing
-// day-scan gap, tracked separately). An omitted atTimes defaults to
-// midnight (00:00:00).
+// (ADR-0136) — use UTC/Local/IANA zones with cron. [Daily], [Weekly], and
+// [Monthly] are interval-aware (ADR-0140): the first fire Next reports for
+// an interval>1 calendar trigger matches the live scheduler's first fire,
+// including when the current period's at-times have already passed. An
+// omitted atTimes defaults to midnight (00:00:00).
 func (t Trigger) Next(after time.Time) (time.Time, bool) {
 	switch t.kind {
 	case triggerAt:
@@ -228,7 +227,7 @@ func (t Trigger) Next(after time.Time) (time.Time, bool) {
 		// scheduler; a UTC after (the default) yields UTC.
 		return sched.Next(after), true
 	case triggerDaily, triggerWeekly, triggerMonthly:
-		return calendarNext(after, t.kind, t.days, t.weekdays, t.atTimes)
+		return calendarNext(after, t.kind, t.interval, t.days, t.weekdays, t.atTimes)
 	default:
 		return time.Time{}, false
 	}
@@ -287,20 +286,38 @@ func (t Trigger) Calendar() (uint, []int, []time.Weekday, []ClockTime, bool) {
 	}
 }
 
-// maxCalendarScanDays bounds the forward day-by-day scan in calendarNext so
-// a degenerate calendar shape (e.g. an empty weekday set) cannot spin
-// forever; it is generous enough (5 years) that no real calendar trigger
-// ever hits it.
+// maxCalendarScanDays bounds the forward day-by-day scan in calendarNext, at
+// interval==1, so a degenerate calendar shape (e.g. an empty weekday set)
+// cannot spin forever; it is generous enough (5 years) that no real
+// interval==1 calendar trigger ever hits it. calendarNext scales this bound
+// by interval (ADR-0140) — at interval==1 the scaled bound equals this
+// constant exactly (byte-identical); for interval>1 it grows so a large
+// interval's first fire (e.g. "every 8 years") still lies within scan range,
+// matching the live scheduler rather than exhausting into ok=false.
 const maxCalendarScanDays = 366 * 5
 
 // calendarNext scans forward from after, day by day in after's location
 // (ADR-0137), for the first instant matching kind's day filter (any day for
 // triggerDaily, a weekday in weekdays for triggerWeekly, a day-of-month in
-// days for triggerMonthly) at one of atTimes (sorted; midnight if atTimes is
-// empty). It returns ok=false only if the day filter is empty for a kind
-// that requires one, or if the scan exhausts its bound without finding a
-// match.
-func calendarNext(after time.Time, kind triggerKind, days []int, weekdays []time.Weekday, atTimes []ClockTime) (time.Time, bool) {
+// days for triggerMonthly) AND lying on the interval grid anchored at after's
+// own day/week/month (ADR-0140), at one of atTimes (sorted; midnight if
+// atTimes is empty). A scanned day's period index — its day offset for
+// triggerDaily, its Sunday-anchored week offset for triggerWeekly, its
+// month offset for triggerMonthly, all relative to after — must be a
+// multiple of interval to be accepted; day-of-month overflow (e.g. day 31 in
+// a 30-day month) and "target month/week has no matching day" are handled
+// implicitly, since the scan never lands on a day that doesn't exist. This
+// matches the live scheduler's own interval-jumped first fire exactly (see
+// ADR-0140), including for interval==1, where the predicate is always true
+// and the scan is unchanged from before ADR-0140. It returns ok=false if
+// interval is zero (never advances, would divide by zero), if the day
+// filter is empty for a kind that requires one, or if the scan exhausts its
+// (interval-scaled) bound without finding a match.
+func calendarNext(after time.Time, kind triggerKind, interval uint, days []int, weekdays []time.Weekday, atTimes []ClockTime) (time.Time, bool) {
+	if interval == 0 {
+		return time.Time{}, false
+	}
+
 	loc := after.Location()
 
 	times := atTimes
@@ -342,15 +359,30 @@ func calendarNext(after time.Time, kind triggerKind, days []int, weekdays []time
 	}
 
 	start := time.Date(after.Year(), after.Month(), after.Day(), 0, 0, 0, 0, loc)
-	for i := 0; i <= maxCalendarScanDays; i++ {
+	// Scaled per ADR-0140 audit F1: at interval==1 this equals
+	// maxCalendarScanDays exactly (byte-identical scan range).
+	bound := maxCalendarScanDays * int(interval)
+	for i := 0; i <= bound; i++ {
 		day := start.AddDate(0, 0, i)
 
 		switch kind {
+		case triggerDaily:
+			if i%int(interval) != 0 {
+				continue
+			}
 		case triggerWeekly:
+			weekIndex := (int(after.Weekday()) + i) / 7
+			if weekIndex%int(interval) != 0 {
+				continue
+			}
 			if !weekdaySet[day.Weekday()] {
 				continue
 			}
 		case triggerMonthly:
+			monthIndex := (day.Year()-after.Year())*12 + (int(day.Month()) - int(after.Month()))
+			if monthIndex%int(interval) != 0 {
+				continue
+			}
 			if !daySet[day.Day()] {
 				continue
 			}
