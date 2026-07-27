@@ -82,7 +82,7 @@ func TestEngineResolveIncident(t *testing.T) {
 
 	def := incidentDef()
 	reg := kernel.NewMapDefinitionRegistry(def)
-	svc, err := service.NewEngine(
+	svc, err := service.NewProcessEngine(
 		service.WithProcessDriver(r),
 		service.WithInstanceStore(store),
 		service.WithDefinitions(reg),
@@ -151,7 +151,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 
 	def := incidentDef()
 	reg := kernel.NewMapDefinitionRegistry(def)
-	svc, err := service.NewEngine(
+	svc, err := service.NewProcessEngine(
 		service.WithProcessDriver(r),
 		service.WithInstanceStore(store),
 		service.WithDefinitions(reg),
@@ -181,7 +181,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 // ErrInstanceNotFound for an unknown instance ID.
 func TestEngineResolveIncidentInstanceNotFound(t *testing.T) {
 	h := newHarness(t, linearDef())
-	svc := h.newEngine(t)
+	svc := h.newProcessEngine(t)
 
 	_, err := svc.ResolveIncident(t.Context(), service.ResolveIncidentRequest{
 		InstanceID:  "no-such-instance",

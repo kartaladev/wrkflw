@@ -90,6 +90,6 @@ type ResolveIncidentRequest struct {
 	IncidentID string
 	// AddAttempts is the number of additional execution attempts to grant the
 	// failing node before the operator considers the incident resolved.
-	// Values ≤ 0 are treated as 1 by the Engine implementation.
+	// Values ≤ 0 are treated as 1 by the ProcessEngine implementation.
 	AddAttempts int
 }

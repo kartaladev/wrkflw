@@ -38,7 +38,7 @@ func (driver *ProcessDriver) admit() (release func(), ok bool) {
 }
 
 // IsShuttingDown reports whether Shutdown has begun draining. It lets a higher layer
-// (e.g. service.Engine's human-task handlers) reject before performing side effects.
+// (e.g. service.ProcessEngine's human-task handlers) reject before performing side effects.
 func (driver *ProcessDriver) IsShuttingDown() bool {
 	return driver.draining.Load()
 }

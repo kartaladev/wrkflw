@@ -85,7 +85,7 @@ func NewHarness(t testing.TB, defs ...*model.ProcessDefinition) (*Harness, servi
 	)
 	require.NoError(t, err)
 
-	svc, err := service.NewEngine(
+	svc, err := service.NewProcessEngine(
 		service.WithProcessDriver(driver),
 		service.WithInstanceStore(store),
 		service.WithDefinitions(reg),

@@ -14,7 +14,7 @@ import (
 // its default driver, and thus its in-process scheduler) starts and shuts down
 // cleanly and idempotently.
 func TestEngineLifecycleOwnedDriver(t *testing.T) {
-	e, err := service.NewEngine()
+	e, err := service.NewProcessEngine()
 	require.NoError(t, err)
 
 	ctx := t.Context()
@@ -31,7 +31,7 @@ func TestEngineLifecycleOwnedDriver(t *testing.T) {
 // TestEngineLifecycleZeroConfigShutdownOnly verifies that Shutdown on a
 // never-started zero-config engine returns nil and stays idempotent.
 func TestEngineLifecycleZeroConfigShutdownOnly(t *testing.T) {
-	e, err := service.NewEngine()
+	e, err := service.NewProcessEngine()
 	require.NoError(t, err)
 
 	ctx := t.Context()
@@ -40,11 +40,11 @@ func TestEngineLifecycleZeroConfigShutdownOnly(t *testing.T) {
 }
 
 // TestEngineShutdownLeavesInjectedDriverUntouched verifies that when the driver
-// is supplied by the consumer via WithProcessDriver, Engine.Shutdown does NOT
+// is supplied by the consumer via WithProcessDriver, ProcessEngine.Shutdown does NOT
 // tear it down: the injected driver remains usable afterwards.
 func TestEngineShutdownLeavesInjectedDriverUntouched(t *testing.T) {
 	h := newHarness(t)
-	e := h.newEngine(t)
+	e := h.newProcessEngine(t)
 
 	ctx := t.Context()
 	require.NoError(t, e.Shutdown(ctx))

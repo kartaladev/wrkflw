@@ -19,10 +19,10 @@ func regWith(t *testing.T, def *model.ProcessDefinition) kernel.DefinitionRegist
 	return reg
 }
 
-// TestNewEngineZeroConfig verifies that NewEngine with no options constructs a
+// TestNewEngineZeroConfig verifies that NewProcessEngine with no options constructs a
 // fully-wired engine from coherent in-memory defaults.
 func TestNewEngineZeroConfig(t *testing.T) {
-	e, err := service.NewEngine()
+	e, err := service.NewProcessEngine()
 	require.NoError(t, err)
 	require.NotNil(t, e)
 }
@@ -32,7 +32,7 @@ func TestNewEngineZeroConfig(t *testing.T) {
 // from, so a start→get round-trips.
 func TestNewEngineDefaultGraphRoundTrips(t *testing.T) {
 	def := linearDef()
-	e, err := service.NewEngine(service.WithDefinitions(regWith(t, def)))
+	e, err := service.NewProcessEngine(service.WithDefinitions(regWith(t, def)))
 	require.NoError(t, err)
 
 	pi, err := e.StartInstance(t.Context(), service.StartInstanceRequest{
@@ -47,7 +47,7 @@ func TestNewEngineDefaultGraphRoundTrips(t *testing.T) {
 }
 
 // TestNewEngineNilOptionsIgnored verifies that options receiving nil leaves are
-// ignored — the coherent in-memory default is kept and NewEngine still succeeds.
+// ignored — the coherent in-memory default is kept and NewProcessEngine still succeeds.
 func TestNewEngineNilOptionsIgnored(t *testing.T) {
 	cases := []struct {
 		name string
@@ -62,7 +62,7 @@ func TestNewEngineNilOptionsIgnored(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			e, err := service.NewEngine(tc.opt)
+			e, err := service.NewProcessEngine(tc.opt)
 			require.NoError(t, err)
 			assert.NotNil(t, e)
 		})

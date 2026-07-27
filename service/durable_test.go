@@ -47,7 +47,7 @@ func TestWithDurableStore(t *testing.T) {
 		lister: ms,
 		tasks:  humantask.NewMemTaskStore(),
 	}
-	e, err := service.NewEngine(service.WithDurableStore(p))
+	e, err := service.NewProcessEngine(service.WithDurableStore(p))
 	require.NoError(t, err)
 	require.NotNil(t, e)
 }
@@ -71,7 +71,7 @@ func TestWithDurableStoreNilLeafFails(t *testing.T) {
 				tasks:  humantask.NewMemTaskStore(),
 			}
 			tt.mutate(&p)
-			_, err := service.NewEngine(service.WithDurableStore(p))
+			_, err := service.NewProcessEngine(service.WithDurableStore(p))
 			require.ErrorIs(t, err, service.ErrNilDependency)
 		})
 	}
@@ -87,7 +87,7 @@ func TestWithDurableStorePrecedenceLaterOverrideWins(t *testing.T) {
 		tasks:  humantask.NewMemTaskStore(),
 	}
 	// A later WithInstanceStore override must win over the provider's store.
-	e, err := service.NewEngine(
+	e, err := service.NewProcessEngine(
 		service.WithDurableStore(p),
 		service.WithInstanceStore(ms2),
 	)
@@ -97,7 +97,7 @@ func TestWithDurableStorePrecedenceLaterOverrideWins(t *testing.T) {
 
 func TestWithDurableStoreNilProviderIgnored(t *testing.T) {
 	// A nil provider is ignored; the engine falls back to in-memory defaults.
-	e, err := service.NewEngine(service.WithDurableStore(nil))
+	e, err := service.NewProcessEngine(service.WithDurableStore(nil))
 	require.NoError(t, err)
 	require.NotNil(t, e)
 }

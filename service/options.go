@@ -10,7 +10,7 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
-// Option configures NewEngine. Options that receive nil are ignored (the
+// Option configures NewProcessEngine. Options that receive nil are ignored (the
 // coherent in-memory default is kept), except WithDurableStore leaves, which
 // are set as-is so a nil leaf surfaces as ErrNilDependency during validation.
 type Option func(*engineConfig)
@@ -30,7 +30,7 @@ type engineConfig struct {
 }
 
 // WithProcessDriver supplies a pre-built driver (escape hatch for tests /
-// advanced wiring). When set, NewEngine does not build a driver from the leaves.
+// advanced wiring). When set, NewProcessEngine does not build a driver from the leaves.
 func WithProcessDriver(driver *runtime.ProcessDriver) Option {
 	return func(c *engineConfig) {
 		if driver != nil {
@@ -106,7 +106,7 @@ func WithIDGenerator(gen idgen.Generator) Option {
 // rebuilding the driver durable-coherent. Marking the config durable disables
 // the in-memory defaults, so a provider that returns a nil REQUIRED leaf
 // (instance store, definitions, lister, or task store) surfaces as
-// ErrNilDependency during NewEngine validation rather than being silently
+// ErrNilDependency during NewProcessEngine validation rather than being silently
 // replaced by an in-memory default.
 //
 // Precedence is last-writer-wins in option order: a finer per-leaf override
@@ -114,7 +114,7 @@ func WithIDGenerator(gen idgen.Generator) Option {
 // leaf; placed before, it is overwritten by the provider. A nil provider is
 // ignored.
 //
-// The driver NewEngine builds from the provider's leaves wires only the
+// The driver NewProcessEngine builds from the provider's leaves wires only the
 // instance store, definitions, timer store, and call-link store — it does not
 // arm human-task nodes or a scheduler. For a durable graph whose processes use
 // human tasks or timers, supply a fully-wired *runtime.ProcessDriver via

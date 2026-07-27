@@ -37,11 +37,11 @@ type harness struct {
 	taskStore *humantask.MemTaskStore
 }
 
-// newEngine constructs a service.Engine from a harness with the standard leaves,
+// newProcessEngine constructs a service.ProcessEngine from a harness with the standard leaves,
 // mirroring how the old service.New(...) call was wired.
-func (h *harness) newEngine(t *testing.T) *service.Engine {
+func (h *harness) newProcessEngine(t *testing.T) *service.ProcessEngine {
 	t.Helper()
-	e, err := service.NewEngine(
+	e, err := service.NewProcessEngine(
 		service.WithProcessDriver(h.driver),
 		service.WithInstanceStore(h.store),
 		service.WithDefinitions(h.reg),
@@ -204,7 +204,7 @@ func (greetAction) Do(_ context.Context, in map[string]any) (map[string]any, err
 func TestStartInstance(t *testing.T) {
 	def := linearDef()
 	h := newHarness(t, def)
-	svc := h.newEngine(t)
+	svc := h.newProcessEngine(t)
 
 	st, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
 		DefRef: model.Latest("greeting"),
@@ -219,7 +219,7 @@ func TestStartInstance(t *testing.T) {
 // ErrDefinitionNotFound for an unregistered DefRef.
 func TestStartInstanceUnknownDefRef(t *testing.T) {
 	h := newHarness(t) // no defs registered
-	svc := h.newEngine(t)
+	svc := h.newProcessEngine(t)
 
 	_, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
 		DefRef: model.Latest("non-existent"),
@@ -233,7 +233,7 @@ func TestStartInstanceUnknownDefRef(t *testing.T) {
 func TestGetInstance(t *testing.T) {
 	def := linearDef()
 	h := newHarness(t, def)
-	svc := h.newEngine(t)
+	svc := h.newProcessEngine(t)
 
 	// Start an instance first.
 	started, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
@@ -263,7 +263,7 @@ func TestDeliverSignal(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, parked.Status, "must park at signal catch")
 
-	svc := h.newEngine(t)
+	svc := h.newProcessEngine(t)
 
 	// DeliverSignal resumes the instance.
 	final, err := svc.DeliverSignal(t.Context(), service.DeliverSignalRequest{
@@ -280,7 +280,7 @@ func TestDeliverSignal(t *testing.T) {
 func TestDeliverSignalInstanceNotFound(t *testing.T) {
 	def := signalCatchDef("approved")
 	h := newHarness(t, def)
-	svc := h.newEngine(t)
+	svc := h.newProcessEngine(t)
 
 	_, err := svc.DeliverSignal(t.Context(), service.DeliverSignalRequest{
 		InstanceID: "no-such-id",
@@ -295,7 +295,7 @@ func TestDeliverSignalInstanceNotFound(t *testing.T) {
 func TestHumanTaskLifecycle(t *testing.T) {
 	def := approvalDef()
 	h := newHarness(t, def)
-	svc := h.newEngine(t)
+	svc := h.newProcessEngine(t)
 
 	ctx := t.Context()
 
@@ -395,7 +395,7 @@ func TestCompleteTaskValidatesCompletionOutput(t *testing.T) {
 			t.Parallel()
 
 			h := newHarness(t, def)
-			svc := h.newEngine(t)
+			svc := h.newProcessEngine(t)
 			ctx := t.Context()
 
 			parked, err := h.driver.Drive(ctx, def, "approve-validated-1", nil)
@@ -427,7 +427,7 @@ func TestDeliverMessage(t *testing.T) {
 	_, err := h.driver.Drive(t.Context(), def, "order-100", map[string]any{"orderId": "100"})
 	require.NoError(t, err)
 
-	svc := h.newEngine(t)
+	svc := h.newProcessEngine(t)
 
 	err = svc.DeliverMessage(t.Context(), service.DeliverMessageRequest{
 		Name:           "order-shipped",
@@ -446,7 +446,7 @@ func TestDeliverMessage(t *testing.T) {
 func TestListInstances(t *testing.T) {
 	def := linearDef()
 	h := newHarness(t, def)
-	svc := h.newEngine(t)
+	svc := h.newProcessEngine(t)
 
 	ctx := t.Context()
 
@@ -475,7 +475,7 @@ func TestListInstances(t *testing.T) {
 // simply does nothing (ADR-0121).
 func TestDeliverMessageNoMatchIsNoop(t *testing.T) {
 	h := newHarness(t) // no defs registered
-	svc := h.newEngine(t)
+	svc := h.newProcessEngine(t)
 
 	err := svc.DeliverMessage(t.Context(), service.DeliverMessageRequest{
 		Name:           "order-shipped",
@@ -501,7 +501,7 @@ func TestReassignTaskUnauthorized(t *testing.T) {
 
 	// Claim the task first (required for Reassign's "from" check).
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
-	svc := h.newEngine(t)
+	svc := h.newProcessEngine(t)
 
 	_, err = svc.ClaimTask(ctx, service.ClaimTaskRequest{
 		TaskToken: taskToken,
@@ -537,7 +537,7 @@ func TestDeliverSignalDefinitionNotFound(t *testing.T) {
 
 	// Build a registry WITHOUT the definition so resolveDefinition fails.
 	emptyReg := kernel.NewMapDefinitionRegistry()
-	svc, err := service.NewEngine(
+	svc, err := service.NewProcessEngine(
 		service.WithProcessDriver(h.driver),
 		service.WithInstanceStore(h.store),
 		service.WithDefinitions(emptyReg),
@@ -555,11 +555,11 @@ func TestDeliverSignalDefinitionNotFound(t *testing.T) {
 	assert.ErrorIs(t, err, kernel.ErrDefinitionNotFound)
 }
 
-// TestNewEngineDefaultClockNoPanic verifies that NewEngine works without a clock
-// option and returns a non-nil Engine (default clockwork.NewRealClock() is applied).
+// TestNewEngineDefaultClockNoPanic verifies that NewProcessEngine works without a clock
+// option and returns a non-nil ProcessEngine (default clockwork.NewRealClock() is applied).
 func TestNewEngineDefaultClockNoPanic(t *testing.T) {
 	h := newHarness(t)
-	e, err := service.NewEngine(
+	e, err := service.NewProcessEngine(
 		service.WithProcessDriver(h.driver),
 		service.WithInstanceStore(h.store),
 		service.WithDefinitions(h.reg),
@@ -574,7 +574,7 @@ func TestNewEngineDefaultClockNoPanic(t *testing.T) {
 func TestNewEngineWithClockOption(t *testing.T) {
 	h := newHarness(t)
 	fake := clockwork.NewFakeClockAt(time.Unix(1000, 0))
-	e, err := service.NewEngine(
+	e, err := service.NewProcessEngine(
 		service.WithProcessDriver(h.driver),
 		service.WithInstanceStore(h.store),
 		service.WithDefinitions(h.reg),

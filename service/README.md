@@ -32,7 +32,7 @@ Import path: `github.com/kartaladev/wrkflw/service`
 
 ## The `Service` interface
 
-`Service` is implemented by `*Engine`. Every method takes `ctx context.Context`
+`Service` is implemented by `*ProcessEngine`. Every method takes `ctx context.Context`
 first. Domain errors (`runtime.ErrInstanceNotFound`, `runtime.ErrDefinitionNotFound`,
 `authz.ErrNotAuthorized`, `runtime.ErrConcurrentUpdate`, `humantask.ErrTaskNotFound`)
 are propagated **as-is** so the transport layer can classify them.
