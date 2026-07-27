@@ -238,7 +238,6 @@ All packages live directly at the module root — no `pkg/` prefix.
 | `eventing` | Eventing façade for publishing domain events via the transactional outbox. |
 | `scheduler` | Façade over the timer/deadline scheduler (gocron behind the abstraction). |
 | `observability` | Metrics, traces, and `slog` wiring at the runtime boundary. |
-| `clock` | `clock.Clock` time abstraction. Supply `clock.System()` in production; inject a fake in tests. |
 | `service` | Application-layer `Service` façade consumed by transport adapters. |
 
 Implementation details a consumer must not import live under `internal/`.
@@ -267,7 +266,7 @@ import (
     "github.com/kartaladev/wrkflw/transport/http/stdlib"
 )
 
-// svc is a service.Service (constructed via service.New or wired manually).
+// svc is a service.Service (constructed via service.NewProcessEngine or wired manually).
 var svc service.Service
 
 mux := http.NewServeMux()
@@ -598,7 +597,6 @@ persistence/        # Persistence façade (public)
 eventing/           # Eventing façade (public)
 scheduler/          # Scheduling façade (public)
 observability/      # OTel + slog wiring (public)
-clock/              # Clock abstraction (public)
 service/            # Application-layer Service façade (public)
 internal/           # Non-exported implementation details (consumers must not import)
 examples/           # Reference wiring (illustrative main packages, not a product)

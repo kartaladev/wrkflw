@@ -53,68 +53,78 @@ are propagated **as-is** so the transport layer can classify them.
 
 ---
 
-## Constructing the engine (`New`)
+## Constructing the engine (`NewProcessEngine`)
 
 ```go
-func New(
-    driver    *runtime.ProcessDriver,    // 1. required
-    tasks     *task.TaskService,         // 2. required
-    reg       kernel.DefinitionRegistry, // 3. required
-    store     kernel.InstanceStore,      // 4. required
-    lister    kernel.InstanceLister,     // 5. required
-    taskStore humantask.TaskStore,       // 6. required
-    opts      ...EngineOption,           //    optional
-) *Engine
+func NewProcessEngine(opts ...Option) (*ProcessEngine, error)
 ```
 
-The six required collaborators must be wired by hand (no DI container is imposed):
+`NewProcessEngine` builds the facade from **functional options over a coherent
+in-memory default graph** (ADR-0096/0097/0098; renamed from `NewEngine` in
+ADR-0141). Called with no options it wires a fully-functional, non-durable engine:
+an in-memory instance store, the process-global definition registry, an in-memory
+human-task store, an allow-all authorizer, a real clock
+(`clockwork.NewRealClock()`), `idgen.XID()`, and a driver built over those same
+leaves (so the store the driver writes is the store the reader loads from). It
+returns `ErrNilDependency` when a required leaf resolves to nil (e.g. a
+`DurableProvider` that yields a nil store).
 
-| # | Parameter | Type | Role |
-|---|---|---|---|
-| 1 | `driver` | `*runtime.ProcessDriver` | Drives execution — `Run` / `Deliver` / `DeliverMessage` / `ResolveIncident` / `CancelInstance`. |
-| 2 | `tasks` | `*task.TaskService` (`runtime/task`) | Authorizes human-task ops and returns the resulting engine trigger (`Claim`/`Complete`/`Reassign`). |
-| 3 | `reg` | `kernel.DefinitionRegistry` (`runtime/kernel`) | Resolves `DefRef` strings to `*model.ProcessDefinition`. |
-| 4 | `store` | `kernel.InstanceStore` | Loads instance state for `GetInstance` and definition resolution. |
-| 5 | `lister` | `kernel.InstanceLister` | Enumerates instance summaries for `ListInstances`. |
-| 6 | `taskStore` | `humantask.TaskStore` | Resolves the owning instance ID from a task token in task-lifecycle ops. |
+```go
+// Zero-config, in-memory engine (tests / embedded single-node):
+svc, err := service.NewProcessEngine()
+```
+
+Options override individual leaves; an option that receives nil is ignored (the
+default is kept), except the leaves set together by `WithDurableStore`.
+
+| Option | Effect |
+|---|---|
+| `WithProcessDriver(*runtime.ProcessDriver)` | Supply a pre-built driver (escape hatch for advanced wiring — e.g. one built with `runtime.WithHumanTasks` / `runtime.WithScheduler`). When set, the engine neither builds a driver from the leaves nor starts/stops it. |
+| `WithInstanceStore(kernel.InstanceStore)` | Override the in-memory instance store. |
+| `WithDefinitions(kernel.DefinitionRegistry)` | Override the default process-global definition registry. |
+| `WithLister(kernel.InstanceLister)` | Override the instance lister (defaults to the instance store when it satisfies `kernel.InstanceLister`). |
+| `WithHumanTasks(humantask.TaskStore, authz.Authorizer)` | Override the human-task store and authorizer used to build the internal task service. |
+| `WithClock(clockwork.Clock)` | Override the time source used by the engine, the internal task service, and the default driver. Default `clockwork.NewRealClock()`; a nil clock is ignored. |
+| `WithIDGenerator(idgen.Generator)` | Strategy used to mint every new process-instance ID. Default `idgen.XID()`. |
+| `WithDurableStore(DurableProvider)` | Flip the whole graph durable in one call, setting every leaf from the provider and rebuilding the driver durable-coherent. A durable graph that uses human tasks or timers must also pass a fully-wired driver via `WithProcessDriver` — see the option's doc comment. |
 
 > **Registry key contract:** the `DefinitionRegistry` must be keyed by
 > `"DefID:DefVersion"` so an existing instance can be resolved by its state. Short
 > aliases (e.g. the bare definition ID) may also be registered for `StartInstance`.
 
-**Typical wiring (no DI container):**
+**Explicit wiring (in-memory store + human tasks):**
 
 ```go
-// 1. Build persistence:
-pgStore, _ := persistence.OpenPostgres(ctx, pool)
-taskStore  := humantask.NewMemTaskStore()   // or a SQL-backed one
-lister, _  := persistence.NewLister(pool)
+store, _  := kernel.NewMemInstanceStore()
+taskStore := humantask.NewMemTaskStore()
+reg       := kernel.NewMapDefinitionRegistry(def) // def ...*model.ProcessDefinition (variadic)
+resolver  := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
+az        := authz.RoleAuthorizer{}
 
-// 2. Build authorization:
-az, _, _ := casbinauthz.NewCasbinAuthorizer(
-    casbinauthz.FromStrings(modelText, policyText))
+driver, _ := runtime.NewProcessDriver(
+    runtime.WithActionCatalog(cat),
+    runtime.WithInstanceStore(store),
+    runtime.WithHumanTasks(resolver, taskStore, az),
+)
 
-// 3. Build the process driver:
-reg := kernel.NewMapDefinitionRegistry(map[string]*model.ProcessDefinition{...})
-cat := action.NewMapCatalog(map[string]action.Action{...})
-driver, _ := runtime.NewProcessDriver(cat, pgStore, runtime.WithDefinitions(reg))
-
-// 4. Build TaskService:
-tasks, _ := task.NewTaskService(taskStore, az)
-
-// 5. Assemble the service:
-svc := service.New(driver, tasks, reg, pgStore, lister, taskStore)
+svc, err := service.NewProcessEngine(
+    service.WithProcessDriver(driver),
+    service.WithInstanceStore(store),
+    service.WithDefinitions(reg),
+    service.WithHumanTasks(taskStore, az),
+)
 ```
 
-Assembling this once at startup and injecting `svc` into the transport adapters is
-all that is needed. The service layer holds no goroutines and no persistent
-connections of its own — those belong to the collaborators.
+For durable (Postgres / MySQL / SQLite) wiring, the runnable `examples/production_wiring`,
+`examples/mysql_wiring`, and `examples/sqlite_wiring` open a SQL store
+(`persistence.OpenPostgres` / `OpenMySQL` / `OpenSQLite`) and pass its leaves via
+the granular per-leaf options (`WithInstanceStore`, `WithDefinitions`, …). The
+one-call coherent-graph shortcut — `WithDurableStore(persistence.NewDurableProvider(...))`
+— is illustrated (commented) in `examples/cache_wiring`.
 
-**Options** (`type EngineOption func(*Engine)`):
-
-| Option | Effect |
-|---|---|
-| `WithEngineClock(clk clock.Clock)` | Overrides the time source used to stamp signal triggers. Default `clock.System()`; a nil clock is ignored. |
+Assemble this once at startup and inject `svc` into the transport adapters. The
+service layer holds no goroutines and no persistent connections of its own — those
+belong to the collaborators.
 
 ---
 
