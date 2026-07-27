@@ -91,10 +91,25 @@ release.
   host-local resolution passes `scheduler.WithLocation(time.Local)`. A consumer driving
   `Trigger.Next` directly with a non-UTC `after` now gets a result in that zone. Named zones
   resolve at-times per their DST rules on the live scheduler. In a multi-replica deployment
-  every replica must use the same location. Caveats: a `Cron` trigger under a non-IANA
-  `time.FixedZone` cannot schedule on the live engine (gocron resolves cron by zone name); and
-  an `interval>1` calendar trigger's *reported* first-fire may still differ from the live fire
-  (a separate, pre-existing `calendarNext` day-scan gap, tracked as a follow-up).
+  every replica must use the same location. Caveat: a `Cron` trigger under a non-IANA
+  `time.FixedZone` cannot schedule on the live engine (gocron resolves cron by zone name).
+  (The former caveat that an `interval>1` calendar trigger's reported first-fire could differ
+  from the live fire is closed by ADR-0140, below.)
+
+- **`Trigger.Next`'s calendar (`Daily`/`Weekly`/`Monthly`) first fire is now interval-aware,
+  matching the live scheduler for `interval>1` (ADR-0140).** `calendarNext` previously ignored
+  `interval` on the day-by-day scan it uses to compute the first fire, so for an `interval>1`
+  trigger whose current period's at-times had already passed, it returned the very next
+  matching period-day instead of jumping by `interval` the way the live gocron engine does —
+  the persisted/admin `NextRun` and the `Schedule()`-return value disagreed with the actual
+  fire. `calendarNext` now accepts a scanned day only when its period index (day/week/month,
+  anchored at the `after` instant) is a multiple of `interval`, converging exactly with gocron
+  v2.22.0's own interval-jump logic (verified by an extended
+  `TestNativeScheduler_ScheduleReturnMatchesLocation`, including a large-interval row that
+  exercises the now-`interval`-scaled forward-scan bound). **Behavior change for `interval>1`
+  calendar triggers only** — the value `Next` returns changes (to the correct one);
+  `interval==1` and cron triggers are byte-identical to before. Pre-v0.1.0, no stability
+  promise on this value.
 
 - **`DefinitionRegistry.Lookup(ctx, defRef string)` → `Lookup(ctx, model.Qualifier)`;
   def-ref fields, params, and constructors now typed `definition.Qualifier` (ADR-0101).**

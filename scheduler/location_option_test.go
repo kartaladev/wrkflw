@@ -104,31 +104,100 @@ func TestNativeScheduler_LocationMethod(t *testing.T) {
 // convergence property: Schedule()'s returned NextRun is computed against the
 // same location the live gocron engine resolves at-times in, so the
 // Schedule()-return value equals what Scheduled() (the live surface) reports.
-// Before this change Schedule() always resolved against UTC, so the two
-// diverged whenever WithLocation set a non-UTC zone.
+// Before ADR-0137, Schedule() always resolved against UTC, so the two
+// diverged whenever WithLocation set a non-UTC zone. It is also the
+// correctness oracle for ADR-0140 (interval-aware calendarNext first fire):
+// the interval>1 and large-interval rows prove the pure Schedule()-return
+// value matches the live gocron NextRun, not just the interval==1 case.
 func TestNativeScheduler_ScheduleReturnMatchesLocation(t *testing.T) {
-	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	plusThree := time.FixedZone("plusThree", 3*60*60)
-	clk := clockwork.NewFakeClockAt(start)
-	s, err := scheduler.NewScheduler(scheduler.WithClock(clk), scheduler.WithLocation(plusThree))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = s.Close() })
 
-	sj, err := s.Schedule(t.Context(), mustJob(t, "daily-9am", surfaceKind,
-		scheduler.Daily(1, scheduler.ClockTime{Hour: 9}), func() {}))
-	require.NoError(t, err)
-	// 09:00 at UTC+3 == 06:00 UTC — the Schedule()-return now matches the
-	// live fire, not the (previously UTC-pinned) trigger reference.
-	assert.True(t, sj.NextRun().UTC().Equal(time.Date(2026, 1, 1, 6, 0, 0, 0, time.UTC)),
-		"want 06:00 UTC, got %s", sj.NextRun().UTC())
+	type testCase struct {
+		name   string
+		start  time.Time
+		opts   []scheduler.Option
+		trig   scheduler.Trigger
+		assert func(t *testing.T, sj scheduler.ScheduledJob) // extra, case-specific checks beyond convergence
+	}
 
-	// Prove CONVERGENCE with the live surface — the whole point of the
-	// change: mustJob defaults to ActivationAuto, so Schedule already armed
-	// the job against the live gocron engine. Read the live next-run
-	// straight back via Scheduled and confirm it equals the Schedule()-return
-	// value (both loc-resolved), not just the computed number.
-	live, err := s.Scheduled(t.Context(), "daily-9am")
-	require.NoError(t, err)
-	assert.True(t, live.NextRun().Equal(sj.NextRun()),
-		"Schedule()-return %s must equal live Scheduled() %s", sj.NextRun(), live.NextRun())
+	cases := []testCase{
+		{
+			name:  "interval=1 daily resolves in non-UTC location (ADR-0137 baseline)",
+			start: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			opts:  []scheduler.Option{scheduler.WithLocation(plusThree)},
+			trig:  scheduler.Daily(1, scheduler.ClockTime{Hour: 9}),
+			assert: func(t *testing.T, sj scheduler.ScheduledJob) {
+				// 09:00 at UTC+3 == 06:00 UTC — the Schedule()-return now
+				// matches the live fire, not the (previously UTC-pinned)
+				// trigger reference.
+				assert.True(t, sj.NextRun().UTC().Equal(time.Date(2026, 1, 1, 6, 0, 0, 0, time.UTC)),
+					"want 06:00 UTC, got %s", sj.NextRun().UTC())
+			},
+		},
+		{
+			name:  "daily interval=2 past current day converges with live gocron (ADR-0140)",
+			start: time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC), // past the day's 09:00
+			trig:  scheduler.Daily(2, scheduler.ClockTime{Hour: 9}),
+			assert: func(t *testing.T, sj scheduler.ScheduledJob) {
+				assert.True(t, sj.NextRun().Equal(time.Date(2026, 7, 12, 9, 0, 0, 0, time.UTC)),
+					"want 2026-07-12 09:00 UTC, got %s", sj.NextRun())
+			},
+		},
+		{
+			name:  "weekly interval=2 multi-weekday past current week converges with live gocron (ADR-0140)",
+			start: time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC), // Wednesday, past this week's 09:00
+			trig:  scheduler.Weekly(2, []time.Weekday{time.Monday, time.Wednesday}, scheduler.ClockTime{Hour: 9}),
+			assert: func(t *testing.T, sj scheduler.ScheduledJob) {
+				assert.True(t, sj.NextRun().Equal(time.Date(2026, 8, 3, 9, 0, 0, 0, time.UTC)),
+					"want 2026-08-03 09:00 UTC, got %s", sj.NextRun())
+			},
+		},
+		{
+			name:  "monthly interval=3 day-31 skip-month past current day converges with live gocron (ADR-0140)",
+			start: time.Date(2026, 1, 31, 10, 0, 0, 0, time.UTC), // past the day's 09:00
+			trig:  scheduler.Monthly(3, []int{31}, scheduler.ClockTime{Hour: 9}),
+			assert: func(t *testing.T, sj scheduler.ScheduledJob) {
+				assert.True(t, sj.NextRun().Equal(time.Date(2026, 7, 31, 9, 0, 0, 0, time.UTC)),
+					"want 2026-07-31 09:00 UTC, got %s", sj.NextRun())
+			},
+		},
+		{
+			name:  "monthly large interval exercises the scaled scan bound (ADR-0140 audit F1)",
+			start: time.Date(2026, 1, 28, 10, 0, 0, 0, time.UTC), // past the day's 09:00
+			trig:  scheduler.Monthly(100, []int{28}, scheduler.ClockTime{Hour: 9}),
+			assert: func(t *testing.T, sj scheduler.ScheduledJob) {
+				// interval=100 months is ~8.3 years, past the unscaled 5-year
+				// scan bound (maxCalendarScanDays); without the F1 scale fix
+				// the pure path reports ok=false while gocron still fires.
+				assert.True(t, sj.NextRun().Equal(time.Date(2034, 5, 28, 9, 0, 0, 0, time.UTC)),
+					"want 2034-05-28 09:00 UTC, got %s", sj.NextRun())
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			clk := clockwork.NewFakeClockAt(c.start)
+			opts := append([]scheduler.Option{scheduler.WithClock(clk)}, c.opts...)
+			s, err := scheduler.NewScheduler(opts...)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = s.Close() })
+
+			sj, err := s.Schedule(t.Context(), mustJob(t, "job", surfaceKind, c.trig, func() {}))
+			require.NoError(t, err)
+
+			// Prove CONVERGENCE with the live surface — the whole point of
+			// the change: mustJob defaults to ActivationAuto, so Schedule
+			// already armed the job against the live gocron engine. Read the
+			// live next-run straight back via Scheduled and confirm it
+			// equals the Schedule()-return value (both loc-resolved), not
+			// just the computed number.
+			live, err := s.Scheduled(t.Context(), "job")
+			require.NoError(t, err)
+			assert.True(t, live.NextRun().Equal(sj.NextRun()),
+				"Schedule()-return %s must equal live Scheduled() %s", sj.NextRun(), live.NextRun())
+
+			c.assert(t, sj)
+		})
+	}
 }
