@@ -38,7 +38,11 @@ func ClassifyError(err error) (int, ErrorBody) {
 		// correct — an outcome outside the node's declared set, or none supplied
 		// where the node declares one (ADR-0146). Without these arms they fall to
 		// the 500 default, which hides an actionable 4xx behind an empty body.
-		errors.Is(err, engine.ErrInvalidOutcome), errors.Is(err, engine.ErrOutcomeRequired):
+		errors.Is(err, engine.ErrInvalidOutcome), errors.Is(err, engine.ErrOutcomeRequired),
+		// An empty trigger identity key is a malformed request the caller can fix
+		// by supplying the id (ADR-0152), not a server fault. This changes the
+		// human-task routes from 404/422 and the incident route from 200.
+		errors.Is(err, engine.ErrEmptyTriggerKey):
 		return http.StatusBadRequest, ErrorBody{Error: "bad_request", Message: err.Error()}
 	case errors.Is(err, service.ErrConflict), errors.Is(err, engine.ErrInvalidTransition):
 		return http.StatusUnprocessableEntity, ErrorBody{Error: "conflict_state", Message: err.Error()}

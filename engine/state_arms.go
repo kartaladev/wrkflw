@@ -9,7 +9,11 @@ package engine
 // byte-identical to the pre-embed shape (an anonymous embedded struct's
 // fields are promoted into the parent JSON object — see ADR-0131 and the
 // parity test in state_arms_wire_test.go). At most one of the four fields is
-// non-empty for a given arm (timer XOR signal XOR message).
+// non-empty for a given arm (timer XOR signal XOR message) — EXCEPT an
+// error-boundary arm (armBoundaries, step_boundaries.go:38-70), which carries
+// none of the four fields set at all. The lookup helpers below (armByTimer /
+// armBySignal / armByMessage) must therefore treat an empty identity key as
+// matching NO arm (ADR-0152), not as a wildcard for "the error-boundary arm".
 type triggerMatch struct {
 	// TimerID is the scheduled timer id for timer arms (empty for signal/message arms).
 	TimerID string
@@ -168,11 +172,14 @@ func (a *armedEvent) matchPtr() *triggerMatch                  { return &a.trigg
 func (b *boundaryArm) matchPtr() *triggerMatch                 { return &b.triggerMatch }
 func (e *eventTriggeredSubprocessArm) matchPtr() *triggerMatch { return &e.triggerMatch }
 
-// armByTimer returns a pointer to the first arm in arms whose embedded timer id
-// equals timerID, or nil if none exists. Slice order is preserved (first match
-// wins) and the returned pointer aliases the slice element so callers may mutate
-// it in place.
+// armByTimer returns a pointer to the first arm whose embedded TimerID equals
+// timerID, or nil. An empty timerID matches no arm (ADR-0152): arms of other
+// kinds — and error-boundary arms, which carry NO non-empty match field at all
+// (step_boundaries.go:38-70) — would otherwise all match.
 func armByTimer[T any, PT armMatchable[T]](arms []T, timerID string) *T {
+	if timerID == "" {
+		return nil
+	}
 	for i := range arms {
 		if PT(&arms[i]).matchPtr().TimerID == timerID {
 			return &arms[i]
@@ -182,8 +189,12 @@ func armByTimer[T any, PT armMatchable[T]](arms []T, timerID string) *T {
 }
 
 // armBySignal returns a pointer to the first arm whose embedded signal name
-// equals name, or nil. See armByTimer for the pointer-aliasing contract.
+// equals name, or nil. An empty name matches no arm (ADR-0152) — see armByTimer.
+// See armByTimer for the pointer-aliasing contract.
 func armBySignal[T any, PT armMatchable[T]](arms []T, name string) *T {
+	if name == "" {
+		return nil
+	}
 	for i := range arms {
 		if PT(&arms[i]).matchPtr().Signal == name {
 			return &arms[i]
@@ -193,9 +204,14 @@ func armBySignal[T any, PT armMatchable[T]](arms []T, name string) *T {
 }
 
 // armByMessage returns a pointer to the first arm whose embedded Message equals
-// name and MessageKey equals correlationKey, or nil. See armByTimer for the
-// pointer-aliasing contract.
+// name and MessageKey equals correlationKey, or nil. An empty name matches no arm
+// (ADR-0152). correlationKey is deliberately NOT guarded: an empty key means
+// "uncorrelated" and must keep matching an arm whose MessageKey is also empty.
+// See armByTimer for the pointer-aliasing contract.
 func armByMessage[T any, PT armMatchable[T]](arms []T, name, correlationKey string) *T {
+	if name == "" {
+		return nil
+	}
 	for i := range arms {
 		m := PT(&arms[i]).matchPtr()
 		if m.Message == name && m.MessageKey == correlationKey {
@@ -248,6 +264,10 @@ func (s *InstanceState) armedEventByMessage(name, correlationKey string) *armedE
 // matches the given token ID, returning the TimerIDs of any timer-arm entries so
 // the caller can emit CancelTimer commands for them.
 func (s *InstanceState) removeArmedEventsForGateway(gatewayToken string) []string {
+	// An empty gateway token names no arm (ADR-0152).
+	if gatewayToken == "" {
+		return nil
+	}
 	kept, cancelTimerIDs := removeArmsWhere(s.ArmedEvents, func(ae *armedEvent) bool {
 		return ae.GatewayToken == gatewayToken
 	})
@@ -277,6 +297,10 @@ func (s *InstanceState) boundaryArmByMessage(name, correlationKey string) *bound
 // hostToken, returning the TimerIDs of any timer-boundary arms so the caller
 // can emit CancelTimer commands for them.
 func (s *InstanceState) removeBoundaryArmsForHost(hostToken string) []string {
+	// An empty host token names no arm (ADR-0152).
+	if hostToken == "" {
+		return nil
+	}
 	kept, cancelTimerIDs := removeArmsWhere(s.Boundaries, func(ba *boundaryArm) bool {
 		return ba.HostToken == hostToken
 	})

@@ -1,6 +1,7 @@
 package model_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -2159,6 +2160,193 @@ func TestValidateUserTaskOutcomes(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}
+
+// TestValidateReceiveTaskMessageName covers ADR-0152: a ReceiveTask waits on a
+// NAMED message — engine/step_nodes.go:97-99 assigns tok.AwaitMessage =
+// rt.MessageName unconditionally, unlike the catch-event and boundary paths,
+// which guard != "". A blank name (empty or whitespace-only) parks a token on
+// AwaitMessage that no MessageReceived can ever resume once an empty identity
+// key stops matching a record (ADR-0152's core guard), so the shape is
+// rejected at authoring time rather than left to strand a token at runtime.
+func TestValidateReceiveTaskMessageName(t *testing.T) {
+	t.Parallel()
+
+	// recvDef wraps a single ReceiveTask between start and end.
+	recvDef := func(messageName string) *model.ProcessDefinition {
+		return &model.ProcessDefinition{
+			ID: "recv-name", Version: 1,
+			Nodes: []model.Node{
+				event.NewStart("start"),
+				activity.NewReceiveTask("recv", messageName),
+				event.NewEnd("end"),
+			},
+			Flows: []flow.SequenceFlow{
+				{ID: "f1", Source: "start", Target: "recv"},
+				{ID: "f2", Source: "recv", Target: "end"},
+			},
+		}
+	}
+
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "a named receive task validates",
+			def:  recvDef("order.paid"),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "an unnamed receive task is rejected",
+			def:  recvDef(""),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrEmptyMessageName)
+			},
+		},
+		{
+			name: "a whitespace-only receive task message name is rejected",
+			def:  recvDef("   "),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrEmptyMessageName)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}
+
+// TestValidateBlankEventName covers ADR-0152's authoring-hygiene rule: a
+// SignalName or MessageName that was WRITTEN but carries no visible character
+// is rejected, while a name that is legitimately ABSENT ("") — the way a
+// manual start or an error boundary says "no event trigger at all" — remains
+// valid. This rule must reject the shape without disturbing the event-kind
+// discriminators elsewhere in this file (:271-272 start-trigger family,
+// :503 error-boundary detection, :701 event-subprocess detection), which key
+// off a bare `!= ""` / `== ""` comparison and would silently RECLASSIFY a
+// node (e.g. a boundary with SignalName " " turning into an error boundary)
+// if ever converted to TrimSpace. The "legitimately absent name" case below
+// is what pins that those discriminators were left untouched.
+func TestValidateBlankEventName(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "whitespace-only signal name on a catch event is rejected",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					event.NewIntermediateCatch("catch", event.WithSignalName("   ")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "catch"},
+					{ID: "f2", Source: "catch", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrBlankEventName)
+			},
+		},
+		{
+			name: "whitespace-only message name on a non-ReceiveTask kind is rejected independently",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					event.NewIntermediateCatch("catch", event.WithMessageCorrelator("   ", "")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "catch"},
+					{ID: "f2", Source: "catch", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrBlankEventName)
+			},
+		},
+		{
+			name: "both names whitespace-only on the same node reports once",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					event.NewIntermediateCatch("catch",
+						event.WithSignalName("   "), event.WithMessageCorrelator("  ", "")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "catch"},
+					{ID: "f2", Source: "catch", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrBlankEventName)
+				require.Equal(t, 1, strings.Count(err.Error(), model.ErrBlankEventName.Error()),
+					"a node with both names blank must contribute exactly one ErrBlankEventName")
+			},
+		},
+		{
+			name: "a legitimately absent name on an error boundary stays valid",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewServiceTask("task", activity.WithTaskAction("do-work")),
+					// No options: an error boundary, both SignalName and
+					// MessageName legitimately absent ("").
+					event.NewBoundary("boundary", "task"),
+					event.NewEnd("end"),
+					event.NewEnd("boundary-end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "task"},
+					{ID: "f2", Source: "task", Target: "end"},
+					{ID: "f3", Source: "boundary", Target: "boundary-end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "a normal named catch event stays valid",
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					event.NewIntermediateCatch("catch", event.WithSignalName("go")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "catch"},
+					{ID: "f2", Source: "catch", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			tc.assert(t, model.Validate(tc.def))
 		})
 	}

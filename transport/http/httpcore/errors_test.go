@@ -105,6 +105,25 @@ func TestClassifyErrorOutcomeSentinels(t *testing.T) {
 				assert.Contains(t, body.Message, "outcome")
 			},
 		},
+		{
+			// ADR-0152: a malformed trigger is a caller-correctable input error,
+			// not a server fault.
+			name: "empty trigger key is a bad request",
+			err:  fmt.Errorf("apply trigger: %w", engine.ErrEmptyTriggerKey),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusBadRequest, status)
+				assert.Equal(t, "bad_request", body.Error)
+				assert.NotEmpty(t, body.Message, "a 4xx body must carry an actionable message")
+			},
+		},
+		{
+			name: "wrapped empty trigger key is still a bad request",
+			err:  fmt.Errorf("service: %w", fmt.Errorf("engine: %w", engine.ErrEmptyTriggerKey)),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusBadRequest, status)
+				assert.Equal(t, "bad_request", body.Error)
+			},
+		},
 	}
 
 	for _, tc := range cases {

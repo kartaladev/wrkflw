@@ -239,3 +239,24 @@ func TestTargetNode(t *testing.T) {
 		})
 	}
 }
+
+// TestMessageTargetNodeScopedEmptyName pins ADR-0152's delegation contract:
+// messageTargetNodeScoped carries NO guard of its own and inherits one from the
+// message lookups in step_state.go. Before the fix it resolved tokActive — the
+// first token whose AwaitMessage AND AwaitMessageKey are both empty.
+func TestMessageTargetNodeScopedEmptyName(t *testing.T) {
+	t.Parallel()
+
+	s := &InstanceState{
+		Tokens: []Token{
+			{ID: "tokActive", State: TokenActive, NodeID: "nActive", ScopeID: "sc1"},
+			{ID: "tokMsg", State: TokenWaiting, NodeID: "nMsg", ScopeID: "sc2", AwaitMessage: "msg"},
+		},
+	}
+
+	nodeID, scopeID, ok := s.messageTargetNodeScoped("", "")
+
+	assert.False(t, ok, "an empty message name resolves no target")
+	assert.Empty(t, nodeID)
+	assert.Empty(t, scopeID)
+}

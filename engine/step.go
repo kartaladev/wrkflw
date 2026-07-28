@@ -75,6 +75,12 @@ type StepResult struct {
 // outgoing flow — the engine takes the first matching flow in definition order
 // and does not detect ambiguous multi-unconditional configurations.
 func Step(ctx context.Context, def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error) {
+	// Reject a malformed trigger before any work: an empty identity key names no
+	// record, so there is nothing to dispatch it to (ADR-0152). Running before
+	// cloneState keeps a rejected trigger free of side effects.
+	if err := validateTriggerKey(trg); err != nil {
+		return StepResult{}, err
+	}
 	s := cloneState(st)
 	sp := &s
 	// Install the id-generation seam on the working clone for the duration of
