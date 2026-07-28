@@ -1,8 +1,9 @@
 package kernel
 
 import (
+	"cmp"
 	"context"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -95,14 +96,12 @@ func (s *MemTimerStore) ListArmed(_ context.Context) ([]ArmedTimer, error) {
 		out = append(out, t)
 	}
 	s.mu.Unlock()
-	sort.Slice(out, func(i, j int) bool {
-		if !out[i].NextRun.Equal(out[j].NextRun) {
-			return out[i].NextRun.Before(out[j].NextRun)
-		}
-		if out[i].InstanceID != out[j].InstanceID {
-			return out[i].InstanceID < out[j].InstanceID
-		}
-		return out[i].TimerID < out[j].TimerID
+	slices.SortFunc(out, func(a, b ArmedTimer) int {
+		return cmp.Or(
+			a.NextRun.Compare(b.NextRun),
+			cmp.Compare(a.InstanceID, b.InstanceID),
+			cmp.Compare(a.TimerID, b.TimerID),
+		)
 	})
 	return out, nil
 }

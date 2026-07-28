@@ -59,6 +59,32 @@ func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, 
 	return nil
 }
 
+// joinedAt reports whether t is a token already parked at nodeID's join within
+// scopeID. The ScopeID term is what keeps two concurrently-open scopes that
+// share the same inner join node ID counted and consumed independently.
+func joinedAt(t *Token, nodeID, scopeID string) bool {
+	return t.NodeID == nodeID && t.State == TokenJoining && t.ScopeID == scopeID
+}
+
+// fireJoin consumes every token parked at node's join in scopeID (closing their
+// visits) and places one Active token per outgoing flow, in the same scope. It
+// is the shared tail of tryParallelJoin and tryInclusiveJoin, which differ only
+// in the readiness test that decides when to call it.
+func (s *InstanceState) fireJoin(def *model.ProcessDefinition, node model.Node, scopeID string, at time.Time) {
+	kept := make([]Token, 0, len(s.Tokens))
+	for _, t := range s.Tokens {
+		if joinedAt(&t, node.ID(), scopeID) {
+			s.closeVisit(t.ID, t.NodeID, at)
+			continue
+		}
+		kept = append(kept, t)
+	}
+	s.Tokens = kept
+	for _, f := range def.Outgoing(node.ID()) {
+		s.placeTokenInScope(f.Target, scopeID, at)
+	}
+}
+
 // tryParallelJoin parks the arriving token at a converging parallel gateway and,
 // once a token has arrived on every incoming flow within the SAME scope, consumes
 // them all and forks to the gateway's outgoing flows. Until then the token waits
@@ -75,7 +101,7 @@ func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token
 
 	arrived := 0
 	for i := range s.Tokens {
-		if s.Tokens[i].NodeID == node.ID() && s.Tokens[i].State == TokenJoining && s.Tokens[i].ScopeID == scopeID {
+		if joinedAt(&s.Tokens[i], node.ID(), scopeID) {
 			arrived++
 		}
 	}
@@ -85,18 +111,7 @@ func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token
 
 	// Fire: remove all tokens parked at this join IN THIS SCOPE (closing their visits),
 	// then create one Active token per outgoing flow.
-	kept := make([]Token, 0, len(s.Tokens))
-	for _, t := range s.Tokens {
-		if t.NodeID == node.ID() && t.State == TokenJoining && t.ScopeID == scopeID {
-			s.closeVisit(t.ID, t.NodeID, at)
-			continue
-		}
-		kept = append(kept, t)
-	}
-	s.Tokens = kept
-	for _, f := range def.Outgoing(node.ID()) {
-		s.placeTokenInScope(f.Target, scopeID, at)
-	}
+	s.fireJoin(def, node, scopeID, at)
 }
 
 // tryInclusiveJoin parks the arriving token at an OR-join and fires only once no
@@ -115,7 +130,7 @@ func (s *InstanceState) tryInclusiveJoin(def *model.ProcessDefinition, tok *Toke
 	canReach := nodesThatCanReach(def, node.ID())
 	for i := range s.Tokens {
 		t := &s.Tokens[i]
-		if t.NodeID == node.ID() && t.State == TokenJoining && t.ScopeID == scopeID {
+		if joinedAt(t, node.ID(), scopeID) {
 			continue // already arrived at the join in this scope
 		}
 		if t.ScopeID == scopeID && canReach[t.NodeID] {
@@ -124,18 +139,7 @@ func (s *InstanceState) tryInclusiveJoin(def *model.ProcessDefinition, tok *Toke
 	}
 
 	// Fire: consume all tokens parked at this join IN THIS SCOPE, then fork to outgoing flows.
-	kept := make([]Token, 0, len(s.Tokens))
-	for _, t := range s.Tokens {
-		if t.NodeID == node.ID() && t.State == TokenJoining && t.ScopeID == scopeID {
-			s.closeVisit(t.ID, t.NodeID, at)
-			continue
-		}
-		kept = append(kept, t)
-	}
-	s.Tokens = kept
-	for _, f := range def.Outgoing(node.ID()) {
-		s.placeTokenInScope(f.Target, scopeID, at)
-	}
+	s.fireJoin(def, node, scopeID, at)
 }
 
 // nodesThatCanReach returns the set of node IDs (excluding target) from which

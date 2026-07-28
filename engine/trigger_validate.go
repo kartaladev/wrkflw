@@ -2,26 +2,41 @@ package engine
 
 import "fmt"
 
+// triggerKey names the identity field validateTriggerKey requires to be
+// non-empty and reads that field off the trigger.
+//
+// The bare type assertion inside read is safe only while a row's key names the
+// same concrete type the assertion names. That pairing is not expressible in the
+// type system, so TestValidateTriggerKindsAreExhaustive calls read on every row
+// to pin it: a mis-paired row panics there rather than inside Step.
+type triggerKey struct {
+	field string
+	read  func(Trigger) string
+}
+
 // validatedTriggerKinds maps a trigger's type name to the identity field
-// validateTriggerKey requires to be non-empty.
+// validateTriggerKey requires to be non-empty, paired with the accessor that
+// reads it. The map is the single registration point: naming the field and
+// extracting its value are one row, so a variant cannot be registered for the
+// error message while its value silently goes unread.
 //
 // exemptTriggerKinds lists the variants deliberately NOT validated, each with the
 // reason. Together the two sets must cover every variant of the sealed Trigger
 // interface; TestValidateTriggerKindsAreExhaustive enforces that, so a variant
 // added later cannot silently fall through validateTriggerKey's default arm.
 var (
-	validatedTriggerKinds = map[string]string{
-		"engine.ActionCompleted":         "CommandID",
-		"engine.ActionFailed":            "CommandID",
-		"engine.SubInstanceCompleted":    "CommandID",
-		"engine.SubInstanceFailed":       "CommandID",
-		"engine.HumanCompleted":          "TaskID",
-		"engine.HumanClaimed":            "TaskID",
-		"engine.HumanReassigned":         "TaskID",
-		"engine.HumanCandidatesResolved": "TaskID",
-		"engine.SignalReceived":          "Name",
-		"engine.MessageReceived":         "Name",
-		"engine.ResolveIncident":         "IncidentID",
+	validatedTriggerKinds = map[string]triggerKey{
+		"engine.ActionCompleted":         {"CommandID", func(t Trigger) string { return t.(ActionCompleted).CommandID }},
+		"engine.ActionFailed":            {"CommandID", func(t Trigger) string { return t.(ActionFailed).CommandID }},
+		"engine.SubInstanceCompleted":    {"CommandID", func(t Trigger) string { return t.(SubInstanceCompleted).CommandID }},
+		"engine.SubInstanceFailed":       {"CommandID", func(t Trigger) string { return t.(SubInstanceFailed).CommandID }},
+		"engine.HumanCompleted":          {"TaskID", func(t Trigger) string { return t.(HumanCompleted).TaskID }},
+		"engine.HumanClaimed":            {"TaskID", func(t Trigger) string { return t.(HumanClaimed).TaskID }},
+		"engine.HumanReassigned":         {"TaskID", func(t Trigger) string { return t.(HumanReassigned).TaskID }},
+		"engine.HumanCandidatesResolved": {"TaskID", func(t Trigger) string { return t.(HumanCandidatesResolved).TaskID }},
+		"engine.SignalReceived":          {"Name", func(t Trigger) string { return t.(SignalReceived).Name }},
+		"engine.MessageReceived":         {"Name", func(t Trigger) string { return t.(MessageReceived).Name }},
+		"engine.ResolveIncident":         {"IncidentID", func(t Trigger) string { return t.(ResolveIncident).IncidentID }},
 	}
 
 	exemptTriggerKinds = map[string]string{
@@ -55,37 +70,12 @@ func triggerTypeName(trg Trigger) string { return fmt.Sprintf("%T", trg) }
 //
 // MessageReceived validates Name only — an empty CorrelationKey means "uncorrelated".
 func validateTriggerKey(trg Trigger) error {
-	field, ok := validatedTriggerKinds[triggerTypeName(trg)]
+	k, ok := validatedTriggerKinds[triggerTypeName(trg)]
 	if !ok {
 		return nil
 	}
-	var key string
-	switch t := trg.(type) {
-	case ActionCompleted:
-		key = t.CommandID
-	case ActionFailed:
-		key = t.CommandID
-	case SubInstanceCompleted:
-		key = t.CommandID
-	case SubInstanceFailed:
-		key = t.CommandID
-	case HumanCompleted:
-		key = t.TaskID
-	case HumanClaimed:
-		key = t.TaskID
-	case HumanReassigned:
-		key = t.TaskID
-	case HumanCandidatesResolved:
-		key = t.TaskID
-	case SignalReceived:
-		key = t.Name
-	case MessageReceived:
-		key = t.Name
-	case ResolveIncident:
-		key = t.IncidentID
-	}
-	if key == "" {
-		return fmt.Errorf("%w: %T.%s", ErrEmptyTriggerKey, trg, field)
+	if k.read(trg) == "" {
+		return fmt.Errorf("%w: %T.%s", ErrEmptyTriggerKey, trg, k.field)
 	}
 	return nil
 }

@@ -165,13 +165,14 @@ func checkMessageStartUnique(reg *kernel.MemDefinitionRegistry, def *model.Proce
 // start nodes of def itself — a case structural validation does not catch,
 // since ADR-0121 permits any number of event-triggered start events.
 func messageStartNames(def *model.ProcessDefinition) (map[string]bool, error) {
+	// Kept rather than folded into startEvents' own nil handling: a nil def must
+	// yield a nil map, not the non-nil empty one the loop below would return.
 	if def == nil {
 		return nil, nil
 	}
 	names := make(map[string]bool)
-	for _, n := range def.StartNodes() {
-		se, ok := n.(event.StartEvent)
-		if !ok || se.MessageName == "" {
+	for se := range startEvents(def) {
+		if se.MessageName == "" {
 			continue
 		}
 		if names[se.MessageName] {
@@ -243,11 +244,7 @@ func mixedSubprocessStartWarnings(def *model.ProcessDefinition) []string {
 			continue
 		}
 		var manual, eventTriggered int
-		for _, s := range sp.Subprocess.StartNodes() {
-			se, ok := s.(event.StartEvent)
-			if !ok {
-				continue
-			}
+		for se := range startEvents(sp.Subprocess) {
 			if se.SignalName != "" || se.MessageName != "" || !se.Timer.IsZero() {
 				eventTriggered++
 			} else {

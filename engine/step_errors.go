@@ -251,11 +251,7 @@ func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *
 	// must not be left open in the TaskStore when the instance fails (ADR-0089).
 	cmds = append(cmds, s.cancelOpenTasks()...)
 	cmds = append(cmds, FailInstance{Err: errorCode})
-	cmds = append(cmds, s.cancelAllTimers()...)
-	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
-	for _, timerID := range s.removeAllEventTriggeredSubprocessArms() {
-		cmds = append(cmds, CancelTimer{TimerID: timerID})
-	}
+	cmds = append(cmds, s.cancelAllScheduledWork()...)
 	return cmds, nil
 }
 
@@ -393,9 +389,7 @@ func propagateError(ctx context.Context, top *model.ProcessDefinition, s *Instan
 				cmds = append(cmds, cancelTokenWaits(s, &tok, at, CloseKindBoundaryInterrupted)...)
 			}
 			// Cancel ESP arms for the scope.
-			for _, timerID := range s.removeEventTriggeredSubprocessArmsForScope(errScopeID) {
-				cmds = append(cmds, CancelTimer{TimerID: timerID})
-			}
+			cmds = appendCancelTimers(cmds, s.removeEventTriggeredSubprocessArmsForScope(errScopeID))
 			s.closeScope(errScopeID)
 			return cmds
 		}

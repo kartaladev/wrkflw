@@ -63,29 +63,6 @@ func (o *driverObs) tracer() trace.Tracer {
 	return o.tel.Tracer
 }
 
-// isTerminal reports whether s is a terminal process-instance status
-// (completed, failed, or terminated).
-func isTerminal(s engine.Status) bool {
-	return s == engine.StatusCompleted || s == engine.StatusFailed || s == engine.StatusTerminated
-}
-
-// statusName maps a process-instance [engine.Status] to a stable, lowercase
-// label string suitable for use as a metric attribute.
-func statusName(s engine.Status) string {
-	switch s {
-	case engine.StatusCompleted:
-		return "completed"
-	case engine.StatusFailed:
-		return "failed"
-	case engine.StatusTerminated:
-		return "terminated"
-	case engine.StatusCompensating:
-		return "compensating"
-	default:
-		return "running"
-	}
-}
-
 // triggerName returns a stable, low-cardinality label for a trigger type.
 // It strips the "engine." package prefix from the concrete Go type name so
 // the label reads as, e.g., "StartInstance" rather than "engine.StartInstance".

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -349,11 +350,6 @@ func onOff(v bool) string {
 	return "off"
 }
 
-// logConstructionSummary emits a single DEBUG log record summarising the
-// ProcessDriver's wiring after construction. defaultStore is the MemInstanceStore
-// that was created inside NewProcessDriver as the pre-option default; when driver.store
-// still points to that same value after the option loop, the store is in-memory
-// (non-durable); otherwise a custom implementation was supplied.
 // defOrigin returns "default-global" when the driver is using the process-global
 // DefaultDefinitionRegistry and "custom" otherwise, mirroring the storeLabel /
 // catalogLabel helpers in logConstructionSummary.
@@ -364,6 +360,13 @@ func defOrigin(defsReg kernel.DefinitionRegistry) string {
 	return "custom"
 }
 
+// logConstructionSummary emits a single DEBUG log record summarising the
+// ProcessDriver's wiring after construction. defaultStore is the MemInstanceStore
+// that was created inside NewProcessDriver as the pre-option default; when driver.store
+// still points to that same value after the option loop, the store is in-memory
+// (non-durable); otherwise a custom implementation was supplied.
+//
+// default — so a nil there means the consumer supplied their own.
 func (driver *ProcessDriver) logConstructionSummary(defaultStore kernel.InstanceStore, customScheduler bool) {
 	storeLabel := "in-memory(non-durable)"
 	if driver.store != defaultStore {
@@ -376,7 +379,11 @@ func (driver *ProcessDriver) logConstructionSummary(defaultStore kernel.Instance
 	}
 
 	// The driver always has a scheduler after construction: a consumer-injected
-	// one (custom) or the driver-owned in-process default.
+	// one (custom) or the driver-owned in-process default. Take the fact from the
+	// caller rather than inferring it from driver.ownedScheduler: ownership is a
+	// shutdown-lifecycle concern that merely happens to coincide today, and a
+	// future option letting the driver own a consumer-supplied scheduler would
+	// silently make this summary report the wrong wiring.
 	schedulerLabel := "default-inprocess"
 	if customScheduler {
 		schedulerLabel = "custom"
@@ -440,7 +447,7 @@ func (driver *ProcessDriver) Drive(ctx context.Context, def *model.ProcessDefini
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 	} else {
-		span.SetAttributes(attribute.String("wrkflw.status", statusName(out.Status)))
+		span.SetAttributes(attribute.String("wrkflw.status", out.Status.String()))
 	}
 	return out, err
 }
@@ -583,10 +590,15 @@ func (driver *ProcessDriver) deliverLoop(
 			return st, fmt.Errorf("workflow-runtime: validate input: %w", err)
 		}
 
+		// Derived once per step: triggerName reflects over t's dynamic type and
+		// allocates, and both the span attribute and the duration metric below
+		// label the same trigger.
+		triggerLabel := triggerName(t)
+
 		stepCtx, span := driver.obs.tracer().Start(ctx, "wrkflw.step", trace.WithAttributes(
 			attribute.String("wrkflw.instance_id", st.InstanceID),
 			attribute.String("wrkflw.def_id", def.ID),
-			attribute.String("wrkflw.trigger", triggerName(t)),
+			attribute.String("wrkflw.trigger", triggerLabel),
 		))
 		start := driver.clk.Now()
 		res, err := engine.Step(stepCtx, def, st, t, engine.StepOptions{
@@ -601,7 +613,7 @@ func (driver *ProcessDriver) deliverLoop(
 			IDGenerator: driver.idgen,
 		})
 		driver.obs.stepDuration.Record(stepCtx, driver.clk.Now().Sub(start).Seconds(),
-			metric.WithAttributes(attribute.String("trigger", triggerName(t))))
+			metric.WithAttributes(attribute.String("trigger", triggerLabel)))
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -627,7 +639,7 @@ func (driver *ProcessDriver) deliverLoop(
 		}
 		span.SetAttributes(
 			attribute.Int("wrkflw.command_count", len(res.Commands)),
-			attribute.String("wrkflw.status", statusName(st.Status)),
+			attribute.String("wrkflw.status", st.Status.String()),
 		)
 		span.End()
 
@@ -635,10 +647,10 @@ func (driver *ProcessDriver) deliverLoop(
 			driver.obs.instStarted.Add(ctx, 1, metric.WithAttributes(attribute.String("def", def.ID)))
 			driver.obs.instActive.Add(ctx, 1)
 		}
-		if isTerminal(st.Status) && !isTerminal(prevStatus) {
+		if st.Status.IsTerminal() && !prevStatus.IsTerminal() {
 			driver.obs.instCompleted.Add(ctx, 1, metric.WithAttributes(
 				attribute.String("def", def.ID),
-				attribute.String("status", statusName(st.Status)),
+				attribute.String("status", st.Status.String()),
 			))
 			driver.obs.instActive.Add(ctx, -1)
 		}
@@ -656,10 +668,13 @@ func (driver *ProcessDriver) deliverLoop(
 		// treats a missing link as a no-op, so setting CallOutcome unconditionally
 		// on terminal is safe even without special-casing here.
 		var outcome *kernel.CallOutcome
-		if driver.callLinks != nil && isTerminal(st.Status) && !isTerminal(prevStatus) {
+		if driver.callLinks != nil && st.Status.IsTerminal() && !prevStatus.IsTerminal() {
 			switch st.Status {
 			case engine.StatusCompleted:
-				outcome = &kernel.CallOutcome{Completed: true, Output: copyVarsForOutcome(st.Variables)}
+				// Shallow-clone so CallOutcome.Output does not alias the live
+				// InstanceState.Variables map. maps.Clone is nil-in/nil-out, which
+				// preserves the zero value for a variable-less instance.
+				outcome = &kernel.CallOutcome{Completed: true, Output: maps.Clone(st.Variables)}
 			default: // StatusFailed, StatusTerminated, or any other terminal
 				outcome = &kernel.CallOutcome{Completed: false, Err: terminalErr(st)}
 			}

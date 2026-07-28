@@ -32,7 +32,7 @@ func (driver *ProcessDriver) syncSignalBus(st engine.InstanceState) {
 		return
 	}
 	var awaiting []string
-	if !isTerminal(st.Status) {
+	if !st.Status.IsTerminal() {
 		// A terminal instance awaits nothing. A repeatable non-interrupting root
 		// event-sub arm can still be present in a terminal snapshot (ADR-0124), so
 		// leaving its subscription would misroute a later broadcast to a dead
@@ -66,7 +66,7 @@ func (driver *ProcessDriver) syncMsgWaiters(st engine.InstanceState) {
 	// message-start instance). A repeatable non-interrupting root event-sub arm can
 	// still be present in the terminal snapshot, so this guard is required
 	// (ADR-0124); it also retroactively closes the same gap for a never-fired arm.
-	if isTerminal(st.Status) {
+	if st.Status.IsTerminal() {
 		return
 	}
 

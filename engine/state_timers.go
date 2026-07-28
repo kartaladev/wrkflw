@@ -55,6 +55,27 @@ func (s *InstanceState) removeTimer(timerID string) {
 	s.Timers = out
 }
 
+// cancelTimersWhere removes every timer record whose keyOf value equals key
+// (except the timer named by excludeTimerID) and returns their TimerIDs. An
+// empty key names no record and cancels nothing (ADR-0152); an empty
+// excludeTimerID excludes nothing.
+func (s *InstanceState) cancelTimersWhere(key, excludeTimerID string, keyOf func(timerRecord) string) []string {
+	if key == "" {
+		return nil
+	}
+	var toCancel []string
+	out := make([]timerRecord, 0, len(s.Timers))
+	for _, tr := range s.Timers {
+		if keyOf(tr) == key && tr.TimerID != excludeTimerID {
+			toCancel = append(toCancel, tr.TimerID)
+			continue
+		}
+		out = append(out, tr)
+	}
+	s.Timers = out
+	return toCancel
+}
+
 // cancelTimersByTaskID removes all timer records associated with the given
 // taskID (excluding the one already being handled), returning their TimerIDs
 // so the caller can emit CancelTimer commands.
@@ -68,20 +89,7 @@ func (s *InstanceState) removeTimer(timerID string) {
 // excludeTimerID is deliberately NOT guarded: an empty value means "exclude
 // nothing", and five of the seven call sites rely on that.
 func (s *InstanceState) cancelTimersByTaskID(taskID, excludeTimerID string) []string {
-	if taskID == "" {
-		return nil
-	}
-	var toCancel []string
-	out := make([]timerRecord, 0, len(s.Timers))
-	for _, tr := range s.Timers {
-		if tr.TaskID == taskID && tr.TimerID != excludeTimerID {
-			toCancel = append(toCancel, tr.TimerID)
-			continue
-		}
-		out = append(out, tr)
-	}
-	s.Timers = out
-	return toCancel
+	return s.cancelTimersWhere(taskID, excludeTimerID, func(tr timerRecord) string { return tr.TaskID })
 }
 
 // cancelTimersForToken removes all timer records whose Token matches the given
@@ -93,20 +101,7 @@ func (s *InstanceState) cancelTimersByTaskID(taskID, excludeTimerID string) []st
 //
 // An empty tokenID names no token (ADR-0152). excludeTimerID is NOT guarded.
 func (s *InstanceState) cancelTimersForToken(tokenID, excludeTimerID string) []string {
-	if tokenID == "" {
-		return nil
-	}
-	var toCancel []string
-	out := make([]timerRecord, 0, len(s.Timers))
-	for _, tr := range s.Timers {
-		if tr.Token == tokenID && tr.TimerID != excludeTimerID {
-			toCancel = append(toCancel, tr.TimerID)
-			continue
-		}
-		out = append(out, tr)
-	}
-	s.Timers = out
-	return toCancel
+	return s.cancelTimersWhere(tokenID, excludeTimerID, func(tr timerRecord) string { return tr.Token })
 }
 
 // cancelAllTimers returns a CancelTimer command for every outstanding timer

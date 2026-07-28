@@ -4,6 +4,7 @@ package authz_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/kartaladev/wrkflw/authz"
@@ -203,6 +204,77 @@ func TestActorClone(t *testing.T) {
 	}
 }
 
+// TestCloneActors verifies that CloneActors deep-copies every element, so a
+// caller holding the result cannot mutate the source slice's actors. It is the
+// single slice-level deep copy shared by the engine, the runtime driver, and
+// [humantask.HumanTask.Clone]; nil-ness is preserved because callers distinguish
+// "no candidates resolved" (nil) from "resolved to nobody" (empty).
+func TestCloneActors(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		actors []authz.Actor
+		assert func(t *testing.T, orig, clone []authz.Actor)
+	}
+
+	cases := []testCase{
+		{
+			name:   "nil in nil out",
+			actors: nil,
+			assert: func(t *testing.T, _, clone []authz.Actor) {
+				t.Helper()
+				require.Nil(t, clone)
+			},
+		},
+		{
+			name:   "non-nil empty in non-nil empty out",
+			actors: []authz.Actor{},
+			assert: func(t *testing.T, _, clone []authz.Actor) {
+				t.Helper()
+				require.NotNil(t, clone)
+				require.Empty(t, clone)
+			},
+		},
+		{
+			name: "elements are deep-copied",
+			actors: []authz.Actor{
+				{ID: "u-jane", Roles: []string{"manager"}, Attributes: map[string]any{"email": "jane@acme.com"}},
+				{ID: "u-john", Roles: []string{"clerk"}, Attributes: map[string]any{"email": "john@acme.com"}},
+			},
+			assert: func(t *testing.T, orig, clone []authz.Actor) {
+				t.Helper()
+				require.Len(t, clone, 2)
+				require.Equal(t, orig, clone)
+
+				clone[0].Roles[0] = "mutated"
+				clone[1].Attributes["email"] = "mutated"
+
+				require.Equal(t, "manager", orig[0].Roles[0])
+				require.Equal(t, "john@acme.com", orig[1].Attributes["email"])
+			},
+		},
+		{
+			name:   "nil element fields stay nil",
+			actors: []authz.Actor{{ID: "u-jane"}},
+			assert: func(t *testing.T, _, clone []authz.Actor) {
+				t.Helper()
+				require.Len(t, clone, 1)
+				require.Equal(t, "u-jane", clone[0].ID)
+				require.Nil(t, clone[0].Roles)
+				require.Nil(t, clone[0].Attributes)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, tc.actors, authz.CloneActors(tc.actors))
+		})
+	}
+}
+
 // TestActorJSONWireShape pins the actor's wire form to {id, roles, attributes}.
 // The human-task audit renders actors by faithful passthrough (ADR-0147), so the
 // actor type itself carries the wire contract rather than each view re-mapping it.
@@ -253,4 +325,32 @@ func TestActorJSONWireShape(t *testing.T) {
 			require.Equal(t, []string{"r"}, legacy.Roles)
 		})
 	}
+}
+
+// ExampleCloneActors shows that the returned actors are fully independent of the
+// input: mutating a clone's Roles slice or Attributes map leaves the original
+// untouched. That isolation is why callers crossing a task or instance boundary
+// must clone rather than share.
+func ExampleCloneActors() {
+	original := []authz.Actor{{
+		ID:         "u-1",
+		Roles:      []string{"reviewer"},
+		Attributes: map[string]any{"region": "eu"},
+	}}
+
+	cloned := authz.CloneActors(original)
+	cloned[0].Roles[0] = "admin"
+	cloned[0].Attributes["region"] = "us"
+
+	fmt.Println(original[0].Roles[0], original[0].Attributes["region"])
+	fmt.Println(cloned[0].Roles[0], cloned[0].Attributes["region"])
+
+	// nil in, nil out — an unresolved candidate list stays distinguishable from
+	// one that resolved to nobody.
+	fmt.Println(authz.CloneActors(nil) == nil, authz.CloneActors([]authz.Actor{}) == nil)
+
+	// Output:
+	// reviewer eu
+	// admin us
+	// true false
 }

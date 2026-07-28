@@ -124,23 +124,17 @@ type eventTriggeredSubprocessArm struct {
 // arms) that has a non-empty TimerID, then clears both slices. Iteration is in
 // slice order (ArmedEvents first, then Boundaries) for determinism.
 //
-// This is called alongside cancelAllTimers on ALL terminal paths to prevent
-// gateway and boundary timer arms from leaking as orphaned scheduled tasks in
-// the runtime scheduler. Callers:
-//   - handleCancelRequested (admin cancel, no compensation records → StatusTerminated)
-//   - handleSubInstanceFailed (child instance failed → parent StatusFailed)
-//   - propagateError (unhandled-error, no compensation records → terminal path)
-//   - beginCompensation (cancel in-flight tokens at compensation walk-start)
-//   - applyTerminate (compensation walk finish, reached via stepCompensationFinish
-//     → applyFinish, when the walk ends the instance rather than resuming it)
+// Cancelling these arms prevents gateway and boundary timer arms from leaking
+// as orphaned scheduled tasks in the runtime scheduler. Terminal paths do not
+// call this directly — they call cancelAllScheduledWork, which composes it with
+// cancelAllTimers and the across-all-scopes event-sub-process sweep.
 //
-// This function does NOT drain s.EventTriggeredSubprocesses. beginCompensation
-// invokes it at walk-START, where root-scope ESP arms must survive — the walk
-// may still resume the instance (a ReverseNode target) rather than end it, so
-// their timers must keep running. The other four callers above run once the
-// instance is genuinely terminating and each additionally drains ESP arms
-// itself, via removeAllEventTriggeredSubprocessArms (a sweep across ALL
-// scopes) — not through this function.
+// This function deliberately does NOT drain s.EventTriggeredSubprocesses, which
+// is why it remains separately callable: beginCompensation cancels in-flight
+// tokens at compensation walk-START, where root-scope ESP arms must survive —
+// the walk may still resume the instance (a ReverseNode target) rather than end
+// it, so their timers must keep running. Any path that is genuinely terminating
+// wants cancelAllScheduledWork instead.
 func (s *InstanceState) cancelAllArmsAndBoundaries() []Command {
 	var cmds []Command
 	for _, ae := range s.ArmedEvents {
@@ -156,6 +150,37 @@ func (s *InstanceState) cancelAllArmsAndBoundaries() []Command {
 	}
 	s.Boundaries = nil
 	return cmds
+}
+
+// appendCancelTimers appends a CancelTimer command to cmds for each id in
+// timerIDs and returns the result. It is the single place the state layer's
+// []string timer-id removals are turned into commands; an empty timerIDs
+// leaves cmds untouched (a nil accumulator stays nil).
+func appendCancelTimers(cmds []Command, timerIDs []string) []Command {
+	for _, id := range timerIDs {
+		cmds = append(cmds, CancelTimer{TimerID: id})
+	}
+	return cmds
+}
+
+// cancelAllScheduledWork returns the CancelTimer commands that retire every
+// piece of scheduler work the instance still owns — outstanding timer records,
+// event-gateway and boundary timer arms, and event-sub-process arms across all
+// scopes — and clears the corresponding state.
+//
+// It is the sweep for ABNORMAL termination: cancel, unhandled error, child
+// failure, force-terminate, and the compensation-walk terminate. Normal
+// completion does NOT run it — exitRootScope ends the instance without a sweep,
+// and a repeatable non-interrupting root event-sub arm is deliberately allowed
+// to survive into a terminal snapshot (ADR-0124). Do not wire this into the
+// normal-completion path.
+//
+// Keeping it as one definition means a newly added arm family is retired across
+// all the abnormal paths at once.
+func (s *InstanceState) cancelAllScheduledWork() []Command {
+	cmds := s.cancelAllTimers()
+	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
+	return appendCancelTimers(cmds, s.removeAllEventTriggeredSubprocessArms())
 }
 
 // armMatchable constrains a *T that exposes the arm's embedded triggerMatch,
@@ -240,6 +265,30 @@ func removeArmsWhere[T any, PT armMatchable[T]](arms []T, owned func(*T) bool) (
 		kept = append(kept, arms[i])
 	}
 	return kept, cancelTimerIDs
+}
+
+// messageWaitersOf returns the (name, correlation key) pair of every MESSAGE
+// arm in arms, in slice order; nil when none is armed.
+func messageWaitersOf[T any, PT armMatchable[T]](arms []T) []MessageWaiter {
+	var out []MessageWaiter
+	for i := range arms {
+		if m := PT(&arms[i]).matchPtr(); m.Message != "" {
+			out = append(out, MessageWaiter{Name: m.Message, CorrelationKey: m.MessageKey})
+		}
+	}
+	return out
+}
+
+// signalNamesOf returns the signal name of every SIGNAL arm in arms, in slice
+// order; nil when none is armed.
+func signalNamesOf[T any, PT armMatchable[T]](arms []T) []string {
+	var out []string
+	for i := range arms {
+		if m := PT(&arms[i]).matchPtr(); m.Signal != "" {
+			out = append(out, m.Signal)
+		}
+	}
+	return out
 }
 
 // armedEventByTimer returns a pointer to the first armedEvent with the given

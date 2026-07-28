@@ -90,10 +90,7 @@ func handleActionCompleted(ctx context.Context, def *model.ProcessDefinition, s 
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 	}
 	// Cancel any boundary arms on this host token before advancing.
-	var preCmds []Command
-	for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
-		preCmds = append(preCmds, CancelTimer{TimerID: timerID})
-	}
+	preCmds := appendCancelTimers(nil, s.removeBoundaryArmsForHost(tok.ID))
 	// Resolve the effective definition for the token's scope so we can look up
 	// the node and check for a CompensateAction BEFORE merging output.
 	tdef, err := defForScope(def, s, tok.ScopeID)
@@ -233,11 +230,7 @@ func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s 
 	// so a terminated instance no longer surfaces tasks in inbox queries (ADR-0088).
 	cmds = append(cmds, s.cancelOpenTasks()...)
 	cmds = append(cmds, FailInstance{Err: "cancelled"})
-	cmds = append(cmds, s.cancelAllTimers()...)
-	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
-	for _, timerID := range s.removeAllEventTriggeredSubprocessArms() {
-		cmds = append(cmds, CancelTimer{TimerID: timerID})
-	}
+	cmds = append(cmds, s.cancelAllScheduledWork()...)
 	return StepResult{State: *s, Commands: cmds}, nil
 }
 
@@ -269,10 +262,7 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 	// Cancel any boundary arms on this host token before propagating.
 	// On the unhandled path cancelAllArmsAndBoundaries covers the rest;
 	// on the caught path we clear them before routing to the recovery flow.
-	var preCmds []Command
-	for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
-		preCmds = append(preCmds, CancelTimer{TimerID: timerID})
-	}
+	preCmds := appendCancelTimers(nil, s.removeBoundaryArmsForHost(tok.ID))
 	// Retry interception: when the node (or the default policy) carries a retry
 	// policy and the failure is non-terminal, schedule a TimerRetry instead of
 	// propagating the error immediately.
@@ -417,21 +407,8 @@ func handleHumanCandidatesResolved(s *InstanceState, t HumanCandidatesResolved) 
 	// Copy on ingest: the trigger's slice belongs to the caller (and, on the
 	// refresh path, to the resolver), so aliasing it here would let a later
 	// mutation reach committed instance state.
-	task.Candidates = cloneActors(t.Candidates)
+	task.Candidates = authz.CloneActors(t.Candidates)
 	return StepResult{State: *s, Commands: []Command{UpdateTask{Task: *task}}}, nil
-}
-
-// cloneActors returns a deep copy of the actor slice, isolating each actor's
-// Roles and Attributes. nil in, nil out.
-func cloneActors(actors []authz.Actor) []authz.Actor {
-	if actors == nil {
-		return nil
-	}
-	out := make([]authz.Actor, len(actors))
-	for i, a := range actors {
-		out[i] = a.Clone()
-	}
-	return out
 }
 
 // handleHumanReassigned processes a HumanReassigned trigger: updates the task
@@ -521,10 +498,7 @@ func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *Inst
 	// Cancel any in-wait reminder armed on this parked token (timer catch): the
 	// reminder is a DIFFERENT TimerInWait than the intermediate that just fired;
 	// exclude t.TimerID defensively.
-	var timerPreCmds []Command
-	for _, timerID := range s.cancelTimersForToken(tok.ID, t.TimerID) {
-		timerPreCmds = append(timerPreCmds, CancelTimer{TimerID: timerID})
-	}
+	timerPreCmds := appendCancelTimers(nil, s.cancelTimersForToken(tok.ID, t.TimerID))
 	timerTdef, timerTdefErr := defForScope(def, s, tok.ScopeID)
 	if timerTdefErr != nil {
 		return StepResult{}, timerTdefErr
@@ -653,16 +627,12 @@ func handleHumanCompleted(ctx context.Context, def *model.ProcessDefinition, s *
 	tok.AwaitCommand = ""
 	cmds := []Command{UpdateTask{Task: *task}}
 	// Cancel any deadline or reminder timers that were guarding this task.
-	for _, timerID := range s.cancelTimersByTaskID(t.TaskID, "") {
-		cmds = append(cmds, CancelTimer{TimerID: timerID})
-	}
+	cmds = appendCancelTimers(cmds, s.cancelTimersByTaskID(t.TaskID, ""))
 	// Cancel any boundary arms on this host token (token ID is the same as the
 	// HostToken recorded at arm time; at this point tok.ID is still valid since
 	// the token has not moved yet — tok.ID is already the token that was
 	// parked, looked up via tokenAwaiting(t.TaskID) above).
-	for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
-		cmds = append(cmds, CancelTimer{TimerID: timerID})
-	}
+	cmds = appendCancelTimers(cmds, s.removeBoundaryArmsForHost(tok.ID))
 	// Completion action: park on the action round-trip instead of advancing now.
 	// handleActionCompleted resumes: it merges the action output and advances the
 	// token along the single outgoing flow (the token is still at humanTdef's node).
@@ -772,10 +742,7 @@ func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *
 		tok.AwaitSignal = ""
 		// Cancel any in-wait reminder armed on this parked token (signal catch):
 		// the wait has resolved, so the recurring reminder job must be removed.
-		var timerPreCmds []Command
-		for _, timerID := range s.cancelTimersForToken(tok.ID, "") {
-			timerPreCmds = append(timerPreCmds, CancelTimer{TimerID: timerID})
-		}
+		timerPreCmds := appendCancelTimers(nil, s.cancelTimersForToken(tok.ID, ""))
 		signalTdef, signalTdefErr := defForScope(def, s, tok.ScopeID)
 		if signalTdefErr != nil {
 			return StepResult{}, signalTdefErr
@@ -848,9 +815,7 @@ func handleSubInstanceFailed(ctx context.Context, def *model.ProcessDefinition, 
 			// before consuming it, so a matched error boundary doesn't leak a
 			// still-armed sibling arm that would otherwise fire later against a
 			// gone host.
-			for _, timerID := range s.removeBoundaryArmsForHost(callActivityTok.ID) {
-				cmds = append(cmds, CancelTimer{TimerID: timerID})
-			}
+			cmds = appendCancelTimers(cmds, s.removeBoundaryArmsForHost(callActivityTok.ID))
 			s.consumeTokenAs(callActivityTok, t.OccurredAt(), CloseKindBoundaryInterrupted)
 			return cmds
 		}
@@ -869,11 +834,7 @@ func handleSubInstanceFailed(ctx context.Context, def *model.ProcessDefinition, 
 	// Reconcile the human-task projection: a UserTask parked on a sibling branch
 	// must not be left open when a child failure fails the parent (ADR-0089).
 	cmds = append(cmds, s.cancelOpenTasks()...)
-	cmds = append(cmds, s.cancelAllTimers()...)
-	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
-	for _, timerID := range s.removeAllEventTriggeredSubprocessArms() {
-		cmds = append(cmds, CancelTimer{TimerID: timerID})
-	}
+	cmds = append(cmds, s.cancelAllScheduledWork()...)
 	return StepResult{State: *s, Commands: cmds}, nil
 }
 
@@ -930,16 +891,11 @@ func handleMessageReceived(ctx context.Context, def *model.ProcessDefinition, s 
 	// Cancel any in-wait reminder armed on this parked token (ReceiveTask or
 	// message intermediate catch): the wait has resolved, so the recurring
 	// reminder job must be removed to stop it firing forever.
-	var preCmds []Command
-	for _, timerID := range s.cancelTimersForToken(tok.ID, "") {
-		preCmds = append(preCmds, CancelTimer{TimerID: timerID})
-	}
+	preCmds := appendCancelTimers(nil, s.cancelTimersForToken(tok.ID, ""))
 	// Disarm any boundary arms on this host token (e.g. a ReceiveTask with an
 	// attached timer/message boundary) now that the awaited message resolved
 	// the host before the boundary fired.
-	for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
-		preCmds = append(preCmds, CancelTimer{TimerID: timerID})
-	}
+	preCmds = appendCancelTimers(preCmds, s.removeBoundaryArmsForHost(tok.ID))
 	msgTdef, msgTdefErr := defForScope(def, s, tok.ScopeID)
 	if msgTdefErr != nil {
 		return StepResult{}, msgTdefErr

@@ -123,16 +123,7 @@ func (r *MemDefinitionRegistry) ListDefinitions(context.Context) []*model.Proces
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	seen := make(map[*model.ProcessDefinition]struct{}, len(r.m))
-	out := make([]*model.ProcessDefinition, 0, len(r.m))
-	for _, d := range r.m {
-		if _, ok := seen[d]; ok {
-			continue
-		}
-		seen[d] = struct{}{}
-		out = append(out, d)
-	}
-	return out
+	return distinctDefinitions(r.m)
 }
 
 // Compile-time assertions: MemDefinitionRegistry satisfies DefinitionRegistry

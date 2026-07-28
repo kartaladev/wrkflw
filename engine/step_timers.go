@@ -91,9 +91,7 @@ func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *I
 	}
 
 	// (d) Cancel any other timers (e.g. reminder timers) for this task.
-	for _, reminderID := range s.cancelTimersByTaskID(rec.TaskID, rec.TimerID) {
-		cmds = append(cmds, CancelTimer{TimerID: reminderID})
-	}
+	cmds = appendCancelTimers(cmds, s.cancelTimersByTaskID(rec.TaskID, rec.TimerID))
 
 	// Remove the deadline timer record — it has been consumed.
 	s.removeTimer(rec.TimerID)

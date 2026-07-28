@@ -1,6 +1,8 @@
 package runtime
 
 import (
+	"iter"
+
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/definition/schedule"
@@ -12,6 +14,34 @@ import (
 // dedup is handled by a deterministic instance id (see messageStartInstanceID)
 // plus Store.Create's ErrInstanceExists, so no in-process correlation state is
 // kept here.
+
+// startEvents yields def's start nodes that are event.StartEvent, in StartNodes
+// order. A nil def yields nothing.
+//
+// It exists so the narrowing preamble — range StartNodes, type-assert, skip
+// non-start-events — is written once rather than repeated at every site that
+// inspects a definition's start triggers (message, signal, and timer starts).
+//
+// It is an iterator rather than a slice because these sites are hot — every
+// signal broadcast and every delivered message scans the registry — and because
+// a caller looking for one match (messageStartNode) must be able to stop early.
+// Ranging it allocates nothing and honours break/return.
+func startEvents(def *model.ProcessDefinition) iter.Seq[event.StartEvent] {
+	return func(yield func(event.StartEvent) bool) {
+		if def == nil {
+			return
+		}
+		for _, n := range def.StartNodes() {
+			se, ok := n.(event.StartEvent)
+			if !ok {
+				continue
+			}
+			if !yield(se) {
+				return
+			}
+		}
+	}
+}
 
 // latestPerID collapses defs to at most one definition per def.ID: the one with
 // the highest Version. It is the runtime counterpart of the model.Latest /
@@ -69,14 +99,7 @@ type timerStartHit struct {
 // name equals name, and ok=true. It returns ok=false when def has no start
 // node with a matching message name.
 func messageStartNode(def *model.ProcessDefinition, name string) (nodeID string, ok bool) {
-	if def == nil {
-		return "", false
-	}
-	for _, n := range def.StartNodes() {
-		se, isStart := n.(event.StartEvent)
-		if !isStart {
-			continue
-		}
+	for se := range startEvents(def) {
 		if se.MessageName == name {
 			return se.ID(), true
 		}
@@ -92,11 +115,7 @@ func messageStartNode(def *model.ProcessDefinition, name string) (nodeID string,
 func signalStartDefs(defs []*model.ProcessDefinition, name string) []signalStartHit {
 	var hits []signalStartHit
 	for _, def := range latestPerID(defs) {
-		for _, n := range def.StartNodes() {
-			se, isStart := n.(event.StartEvent)
-			if !isStart {
-				continue
-			}
+		for se := range startEvents(def) {
 			if se.SignalName == name {
 				hits = append(hits, signalStartHit{Def: def, NodeID: se.ID()})
 			}
@@ -143,11 +162,7 @@ func uniqueMessageStartDef(defs []*model.ProcessDefinition, name string) (*model
 func timerStartDefs(defs []*model.ProcessDefinition) []timerStartHit {
 	var hits []timerStartHit
 	for _, def := range latestPerID(defs) {
-		for _, n := range def.StartNodes() {
-			se, isStart := n.(event.StartEvent)
-			if !isStart {
-				continue
-			}
+		for se := range startEvents(def) {
 			if !se.Timer.IsZero() {
 				hits = append(hits, timerStartHit{Def: def, NodeID: se.ID(), Trigger: se.Timer})
 			}

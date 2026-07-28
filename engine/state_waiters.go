@@ -21,14 +21,7 @@ type MessageWaiter struct {
 // s.Boundaries slice order (deterministic) and is nil when no message boundary
 // is armed.
 func (s *InstanceState) MessageBoundaryWaiters() []MessageWaiter {
-	var out []MessageWaiter
-	for i := range s.Boundaries {
-		ba := &s.Boundaries[i]
-		if ba.Message != "" {
-			out = append(out, MessageWaiter{Name: ba.Message, CorrelationKey: ba.MessageKey})
-		}
-	}
-	return out
+	return messageWaitersOf(s.Boundaries)
 }
 
 // MessageArmedEventWaiters returns the (message name, correlation key) pairs for
@@ -41,14 +34,7 @@ func (s *InstanceState) MessageBoundaryWaiters() []MessageWaiter {
 // Timer and signal arms contribute no entries. The result preserves s.ArmedEvents
 // slice order (deterministic) and is nil when no message arm is armed.
 func (s *InstanceState) MessageArmedEventWaiters() []MessageWaiter {
-	var out []MessageWaiter
-	for i := range s.ArmedEvents {
-		ae := &s.ArmedEvents[i]
-		if ae.Message != "" {
-			out = append(out, MessageWaiter{Name: ae.Message, CorrelationKey: ae.MessageKey})
-		}
-	}
-	return out
+	return messageWaitersOf(s.ArmedEvents)
 }
 
 // MessageEventSubprocessWaiters returns the (message name, correlation key) pairs
@@ -63,14 +49,7 @@ func (s *InstanceState) MessageArmedEventWaiters() []MessageWaiter {
 // s.EventTriggeredSubprocesses slice order (deterministic) and is nil when no
 // message arm is armed.
 func (s *InstanceState) MessageEventSubprocessWaiters() []MessageWaiter {
-	var out []MessageWaiter
-	for i := range s.EventTriggeredSubprocesses {
-		ea := &s.EventTriggeredSubprocesses[i]
-		if ea.Message != "" {
-			out = append(out, MessageWaiter{Name: ea.Message, CorrelationKey: ea.MessageKey})
-		}
-	}
-	return out
+	return messageWaitersOf(s.EventTriggeredSubprocesses)
 }
 
 // SignalEventSubprocessNames returns the signal names of every armed
@@ -83,14 +62,7 @@ func (s *InstanceState) MessageEventSubprocessWaiters() []MessageWaiter {
 // s.EventTriggeredSubprocesses slice order (deterministic) and is nil when no
 // signal arm is armed.
 func (s *InstanceState) SignalEventSubprocessNames() []string {
-	var out []string
-	for i := range s.EventTriggeredSubprocesses {
-		ea := &s.EventTriggeredSubprocesses[i]
-		if ea.Signal != "" {
-			out = append(out, ea.Signal)
-		}
-	}
-	return out
+	return signalNamesOf(s.EventTriggeredSubprocesses)
 }
 
 // MessageWaiters returns EVERY (message name, correlation key) pair the instance

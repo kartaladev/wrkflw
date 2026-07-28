@@ -315,9 +315,7 @@ func exitRootEventSubprocessScope(c *stepCtx, currentScopeID string) ([]Command,
 	// Interrupting root-level ESP completed: all root tokens were cancelled
 	// and no sibling child scopes remain. The instance is now complete.
 	// Cancel any remaining ESP arms for the root scope.
-	for _, timerID := range c.s.removeEventTriggeredSubprocessArmsForScope("") {
-		cmds = append(cmds, CancelTimer{TimerID: timerID})
-	}
+	cmds = appendCancelTimers(cmds, c.s.removeEventTriggeredSubprocessArmsForScope(""))
 	// Instance completes: all tokens gone, no active root children.
 	if len(c.s.Tokens) == 0 {
 		c.s.Status = StatusCompleted
@@ -370,9 +368,7 @@ func exitNestedEventSubprocessScope(c *stepCtx, currentScopeID, parentScopeID st
 	grandparentScopeID := enclosingScope.ParentID
 	enclosingNodeID := enclosingScope.NodeID
 	// Cancel remaining event sub-process arms for the enclosing scope.
-	for _, timerID := range c.s.removeEventTriggeredSubprocessArmsForScope(parentScopeID) {
-		cmds = append(cmds, CancelTimer{TimerID: timerID})
-	}
+	cmds = appendCancelTimers(cmds, c.s.removeEventTriggeredSubprocessArmsForScope(parentScopeID))
 	c.s.closeScope(parentScopeID)
 
 	// Resume execution: place a token on the enclosing sub-process
@@ -422,9 +418,7 @@ func exitRegularSubprocessScope(c *stepCtx, currentScopeID, subNodeID, parentSco
 
 	// Scope drained (and no active children): close it and resume in parent.
 	// Cancel any still-armed event sub-process arms for this scope.
-	for _, timerID := range c.s.removeEventTriggeredSubprocessArmsForScope(currentScopeID) {
-		cmds = append(cmds, CancelTimer{TimerID: timerID})
-	}
+	cmds = appendCancelTimers(cmds, c.s.removeEventTriggeredSubprocessArmsForScope(currentScopeID))
 	c.s.archiveCompensations(currentScopeID)
 	c.s.closeScope(currentScopeID)
 
@@ -506,11 +500,7 @@ func forceTerminate(c *stepCtx, ev event.EndEvent) ([]Command, bool, error) {
 		cmds = append(cmds, CompleteInstance{Result: copyVars(c.s.Variables)})
 	}
 
-	cmds = append(cmds, c.s.cancelAllTimers()...)
-	cmds = append(cmds, c.s.cancelAllArmsAndBoundaries()...)
-	for _, timerID := range c.s.removeAllEventTriggeredSubprocessArms() {
-		cmds = append(cmds, CancelTimer{TimerID: timerID})
-	}
+	cmds = append(cmds, c.s.cancelAllScheduledWork()...)
 	return cmds, true, nil
 }
 
@@ -968,6 +958,41 @@ func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 // flight defers this throw (ADR-0071 serialization, one walk at a time).
 type compensationThrowEventStrategy struct{}
 
+// deferCompensationThrow parks tok behind the compensation walk already in
+// flight (ADR-0071 serialization, one walk at a time). The token is re-driven
+// through the throw strategy when that walk finishes (popOneDeferredThrow).
+func deferCompensationThrow(s *InstanceState, tok *Token) {
+	tok.State = TokenWaiting
+	s.DeferredCompensationThrows = append(s.DeferredCompensationThrows, tok.ID)
+}
+
+// startCompensationWalk commits tok to a compensation walk and returns cmds with
+// the walk's first InvokeAction appended: it consumes the token, flips the
+// instance to StatusCompensating, mints the command ID identifying the in-flight
+// action, completes cursor with the fields both throw branches share, installs
+// it, and parks the token.
+//
+// cursor carries only the caller's distinguishing fields — ArchiveKey for a
+// targeted throw, ScopeID/StartRecordCount for a scope-wide one. resumeScope
+// must be the throw token's scope read BEFORE the call, since consumeToken
+// invalidates tok's slot in s.Tokens.
+//
+// The mutation order is load-bearing: consumeToken must run before
+// nextCommandID, as both advance state on c.s.
+func startCompensationWalk(c *stepCtx, cmds []Command, tok *Token, records []CompensationRecord, cursor compensationCursor, resumeNode, resumeScope string) []Command {
+	c.s.consumeToken(tok, c.at)
+	c.s.Status = StatusCompensating
+	cmdID := c.s.nextCommandID()
+	cursor.ResumeNode = resumeNode
+	cursor.ResumeScope = resumeScope
+	cursor.NextIndex = len(records) - 1
+	cursor.ActiveCmdID = cmdID
+	c.s.Compensating = cursor
+	cmds = append(cmds, compensationInvoke(records[len(records)-1], cmdID))
+	tok.State = TokenWaiting
+	return cmds
+}
+
 func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
 	cte := node.(event.CompensationThrowEvent)
 	var cmds []Command
@@ -995,26 +1020,11 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 			c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
 		} else if c.s.Compensating.ActiveCmdID != "" {
 			// SERIALIZE (ADR-0071): a walk is already in flight — defer this throw.
-			tok.State = TokenWaiting
-			c.s.DeferredCompensationThrows = append(c.s.DeferredCompensationThrows, tok.ID)
+			deferCompensationThrow(c.s, tok)
 		} else {
 			// Start the throw compensation walk (resumeNode is non-empty here).
-			c.s.consumeToken(tok, c.at)
-			c.s.Status = StatusCompensating
-			cmdID := c.s.nextCommandID()
-			c.s.Compensating = compensationCursor{
-				ArchiveKey:  ref,
-				ResumeNode:  resumeNode,
-				ResumeScope: tokScope,
-				NextIndex:   len(records) - 1,
-				ActiveCmdID: cmdID,
-			}
-			cmds = append(cmds, InvokeAction{
-				CommandID: cmdID,
-				Name:      records[len(records)-1].Action,
-				Input:     copyVars(records[len(records)-1].Input),
-			})
-			tok.State = TokenWaiting
+			cmds = startCompensationWalk(c, cmds, tok, records,
+				compensationCursor{ArchiveKey: ref}, resumeNode, tokScope)
 		}
 	} else {
 		// Scope-wide throw (ADR-0120): compensate the throwing scope's completed
@@ -1038,8 +1048,7 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 			// token is re-driven through this strategy when the current walk finishes
 			// (popOneDeferredThrow → drive), so consolidation happens then, on the
 			// committing path below.
-			tok.State = TokenWaiting
-			c.s.DeferredCompensationThrows = append(c.s.DeferredCompensationThrows, tok.ID)
+			deferCompensationThrow(c.s, tok)
 		default:
 			// Committing to a walk. Whole-instance default (BPMN conformant): merge
 			// archived sub-process records into RootCompensations FIRST so they are
@@ -1057,23 +1066,9 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 				// Start the scope-wide walk. The cursor carries NO ArchiveKey, so
 				// cursorRecords reads the throwing scope's live records; the finish
 				// then clears them (compensate-once).
-				c.s.consumeToken(tok, c.at)
-				c.s.Status = StatusCompensating
-				cmdID := c.s.nextCommandID()
-				c.s.Compensating = compensationCursor{
-					ScopeID:          tokScope,
-					ResumeNode:       resumeNode,
-					ResumeScope:      tokScope,
-					NextIndex:        len(records) - 1,
-					StartRecordCount: len(records),
-					ActiveCmdID:      cmdID,
-				}
-				cmds = append(cmds, InvokeAction{
-					CommandID: cmdID,
-					Name:      records[len(records)-1].Action,
-					Input:     copyVars(records[len(records)-1].Input),
-				})
-				tok.State = TokenWaiting
+				cmds = startCompensationWalk(c, cmds, tok, records,
+					compensationCursor{ScopeID: tokScope, StartRecordCount: len(records)},
+					resumeNode, tokScope)
 			}
 		}
 	}

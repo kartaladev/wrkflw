@@ -56,6 +56,26 @@ func (a Actor) Clone() Actor {
 	return a
 }
 
+// CloneActors returns a deep copy of actors in which every element is
+// independently allocated via [Actor.Clone], so mutating the result cannot
+// affect the input. Nil in, nil out; a non-nil empty slice yields a non-nil
+// empty slice, preserving the caller's distinction between "no actors resolved"
+// and "resolved to nobody".
+//
+// This is the single slice-level deep copy for actors: the engine's trigger
+// handling, the runtime driver, and the human-task clone all delegate here
+// rather than re-deriving the loop.
+func CloneActors(actors []Actor) []Actor {
+	if actors == nil {
+		return nil
+	}
+	out := make([]Actor, len(actors))
+	for i, a := range actors {
+		out[i] = a.Clone()
+	}
+	return out
+}
+
 // AuthzSpec describes who may act: any-of roles, any-of resource privileges,
 // and an optional attribute predicate (expr over {actor, vars}). An empty spec
 // means allow-all.

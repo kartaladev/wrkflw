@@ -12,23 +12,15 @@ import (
 func cancelTokenWaits(s *InstanceState, tok *Token, at time.Time, closeKind CloseKind) []Command {
 	var cmds []Command
 	// Cancel deadline/reminder timers for this token (UserTask case).
-	for _, timerID := range s.cancelTimersByTaskID(tok.AwaitCommand, "") {
-		cmds = append(cmds, CancelTimer{TimerID: timerID})
-	}
+	cmds = appendCancelTimers(cmds, s.cancelTimersByTaskID(tok.AwaitCommand, ""))
 	// Cancel any token-keyed in-wait reminder (ReceiveTask / catch): its parked
 	// token is being consumed, so the recurring reminder must go.
-	for _, timerID := range s.cancelTimersForToken(tok.ID, "") {
-		cmds = append(cmds, CancelTimer{TimerID: timerID})
-	}
+	cmds = appendCancelTimers(cmds, s.cancelTimersForToken(tok.ID, ""))
 	// Cancel boundary arms for this host token.
-	for _, timerID := range s.removeBoundaryArmsForHost(tok.ID) {
-		cmds = append(cmds, CancelTimer{TimerID: timerID})
-	}
+	cmds = appendCancelTimers(cmds, s.removeBoundaryArmsForHost(tok.ID))
 	// Cancel any event-gateway arms.
 	if strings.HasPrefix(tok.AwaitCommand, "evtgw:") {
-		for _, timerID := range s.removeArmedEventsForGateway(tok.ID) {
-			cmds = append(cmds, CancelTimer{TimerID: timerID})
-		}
+		cmds = appendCancelTimers(cmds, s.removeArmedEventsForGateway(tok.ID))
 	}
 	tokPtr := s.tokenByID(tok.ID)
 	if tokPtr != nil {

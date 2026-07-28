@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/activity"
@@ -308,6 +309,8 @@ func effectiveRetryPolicy(node model.Node, opt StepOptions) (model.RetryPolicy, 
 	}
 }
 
+// mergeVars copies in over s.Variables, allocating the destination when it is
+// nil — maps.Copy panics on a nil destination, so the guard must stay.
 func mergeVars(s *InstanceState, in map[string]any) {
 	if len(in) == 0 {
 		return
@@ -315,21 +318,11 @@ func mergeVars(s *InstanceState, in map[string]any) {
 	if s.Variables == nil {
 		s.Variables = make(map[string]any, len(in))
 	}
-	for k, v := range in {
-		s.Variables[k] = v
-	}
+	maps.Copy(s.Variables, in)
 }
 
-func copyVars(in map[string]any) map[string]any {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]any, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
+// copyVars returns an independently allocated shallow copy of in. nil in, nil out.
+func copyVars(in map[string]any) map[string]any { return maps.Clone(in) }
 
 // serviceActionInput builds the Input map for a node's primary action.Action
 // invocation. It copies the instance variables and stamps a stable,
@@ -348,6 +341,21 @@ func serviceActionInput(s *InstanceState, node model.Node) map[string]any {
 	}
 	in["_idempotencyKey"] = s.InstanceID + ":" + node.ID()
 	return in
+}
+
+// cloneCompensationRecords returns an independently allocated copy of recs with
+// each record's Input map deep-copied, so mutating the clone cannot affect the
+// original. nil in, nil out; a non-nil empty source yields a non-nil empty clone.
+func cloneCompensationRecords(recs []CompensationRecord) []CompensationRecord {
+	if recs == nil {
+		return nil
+	}
+	out := make([]CompensationRecord, len(recs))
+	for i, cr := range recs {
+		cr.Input = copyVars(cr.Input)
+		out[i] = cr
+	}
+	return out
 }
 
 func cloneState(st InstanceState) InstanceState {
@@ -373,7 +381,10 @@ func cloneState(st InstanceState) InstanceState {
 	// actor's Roles/Attributes), the eligibility slices, and the Claim/Completion
 	// pointees, so mutations to the clone do not affect the original — required
 	// for TestStepDoesNotMutateInput to hold.
-	if len(st.Tasks) > 0 {
+	// Guard on nil, not on length: a non-nil zero-length source still shares its
+	// backing array with the struct copy above, so a later append on either side
+	// would write the same slot.
+	if st.Tasks != nil {
 		s.Tasks = make([]humantask.HumanTask, len(st.Tasks))
 		for i, t := range st.Tasks {
 			s.Tasks[i] = t.Clone()
@@ -394,48 +405,27 @@ func cloneState(st InstanceState) InstanceState {
 	s.EventTriggeredSubprocesses = append([]eventTriggeredSubprocessArm(nil), st.EventTriggeredSubprocesses...)
 	// Deep-copy RootCompensations: each CompensationRecord contains an Input
 	// map[string]any (a reference type) that must be independently allocated so
-	// mutations to a clone's record do not affect the original.
-	// Use append([]T(nil), src...) instead of a len>0 guard + make so that a
-	// non-nil empty source produces a non-nil empty clone (nil-vs-empty consistency).
-	{
-		src := st.RootCompensations
-		if src == nil {
-			s.RootCompensations = nil
-		} else {
-			s.RootCompensations = make([]CompensationRecord, len(src))
-			for i, cr := range src {
-				ccr := cr
-				ccr.Input = copyVars(cr.Input)
-				s.RootCompensations[i] = ccr
-			}
-		}
-	}
+	// mutations to a clone's record do not affect the original. nil-vs-empty is
+	// preserved (see cloneCompensationRecords).
+	s.RootCompensations = cloneCompensationRecords(st.RootCompensations)
 	// Deep-copy Scopes: each Scope contains a Compensations slice that must be
 	// independently allocated so mutations to a clone's compensation records do
 	// not affect the original. The other Scope fields (ID, NodeID, ParentID) are
 	// plain strings (value types) and are correctly copied by the struct copy.
 	// ScopeSeq is a scalar (int) and is already carried by the struct copy above.
-	if len(st.Scopes) > 0 {
+	// Guard on nil, not on length: closeScope rebuilds Scopes with make(..., 0, n),
+	// so closing the last scope leaves a non-nil zero-length slice whose backing
+	// array would otherwise stay shared with the clone.
+	if st.Scopes != nil {
 		s.Scopes = make([]Scope, len(st.Scopes))
 		for i, sc := range st.Scopes {
-			cs := sc
 			// Deep-copy each CompensationRecord: the Input field is a map[string]any
 			// (a reference type) and must be independently allocated so mutations to
 			// a clone's Input do not propagate back to the original's record.
-			// Use explicit nil-check for nil-vs-empty consistency: a nil Compensations
-			// in the source produces nil in the clone; a non-nil empty slice produces
-			// a non-nil empty clone.
-			if sc.Compensations == nil {
-				cs.Compensations = nil
-			} else if len(sc.Compensations) > 0 {
-				cs.Compensations = make([]CompensationRecord, len(sc.Compensations))
-				for j, cr := range sc.Compensations {
-					ccr := cr
-					ccr.Input = copyVars(cr.Input)
-					cs.Compensations[j] = ccr
-				}
-			}
-			s.Scopes[i] = cs
+			// nil-vs-empty is preserved: a nil Compensations in the source produces
+			// nil in the clone; a non-nil empty slice produces a non-nil empty clone.
+			sc.Compensations = cloneCompensationRecords(sc.Compensations)
+			s.Scopes[i] = sc
 		}
 	}
 	// Deep-copy ArchivedCompensations: each entry in the map holds a
@@ -445,25 +435,16 @@ func cloneState(st InstanceState) InstanceState {
 	if st.ArchivedCompensations != nil {
 		s.ArchivedCompensations = make(map[string][]CompensationRecord, len(st.ArchivedCompensations))
 		for k, recs := range st.ArchivedCompensations {
-			if recs == nil {
-				s.ArchivedCompensations[k] = nil
-			} else {
-				cloned := make([]CompensationRecord, len(recs))
-				for i, cr := range recs {
-					ccr := cr
-					ccr.Input = copyVars(cr.Input)
-					cloned[i] = ccr
-				}
-				s.ArchivedCompensations[k] = cloned
-			}
+			s.ArchivedCompensations[k] = cloneCompensationRecords(recs)
 		}
 	}
 	// Deep-copy Incidents: Incident is a flat value struct (all fields are plain
 	// scalars — no pointers or maps), so an append-copy of the slice is sufficient
 	// to ensure mutations to the clone's Incidents do not affect the original.
-	if len(st.Incidents) > 0 {
-		s.Incidents = append([]Incident(nil), st.Incidents...)
-	}
+	// append([]Incident(nil), ...) already maps nil to nil and allocates fresh for
+	// anything else, so no length guard is needed — and a non-nil zero-length
+	// source (left by incident resolution) stays unshared.
+	s.Incidents = append([]Incident(nil), st.Incidents...)
 	// Deep-copy DeferredCompensationThrows: a []string of token IDs (value type),
 	// so an append-copy is sufficient to isolate the clone from the original.
 	s.DeferredCompensationThrows = append([]string(nil), st.DeferredCompensationThrows...)
