@@ -114,6 +114,71 @@ func TestMessageWaiters_Empty(t *testing.T) {
 	assert.Nil(t, (&InstanceState{}).MessageWaiters())
 }
 
+func TestSignalBoundaryNames(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		arms   []boundaryArm
+		assert func(t *testing.T, got []string)
+	}{
+		"none": {
+			arms:   nil,
+			assert: func(t *testing.T, got []string) { assert.Nil(t, got) },
+		},
+		"only signal arms, in slice order, timer/message skipped": {
+			arms: []boundaryArm{
+				{HostToken: "h1", BoundaryNode: "bnd-sig", triggerMatch: triggerMatch{Signal: "escalate"}},
+				{HostToken: "h2", BoundaryNode: "bnd-timer", triggerMatch: triggerMatch{TimerID: "t1"}},
+				{HostToken: "h3", BoundaryNode: "bnd-msg", triggerMatch: triggerMatch{Message: "cancel"}},
+				{HostToken: "h4", BoundaryNode: "bnd-sig2", triggerMatch: triggerMatch{Signal: "abort"}},
+			},
+			assert: func(t *testing.T, got []string) {
+				assert.Equal(t, []string{"escalate", "abort"}, got)
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			s := &InstanceState{Boundaries: tc.arms}
+			tc.assert(t, s.SignalBoundaryNames())
+		})
+	}
+}
+
+func TestSignalArmedEventNames(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		arms   []armedEvent
+		assert func(t *testing.T, got []string)
+	}{
+		"none": {
+			arms:   nil,
+			assert: func(t *testing.T, got []string) { assert.Nil(t, got) },
+		},
+		"only signal arms, in slice order, timer/message skipped": {
+			arms: []armedEvent{
+				{GatewayToken: "g1", CatchNode: "c-sig", triggerMatch: triggerMatch{Signal: "approved"}},
+				{GatewayToken: "g1", CatchNode: "c-timer", triggerMatch: triggerMatch{TimerID: "t1"}},
+				{GatewayToken: "g1", CatchNode: "c-msg", triggerMatch: triggerMatch{Message: "m"}},
+			},
+			assert: func(t *testing.T, got []string) {
+				assert.Equal(t, []string{"approved"}, got)
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			s := &InstanceState{ArmedEvents: tc.arms}
+			tc.assert(t, s.SignalArmedEventNames())
+		})
+	}
+}
+
 func TestSignalWaiters_Union(t *testing.T) {
 	t.Parallel()
 
@@ -122,14 +187,22 @@ func TestSignalWaiters_Union(t *testing.T) {
 			{ID: "t1", AwaitSignal: "tok-sig"},
 			{ID: "t2"},
 		},
+		Boundaries: []boundaryArm{
+			{HostToken: "h1", BoundaryNode: "bnd", triggerMatch: triggerMatch{Signal: "bnd-sig"}},
+			{HostToken: "h2", BoundaryNode: "bnd-timer", triggerMatch: triggerMatch{TimerID: "bt1"}}, // contributes nothing
+		},
+		ArmedEvents: []armedEvent{
+			{GatewayToken: "g1", CatchNode: "c1", triggerMatch: triggerMatch{Signal: "gw-sig"}},
+		},
 		EventTriggeredSubprocesses: []eventTriggeredSubprocessArm{
 			{EventSubprocessNode: "esp", triggerMatch: triggerMatch{Signal: "esp-sig"}},
 			{EventSubprocessNode: "esp-msg", triggerMatch: triggerMatch{Message: "m"}}, // contributes nothing
 		},
 	}
 
-	// Order: token signals, then event-sub signals.
-	assert.Equal(t, []string{"tok-sig", "esp-sig"}, s.SignalWaiters())
+	// Order mirrors MessageWaiters: tokens, then boundaries, then gateway arms,
+	// then event-subs.
+	assert.Equal(t, []string{"tok-sig", "bnd-sig", "gw-sig", "esp-sig"}, s.SignalWaiters())
 }
 
 func TestSignalWaiters_Empty(t *testing.T) {
