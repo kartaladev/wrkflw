@@ -110,9 +110,12 @@ func WithScheduler(sched scheduler.Scheduler) Option {
 // commands (ThrowSignal). Without this option any process that reaches a signal
 // throw node will return a descriptive error.
 //
-// After each deliverLoop iteration the runner reconciles the instance's
-// AwaitSignal tokens with the bus (via [SignalBus.Sync]) so that a later
-// [SignalBus.Publish] reaches all parked instances.
+// After each deliverLoop iteration the runner reconciles every signal name the
+// instance can be woken by — signal-catch tokens, armed signal boundaries,
+// event-based-gateway signal arms, and signal-triggered event sub-processes, as
+// reported by engine.InstanceState.SignalWaiters — with the bus (via
+// [SignalBus.Sync]) so that a later [SignalBus.Publish] reaches all parked
+// instances.
 func WithSignalBus(bus *signal.SignalBus) Option {
 	return func(driver *ProcessDriver) { driver.sigbus = bus }
 }

@@ -29,9 +29,19 @@ go.work.sum
 .superpowers/
 
 # Compiled example binaries dropped at repo root by `go build ./examples/<name>/`
-# (leading slash anchors to root so the examples/<name>/ source dirs stay tracked)
+# (leading slash anchors to root so the examples/<name>/ source dirs stay tracked).
+# One entry per main package under examples/, INCLUDING examples/scenarios/<name>,
+# because go build names the output after the package dir's basename regardless of
+# nesting. Adding an example without adding its entry here leaks a ~12-33MB binary
+# into git. Re-audit with:
+#
+#   for d in $(go list -f '{{if eq .Name "main"}}{{.Dir}}{{end}}' ./examples/...); do \
+#     grep -qxF "/$(basename $d)" .gitignore || echo "MISSING /$(basename $d)"; done
+#
+# examples/<name>
 /broker_wiring
 /builtin_actions
+/cache_wiring
 /chaining_wiring
 /migrate
 /mysql_wiring
@@ -40,20 +50,39 @@ go.work.sum
 /real_db_transaction
 /scenarios
 /sqlite_wiring
-# examples/scenarios/<name> build outputs (basename == scenario dir name)
+# examples/scenarios/<name>
 /admin_monitoring
 /attribute_authz
-/boundary_timer
+/boundary_action
 /call_activity
+/catch_event_reminder
 /compensation_saga
+/compensation_throw
+/completion_action
+/error_boundary
+/event_based_gateway
+/event_start
+/event_subprocess
 /exclusive_routing
-/human_task_approval
 /inclusive_gateway
+/input_validation
 /instance_cancellation
 /inwait_reminder
+/manual_task
+/message_boundary
 /message_correlation
 /parallel_fork_join
 /retry_recovery
+/reverse_rollback
+/send_task_routing
 /signal_broadcast
+/signal_throw
 /subprocess_embedded
+/terminate_end
+/timer_boundary
+/timer_durability
+/usertask_approval
+/usertask_deadline
+
+# SQLite artifact created by examples/sqlite_wiring and examples/migrate
 /app.db

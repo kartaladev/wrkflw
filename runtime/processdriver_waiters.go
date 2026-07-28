@@ -24,9 +24,11 @@ func (driver *ProcessDriver) syncWaiters(st engine.InstanceState) {
 
 // syncSignalBus reconciles st's signal awaits with the SignalBus, if one is
 // configured. The authoritative set of signal names the instance can be woken by
-// — token AwaitSignal catches AND signal-triggered event sub-process arms — comes
-// from the engine's st.SignalWaiters() (ADR-0123), so the runtime never has to
-// know which constructs contribute. This is a no-op when driver.sigbus is nil.
+// comes from the engine's st.SignalWaiters() (ADR-0123/0154), so the runtime
+// never has to know which constructs contribute — deliberately no enumeration is
+// repeated here, because a stale list at this layer is exactly what hid the
+// missing boundary and gateway arms until ADR-0154. This is a no-op when
+// driver.sigbus is nil.
 func (driver *ProcessDriver) syncSignalBus(st engine.InstanceState) {
 	if driver.sigbus == nil {
 		return
