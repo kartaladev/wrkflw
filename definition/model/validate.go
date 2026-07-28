@@ -140,6 +140,34 @@ var (
 	// silently skipped (fail-open). The combination is rejected at authoring
 	// time to keep validation fail-closed.
 	ErrPayloadValidationRequiresMessage = errors.New("workflow-definition: payload validation requires a message catch")
+	// ErrEmptyMessageName is returned when a ReceiveTask's MessageName is empty
+	// or whitespace-only. The two sub-cases have different rationale:
+	//
+	// An EMPTY name is the genuine defect this rule exists to close.
+	// receiveTaskStrategy.enter (engine/step_nodes.go:97-99) assigns
+	// tok.AwaitMessage = rt.MessageName UNCONDITIONALLY — unlike the
+	// catch-event and boundary paths, which guard != "" — so such a node
+	// parks its token on AwaitMessage "", and once an empty identity key
+	// matches no record (ADR-0152) no MessageReceived can ever resume it.
+	//
+	// A WHITESPACE-ONLY name is NOT that defect: a token parked on e.g.
+	// AwaitMessage "   " remains resumable by an exact-equal
+	// MessageReceived{Name: "   "}, since ADR-0152's engine guards reject
+	// only "", never a non-empty whitespace string. It is rejected here as
+	// authoring hygiene, not a leak fix: not a name any operator can
+	// reasonably produce or correlate on, so the shape is made
+	// unrepresentable at authoring time rather than merely unmatched.
+	ErrEmptyMessageName = errors.New("workflow-definition: receive task requires a message name")
+	// ErrBlankEventName is returned when a node declares a SignalName or
+	// MessageName consisting only of whitespace. Such a name is non-empty, so
+	// it survives the definition's event-kind discriminators (:271-272, :503,
+	// :701) undetected, then parks a token on a name no operator can
+	// reasonably produce or match against — the whitespace analogue of the
+	// empty key ADR-0152 closes at the engine's state layer. A declared event
+	// name must carry at least one visible character; an ABSENT name ("") is
+	// unaffected — several kinds rely on "" meaning "no trigger at all" (a
+	// manual start, an error boundary).
+	ErrBlankEventName = errors.New("workflow-definition: event name must not be blank")
 	// ErrDeadlineTriggerRecurring is returned when a node's DeadlineTimer
 	// (set via WithWaitDeadline) is a recurring schedule.TriggerSpec (e.g.
 	// Every, Cron, Daily). A deadline must fire at most once: the
@@ -569,6 +597,54 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		}
 		if ValidationStrategyFor(n) != nil && toWire(n).MessageName == "" {
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrPayloadValidationRequiresMessage, n.ID()))
+		}
+	}
+
+	// ReceiveTask: the node waits for a NAMED message, and MessageName == ""
+	// and MessageName == "   " are rejected for different reasons — see
+	// ErrEmptyMessageName's doc comment. In short: an EMPTY name parks the
+	// token on AwaitMessage "" (engine/step_nodes.go:97-99 assigns it
+	// unconditionally, unlike the catch-event and boundary paths), and an
+	// empty identity key matches no record (ADR-0152), so the token could
+	// never be resumed. A WHITESPACE-ONLY name remains resumable in
+	// principle — it is rejected as authoring hygiene, not to close a leak.
+	// Reject both shapes at authoring time. model cannot import the leaf
+	// activity package, so the name is read from the node's wire form.
+	//
+	// A ReceiveTask with a whitespace-only MessageName also trips
+	// ErrBlankEventName below (that loop does not exclude KindReceiveTask):
+	// intentional — the addendum's "at most one ErrBlankEventName per node"
+	// dedup requirement is scoped to that rule alone, not to
+	// cross-rule exclusivity, so a definition can carry both errors at once.
+	for _, n := range d.Nodes {
+		if n.Kind() != KindReceiveTask {
+			continue
+		}
+		if strings.TrimSpace(toWire(n).MessageName) == "" {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrEmptyMessageName, n.ID()))
+		}
+	}
+
+	// A DECLARED event name must not be whitespace-only. This deliberately does
+	// not fire on an absent name: "" is how a node says it has no signal/message
+	// at all, and several kinds rely on that (a manual start, an error
+	// boundary). Only a name that was written but carries no visible character
+	// is rejected (ADR-0152). At most one ErrBlankEventName is reported per
+	// node even when both SignalName and MessageName are blank.
+	//
+	// This must NEVER be confused with, or replace, the event-kind
+	// discriminators elsewhere in this file (hasSignal/hasMessage above,
+	// isErrorBoundary below, isEventTriggeredSubprocess) — those stay on the
+	// bare != ""/== "" comparison. Trimming a discriminator would silently
+	// RECLASSIFY a node (e.g. a boundary with SignalName " " turning into an
+	// error boundary); this rule only REJECTS the definition, so a
+	// reclassification question never arises for it.
+	for _, n := range d.Nodes {
+		w := toWire(n)
+		blankSignal := w.SignalName != "" && strings.TrimSpace(w.SignalName) == ""
+		blankMessage := w.MessageName != "" && strings.TrimSpace(w.MessageName) == ""
+		if blankSignal || blankMessage {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrBlankEventName, n.ID()))
 		}
 	}
 

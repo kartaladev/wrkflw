@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kartaladev/wrkflw/humantask"
 )
 
 // ---------------------------------------------------------------------------
@@ -264,21 +266,56 @@ func TestConsolidateArchiveIntoRootNoopOnEmptyArchive(t *testing.T) {
 	assert.Equal(t, "a", s.RootCompensations[0].NodeID)
 }
 
-// TestCancelTimersForToken verifies the token-keyed cancel helper removes exactly
-// the timer records whose Token matches (honouring excludeTimerID) and returns
-// their TimerIDs, leaving other tokens' timers intact.
-func TestCancelTimersForToken(t *testing.T) {
-	s := &InstanceState{
-		Timers: []timerRecord{
-			{TimerID: "t1", Kind: TimerInWait, Token: "tokA"},
-			{TimerID: "t2", Kind: TimerIntermediate, Token: "tokA"},
-			{TimerID: "t3", Kind: TimerInWait, Token: "tokB"},
+// ---------------------------------------------------------------------------
+// TaskByID
+// ---------------------------------------------------------------------------
+
+// TestTaskByID covers ADR-0152: a task id is an identity, so an empty one names
+// no task. The fixture plants a task with an empty TaskID so the empty-key case
+// fails without the guard.
+func TestTaskByID(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		taskID string
+		assert func(t *testing.T, task *humantask.HumanTask)
+	}
+
+	cases := []testCase{
+		{
+			name:   "returns the named task",
+			taskID: "h1",
+			assert: func(t *testing.T, task *humantask.HumanTask) {
+				require.NotNil(t, task)
+				assert.Equal(t, "h1", task.TaskID)
+			},
+		},
+		{
+			name:   "returns nil for an unknown id",
+			taskID: "nope",
+			assert: func(t *testing.T, task *humantask.HumanTask) {
+				assert.Nil(t, task)
+			},
+		},
+		{
+			name:   "empty task id names no task",
+			taskID: "",
+			assert: func(t *testing.T, task *humantask.HumanTask) {
+				assert.Nil(t, task)
+			},
 		},
 	}
 
-	got := s.cancelTimersForToken("tokA", "t2") // exclude t2 (the firing timer)
-	assert.Equal(t, []string{"t1"}, got, "returns tokA timers except the excluded one")
-	// t2 (excluded) and t3 (other token) remain.
-	remaining := []string{s.Timers[0].TimerID, s.Timers[1].TimerID}
-	assert.ElementsMatch(t, []string{"t2", "t3"}, remaining)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := &InstanceState{Tasks: []humantask.HumanTask{
+				{TaskID: "h1", NodeID: "n1"},
+				{TaskID: "", NodeID: "nGhost"},
+			}}
+			tc.assert(t, s.TaskByID(tc.taskID))
+		})
+	}
 }

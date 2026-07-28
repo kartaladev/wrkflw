@@ -363,9 +363,12 @@ func (e *ProcessEngine) DeliverSignal(ctx context.Context, req DeliverSignalRequ
 	newSt, err := e.driver.ApplyTrigger(ctx, def, st.InstanceID, trg)
 	if err != nil {
 		// No ErrInvalidTransition classification here: SignalReceived uses
-		// broadcast semantics in the engine — a signal matching no awaiting
-		// token is a clean no-op, never a wrong-state error. There is nothing
-		// to reclassify on this path (see ADR-0026).
+		// broadcast semantics in the engine — a non-empty signal name matching
+		// no awaiting token is a clean no-op, never a wrong-state error, and
+		// there is nothing to reclassify on this path (see ADR-0026). Since
+		// ADR-0152 an EMPTY signal name is no longer part of that no-op case:
+		// it is rejected upstream by Step as engine.ErrEmptyTriggerKey, which
+		// surfaces here unmodified.
 		return nil, fmt.Errorf("workflow-service: deliver signal: %w", err)
 	}
 	return e.instance(def, newSt), nil

@@ -274,8 +274,12 @@ type InstanceState struct {
 }
 
 // TaskByID returns a pointer to the HumanTask with the given taskID, or
-// nil if no such task exists in the state.
+// nil if no such task exists in the state. An empty taskID names no task
+// (ADR-0152).
 func (s *InstanceState) TaskByID(taskID string) *humantask.HumanTask {
+	if taskID == "" {
+		return nil
+	}
 	for i := range s.Tasks {
 		if s.Tasks[i].TaskID == taskID {
 			return &s.Tasks[i]

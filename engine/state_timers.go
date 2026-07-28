@@ -26,8 +26,11 @@ type timerRecord struct {
 }
 
 // timerByID returns a pointer to the timerRecord with the given timerID, or nil
-// if no such record exists.
+// if no such record exists. An empty timerID names no record (ADR-0152).
 func (s *InstanceState) timerByID(timerID string) *timerRecord {
+	if timerID == "" {
+		return nil
+	}
 	for i := range s.Timers {
 		if s.Timers[i].TimerID == timerID {
 			return &s.Timers[i]
@@ -37,8 +40,12 @@ func (s *InstanceState) timerByID(timerID string) *timerRecord {
 }
 
 // removeTimer removes the timerRecord with the given timerID from the Timers
-// slice. It is a no-op if no record with that timerID exists.
+// slice. It is a no-op if no record with that timerID exists, and an empty
+// timerID names no record (ADR-0152).
 func (s *InstanceState) removeTimer(timerID string) {
+	if timerID == "" {
+		return
+	}
 	out := make([]timerRecord, 0, len(s.Timers))
 	for _, tr := range s.Timers {
 		if tr.TimerID != timerID {
@@ -50,9 +57,20 @@ func (s *InstanceState) removeTimer(timerID string) {
 
 // cancelTimersByTaskID removes all timer records associated with the given
 // taskID (excluding the one already being handled), returning their TimerIDs
-// so the caller can emit CancelTimer commands. Used to cancel in-wait/reminder
-// timers when a deadline breach or task completion supersedes them.
+// so the caller can emit CancelTimer commands.
+//
+// An empty taskID cancels NOTHING (ADR-0152). A task id is an identity; the empty
+// string names no task. TimerRetry records carry no TaskID, so without this guard
+// an empty key matched every retry timer in the instance — including retries owned
+// by tokens in sibling scopes that were not being cancelled, leaving those tokens
+// parked in TokenWaiting forever with their timer cancelled in the scheduler.
+//
+// excludeTimerID is deliberately NOT guarded: an empty value means "exclude
+// nothing", and five of the seven call sites rely on that.
 func (s *InstanceState) cancelTimersByTaskID(taskID, excludeTimerID string) []string {
+	if taskID == "" {
+		return nil
+	}
 	var toCancel []string
 	out := make([]timerRecord, 0, len(s.Timers))
 	for _, tr := range s.Timers {
@@ -72,7 +90,12 @@ func (s *InstanceState) cancelTimersByTaskID(taskID, excludeTimerID string) []st
 // cancelTimersByTaskID, used to cancel a parked token's in-wait reminder when
 // its wait resolves or its scope is interrupted (ReceiveTask / IntermediateCatchEvent
 // have no human-task correlation token).
+//
+// An empty tokenID names no token (ADR-0152). excludeTimerID is NOT guarded.
 func (s *InstanceState) cancelTimersForToken(tokenID, excludeTimerID string) []string {
+	if tokenID == "" {
+		return nil
+	}
 	var toCancel []string
 	out := make([]timerRecord, 0, len(s.Timers))
 	for _, tr := range s.Timers {

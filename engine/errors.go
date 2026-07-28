@@ -47,4 +47,13 @@ var (
 	// A manual UserTask is exempt — it is forbidden from declaring outcomes
 	// (model.ErrManualTaskOutcome) and completes on a bare trigger. See ADR-0146.
 	ErrOutcomeRequired = errors.New("workflow-engine: user task requires a completion outcome")
+
+	// ErrEmptyTriggerKey is returned when an inbound trigger's identity key is
+	// empty. An identity key names one specific record; the empty string names
+	// none, so the trigger cannot be dispatched.
+	//
+	// It is deliberately NOT wrapped in ErrInvalidTransition: the instance state is
+	// irrelevant here, the trigger itself is malformed. Transports classify it 400,
+	// alongside the other caller-correctable input sentinels. See ADR-0152.
+	ErrEmptyTriggerKey = errors.New("workflow-engine: trigger identity key is empty")
 )

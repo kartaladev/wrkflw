@@ -69,7 +69,16 @@ func (s *InstanceState) firstActive() *Token {
 	return nil
 }
 
+// tokenAwaiting returns the token parked on the given command id, or nil.
+//
+// An empty cmdID names no token (ADR-0152): a Token parks on exactly one of
+// AwaitCommand/AwaitSignal/AwaitMessage (state.go:89-101), leaving the other
+// two "". Without this guard, cmdID == "" would match any token NOT parked
+// on a command — an unrelated wildcard hit.
 func (s *InstanceState) tokenAwaiting(cmdID string) *Token {
+	if cmdID == "" {
+		return nil
+	}
 	for i := range s.Tokens {
 		if s.Tokens[i].AwaitCommand == cmdID {
 			return &s.Tokens[i]
@@ -79,7 +88,13 @@ func (s *InstanceState) tokenAwaiting(cmdID string) *Token {
 }
 
 // tokenByID returns the first token whose ID matches, or nil.
+//
+// An empty tokenID names no token (ADR-0152); a Token's ID is always assigned
+// by nextID and is never legitimately empty.
 func (s *InstanceState) tokenByID(tokenID string) *Token {
+	if tokenID == "" {
+		return nil
+	}
 	for i := range s.Tokens {
 		if s.Tokens[i].ID == tokenID {
 			return &s.Tokens[i]
@@ -93,7 +108,15 @@ func (s *InstanceState) tokenByID(tokenID string) *Token {
 // captures the state at the call instant; tokens added to s.Tokens after this
 // call are NOT included. Used by SignalReceived dispatch to implement snapshot
 // semantics: only tokens awaiting the signal AT DELIVERY TIME are resumed.
+//
+// An empty name names no signal (ADR-0152): a Token parks on exactly one of
+// AwaitCommand/AwaitSignal/AwaitMessage (state.go:89-101), so without this
+// guard name == "" would select every token NOT awaiting a signal and a
+// consumer-built SignalReceived{Name: ""} would broadcast-resume them all.
 func (s *InstanceState) tokenIDsAwaitingSignal(name string) []string {
+	if name == "" {
+		return nil
+	}
 	var ids []string
 	for i := range s.Tokens {
 		if s.Tokens[i].AwaitSignal == name {
@@ -107,7 +130,17 @@ func (s *InstanceState) tokenIDsAwaitingSignal(name string) []string {
 // AND whose AwaitMessageKey matches correlationKey. An empty correlationKey on
 // the token (no key configured on the catch node) matches only when the
 // incoming MessageReceived.CorrelationKey is also empty.
+//
+// An empty name names no message (ADR-0152): a Token parks on exactly one of
+// AwaitCommand/AwaitSignal/AwaitMessage (state.go:89-101), so without this
+// guard name == "" would match any token NOT parked on a message.
+// correlationKey is deliberately NOT guarded: "" is the legitimate
+// "uncorrelated" value (see the AwaitMessageKey doc on Token), and must keep
+// matching a token whose AwaitMessageKey is also empty.
 func (s *InstanceState) tokenAwaitingMessage(name, correlationKey string) *Token {
+	if name == "" {
+		return nil
+	}
 	for i := range s.Tokens {
 		t := &s.Tokens[i]
 		if t.AwaitMessage == name && t.AwaitMessageKey == correlationKey {
@@ -141,7 +174,15 @@ func (s *InstanceState) setVisitTask(tokenID, nodeID, taskID string) {
 
 // openVisitFor returns the most recent open (not-yet-left) NodeVisit for the
 // given (tokenID, nodeID) pair, or nil when none is open.
+//
+// Both tokenID and nodeID are identity keys into s.History; an empty value on
+// either side names no visit (ADR-0152), so both are guarded. Callers
+// (setVisitTask, closeVisit, closeVisitAs) pass through to this guard rather
+// than duplicating it.
 func (s *InstanceState) openVisitFor(tokenID, nodeID string) *NodeVisit {
+	if tokenID == "" || nodeID == "" {
+		return nil
+	}
 	for i := len(s.History) - 1; i >= 0; i-- {
 		v := &s.History[i]
 		if v.TokenID == tokenID && v.NodeID == nodeID && v.LeftAt == nil {
@@ -189,7 +230,14 @@ func (s *InstanceState) consumeToken(tok *Token, at time.Time) {
 }
 
 // removeToken drops the token with the given id from the token set.
+//
+// An empty id names no token (ADR-0152): a Token's ID is always assigned by
+// nextID and is never legitimately empty, so an empty id is a no-op rather
+// than a mass-removal of every token that happens to lack one.
 func (s *InstanceState) removeToken(id string) {
+	if id == "" {
+		return
+	}
 	out := make([]Token, 0, len(s.Tokens))
 	for _, t := range s.Tokens {
 		if t.ID != id {

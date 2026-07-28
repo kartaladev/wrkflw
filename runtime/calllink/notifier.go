@@ -200,6 +200,15 @@ func (n *CallNotifier) DrainOnce(ctx context.Context) (int, error) {
 		}
 
 		// Apply the trigger to the parent instance.
+		//
+		// ADR-0152 cross-layer note: an empty p.Link.ParentCommandID would make
+		// Step return engine.ErrEmptyTriggerKey instead of ErrTokenNotFound, which
+		// this check does not recognize as a duplicate — the link would stay
+		// claimable and retry forever. This is unreachable today: ParentCommandID
+		// is always populated from a minted engine.CommandID (see
+		// runtime/processdriver_action.go's nextCommandID call site), never empty.
+		// If it ever became reachable, an infinite retry is a safe failure mode —
+		// strictly safer than the pre-ADR wildcard match resuming a wrong token.
 		derr := n.deliver(ctx, parentDef, p.Link.ParentInstanceID, trg)
 		if derr != nil && !errors.Is(derr, engine.ErrTokenNotFound) {
 			// Transient or structural failure — leave the link claimable for retry.
