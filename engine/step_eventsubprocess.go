@@ -204,9 +204,7 @@ func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefi
 		// Cancel sibling event-subprocess arms for the same enclosing scope (all arms,
 		// including this one). Emit CancelTimer for timer arms.
 		// removeEventTriggeredSubprocessArmsForScope removes ALL arms for the scope including this one.
-		for _, timerID := range s.removeEventTriggeredSubprocessArmsForScope(ea.EnclosingScopeID) {
-			cmds = append(cmds, CancelTimer{TimerID: timerID})
-		}
+		cmds = appendCancelTimers(cmds, s.removeEventTriggeredSubprocessArmsForScope(ea.EnclosingScopeID))
 
 		// Open a child scope for the event sub-process, parented to the ENCLOSING scope.
 		// NodeID = the event sub-process node ID.

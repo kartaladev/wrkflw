@@ -106,10 +106,19 @@ func TestValidateTriggerKindsAreExhaustive(t *testing.T) {
 
 	for _, trg := range all {
 		name := triggerTypeName(trg)
-		_, validated := validatedTriggerKinds[name]
+		k, validated := validatedTriggerKinds[name]
 		_, exempt := exemptTriggerKinds[name]
 		assert.True(t, validated != exempt,
 			"trigger %s must be classified exactly once: validated=%v exempt=%v", name, validated, exempt)
+		if !validated {
+			continue
+		}
+		// Exercise the row's extractor against the variant its key names. The
+		// bare type assertion inside read is not checkable by the compiler, so a
+		// row paired with the wrong concrete type would otherwise panic inside
+		// Step on the engine's hot path. Fail here instead.
+		assert.NotPanics(t, func() { k.read(trg) },
+			"trigger %s: validatedTriggerKinds[%q].read asserts a different concrete type than its key names", name, name)
 	}
 	assert.Len(t, all, len(validatedTriggerKinds)+len(exemptTriggerKinds),
 		"every Trigger variant must appear in exactly one classification set")

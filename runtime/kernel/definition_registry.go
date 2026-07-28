@@ -65,9 +65,19 @@ func (r *MapDefinitionRegistry) Lookup(_ context.Context, q model.Qualifier) (*m
 // the enumeration is entirely in-memory. The registry is immutable after
 // construction, so no locking is required.
 func (r *MapDefinitionRegistry) ListDefinitions(context.Context) []*model.ProcessDefinition {
-	seen := make(map[*model.ProcessDefinition]struct{}, len(r.m))
-	out := make([]*model.ProcessDefinition, 0, len(r.m))
-	for _, d := range r.m {
+	return distinctDefinitions(r.m)
+}
+
+// distinctDefinitions returns each definition in m exactly once, deduped by
+// concrete *model.ProcessDefinition pointer (a registry indexes every
+// definition under both its pinned and its latest Qualifier key). The result is
+// always non-nil, and its iteration order is unspecified (Go map order).
+//
+// The caller is responsible for whatever locking m requires.
+func distinctDefinitions(m map[model.Qualifier]*model.ProcessDefinition) []*model.ProcessDefinition {
+	seen := make(map[*model.ProcessDefinition]struct{}, len(m))
+	out := make([]*model.ProcessDefinition, 0, len(m))
+	for _, d := range m {
 		if _, ok := seen[d]; ok {
 			continue
 		}

@@ -40,20 +40,6 @@ func terminalErr(st engine.InstanceState) string {
 	}
 }
 
-// copyVarsForOutcome returns a shallow copy of vars to avoid aliasing the
-// live InstanceState.Variables map via the CallOutcome.Output reference.
-// Returns nil when vars is nil (preserving the zero value).
-func copyVarsForOutcome(vars map[string]any) map[string]any {
-	if vars == nil {
-		return nil
-	}
-	out := make(map[string]any, len(vars))
-	for k, v := range vars {
-		out[k] = v
-	}
-	return out
-}
-
 // Child-instance id derivation (see [childInstanceIDFor]).
 const (
 	// childInstanceIDInfix separates a parent instance id from the segment that
@@ -267,22 +253,9 @@ func (driver *ProcessDriver) resolveHumanCandidates(ctx context.Context, st *eng
 		// rewrite the candidate list of an already-committed instance, and that
 		// list is audit data (ADR-0147). The engine's own ingest path
 		// (handleHumanCandidatesResolved) clones for the same reason.
-		task.Candidates = cloneActors(actors)
+		task.Candidates = authz.CloneActors(actors)
 	}
 	return nil
-}
-
-// cloneActors returns a deep copy of the actor slice, isolating each actor's
-// Roles slice and Attributes map via [authz.Actor.Clone]. nil in, nil out.
-func cloneActors(actors []authz.Actor) []authz.Actor {
-	if actors == nil {
-		return nil
-	}
-	out := make([]authz.Actor, len(actors))
-	for i, a := range actors {
-		out[i] = a.Clone()
-	}
-	return out
 }
 
 // resolveCandidates performs one ActorResolver lookup under the driver's
@@ -304,162 +277,32 @@ func (driver *ProcessDriver) resolveCandidates(ctx context.Context, spec authz.A
 // to mutate state the caller expects to be persisted — see
 // [ProcessDriver.resolveHumanCandidates] for the pre-commit counterpart.
 //
-//nolint:cyclop // the command switch is intentionally exhaustive; each case is simple.
+// It is a pure dispatcher: every command that does real work has its own
+// perform* method, so this switch stays a readable map from command type to
+// handler.
 func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefinition, st engine.InstanceState, c engine.Command) (engine.Trigger, error) {
 	switch cmd := c.(type) {
 	case engine.InvokeAction:
-		actx, aspan := driver.obs.tracer().Start(ctx, "wrkflw.action "+cmd.Name,
-			trace.WithAttributes(attribute.String("wrkflw.action", cmd.Name)))
-		outcome := "error"
-		var elapsed float64
-		defer func() {
-			driver.obs.actionDuration.Record(actx, elapsed,
-				metric.WithAttributes(attribute.String("action", cmd.Name), attribute.String("outcome", outcome)))
-			aspan.End()
-		}()
-
-		a, ok := driver.resolveInvokeAction(def, cmd)
-		if !ok {
-			err := errors.New("unknown action: " + cmd.Name)
-			aspan.RecordError(err)
-			aspan.SetStatus(codes.Error, err.Error())
-			driver.obs.actionFailures.Add(actx, 1, metric.WithAttributes(
-				attribute.String("action", cmd.Name),
-				attribute.Bool("retryable", false),
-			))
-			if cmd.FireAndForget {
-				// No token awaits a fire-and-forget action's result, so an
-				// ActionFailed would only surface as ErrTokenNotFound. Log and
-				// drop instead — the action was never actionable anyway.
-				driver.obs.tel.Logger.LogAttrs(actx, slog.LevelWarn, "runtime: fire-and-forget action not found",
-					slog.String("action", cmd.Name))
-				return nil, nil
-			}
-			return engine.NewActionFailed(driver.clk.Now(), cmd.CommandID, "unknown action: "+cmd.Name, false), nil
-		}
-		start := driver.clk.Now()
-		bare, timeout, recoverPanics := driver.effectiveActionPolicy(a)
-		tctx, cancel := actionContextFor(actx, timeout)
-		out, err := invokeActionDo(tctx, bare, cmd.Input, recoverPanics)
-		cancel()
-		elapsed = driver.clk.Now().Sub(start).Seconds()
-		if err != nil {
-			aspan.RecordError(err)
-			aspan.SetStatus(codes.Error, err.Error())
-			driver.obs.actionFailures.Add(actx, 1, metric.WithAttributes(
-				attribute.String("action", cmd.Name),
-				attribute.Bool("retryable", action.IsRetryable(err)),
-			))
-			if cmd.FireAndForget {
-				// Deadline-breach and reminder actions run for their side effect
-				// only; no token awaits the result. Log the failure rather than
-				// feeding back an ActionFailed that no token could ever match.
-				driver.obs.tel.Logger.LogAttrs(actx, slog.LevelWarn, "runtime: fire-and-forget action failed",
-					slog.String("action", cmd.Name), slog.Any("error", err))
-				return nil, nil
-			}
-			return engine.NewActionFailed(driver.clk.Now(), cmd.CommandID, err.Error(), action.IsRetryable(err), engine.WithJitter(driver.jitter.Fraction()), engine.WithCause(err)), nil
-		}
-		outcome = "ok"
-		if cmd.FireAndForget {
-			// Side effect performed and observed (span + duration metric). No
-			// token awaits the result, so return no trigger.
-			return nil, nil
-		}
-		return engine.NewActionCompleted(driver.clk.Now(), cmd.CommandID, out), nil
+		return driver.performInvokeAction(ctx, def, cmd)
 
 	case engine.InvokeCancelAction:
-		// Best-effort, fire-and-forget: run the action for its side effect, log any
-		// failure, and NEVER feed a result back or return an error — the instance is
-		// already terminal and cancellation must report success regardless (ADR-0028).
-		a, ok := driver.resolveActionName(def, cmd.Name)
-		if !ok {
-			driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: cancel action not found",
-				slog.String("action", cmd.Name))
-			return nil, nil
-		}
-		// Cancel actions run for their side effect only and MUST NOT crash the
-		// terminal-cancel path, so recover is always forced on here regardless of a
-		// per-action WithRecover(false) — best-effort semantics (ADR-0028). The
-		// per-action execution timeout is still honoured.
-		bare, timeout, _ := driver.effectiveActionPolicy(a)
-		cctx, cancel := actionContextFor(ctx, timeout)
-		_, err := invokeActionDo(cctx, bare, cmd.Input, true)
-		cancel()
-		if err != nil {
-			driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelError, "runtime: cancel action failed",
-				slog.String("action", cmd.Name), slog.Any("error", err))
-		}
-		return nil, nil
+		return driver.performCancelAction(ctx, def, cmd)
 
-	case engine.CompleteInstance:
-		// The terminal outbox event is derived status-driven by
-		// terminalOutboxEvent at the deliverLoop terminal edge and written inside
-		// the Commit tx; nothing to perform here (ADR-0046).
-		return nil, nil
-
-	case engine.FailInstance:
-		// The terminal outbox event is derived status-driven by
-		// terminalOutboxEvent at the deliverLoop terminal edge and written inside
-		// the Commit tx; nothing to perform here (ADR-0046).
+	case engine.CompleteInstance, engine.FailInstance, engine.SendMessage:
+		// Nothing to perform post-commit for any of these — each is already
+		// delivered inside the Commit tx:
+		//   - CompleteInstance / FailInstance: the terminal outbox event is derived
+		//     status-driven by terminalOutboxEvent at the deliverLoop terminal edge
+		//     (ADR-0046).
+		//   - SendMessage: delivered as a message.<Name> outbox event in this step's
+		//     AppliedStep.Events (ADR-0067).
 		return nil, nil
 
 	case engine.AwaitHuman:
-		if driver.tasks == nil {
-			return nil, fmt.Errorf("workflow-runtime: perform AwaitHuman: no TaskStore configured")
-		}
-		// Build and persist the HumanTask record. The task was already added to
-		// st.Tasks by the engine (drive → KindUserTask) and enriched with the
-		// resolved candidates by resolveHumanCandidates BEFORE the commit, so this
-		// projects the committed task into the queryable task store.
-		task := humantask.HumanTask{
-			TaskID:      cmd.TaskID,
-			InstanceID:  st.InstanceID,
-			Eligibility: cmd.Eligibility,
-			State:       humantask.Unclaimed,
-			CreatedAt:   driver.clk.Now(),
-			// Snapshot the process variables so attribute-based eligibility predicates
-			// that reference data variables (e.g. vars["region"] == "EU") are
-			// deterministically evaluated against the state at task-creation time.
-			// maps.Clone returns nil when st.Variables is nil, which is safe.
-			// Note: this is a SHALLOW copy — top-level keys are copied defensively,
-			// but nested maps/slices remain shared with the instance variables;
-			// eligibility predicates should rely on top-level scalar variables only.
-			Vars: maps.Clone(st.Variables),
-		}
-		// Copy the engine-owned fields from the committed task record if present.
-		if t := st.TaskByID(cmd.TaskID); t != nil {
-			task.NodeID = t.NodeID
-			task.CreatedAt = t.CreatedAt // preserve engine-stamped time
-			task.Vars = t.Vars           // engine-snapshotted at creation
-			// Resolved pre-commit and already durable. Clone anyway: handing the
-			// store the engine's own backing array would let a TaskStore that keeps
-			// the value verbatim share mutable actor state with live instance
-			// state — the same hazard cloneActors guards on the resolver side.
-			task.Candidates = cloneActors(t.Candidates)
-			// DueAt is engine-computed from the node's deadline trigger and is what
-			// inbox / SLA views render, so the projection must carry it. Copy the
-			// POINTEE: the store's record must not alias live engine state.
-			if t.DueAt != nil {
-				due := *t.DueAt
-				task.DueAt = &due
-			}
-		}
-		if err := driver.tasks.Upsert(ctx, task); err != nil {
-			return nil, fmt.Errorf("workflow-runtime: upsert task: %w", err)
-		}
-		driver.obs.humanTasks.Add(ctx, 1, metric.WithAttributes(attribute.String("event", "created")))
-		// No follow-up trigger: the instance parks here.
-		return nil, nil
+		return driver.performAwaitHuman(ctx, st, cmd)
 
 	case engine.UpdateTask:
-		if driver.tasks == nil {
-			return nil, fmt.Errorf("workflow-runtime: perform UpdateTask: no TaskStore configured")
-		}
-		if err := driver.tasks.Upsert(ctx, cmd.Task); err != nil {
-			return nil, fmt.Errorf("workflow-runtime: update task: %w", err)
-		}
-		return nil, nil
+		return driver.performUpdateTask(ctx, cmd)
 
 	// NOTE: engine.ScheduleTimer and engine.CancelTimer never reach perform —
 	// the deliverLoop handles them entirely on its commit path (in-tx durable
@@ -467,154 +310,355 @@ func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefi
 	// activate/deactivate — ADR-0134) and skips them before dispatching here.
 
 	case engine.ThrowSignal:
-		if driver.sigbus == nil {
-			return nil, fmt.Errorf("workflow-runtime: perform ThrowSignal %q: no SignalBus configured", cmd.Name)
-		}
-		if err := driver.sigbus.Publish(ctx, cmd.Name, cmd.Payload); err != nil {
-			return nil, fmt.Errorf("workflow-runtime: perform ThrowSignal %q: %w", cmd.Name, err)
-		}
-		return nil, nil
-
-	case engine.SendMessage:
-		// Delivered transactionally as a message.<Name> outbox event in this step's
-		// AppliedStep.Events (ADR-0067). Nothing to perform post-commit.
-		return nil, nil
+		return driver.performThrowSignal(ctx, cmd)
 
 	case engine.StartSubInstance:
-		// Defensive nil-guard: defsReg is always non-nil after NewProcessDriver
-		// (defaultDefinitionRegistry is set before the option loop, and
-		// WithDefinitions ignores nil). This guard exists only as dead-safe code.
-		if driver.defsReg == nil {
-			return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: no definition registry configured"+
-				" (use runtime.RegisterDefinition to populate the default registry, or supply one via WithDefinitions)", cmd.DefRef.String())
-		}
-		childDef, err := driver.defsReg.Lookup(ctx, cmd.DefRef)
-		if err != nil {
-			return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: definition not found"+
-				" (register it via runtime.RegisterDefinition or supply a registry via WithDefinitions): %w", cmd.DefRef.String(), err)
-		}
-
-		// Derive the deterministic child instance id from the parent id and the
-		// command id. The derivation is length-bounded and grows by a constant per
-		// nesting level whatever id shape the injected generator mints — see
-		// [childInstanceIDFor] for the scheme and why it matters.
-		childInstanceID := childInstanceIDFor(st.InstanceID, cmd.CommandID)
-
-		// Async path: when a CallLinkStore is configured, the child is started
-		// non-blocking. The parent parks at the call node; a notifier delivers
-		// the outcome (SubInstanceCompleted / SubInstanceFailed) later.
-		if driver.callLinks != nil {
-			// Compute depth: look up THIS instance's own link (is it itself a child?).
-			// Found ⇒ depth = parentLink.Depth + 1; not found ⇒ depth = 1.
-			// A store error must NOT be swallowed as "not found": that would
-			// miscompute depth and start a child that the guard should have
-			// rejected. Propagate it so the caller can retry.
-			depth := 1
-			parentLink, ok, lerr := driver.callLinks.LookupChild(ctx, st.InstanceID)
-			if lerr != nil {
-				return nil, fmt.Errorf("workflow-runtime: call activity: depth lookup for %q: %w", st.InstanceID, lerr)
-			}
-			if ok {
-				depth = parentLink.Depth + 1
-			}
-			if depth > maxCallDepth {
-				return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID,
-					fmt.Sprintf("workflow-runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
-						"async call activity chain is too deep",
-						maxCallDepth, cmd.DefRef.String()),
-				), nil
-			}
-
-			link := kernel.CallLink{
-				ChildInstanceID:  childInstanceID,
-				ParentInstanceID: st.InstanceID,
-				ParentCommandID:  cmd.CommandID,
-				ParentDefID:      def.ID,
-				ParentDefVersion: def.Version,
-				Depth:            depth,
-			}
-
-			// Start the child's first burst non-blocking: drive it until it parks or
-			// completes. The link is threaded into the child's first Create atomically.
-			if err := driver.runChild(ctx, childDef, childInstanceID, cmd.Input, &link); err != nil {
-				return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID, err.Error()), nil
-			}
-
-			// Return nil, nil — no synchronous resume trigger. The parent stays parked
-			// at the call node; the engine already handled parking when it emitted
-			// StartSubInstance. The notifier will deliver SubInstanceCompleted/Failed later.
-			return nil, nil
-		}
-
-		// Synchronous path (opt-out: driver.callLinks == nil): run the child to completion
-		// in-process.
-
-		// Recursion / cycle depth guard.
-		//
-		// A definition whose call activity references itself (direct: A→A, or via a
-		// cycle: A→B→A) causes unbounded synchronous recursion through perform →
-		// driver.Drive → deliverLoop → perform, which ultimately stack-overflows. We thread
-		// the depth counter through ctx so every nested call increments it; when the
-		// limit is reached we return a descriptive SubInstanceFailed instead of
-		// crashing. The synchronous runner only supports children that run to
-		// completion in one pass; async call activities (a future enhancement) would
-		// not use this counter.
-		depth := callDepth(ctx)
-		if depth >= maxCallDepth {
-			return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID,
-				fmt.Sprintf("workflow-runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
-					"the synchronous runner does not support cyclic or deeply nested call activities",
-					maxCallDepth, cmd.DefRef.String()),
-			), nil
-		}
-		childCtx := withCallDepth(ctx, depth+1)
-
-		// Run the child to completion (synchronous within perform). The child uses
-		// the same ProcessDriver so it shares the store, journal, outbox, catalog, and
-		// scheduler. The child's Drive call drives the child's deliverLoop until the
-		// child parks or completes.
-		childSt, err := driver.Drive(childCtx, childDef, childInstanceID, cmd.Input)
-		if err != nil {
-			// Child run returned a hard error (e.g. storage failure). Propagate as
-			// SubInstanceFailed so the parent instance can respond.
-			return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID, err.Error()), nil
-		}
-
-		// Translate the child's terminal status into a parent trigger.
-		switch childSt.Status {
-		case engine.StatusCompleted:
-			// Pass the child's final variables back as the Output so the parent can
-			// merge them. This gives the parent access to everything the child computed.
-			return engine.NewSubInstanceCompleted(driver.clk.Now(), cmd.CommandID, childSt.Variables), nil
-
-		case engine.StatusRunning:
-			// Explicit parked-child error.
-			//
-			// The child parked (StatusRunning) without completing. This happens when
-			// the child contains a node that requires external input — a human task,
-			// timer, signal catch event, or its own call activity — that cannot be
-			// resolved within a single synchronous Drive. The synchronous reference
-			// runner does not support re-entering a parked child; async call activities
-			// are a future enhancement.
-			//
-			// Return a clear, diagnosable error message so the consumer understands
-			// the limitation rather than receiving a generic "did not complete" message.
-			return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID,
-				fmt.Sprintf("workflow-runtime: call activity child %q parked (status running): "+
-					"the synchronous runner does not support children that wait on human tasks, "+
-					"timers, or events; async call activity is a future enhancement",
-					childInstanceID),
-			), nil
-
-		default:
-			// StatusFailed or any other non-completed, non-running terminal state.
-			// Include the numeric status in the message so failures are diagnosable.
-			return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID,
-				fmt.Sprintf("workflow-runtime: call activity child %q ended with status %d", childInstanceID, childSt.Status),
-			), nil
-		}
+		return driver.performStartSubInstance(ctx, def, st, cmd)
 
 	default:
 		return nil, fmt.Errorf("workflow-runtime: unsupported command %T", c)
+	}
+}
+
+// performInvokeAction invokes the service action named by an [engine.InvokeAction]
+// command and translates the outcome into the trigger that resumes the awaiting
+// token: ActionCompleted on success, ActionFailed on error or on an unresolvable
+// action name.
+//
+// A fire-and-forget invocation (deadline-breach and reminder actions) has no
+// awaiting token, so each of its outcomes is logged and observed rather than fed
+// back as a trigger that no token could ever match.
+func (driver *ProcessDriver) performInvokeAction(ctx context.Context, def *model.ProcessDefinition, cmd engine.InvokeAction) (engine.Trigger, error) {
+	actx, aspan := driver.obs.tracer().Start(ctx, "wrkflw.action "+cmd.Name,
+		trace.WithAttributes(attribute.String("wrkflw.action", cmd.Name)))
+	outcome := "error"
+	var elapsed float64
+	defer func() {
+		driver.obs.actionDuration.Record(actx, elapsed,
+			metric.WithAttributes(attribute.String("action", cmd.Name), attribute.String("outcome", outcome)))
+		aspan.End()
+	}()
+
+	a, ok := driver.resolveInvokeAction(def, cmd)
+	if !ok {
+		err := errors.New("unknown action: " + cmd.Name)
+		aspan.RecordError(err)
+		aspan.SetStatus(codes.Error, err.Error())
+		driver.obs.actionFailures.Add(actx, 1, metric.WithAttributes(
+			attribute.String("action", cmd.Name),
+			attribute.Bool("retryable", false),
+		))
+		if cmd.FireAndForget {
+			// No token awaits a fire-and-forget action's result, so an
+			// ActionFailed would only surface as ErrTokenNotFound. Log and
+			// drop instead — the action was never actionable anyway.
+			driver.obs.tel.Logger.LogAttrs(actx, slog.LevelWarn, "runtime: fire-and-forget action not found",
+				slog.String("action", cmd.Name))
+			return nil, nil
+		}
+		return engine.NewActionFailed(driver.clk.Now(), cmd.CommandID, "unknown action: "+cmd.Name, false), nil
+	}
+	start := driver.clk.Now()
+	bare, timeout, recoverPanics := driver.effectiveActionPolicy(a)
+	tctx, cancel := actionContextFor(actx, timeout)
+	out, err := invokeActionDo(tctx, bare, cmd.Input, recoverPanics)
+	cancel()
+	elapsed = driver.clk.Now().Sub(start).Seconds()
+	if err != nil {
+		aspan.RecordError(err)
+		aspan.SetStatus(codes.Error, err.Error())
+		driver.obs.actionFailures.Add(actx, 1, metric.WithAttributes(
+			attribute.String("action", cmd.Name),
+			attribute.Bool("retryable", action.IsRetryable(err)),
+		))
+		if cmd.FireAndForget {
+			// Deadline-breach and reminder actions run for their side effect
+			// only; no token awaits the result. Log the failure rather than
+			// feeding back an ActionFailed that no token could ever match.
+			driver.obs.tel.Logger.LogAttrs(actx, slog.LevelWarn, "runtime: fire-and-forget action failed",
+				slog.String("action", cmd.Name), slog.Any("error", err))
+			return nil, nil
+		}
+		return engine.NewActionFailed(driver.clk.Now(), cmd.CommandID, err.Error(), action.IsRetryable(err), engine.WithJitter(driver.jitter.Fraction()), engine.WithCause(err)), nil
+	}
+	outcome = "ok"
+	if cmd.FireAndForget {
+		// Side effect performed and observed (span + duration metric). No
+		// token awaits the result, so return no trigger.
+		return nil, nil
+	}
+	return engine.NewActionCompleted(driver.clk.Now(), cmd.CommandID, out), nil
+}
+
+// performCancelAction runs the action named by an [engine.InvokeCancelAction]
+// command. It is best-effort and fire-and-forget: the action runs for its side
+// effect, any failure is logged, and a result is NEVER fed back nor an error
+// returned — the instance is already terminal and cancellation must report
+// success regardless (ADR-0028).
+func (driver *ProcessDriver) performCancelAction(ctx context.Context, def *model.ProcessDefinition, cmd engine.InvokeCancelAction) (engine.Trigger, error) {
+	a, ok := driver.resolveActionName(def, cmd.Name)
+	if !ok {
+		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: cancel action not found",
+			slog.String("action", cmd.Name))
+		return nil, nil
+	}
+	// Cancel actions run for their side effect only and MUST NOT crash the
+	// terminal-cancel path, so recover is always forced on here regardless of a
+	// per-action WithRecover(false) — best-effort semantics (ADR-0028). The
+	// per-action execution timeout is still honoured.
+	bare, timeout, _ := driver.effectiveActionPolicy(a)
+	cctx, cancel := actionContextFor(ctx, timeout)
+	_, err := invokeActionDo(cctx, bare, cmd.Input, true)
+	cancel()
+	if err != nil {
+		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelError, "runtime: cancel action failed",
+			slog.String("action", cmd.Name), slog.Any("error", err))
+	}
+	return nil, nil
+}
+
+// performAwaitHuman projects the human task named by an [engine.AwaitHuman]
+// command into the queryable task store. The task was already added to st.Tasks
+// by the engine (drive → KindUserTask) and enriched with the resolved candidates
+// by resolveHumanCandidates BEFORE the commit, so this only mirrors the committed
+// record out. No follow-up trigger is returned: the instance parks here.
+func (driver *ProcessDriver) performAwaitHuman(ctx context.Context, st engine.InstanceState, cmd engine.AwaitHuman) (engine.Trigger, error) {
+	if driver.tasks == nil {
+		return nil, fmt.Errorf("workflow-runtime: perform AwaitHuman: no TaskStore configured")
+	}
+	task := humantask.HumanTask{
+		TaskID:      cmd.TaskID,
+		InstanceID:  st.InstanceID,
+		Eligibility: cmd.Eligibility,
+		State:       humantask.Unclaimed,
+		CreatedAt:   driver.clk.Now(),
+		// Snapshot the process variables so attribute-based eligibility predicates
+		// that reference data variables (e.g. vars["region"] == "EU") are
+		// deterministically evaluated against the state at task-creation time.
+		// maps.Clone returns nil when st.Variables is nil, which is safe.
+		// Note: this is a SHALLOW copy — top-level keys are copied defensively,
+		// but nested maps/slices remain shared with the instance variables;
+		// eligibility predicates should rely on top-level scalar variables only.
+		Vars: maps.Clone(st.Variables),
+	}
+	// Copy the engine-owned fields from the committed task record if present.
+	if t := st.TaskByID(cmd.TaskID); t != nil {
+		task.NodeID = t.NodeID
+		task.CreatedAt = t.CreatedAt // preserve engine-stamped time
+		task.Vars = t.Vars           // engine-snapshotted at creation
+		// Resolved pre-commit and already durable. Clone anyway: handing the
+		// store the engine's own backing array would let a TaskStore that keeps
+		// the value verbatim share mutable actor state with live instance
+		// state — the same hazard the clone on the resolver side guards against.
+		task.Candidates = authz.CloneActors(t.Candidates)
+		// DueAt is engine-computed from the node's deadline trigger and is what
+		// inbox / SLA views render, so the projection must carry it. Copy the
+		// POINTEE: the store's record must not alias live engine state.
+		if t.DueAt != nil {
+			due := *t.DueAt
+			task.DueAt = &due
+		}
+	}
+	if err := driver.tasks.Upsert(ctx, task); err != nil {
+		return nil, fmt.Errorf("workflow-runtime: upsert task: %w", err)
+	}
+	driver.obs.humanTasks.Add(ctx, 1, metric.WithAttributes(attribute.String("event", "created")))
+	// No follow-up trigger: the instance parks here.
+	return nil, nil
+}
+
+// performUpdateTask writes the task carried by an [engine.UpdateTask] command
+// through to the task store, keeping the queryable projection in step with the
+// engine-side record.
+func (driver *ProcessDriver) performUpdateTask(ctx context.Context, cmd engine.UpdateTask) (engine.Trigger, error) {
+	if driver.tasks == nil {
+		return nil, fmt.Errorf("workflow-runtime: perform UpdateTask: no TaskStore configured")
+	}
+	if err := driver.tasks.Upsert(ctx, cmd.Task); err != nil {
+		return nil, fmt.Errorf("workflow-runtime: update task: %w", err)
+	}
+	return nil, nil
+}
+
+// performThrowSignal publishes the signal carried by an [engine.ThrowSignal]
+// command on the configured SignalBus. Signal delivery is fan-out and handled by
+// the bus, so nothing comes back to the throwing instance.
+func (driver *ProcessDriver) performThrowSignal(ctx context.Context, cmd engine.ThrowSignal) (engine.Trigger, error) {
+	if driver.sigbus == nil {
+		return nil, fmt.Errorf("workflow-runtime: perform ThrowSignal %q: no SignalBus configured", cmd.Name)
+	}
+	if err := driver.sigbus.Publish(ctx, cmd.Name, cmd.Payload); err != nil {
+		return nil, fmt.Errorf("workflow-runtime: perform ThrowSignal %q: %w", cmd.Name, err)
+	}
+	return nil, nil
+}
+
+// performStartSubInstance resolves the child definition and the deterministic
+// child instance id for an [engine.StartSubInstance] command, then hands off to
+// whichever call-activity strategy is wired: the async, call-link-backed path
+// when a CallLinkStore is configured, else the synchronous in-process runner.
+func (driver *ProcessDriver) performStartSubInstance(ctx context.Context, def *model.ProcessDefinition, st engine.InstanceState, cmd engine.StartSubInstance) (engine.Trigger, error) {
+	// Defensive nil-guard: defsReg is always non-nil after NewProcessDriver
+	// (defaultDefinitionRegistry is set before the option loop, and
+	// WithDefinitions ignores nil). This guard exists only as dead-safe code.
+	if driver.defsReg == nil {
+		return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: no definition registry configured"+
+			" (use runtime.RegisterDefinition to populate the default registry, or supply one via WithDefinitions)", cmd.DefRef.String())
+	}
+	childDef, err := driver.defsReg.Lookup(ctx, cmd.DefRef)
+	if err != nil {
+		return nil, fmt.Errorf("workflow-runtime: perform StartSubInstance %q: definition not found"+
+			" (register it via runtime.RegisterDefinition or supply a registry via WithDefinitions): %w", cmd.DefRef.String(), err)
+	}
+
+	// Derive the deterministic child instance id from the parent id and the
+	// command id. The derivation is length-bounded and grows by a constant per
+	// nesting level whatever id shape the injected generator mints — see
+	// [childInstanceIDFor] for the scheme and why it matters.
+	childInstanceID := childInstanceIDFor(st.InstanceID, cmd.CommandID)
+
+	// Async path: when a CallLinkStore is configured, the child is started
+	// non-blocking. The parent parks at the call node; a notifier delivers
+	// the outcome (SubInstanceCompleted / SubInstanceFailed) later.
+	if driver.callLinks != nil {
+		return driver.startSubInstanceAsync(ctx, def, st, cmd, childDef, childInstanceID)
+	}
+
+	// Synchronous path (opt-out: driver.callLinks == nil): run the child to completion
+	// in-process.
+	return driver.startSubInstanceSync(ctx, cmd, childDef, childInstanceID)
+}
+
+// startSubInstanceAsync starts the call-activity child non-blocking and records a
+// [kernel.CallLink] so the outcome can be routed back later. It returns no
+// trigger: the parent stays parked at the call node (the engine parked it when it
+// emitted StartSubInstance) and a notifier delivers SubInstanceCompleted /
+// SubInstanceFailed once the child finishes.
+//
+// Depth is derived from the parent's own call link, and a chain deeper than
+// maxCallDepth fails the command rather than starting the child.
+func (driver *ProcessDriver) startSubInstanceAsync(
+	ctx context.Context,
+	def *model.ProcessDefinition,
+	st engine.InstanceState,
+	cmd engine.StartSubInstance,
+	childDef *model.ProcessDefinition,
+	childInstanceID string,
+) (engine.Trigger, error) {
+	// Compute depth: look up THIS instance's own link (is it itself a child?).
+	// Found ⇒ depth = parentLink.Depth + 1; not found ⇒ depth = 1.
+	// A store error must NOT be swallowed as "not found": that would
+	// miscompute depth and start a child that the guard should have
+	// rejected. Propagate it so the caller can retry.
+	depth := 1
+	parentLink, ok, lerr := driver.callLinks.LookupChild(ctx, st.InstanceID)
+	if lerr != nil {
+		return nil, fmt.Errorf("workflow-runtime: call activity: depth lookup for %q: %w", st.InstanceID, lerr)
+	}
+	if ok {
+		depth = parentLink.Depth + 1
+	}
+	if depth > maxCallDepth {
+		return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID,
+			fmt.Sprintf("workflow-runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
+				"async call activity chain is too deep",
+				maxCallDepth, cmd.DefRef.String()),
+		), nil
+	}
+
+	link := kernel.CallLink{
+		ChildInstanceID:  childInstanceID,
+		ParentInstanceID: st.InstanceID,
+		ParentCommandID:  cmd.CommandID,
+		ParentDefID:      def.ID,
+		ParentDefVersion: def.Version,
+		Depth:            depth,
+	}
+
+	// Start the child's first burst non-blocking: drive it until it parks or
+	// completes. The link is threaded into the child's first Create atomically.
+	if err := driver.runChild(ctx, childDef, childInstanceID, cmd.Input, &link); err != nil {
+		return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID, err.Error()), nil
+	}
+
+	// Return nil, nil — no synchronous resume trigger. The parent stays parked
+	// at the call node; the engine already handled parking when it emitted
+	// StartSubInstance. The notifier will deliver SubInstanceCompleted/Failed later.
+	return nil, nil
+}
+
+// startSubInstanceSync runs the call-activity child to completion in-process and
+// translates its terminal status into the parent's resume trigger
+// (SubInstanceCompleted / SubInstanceFailed). It is the opt-out path taken when
+// no CallLinkStore is configured.
+//
+// A ctx-threaded depth counter guards against a definition whose call activity
+// recurses into itself. A child that merely parked is reported with an explicit,
+// diagnosable message rather than a generic failure, since re-entering a parked
+// child is a limitation of this runner rather than an error in the definition.
+func (driver *ProcessDriver) startSubInstanceSync(ctx context.Context, cmd engine.StartSubInstance, childDef *model.ProcessDefinition, childInstanceID string) (engine.Trigger, error) {
+	// Recursion / cycle depth guard.
+	//
+	// A definition whose call activity references itself (direct: A→A, or via a
+	// cycle: A→B→A) causes unbounded synchronous recursion through perform →
+	// driver.Drive → deliverLoop → perform, which ultimately stack-overflows. We thread
+	// the depth counter through ctx so every nested call increments it; when the
+	// limit is reached we return a descriptive SubInstanceFailed instead of
+	// crashing. The synchronous runner only supports children that run to
+	// completion in one pass; async call activities (a future enhancement) would
+	// not use this counter.
+	depth := callDepth(ctx)
+	if depth >= maxCallDepth {
+		return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID,
+			fmt.Sprintf("workflow-runtime: call activity depth limit %d exceeded (possible recursive definition: %q); "+
+				"the synchronous runner does not support cyclic or deeply nested call activities",
+				maxCallDepth, cmd.DefRef.String()),
+		), nil
+	}
+	childCtx := withCallDepth(ctx, depth+1)
+
+	// Run the child to completion (synchronous within perform). The child uses
+	// the same ProcessDriver so it shares the store, journal, outbox, catalog, and
+	// scheduler. The child's Drive call drives the child's deliverLoop until the
+	// child parks or completes.
+	childSt, err := driver.Drive(childCtx, childDef, childInstanceID, cmd.Input)
+	if err != nil {
+		// Child run returned a hard error (e.g. storage failure). Propagate as
+		// SubInstanceFailed so the parent instance can respond.
+		return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID, err.Error()), nil
+	}
+
+	// Translate the child's terminal status into a parent trigger.
+	switch childSt.Status {
+	case engine.StatusCompleted:
+		// Pass the child's final variables back as the Output so the parent can
+		// merge them. This gives the parent access to everything the child computed.
+		return engine.NewSubInstanceCompleted(driver.clk.Now(), cmd.CommandID, childSt.Variables), nil
+
+	case engine.StatusRunning:
+		// Explicit parked-child error.
+		//
+		// The child parked (StatusRunning) without completing. This happens when
+		// the child contains a node that requires external input — a human task,
+		// timer, signal catch event, or its own call activity — that cannot be
+		// resolved within a single synchronous Drive. The synchronous reference
+		// runner does not support re-entering a parked child; async call activities
+		// are a future enhancement.
+		//
+		// Return a clear, diagnosable error message so the consumer understands
+		// the limitation rather than receiving a generic "did not complete" message.
+		return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID,
+			fmt.Sprintf("workflow-runtime: call activity child %q parked (status running): "+
+				"the synchronous runner does not support children that wait on human tasks, "+
+				"timers, or events; async call activity is a future enhancement",
+				childInstanceID),
+		), nil
+
+	default:
+		// StatusFailed or any other non-completed, non-running terminal state.
+		// Include the numeric status in the message so failures are diagnosable.
+		return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID,
+			fmt.Sprintf("workflow-runtime: call activity child %q ended with status %d", childInstanceID, childSt.Status),
+		), nil
 	}
 }

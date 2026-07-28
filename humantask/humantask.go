@@ -133,14 +133,9 @@ type HumanTask struct {
 func (t HumanTask) Clone() HumanTask {
 	// Guard on nil, not on length: a zero-length slice with spare capacity is
 	// still shared, so two clones appending to it would write the same backing
-	// array. slices.Clone maps nil to nil and anything else to a fresh array.
-	if t.Candidates != nil {
-		candidates := make([]authz.Actor, len(t.Candidates))
-		for i, c := range t.Candidates {
-			candidates[i] = c.Clone()
-		}
-		t.Candidates = candidates
-	}
+	// array. authz.CloneActors and slices.Clone both map nil to nil and anything
+	// else to a fresh array.
+	t.Candidates = authz.CloneActors(t.Candidates)
 	t.Eligibility.Roles = slices.Clone(t.Eligibility.Roles)
 	t.Eligibility.Privileges = slices.Clone(t.Eligibility.Privileges)
 	if t.Claim != nil {

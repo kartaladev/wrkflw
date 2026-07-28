@@ -1,10 +1,11 @@
 package kernel
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"maps"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -119,17 +120,12 @@ func (m *MemChainLinkStore) PredecessorOf(_ context.Context, successorID string)
 // SuccessorsOf returns all ChainLinks fanned out from predecessorID, ordered
 // by Outcome for deterministic results. Returns an empty (never nil) slice
 // when no successors exist.
-func (m *MemChainLinkStore) SuccessorsOf(_ context.Context, predecessorID string) ([]ChainLink, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	out := []ChainLink{}
-	for _, l := range m.links {
-		if l.PredecessorID == predecessorID {
-			out = append(out, cloneChainLink(l))
-		}
+func (m *MemChainLinkStore) SuccessorsOf(ctx context.Context, predecessorID string) ([]ChainLink, error) {
+	out, err := m.ListByPredecessor(ctx, predecessorID)
+	if out == nil {
+		out = []ChainLink{}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Outcome < out[j].Outcome })
-	return out, nil
+	return out, err
 }
 
 // LookupBySuccessor returns the link whose SuccessorID equals successorID.
@@ -154,7 +150,7 @@ func (m *MemChainLinkStore) ListByPredecessor(_ context.Context, predecessorID s
 			out = append(out, cloneChainLink(l))
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Outcome < out[j].Outcome })
+	slices.SortFunc(out, func(a, b ChainLink) int { return cmp.Compare(a.Outcome, b.Outcome) })
 	return out, nil
 }
 

@@ -1,8 +1,9 @@
 package kernel
 
 import (
+	"cmp"
 	"context"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -184,8 +185,8 @@ func (m *MemCallLinkStore) ChildrenOf(_ context.Context, parentID string) ([]Cal
 			out = append(out, l.link)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].ChildInstanceID < out[j].ChildInstanceID
+	slices.SortFunc(out, func(a, b CallLink) int {
+		return cmp.Compare(a.ChildInstanceID, b.ChildInstanceID)
 	})
 	return out, nil
 }
@@ -201,8 +202,8 @@ func (m *MemCallLinkStore) ListRunningChildren(_ context.Context, parentInstance
 			out = append(out, l.link)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].ChildInstanceID < out[j].ChildInstanceID
+	slices.SortFunc(out, func(a, b CallLink) int {
+		return cmp.Compare(a.ChildInstanceID, b.ChildInstanceID)
 	})
 	return out, nil
 }

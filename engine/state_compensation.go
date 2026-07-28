@@ -1,7 +1,9 @@
 package engine
 
 import (
-	"sort"
+	"cmp"
+	"maps"
+	"slices"
 	"time"
 )
 
@@ -267,22 +269,14 @@ func (s *InstanceState) consolidateArchiveIntoRoot() {
 	if len(s.ArchivedCompensations) == 0 {
 		return
 	}
-	// Deterministic iteration: sort archive keys.
-	keys := make([]string, 0, len(s.ArchivedCompensations))
-	for k := range s.ArchivedCompensations {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
+	// Deterministic iteration: drain the archive in sorted key order.
+	for _, k := range slices.Sorted(maps.Keys(s.ArchivedCompensations)) {
 		s.RootCompensations = append(s.RootCompensations, s.ArchivedCompensations[k]...)
 	}
 	s.ArchivedCompensations = nil
 	// Stable-sort combined slice by CompletedAt asc, NodeID asc tiebreak.
-	sort.SliceStable(s.RootCompensations, func(i, j int) bool {
-		if s.RootCompensations[i].CompletedAt.Equal(s.RootCompensations[j].CompletedAt) {
-			return s.RootCompensations[i].NodeID < s.RootCompensations[j].NodeID
-		}
-		return s.RootCompensations[i].CompletedAt.Before(s.RootCompensations[j].CompletedAt)
+	slices.SortStableFunc(s.RootCompensations, func(a, b CompensationRecord) int {
+		return cmp.Or(a.CompletedAt.Compare(b.CompletedAt), cmp.Compare(a.NodeID, b.NodeID))
 	})
 }
 

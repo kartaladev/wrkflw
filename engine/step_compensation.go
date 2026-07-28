@@ -314,13 +314,19 @@ func beginCompensation(ctx context.Context, def *model.ProcessDefinition, s *Ins
 	cur.ReverseResetVars = reverseResetVars
 	cur.RestoreTargetVars = restoreTargetVars
 	s.Compensating = cur
-	cmd := InvokeAction{
+	cmds := append(preCmds, compensationInvoke(rec, cmdID))
+	return StepResult{State: *s, Commands: cmds}, nil
+}
+
+// compensationInvoke returns the InvokeAction that runs rec's compensation
+// action under cmdID, with the record's captured Input copied so the command
+// never aliases stored state.
+func compensationInvoke(rec CompensationRecord, cmdID string) InvokeAction {
+	return InvokeAction{
 		CommandID: cmdID,
 		Name:      rec.Action,
 		Input:     copyVars(rec.Input),
 	}
-	cmds := append(preCmds, cmd)
-	return StepResult{State: *s, Commands: cmds}, nil
 }
 
 // stepCompensationAdvance advances the compensation cursor after a compensation
@@ -357,12 +363,7 @@ func stepCompensationAdvance(ctx context.Context, def *model.ProcessDefinition, 
 	cur.NextIndex = nextIdx
 	cur.ActiveCmdID = cmdID
 	s.Compensating = cur
-	cmd := InvokeAction{
-		CommandID: cmdID,
-		Name:      rec.Action,
-		Input:     copyVars(rec.Input),
-	}
-	return StepResult{State: *s, Commands: []Command{cmd}}, nil
+	return StepResult{State: *s, Commands: []Command{compensationInvoke(rec, cmdID)}}, nil
 }
 
 // finishPlan is the parameterized description of ONE compensation-walk finish
@@ -742,9 +743,7 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 		// for timer-triggered ones) so the re-arm below is idempotent instead
 		// of appending a duplicate entry, then re-arm exactly as
 		// handleStartInstance does for a fresh StartInstance.
-		for _, timerID := range s.removeEventTriggeredSubprocessArmsForScope("") {
-			preDriveCmds = append(preDriveCmds, CancelTimer{TimerID: timerID})
-		}
+		preDriveCmds = appendCancelTimers(preDriveCmds, s.removeEventTriggeredSubprocessArmsForScope(""))
 		espCmds, espErr := armEventTriggeredSubprocesses(def, s, "", at, eval)
 		if espErr != nil {
 			return StepResult{}, espErr
@@ -783,10 +782,6 @@ func applyTerminate(s *InstanceState, plan finishPlan, at time.Time) StepResult 
 	if plan.finalErr != "" {
 		cmds = append(cmds, FailInstance{Err: plan.finalErr})
 	}
-	cmds = append(cmds, s.cancelAllTimers()...)
-	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
-	for _, timerID := range s.removeAllEventTriggeredSubprocessArms() {
-		cmds = append(cmds, CancelTimer{TimerID: timerID})
-	}
+	cmds = append(cmds, s.cancelAllScheduledWork()...)
 	return StepResult{State: *s, Commands: cmds}
 }

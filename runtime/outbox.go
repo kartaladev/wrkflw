@@ -1,6 +1,8 @@
 package runtime
 
 import (
+	"maps"
+
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
@@ -29,13 +31,13 @@ func instanceDefRef(st engine.InstanceState) model.Qualifier {
 // "instance.terminated": a cancelled instance (StatusTerminated) and an admin
 // full-rollback termination (also StatusTerminated, with no terminal command).
 func terminalOutboxEvent(prevStatus engine.Status, st engine.InstanceState, cmds []engine.Command) []kernel.OutboxEvent {
-	if !isTerminal(st.Status) || isTerminal(prevStatus) {
+	if !st.Status.IsTerminal() || prevStatus.IsTerminal() {
 		return nil
 	}
 	def := instanceDefRef(st)
 	switch st.Status {
 	case engine.StatusCompleted:
-		return []kernel.OutboxEvent{{Topic: "instance.completed", Payload: copyVarsForOutcome(st.Variables), InstanceID: st.InstanceID, DefinitionRef: def}}
+		return []kernel.OutboxEvent{{Topic: "instance.completed", Payload: maps.Clone(st.Variables), InstanceID: st.InstanceID, DefinitionRef: def}}
 	case engine.StatusFailed:
 		return []kernel.OutboxEvent{{Topic: "instance.failed", Payload: map[string]any{"error": terminalEventErr(st, cmds)}, InstanceID: st.InstanceID, DefinitionRef: def}}
 	case engine.StatusTerminated:
