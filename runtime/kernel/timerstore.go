@@ -37,7 +37,27 @@ type ArmedTimer struct {
 type TimerStore interface {
 	// ListArmed returns all timers currently armed, ordered by
 	// (NextRun, InstanceID, TimerID) for deterministic re-arm order.
+	//
+	// Implementations MUST serve this as a single read so callers see one
+	// consistent snapshot: startup rehydration re-arms from the whole set while
+	// live traffic may be arming and cancelling timers concurrently (ADR-0159).
 	ListArmed(ctx context.Context) ([]ArmedTimer, error)
+
+	// ArmedTimer returns the timer armed for the exact (instanceID, timerID)
+	// pair. It exists so a caller needing one timer does not read the whole
+	// armed set — the timer-fire hot path asks only whether the timer that just
+	// fired is recurring (ADR-0159).
+	//
+	// found is false when no such timer is armed; that is not an error. err is
+	// reserved for genuine infrastructure failures, and callers MUST distinguish
+	// it from found == false: an error means "recurrence is undeterminable", not
+	// "the timer is one-shot".
+	//
+	// Invariant: ArmedTimer(i, t) returns exactly the row ListArmed would return
+	// for (i, t), WHEN THAT ROW ITSELF IS WELL-FORMED. The qualifier is
+	// deliberate — ListArmed fails wholesale if any row in the table is corrupt,
+	// while ArmedTimer is unaffected by a corrupt sibling.
+	ArmedTimer(ctx context.Context, instanceID, timerID string) (t ArmedTimer, found bool, err error)
 }
 
 // TimerWriter is the write-side capability a TimerStore MAY implement. It is
@@ -86,6 +106,16 @@ func (s *MemTimerStore) Cancel(instanceID, timerID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.armed, timerKey{instanceID, timerID})
+}
+
+// ArmedTimer implements TimerStore. The armed set is already keyed by
+// (instanceID, timerID), so this is a single map lookup — no copy and no sort,
+// which is the whole point on the timer-fire hot path.
+func (s *MemTimerStore) ArmedTimer(_ context.Context, instanceID, timerID string) (ArmedTimer, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.armed[timerKey{instanceID, timerID}]
+	return t, ok, nil
 }
 
 // ListArmed implements TimerStore.

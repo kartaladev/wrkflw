@@ -407,7 +407,14 @@ func (g AdminRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOpti
 		rt.Get(cfg.BasePath+"/admin/timers",
 			observed(inst, "GET", cfg.BasePath+"/admin/timers",
 				func(c fiberlib.Ctx) error {
-					status, body, err := httpcore.AdminTimers(c.Context(), ta)
+					q := httpcore.ListArmedTimersQuery{Cursor: c.Query("cursor")}
+					if s := c.Query("limit"); s != "" {
+						if lim, err := strconv.Atoi(s); err == nil && lim > 0 {
+							q.Limit = lim
+						}
+					}
+					q.IncludeTotal = c.Query("total") == "true" || c.Query("total") == "1"
+					status, body, err := httpcore.AdminTimers(c.Context(), ta, q)
 					if err != nil {
 						return writeErr(cfg, c, err)
 					}

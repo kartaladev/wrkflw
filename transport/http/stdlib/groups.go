@@ -401,7 +401,16 @@ func (c AdminRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpt
 
 		handle(r, inst, cfg, http.MethodGet, "/admin/timers",
 			func(w http.ResponseWriter, req *http.Request) {
-				status, body, err := httpcore.AdminTimers(req.Context(), ta)
+				q := httpcore.ListArmedTimersQuery{Cursor: req.URL.Query().Get("cursor")}
+				if lv := req.URL.Query().Get("limit"); lv != "" {
+					if n, err := strconv.Atoi(lv); err == nil {
+						q.Limit = n
+					}
+				}
+				if tv := req.URL.Query().Get("total"); tv == "true" || tv == "1" {
+					q.IncludeTotal = true
+				}
+				status, body, err := httpcore.AdminTimers(req.Context(), ta, q)
 				if err != nil {
 					writeErr(cfg, w, req, err)
 					return

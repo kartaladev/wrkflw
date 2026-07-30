@@ -113,9 +113,15 @@ func (mysql) IncidentCountExpr() string {
 }
 
 // KeysetCursorPredicate returns the MySQL keyset cursor predicate using an
-// explicit OR decomposition. MySQL has no cross-type row-value comparison
-// nullability guarantees for DESC cursors, so the condition is spelled out:
+// explicit OR decomposition:
 // started_at < ? OR (started_at = ? AND instance_id < ?).
+//
+// The decomposition is required for the same measured reason as
+// [mysql.ArmedTimerKeysetPredicate] below: MySQL's optimizer does not treat a
+// row constructor as an index range condition, so the row-value spelling plans
+// as a full index walk. (An earlier revision of this comment attributed it to
+// cross-type row-value nullability semantics for DESC cursors; that was never
+// the operative cause.)
 func (mysql) KeysetCursorPredicate() string {
 	return "AND (started_at < ? OR (started_at = ? AND instance_id < ?)) "
 }
@@ -123,6 +129,27 @@ func (mysql) KeysetCursorPredicate() string {
 // KeysetCursorArgCount returns 3 because the MySQL predicate binds cursorTime
 // twice (once for < and once for =) then cursorID.
 func (mysql) KeysetCursorArgCount() int { return 3 }
+
+// ArmedTimerKeysetPredicate returns the MySQL armed-timer keyset predicate as
+// an explicit lexicographic OR decomposition.
+//
+// A row value MUST NOT be used here, and the divergence from Postgres and
+// SQLite is deliberate: MySQL's optimizer does not treat a row constructor as
+// an index range condition. Measured over 50k rows, the row-value form plans
+// as `type: index` with `possible_keys: NULL` and reads rows in proportion to
+// cursor depth (≈21,650 mid-table), so paging becomes quadratic overall —
+// slower than the full scan this predicate exists to replace. The expanded
+// form plans as `type: range` and reads about one page.
+func (mysql) ArmedTimerKeysetPredicate() string {
+	return "AND (next_run > ? OR (next_run = ? AND (instance_id > ? OR (instance_id = ? AND timer_id > ?)))) "
+}
+
+// ArmedTimerKeysetArgs binds next_run twice and instance_id twice — once for
+// the strict-greater branch and once for the tie branch — matching the
+// expanded predicate's five placeholders.
+func (mysql) ArmedTimerKeysetArgs(nextRun any, instanceID, timerID string) []any {
+	return []any{nextRun, nextRun, instanceID, instanceID, timerID}
+}
 
 // TimestampsAsText reports that MySQL stores timestamps as native DATETIME
 // values (with loc=UTC in the DSN). The database/sql driver binds and scans

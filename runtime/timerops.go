@@ -114,18 +114,25 @@ type cancelKey struct {
 // A TimerFired trigger normally consumes (cancels) the fired timer — EXCEPT
 // when the fired timer's armed trigger is recurring: a recurring native job
 // keeps firing on its own schedule and never self-disarms, so it must NOT be
-// cancelled on each fire. armedRecurring reports whether the timer with the
-// given id is currently armed with a recurring trigger; when it reports false
-// (unknown timer, or a genuinely one-shot timer) the fired timer is consumed,
-// preserving the pre-recurrence safe default. A NIL armedRecurring means
-// recurrence is undeterminable (no timer store configured): the fired timer is
-// left alone — there is no durable row to delete, and disarming a
-// possibly-recurring native job would kill it (one-shot native jobs self-
-// consume on fire, so nothing leaks). An explicit CancelTimer command always
-// cancels, recurring or not — that is how a scope-exit / instance-terminate
-// stops a recurring native job. Kind-agnostic so it covers every timer kind;
+// cancelled on each fire.
+//
+// armedRecurring answers that in THREE states (ADR-0159):
+//   - (false, true)  genuinely one-shot or genuinely absent → consume the timer,
+//     the pre-recurrence safe default.
+//   - (true, true)   armed with a recurring trigger → leave it alone.
+//   - (_, false)     UNDETERMINABLE (the store could not answer) → leave it
+//     alone. Cancelling here would let one transient read failure permanently
+//     disarm a recurring job, so an unanswerable lookup must never be read as
+//     "one-shot".
+//
+// A NIL armedRecurring is the same undeterminable case reached structurally (no
+// timer store configured): the fired timer is left alone — there is no durable
+// row to delete, and disarming a possibly-recurring native job would kill it
+// (one-shot native jobs self-consume on fire, so nothing leaks). An explicit
+// CancelTimer command always cancels, recurring or not — that is how a
+// scope-exit / instance-terminate stops a recurring native job. Kind-agnostic so it covers every timer kind;
 // the TimerRetry metric is counted at this single derivation site.
-func (driver *ProcessDriver) timerJobsFor(ctx context.Context, def *model.ProcessDefinition, cmds []engine.Command, trg engine.Trigger, instanceID string, armedRecurring func(timerID string) bool) ([]*timerJob, []cancelKey) {
+func (driver *ProcessDriver) timerJobsFor(ctx context.Context, def *model.ProcessDefinition, cmds []engine.Command, trg engine.Trigger, instanceID string, armedRecurring func(timerID string) (recurring, determinable bool)) ([]*timerJob, []cancelKey) {
 	var arms []*timerJob
 	var cancels []cancelKey
 	now := driver.clk.Now().In(driver.schedulingLocation())
@@ -157,40 +164,65 @@ func (driver *ProcessDriver) timerJobsFor(ctx context.Context, def *model.Proces
 	}
 	if tf, ok := trg.(engine.TimerFired); ok {
 		// A recurring timer survives its fire (the scheduler re-arms it natively);
-		// only consume one-shot (or unknown) timers, and only when recurrence is
-		// determinable at all (armedRecurring non-nil).
-		if armedRecurring != nil && !armedRecurring(tf.TimerID) {
-			cancels = append(cancels, cancelKey{instanceID: instanceID, timerID: tf.TimerID})
+		// only consume one-shot (or genuinely absent) timers, and only when
+		// recurrence is determinable at all — a nil armedRecurring (no timer store)
+		// and a lookup that could not answer are treated identically: leave the
+		// fired timer alone (ADR-0159).
+		if armedRecurring != nil {
+			if recurring, determinable := armedRecurring(tf.TimerID); determinable && !recurring {
+				cancels = append(cancels, cancelKey{instanceID: instanceID, timerID: tf.TimerID})
+			}
 		}
 	}
 	return arms, cancels
 }
 
 // armedTimerRecurring reports whether the timer (instanceID, timerID) is
-// currently armed with a recurring trigger. It reads the armed set from the
-// timer store; on any error, when the store is absent, or when the timer is not
-// found it returns false — the safe default that consumes a fired timer (today's
-// behaviour before recurrence-aware cancel). It is invoked only for a TimerFired
-// trigger, so the ListArmed read stays off the hot path of non-timer steps.
-func (driver *ProcessDriver) armedTimerRecurring(ctx context.Context, instanceID, timerID string) bool {
+// currently armed with a recurring trigger, via a single primary-key-exact read
+// (ADR-0159). It replaced a full ListArmed scan: the fire path needs one row, and
+// scanning the whole table on every fire cost O(N) rows plus O(N) trigger decodes
+// to produce one bit.
+//
+// It returns TWO booleans, and the second one matters. determinable is false when
+// the store could not answer — no store configured, or a read failure — and the
+// caller must then leave the fired timer ALONE rather than cancel it. Collapsing
+// that case into recurring == false (as the pre-ADR-0159 single-boolean version
+// did) means cancel, so one transient connection error would permanently disarm a
+// recurring job such as an in-wait reminder loop.
+//
+// A timer that is genuinely absent IS determinable: (false, true), which consumes
+// the fired timer exactly as before.
+//
+// Residual cost of the undeterminable branch: a fired ONE-SHOT timer's durable
+// row is not deleted, while its scheduler job has already self-consumed. It
+// normally self-heals — re-armed at next boot, fires again, and that fire cancels
+// it — but a fire whose applyTrigger fails for a non-CAS reason (e.g. the instance
+// has since completed and been pruned) is dropped, so the row is re-armed every
+// boot and lingers in the admin listing. Pruner.PruneTimers reclaims exactly these
+// rows; it is the required mitigation, not an optional nicety (ADR-0159).
+//
+// It is invoked only for a TimerFired trigger, so the read stays off the hot path
+// of non-timer steps entirely.
+func (driver *ProcessDriver) armedTimerRecurring(ctx context.Context, instanceID, timerID string) (recurring, determinable bool) {
 	if driver.timerStore == nil {
-		return false
+		// Unreachable in practice: Drive only builds this closure when a timer
+		// store is configured. Undeterminable is the consistent answer — it
+		// matches the nil-closure branch in timerJobsFor.
+		return false, false
 	}
-	armed, err := driver.timerStore.ListArmed(ctx)
+	armed, found, err := driver.timerStore.ArmedTimer(ctx, instanceID, timerID)
 	if err != nil {
-		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: recurrence lookup: list armed failed, treating as non-recurring",
+		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: recurrence lookup failed, leaving the fired timer armed",
 			append(driver.obs.tel.LogAttrs(ctx),
 				slog.String("timer_id", timerID),
 				slog.String("instance_id", instanceID),
 				slog.Any("error", err))...)
-		return false
+		return false, false
 	}
-	for _, a := range armed {
-		if a.InstanceID == instanceID && a.TimerID == timerID {
-			return a.Trigger.Recurring()
-		}
+	if !found {
+		return false, true
 	}
-	return false
+	return armed.Trigger.Recurring(), true
 }
 
 // buildTimerJob assembles the runtime's Manual scheduler job for a process-

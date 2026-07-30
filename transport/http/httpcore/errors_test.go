@@ -52,6 +52,17 @@ func TestClassifyError(t *testing.T) {
 				}
 			},
 		},
+		"malformed armed-timer cursor -> 400": {
+			// A cursor an operator pasted wrong must be an actionable 400, never a
+			// silent reset to page one — which would loop a large listing forever
+			// without the operator noticing (ADR-0159).
+			err: fmt.Errorf("wrap: %w", kernel.ErrBadArmedTimerCursor),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				if status != http.StatusBadRequest || body.Error != "bad_request" {
+					t.Fatalf("got %d/%q", status, body.Error)
+				}
+			},
+		},
 		"internal hides message": {
 			err: errors.New("pgx: connection refused at 10.0.0.5:5432"),
 			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {

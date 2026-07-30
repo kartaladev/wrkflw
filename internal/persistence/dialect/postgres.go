@@ -126,6 +126,21 @@ func (postgres) KeysetCursorPredicate() string {
 // binds cursorTime once and cursorID once.
 func (postgres) KeysetCursorArgCount() int { return 2 }
 
+// ArmedTimerKeysetPredicate returns the Postgres row-value form of the
+// three-column armed-timer keyset predicate. Postgres plans a row-value
+// comparison as a single index range condition over the composite index —
+// measured `Index Scan using wrkflw_timers_keyset_idx` with
+// `Index Cond: (ROW(...) > ROW(...))`.
+func (postgres) ArmedTimerKeysetPredicate() string {
+	return "AND (next_run, instance_id, timer_id) > (?, ?, ?) "
+}
+
+// ArmedTimerKeysetArgs binds the cursor triple once each, matching the
+// row-value predicate's three placeholders.
+func (postgres) ArmedTimerKeysetArgs(nextRun any, instanceID, timerID string) []any {
+	return []any{nextRun, instanceID, timerID}
+}
+
 // TimestampsAsText reports that Postgres stores timestamps as native
 // TIMESTAMPTZ values. The pgx driver binds and scans time.Time directly;
 // no RFC3339Nano text encoding is needed.

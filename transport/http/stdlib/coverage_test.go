@@ -3,10 +3,16 @@ package stdlib_test
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/kartaladev/wrkflw/authz"
@@ -34,15 +40,6 @@ func newStubRelayStatsAdmin(t *testing.T) service.RelayStatsAdmin {
 	t.Helper()
 	m := service.NewMockRelayStatsAdmin(gomock.NewController(t))
 	m.EXPECT().OutboxStats(gomock.Any()).Return(kernel.OutboxStats{}, nil).AnyTimes()
-	return m
-}
-
-// newStubTimerAdmin returns a MockTimerAdmin that always succeeds with empty results.
-func newStubTimerAdmin(t *testing.T) service.TimerAdmin {
-	t.Helper()
-	m := service.NewMockTimerAdmin(gomock.NewController(t))
-	m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{}, nil).AnyTimes()
-	m.EXPECT().ListArmed(gomock.Any()).Return(nil, nil).AnyTimes()
 	return m
 }
 
@@ -503,33 +500,134 @@ func TestAdminRoutes_RelayStats_Absent(t *testing.T) {
 	}
 }
 
-// TestAdminRoutes_Timers verifies GET /admin/timers.
+// TestAdminRoutes_Timers exercises GET /admin/timers through the mux: the
+// query string parsed into the filter, the aggregate gate behind total, the
+// handler-side limit clamp, the 400 mapping for a bad cursor, and the absence
+// of the route when the dep is nil (ADR-0159). A route that drops the cursor
+// silently re-serves page one forever, which no status-code-only assertion
+// would catch. The nil-dep case shares the request shape and differs only in
+// what is wired, so it belongs in the same table.
 func TestAdminRoutes_Timers(t *testing.T) {
 	t.Parallel()
 
-	_, svc := transporttest.NewHarness(t)
-
-	mux := http.NewServeMux()
-	stdlib.AdminRoutes{Svc: svc, Timers: newStubTimerAdmin(t)}.Customize(mux)
-
-	rr := do(mux, newGetRequest(t, "/admin/timers"))
-	if rr.Code != http.StatusOK {
-		t.Fatalf("want 200 timers, got %d (body=%s)", rr.Code, rr.Body)
+	tests := map[string]struct {
+		path string
+		// buildTA returns nil for the "dep not wired" case, which must leave the
+		// route unregistered.
+		buildTA func(t *testing.T) service.TimerAdmin
+		assert  func(t *testing.T, rr *httptest.ResponseRecorder)
+	}{
+		"total=1 → aggregates present, and the store is asked for no total": {
+			path: "/admin/timers?limit=2&cursor=opaque-cursor&total=1",
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 3}, nil)
+				// IncludeTotal is deliberately false even though the request asked
+				// for the total: Stats already returns the count and MIN(next_run)
+				// in ONE aggregate query and has to run regardless (NextFireAt is
+				// not derivable from the page). Forwarding IncludeTotal here would
+				// make the store issue a SECOND count(*) whose result is discarded.
+				// Do not "helpfully" re-add it.
+				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{
+					Limit:        2,
+					Cursor:       "opaque-cursor",
+					IncludeTotal: false,
+				}).Return(kernel.ArmedTimerPage{NextCursor: "cursor-2", HasMore: true}, nil)
+				return m
+			},
+			assert: func(t *testing.T, rr *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusOK, rr.Code, "body=%s", rr.Body)
+				var body map[string]any
+				decodeJSON(t, rr.Body, &body)
+				assert.EqualValues(t, 3, body["total_count"], "total_count is the table total from Stats")
+				assert.NotContains(t, body, "count", "count is the retired pre-ADR-0159 field name")
+				assert.Equal(t, "cursor-2", body["next_cursor"])
+			},
+		},
+		"total=true enables the aggregates just like total=1": {
+			path: "/admin/timers?limit=2&total=true",
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 3}, nil)
+				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{
+					Limit:        2,
+					IncludeTotal: false,
+				}).Return(kernel.ArmedTimerPage{}, nil)
+				return m
+			},
+			assert: func(t *testing.T, rr *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusOK, rr.Code, "body=%s", rr.Body)
+				var body map[string]any
+				decodeJSON(t, rr.Body, &body)
+				assert.EqualValues(t, 3, body["total_count"])
+			},
+		},
+		"no total → no aggregate query, no total, limit defaulted": {
+			path: "/admin/timers",
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				// Deliberately no Stats expectation: calling it would fail the test.
+				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{Limit: 50}).
+					Return(kernel.ArmedTimerPage{}, nil)
+				return m
+			},
+			assert: func(t *testing.T, rr *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusOK, rr.Code, "body=%s", rr.Body)
+				var body map[string]any
+				decodeJSON(t, rr.Body, &body)
+				assert.NotContains(t, body, "total_count", "a plain paged request must not report a table total it never queried")
+				assert.NotContains(t, body, "count")
+			},
+		},
+		"limit above the maximum is clamped before the port sees it": {
+			path: "/admin/timers?limit=" + strconv.Itoa(math.MaxInt),
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{Limit: 200}).
+					Return(kernel.ArmedTimerPage{}, nil)
+				return m
+			},
+			assert: func(t *testing.T, rr *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusOK, rr.Code, "body=%s", rr.Body)
+			},
+		},
+		"malformed cursor → 400 from the route, not a silent reset to page one": {
+			path: "/admin/timers?cursor=garbage",
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m.EXPECT().ListArmedPage(gomock.Any(), gomock.Any()).
+					Return(kernel.ArmedTimerPage{}, fmt.Errorf("decode cursor: %w", kernel.ErrBadArmedTimerCursor))
+				return m
+			},
+			assert: func(t *testing.T, rr *httptest.ResponseRecorder) {
+				assert.Equal(t, http.StatusBadRequest, rr.Code, "body=%s", rr.Body)
+			},
+		},
+		"dep not wired → route absent, 404": {
+			path:    "/admin/timers",
+			buildTA: func(_ *testing.T) service.TimerAdmin { return nil },
+			assert: func(t *testing.T, rr *httptest.ResponseRecorder) {
+				assert.Equal(t, http.StatusNotFound, rr.Code, "body=%s", rr.Body)
+			},
+		},
 	}
-}
 
-// TestAdminRoutes_Timers_Absent verifies no route when Timers is nil.
-func TestAdminRoutes_Timers_Absent(t *testing.T) {
-	t.Parallel()
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-	_, svc := transporttest.NewHarness(t)
+			_, svc := transporttest.NewHarness(t)
 
-	mux := http.NewServeMux()
-	stdlib.AdminRoutes{Svc: svc, Timers: nil}.Customize(mux)
+			mux := http.NewServeMux()
+			stdlib.AdminRoutes{Svc: svc, Timers: tc.buildTA(t)}.Customize(mux)
 
-	rr := do(mux, newGetRequest(t, "/admin/timers"))
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("want 404 timers absent, got %d", rr.Code)
+			tc.assert(t, do(mux, newGetRequest(t, tc.path)))
+		})
 	}
 }
 

@@ -59,7 +59,7 @@ func newErrTimerAdmin(t *testing.T) service.TimerAdmin {
 	t.Helper()
 	m := service.NewMockTimerAdmin(gomock.NewController(t))
 	m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{}, errInternalAdmin).AnyTimes()
-	m.EXPECT().ListArmed(gomock.Any()).Return(nil, errInternalAdmin).AnyTimes()
+	m.EXPECT().ListArmedPage(gomock.Any(), gomock.Any()).Return(kernel.ArmedTimerPage{}, errInternalAdmin).AnyTimes()
 	return m
 }
 

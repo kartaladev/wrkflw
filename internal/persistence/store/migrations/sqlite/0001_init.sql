@@ -107,7 +107,11 @@ CREATE TABLE wrkflw_timers (
     trigger_payload TEXT,
     PRIMARY KEY (instance_id, timer_id)
 );
-CREATE INDEX wrkflw_timers_next_run_idx ON wrkflw_timers (next_run);
+-- Composite keyset index over the full armed-timer sort key, so paged admin
+-- listing seeks rather than scans (ADR-0159). It subsumes the single-column
+-- next_run index it replaces: next_run is its leading column, so ORDER BY
+-- next_run and MIN(next_run) still use it.
+CREATE INDEX wrkflw_timers_keyset_idx ON wrkflw_timers (next_run, instance_id, timer_id);
 
 CREATE TABLE wrkflw_chain_links (
     predecessor_instance_id    TEXT NOT NULL,

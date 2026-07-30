@@ -33,7 +33,8 @@ func ClassifyError(err error) (int, ErrorBody) {
 		return http.StatusForbidden, ErrorBody{Error: "forbidden", Message: err.Error()}
 	case errors.Is(err, kernel.ErrConcurrentUpdate):
 		return http.StatusConflict, ErrorBody{Error: "conflict", Message: err.Error()}
-	case errors.Is(err, kernel.ErrBadCursor), errors.Is(err, ErrBadInput), errors.Is(err, validation.ErrInvalidInput),
+	case errors.Is(err, kernel.ErrBadCursor), errors.Is(err, kernel.ErrBadArmedTimerCursor),
+		errors.Is(err, ErrBadInput), errors.Is(err, validation.ErrInvalidInput),
 		// Both outcome sentinels describe a completion payload the caller can
 		// correct — an outcome outside the node's declared set, or none supplied
 		// where the node declares one (ADR-0146). Without these arms they fall to

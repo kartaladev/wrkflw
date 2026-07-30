@@ -146,6 +146,38 @@ type Dialect interface {
 	// MySQL and SQLite (cursorTime, cursorTime, cursorID).
 	KeysetCursorArgCount() int
 
+	// ArmedTimerKeysetPredicate returns the WHERE clause fragment (including
+	// the leading AND keyword and the trailing space) used for keyset
+	// pagination over wrkflw_timers, ordered ASC by the three-column key
+	// (next_run, instance_id, timer_id).
+	//
+	// It is a sibling of [Dialect.KeysetCursorPredicate], not a generalisation
+	// of it: that one is two-column and DESC, over a different table. Neither
+	// is expressible in terms of the other, and the instance listing is out of
+	// scope of this pair.
+	//
+	// The per-dialect shape is set by measurement rather than symmetry
+	// (ADR-0159) — see each implementation's doc comment. Because the two
+	// shapes bind a different NUMBER of values (3 versus 5), the args are
+	// produced by [Dialect.ArmedTimerKeysetArgs] rather than by an arg count
+	// the caller would have to branch on.
+	//
+	// The ? placeholders are in ? style and are converted to the backend's
+	// native form via [Dialect.Rebind].
+	ArmedTimerKeysetPredicate() string
+
+	// ArmedTimerKeysetArgs returns the bind arguments for
+	// [Dialect.ArmedTimerKeysetPredicate], in placeholder order, for the
+	// cursor position (nextRun, instanceID, timerID).
+	//
+	// nextRun is typed any because a TEXT-timestamp backend binds the
+	// fixed-width string form rather than a time.Time — callers pass the value
+	// through the same timeArg conversion the rest of the store uses, gated on
+	// [Dialect.TimestampsAsText]. Binding a raw time.Time on such a backend
+	// makes the driver stringify it non-ISO8601, the predicate then matches
+	// nothing, and every listing silently truncates at one page with no error.
+	ArmedTimerKeysetArgs(nextRun any, instanceID, timerID string) []any
+
 	// TimestampsAsText reports whether this dialect stores timestamp columns as
 	// RFC3339 TEXT strings rather than native time.Time values.
 	//

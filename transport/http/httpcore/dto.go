@@ -106,6 +106,23 @@ type ListInstancesQuery struct {
 	IncludeTotal bool   `json:"total"`
 }
 
+// ListArmedTimersQuery carries the decoded query parameters for
+// GET /admin/timers. Adapters parse these from the URL query string rather
+// than from a JSON body, mirroring [ListInstancesQuery].
+//
+// Limit is clamped — never rejected — via kernel.NormalizeLimit (default 50,
+// max 200), by [AdminTimers] before the value reaches service.TimerAdmin. The
+// SQL store clamps again; NormalizeLimit is idempotent, so that is free, and it
+// keeps a direct store caller safe too. Cursor is the opaque token from the
+// previous page's next_cursor; a malformed one is a 400, not a silent reset to
+// page one. IncludeTotal ("total") gates the aggregate count and next-fire
+// time, which cost an extra query (ADR-0159).
+type ListArmedTimersQuery struct {
+	Limit        int    `json:"limit"`
+	Cursor       string `json:"cursor"`
+	IncludeTotal bool   `json:"total"`
+}
+
 // DeadLetterQuery carries the decoded query parameters for
 // GET /admin/dead-letters. Limit is optional and clamped by
 // kernel.NormalizeLimit (default 50, max 200).
