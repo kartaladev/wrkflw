@@ -157,7 +157,11 @@ func (l *Lister) List(ctx context.Context, filter kernel.InstanceFilter) (kernel
 	var nextCursor string
 	if hasMore && len(items) > 0 {
 		last := items[len(items)-1]
-		nextCursor = kernel.EncodeCursor(last.StartedAt, last.InstanceID)
+		var err error
+		nextCursor, err = kernel.EncodeCursor(last.StartedAt, last.InstanceID)
+		if err != nil {
+			return kernel.InstancePage{}, fmt.Errorf("workflow-store: lister: encode cursor: %w", err)
+		}
 	}
 
 	page := kernel.InstancePage{

@@ -85,6 +85,47 @@ func ExampleEncodeArmedTimerCursor() {
 	// malformed reported: true
 }
 
+// ExampleEncodeCursor shows the keyset cursor seam behind paged instance
+// listing. The cursor carries the full ORDER BY key — (started_at, instance_id)
+// — so the next page resumes at exactly the row after the last one seen, even
+// when several instances share a started_at.
+//
+// Consumers implementing [kernel.InstanceLister] themselves use this pair to
+// mint and parse the token. It is opaque: callers pass it back verbatim and
+// never parse it.
+//
+// Two guarantees are worth noting, because both were once absent (ADR-0160).
+// A cursor from another family — an armed-timer cursor, say — is REJECTED with
+// [kernel.ErrBadCursor] rather than silently reinterpreted; instance listing is
+// DESC, so a foreign cursor used to yield an empty page with a 200 and no
+// diagnostic. And encoding returns an error rather than the empty string, which
+// is the first-page sentinel: a page must never answer HasMore with a cursor a
+// client would follow back to page one.
+func ExampleEncodeCursor() {
+	startedAt := time.Date(2026, 6, 22, 15, 0, 0, 0, time.UTC)
+	cursor, err := kernel.EncodeCursor(startedAt, "order-42")
+	if err != nil {
+		panic(err)
+	}
+
+	gotStarted, gotInstance, err := kernel.DecodeCursor(cursor)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(gotStarted.Format(time.RFC3339), gotInstance)
+
+	foreign, err := kernel.EncodeArmedTimerCursor(startedAt, "order-42", "order-42-tm3")
+	if err != nil {
+		panic(err)
+	}
+	_, _, err = kernel.DecodeCursor(foreign)
+	fmt.Println("foreign cursor rejected:", errors.Is(err, kernel.ErrBadCursor))
+
+	// Output:
+	// 2026-06-22T15:00:00Z order-42
+	// foreign cursor rejected: true
+}
+
 // ExampleNormalizeLimit shows how a requested page size is treated. An
 // out-of-range limit is CLAMPED, never rejected: a paged admin listing should
 // degrade to a sane page rather than fail an operator's request.

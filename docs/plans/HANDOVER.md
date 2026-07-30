@@ -12,60 +12,40 @@ top to bottom; it is meant to stay short enough that you can.
 > with the plan. This file carries only: where `main` is, what is in flight, and
 > what to do next.
 
-## State — 2026-07-30
+## State — 2026-07-31
 
 | | |
 |---|---|
-| `main` | `9656799`, pushed, clean |
-| `feat/bounded-armed-timer-reads` | **`def1e45`** — ADR-0159, gated and complete, **not merged, not pushed** |
+| `main` | **`bfa4a1d`**, pushed, clean — ADR-0159 merged `--no-ff` and pushed |
+| `feat/instance-cursor-hardening` | **ADR-0160 — implemented, full local gate green, NOT merged** |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — parked design bundle, **docs only, zero code**, local-disk only |
-| Latest ADR | **0159**. Next free number is **0160** — 0155–0158 are reserved by the parked branch |
+| Latest ADR | **0160**. Next free number is **0161** — 0155–0158 are reserved by the parked branch |
 | v0.1.0 | not tagged |
-
-**ADR-0159 (bounded armed-timer reads) is done and fully gated:** build/vet clean,
-`go test ./...` exit 0 (64 packages, 0 fail), `-race` clean, `golangci-lint` 0
-issues, every touched package ≥85%, `/security-review` 0 findings, `/code-review`
-4 findings → 4 folded. Plan: `docs/plans/2026-07-30-bounded-armed-timer-reads.md`.
 
 ## Next work — run these in order
 
-### 1. Merge ADR-0159 to `main`
+### 1. Finish delivering ADR-0160 (instance-cursor hardening)
+
+The branch is code-complete and locally gated: build/vet clean, `go test -race
+-count=1 ./...` exit 0 (64 packages, **0 FAIL, 0 skips**, Docker up),
+`golangci-lint` 0 issues, `runtime/kernel` 88.6% and
+`internal/persistence/store` 87.6% (both ≥85%), repo total 73.3% (unchanged,
+pre-existing `examples/` drag).
+
+**What remains is the Delivery Gate, and it needs the owner:**
 
 ```bash
-git checkout main
-git merge --no-ff feat/bounded-armed-timer-reads
-go build ./... && go test ./... ; echo "EXIT=$?"   # must be 0
-golangci-lint run ./...                             # must be 0 issues
+/code-review        # disable-model-invocation — only the owner can run it
+/security-review
 ```
 
-Docker must be up, or the Postgres/MySQL conformance tests skip silently — and a
-silent skip is indistinguishable from a pass. Check the exit code, never a
-`| grep | head` tail. **Ask before pushing:** the owner said "no need to push"
-for the session that produced this.
+Fold all findings into the feature commit with `git commit --amend` — never
+stack fixups. Then merge `--no-ff` to `main` and push.
 
-### 2. Harden the instance-listing cursor (needs ADR-0160)
+Plan (with the full `▶ Progress` block, audit adjudications and mutation-verify
+evidence): `docs/plans/2026-07-30-instance-cursor-hardening.md`.
 
-`runtime/kernel/lister.go` has both defects ADR-0159 fixed in the armed-timer
-cursor. Probe-verified on 2026-07-30, not inferred:
-
-- `DecodeCursor` has no discriminator and uses plain `json.Unmarshal`, which
-  ignores unknown fields — so an armed-timer cursor decodes into it with **no
-  error** as `(zero, "inst-x")`. Instance listing is DESC, so that predicate
-  matches nothing and the operator gets a silently empty page with a 200. Less
-  severe than the armed-timer case's infinite loop; still a wrong answer.
-- `EncodeCursor` swallows its marshal error and returns `""` — which *is* the
-  first-page sentinel, so a page can answer `has_more: true` with an empty
-  `next_cursor`. Less reachable than the timer case, because `StartedAt` is
-  engine-minted rather than user-supplied like `schedule.At`.
-
-Fix is a direct port of `runtime/kernel/armed_timer_paging.go`: a `kind`
-discriminator, `DisallowUnknownFields`, empty-identity rejection, and
-`EncodeCursor` returning `(string, error)` with its two call sites updated
-(`internal/persistence/store/lister.go`, `runtime/kernel/memstore.go`). Write the
-RED cases first — a rejected foreign cursor, `{}`, `null`, and year-10000. It
-changes a public signature, so it needs its own ADR and one rule-#9 audit.
-
-### 3. Restart the parked delivery bundle at ADR-0158
+### 2. Restart the parked delivery bundle at ADR-0158
 
 The signal/message delivery-correctness bundle was split into four deliveries;
 ADR-0158 (first-match-per-family) is delivery #1. All three auditors rejected the
@@ -88,6 +68,10 @@ finding came from the fan-out semantics layered on top.
    store it fine. Needs a reject-vs-normalise decision, so it needs its own ADR.
 3. `Upsert` can persist `State: Claimed, Claim: nil` — the read path upholds the
    invariant, the write path does not.
+4. **ADR-0159 names two symbols that do not exist** (`0159:96` says
+   `EncodeArmedCursor` / `DecodeArmedCursor`; the shipped names are
+   `EncodeArmedTimerCursor` / `DecodeArmedTimerCursor`). That ADR is merged and
+   pushed, so it takes its own small `docs:` commit, not an amend.
 
 ## Where the detail lives
 

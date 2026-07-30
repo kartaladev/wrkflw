@@ -2,8 +2,6 @@ package kernel
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -16,29 +14,80 @@ var ErrBadCursor = errors.New("workflow-runtime: malformed instance cursor")
 
 // cursorPayload is the JSON envelope embedded inside the opaque cursor string.
 type cursorPayload struct {
+	Kind       string    `json:"kind"`
 	StartedAt  time.Time `json:"started_at"`
 	InstanceID string    `json:"instance_id"`
 }
 
+// instanceCursorKind discriminates this cursor from every other opaque cursor
+// the library hands out.
+//
+// It is defence-in-depth rather than the fix itself, and the distinction is
+// worth stating: DisallowUnknownFields alone already rejects an armed-timer
+// cursor here, because its "kind", "next_run" and "timer_id" are all unknown to
+// [cursorPayload]. What the discriminator adds is symmetry with
+// [EncodeArmedTimerCursor] — so a third cursor has one obvious shape to copy —
+// and rejection of a future cursor whose field set is a SUBSET of
+// {started_at, instance_id}, which unknown-fields structurally cannot catch
+// (ADR-0160).
+const instanceCursorKind = "instance"
+
 // EncodeCursor produces an opaque keyset cursor for keyset pagination.
 // The cursor encodes the last-seen (startedAt, instanceID) pair so the next
 // page can continue from where this one left off.
-func EncodeCursor(startedAt time.Time, instanceID string) string {
-	b, _ := json.Marshal(cursorPayload{StartedAt: startedAt, InstanceID: instanceID})
-	return base64.URLEncoding.EncodeToString(b)
+//
+// The cursor is opaque and the empty string is the first-page sentinel
+// ([InstanceFilter.Cursor]). It returns an error rather than swallowing one
+// because the only way to fail is time.Time.MarshalJSON rejecting a year
+// outside [0,9999] — and the zero value it would otherwise return is the empty
+// string, which IS that sentinel. A caller that ignored the error would answer
+// HasMore: true with an empty NextCursor, and a client following the contract
+// would re-request page one forever. The sentinel is only structural if nothing
+// else can produce it.
+func EncodeCursor(startedAt time.Time, instanceID string) (string, error) {
+	c, err := encodeCursorPayload(cursorPayload{
+		Kind:       instanceCursorKind,
+		StartedAt:  startedAt,
+		InstanceID: instanceID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("workflow-runtime: encode instance cursor for %q: %w", instanceID, err)
+	}
+	return c, nil
 }
 
 // DecodeCursor parses an opaque cursor produced by EncodeCursor.
-// Returns [ErrBadCursor] when the cursor is not valid base64 or is not a valid
-// JSON payload.
+// Returns [ErrBadCursor] when the cursor is not valid base64, does not hold a
+// valid JSON payload, belongs to another cursor family, or carries no instance
+// identity.
 func DecodeCursor(cursor string) (time.Time, string, error) {
-	raw, err := base64.URLEncoding.DecodeString(cursor)
-	if err != nil {
+	var p cursorPayload
+	if err := decodeCursorInto(cursor, &p); err != nil {
 		return time.Time{}, "", fmt.Errorf("%w: %w", ErrBadCursor, err)
 	}
-	var p cursorPayload
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return time.Time{}, "", fmt.Errorf("%w: %w", ErrBadCursor, err)
+	if p.Kind != instanceCursorKind {
+		return time.Time{}, "", fmt.Errorf("%w: not an instance cursor", ErrBadCursor)
+	}
+	// A cursor is always minted from a real row and ADR-0152 forbids empty
+	// identity keys, so an empty id means the payload was fabricated or
+	// truncated. Under the DESC ordering this listing uses, the resulting key is
+	// the lowest possible one, which matches nothing — a silently empty page
+	// rather than a diagnostic.
+	if p.InstanceID == "" {
+		return time.Time{}, "", fmt.Errorf("%w: cursor carries no instance identity", ErrBadCursor)
+	}
+	// An absent or zero started_at survives every guard above and decodes to the
+	// zero time, which under this listing's DESC ordering is the LOWEST key — so
+	// it matches nothing and yields a silently empty page with a 200. That is
+	// the exact failure this cursor family exists to prevent.
+	//
+	// Rejecting it is safe here, and deliberately asymmetric with the
+	// armed-timer sibling: a zero next_run is a legitimate armed value there
+	// (ADR-0159), whereas StartedAt is minted from Trigger.OccurredAt and a
+	// zero-StartedAt row sorts LAST under DESC — so a cursor is never
+	// legitimately minted from one.
+	if p.StartedAt.IsZero() {
+		return time.Time{}, "", fmt.Errorf("%w: cursor carries no start time", ErrBadCursor)
 	}
 	return p.StartedAt, p.InstanceID, nil
 }

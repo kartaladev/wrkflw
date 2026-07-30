@@ -1,9 +1,6 @@
 package kernel
 
 import (
-	"bytes"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -65,7 +62,7 @@ const armedTimerCursorKind = "armed_timer"
 // That year range is reachable, not theoretical: schedule.At takes an arbitrary
 // absolute time and Postgres TIMESTAMPTZ stores well past year 9999.
 func EncodeArmedTimerCursor(nextRun time.Time, instanceID, timerID string) (string, error) {
-	b, err := json.Marshal(armedTimerCursorPayload{
+	c, err := encodeCursorPayload(armedTimerCursorPayload{
 		Kind:       armedTimerCursorKind,
 		NextRun:    nextRun,
 		InstanceID: instanceID,
@@ -74,24 +71,21 @@ func EncodeArmedTimerCursor(nextRun time.Time, instanceID, timerID string) (stri
 	if err != nil {
 		return "", fmt.Errorf("workflow-runtime: encode armed-timer cursor for %q/%q: %w", instanceID, timerID, err)
 	}
-	return base64.URLEncoding.EncodeToString(b), nil
+	return c, nil
 }
 
 // DecodeArmedTimerCursor parses an opaque cursor produced by EncodeArmedTimerCursor.
-// Returns [ErrBadArmedTimerCursor] when the cursor is not valid base64 or does not
-// hold a valid JSON payload.
+// Returns [ErrBadArmedTimerCursor] when the cursor is not valid base64, does not
+// hold a valid JSON payload, carries trailing data after that payload, belongs
+// to another cursor family, or carries no timer identity.
 func DecodeArmedTimerCursor(cursor string) (nextRun time.Time, instanceID, timerID string, err error) {
-	raw, err := base64.URLEncoding.DecodeString(cursor)
-	if err != nil {
-		return time.Time{}, "", "", fmt.Errorf("%w: %w", ErrBadArmedTimerCursor, err)
-	}
-	// DisallowUnknownFields rather than plain json.Unmarshal: unmarshalling into
-	// a struct silently ignores fields it does not recognise, which is what lets
-	// a foreign cursor through as a zero-ish triple instead of an error.
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
+	// decodeCursorInto carries the strict-decoding guards shared by every cursor
+	// family: base64 framing, DisallowUnknownFields (plain json.Unmarshal
+	// silently ignores fields it does not recognise, which is what lets a
+	// foreign cursor through as a zero-ish triple), and rejection of trailing
+	// data after the payload (ADR-0160).
 	var p armedTimerCursorPayload
-	if err := dec.Decode(&p); err != nil {
+	if err := decodeCursorInto(cursor, &p); err != nil {
 		return time.Time{}, "", "", fmt.Errorf("%w: %w", ErrBadArmedTimerCursor, err)
 	}
 	if p.Kind != armedTimerCursorKind {
