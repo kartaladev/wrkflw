@@ -303,3 +303,65 @@ func TestMemStoreListProjectsFields(t *testing.T) {
 		t.Errorf("StartedAt: want %v, got %v", now, got.StartedAt)
 	}
 }
+
+// TestMemStoreListOrdersFarFutureTimestampsNewestFirst is a regression test for
+// an ordering divergence found by ADR-0160's audit.
+//
+// The DESC sort compared StartedAt via cmp.Compare over UnixNano, which is
+// undefined outside 1678–2262 and overflows NEGATIVE at year 10000. A far-future
+// instance therefore sorted as the OLDEST here, while every SQL backend sorts it
+// newest — so MemInstanceStore silently disagreed with the InstanceLister
+// contract it implements.
+func TestMemStoreListOrdersFarFutureTimestampsNewestFirst(t *testing.T) {
+	t.Parallel()
+
+	normal := time.Date(2026, 6, 21, 9, 0, 0, 0, time.UTC)
+	farFuture := time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	ms := seedMemStore(t,
+		newInstanceState("inst-normal", engine.StatusRunning, normal),
+		newInstanceState("inst-far-future", engine.StatusRunning, farFuture),
+	)
+
+	page, err := ms.List(t.Context(), kernel.InstanceFilter{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	if len(page.Items) != 2 {
+		t.Fatalf("want 2 items, got %d", len(page.Items))
+	}
+	if got := page.Items[0].InstanceID; got != "inst-far-future" {
+		t.Fatalf("DESC ordering: want the year-10000 instance first, got %q", got)
+	}
+}
+
+// TestMemStoreListReportsUnencodableCursor pins the encode-error branch at the
+// MemInstanceStore call site: when the row a cursor must be minted from carries
+// a timestamp time.Time.MarshalJSON cannot represent, List must return the
+// error rather than a page whose NextCursor is the empty first-page sentinel
+// alongside HasMore: true.
+//
+// This branch is covered here rather than in the SQL store because it is
+// unreachable there on two of three dialects — MySQL DATETIME(6) maxes at
+// 9999-12-31 and SQLite's text codec requires a 4-digit year — and because the
+// SQL cursor is minted from the LAST row under DESC, i.e. the minimum
+// timestamp, so it needs a single-row page to reach at all (ADR-0160).
+func TestMemStoreListReportsUnencodableCursor(t *testing.T) {
+	t.Parallel()
+
+	farFuture := time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Two far-future rows and Limit 1: HasMore is true, so a cursor must be
+	// minted from a row that cannot be encoded.
+	ms := seedMemStore(t,
+		newInstanceState("inst-a", engine.StatusRunning, farFuture),
+		newInstanceState("inst-b", engine.StatusRunning, farFuture),
+	)
+
+	_, err := ms.List(t.Context(), kernel.InstanceFilter{Limit: 1})
+
+	if err == nil {
+		t.Fatal("want an error when the next cursor cannot be encoded, got nil")
+	}
+}

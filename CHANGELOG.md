@@ -17,6 +17,37 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **Instance-listing cursors are strict, and `kernel.EncodeCursor` returns an error
+  (ADR-0160).** Two changes for consumers who implement `kernel.InstanceLister`
+  themselves:
+  - **`EncodeCursor` now returns `(string, error)`.** It previously discarded its
+    `json.Marshal` error and returned `""` — which *is* the first-page sentinel, so a
+    page could answer `has_more: true` with an empty `next_cursor` and a conforming
+    client would re-request page one forever.
+  - **Cursors issued before this release are rejected** with `kernel.ErrBadCursor`
+    (HTTP 400). The envelope gained a `kind` discriminator, and decoding is now strict:
+    unknown fields and trailing data are refused. A client paging across the upgrade
+    receives one 400 and restarts from page one; no cursor is persisted anywhere, so
+    that is the whole blast radius.
+
+  Previously a cursor from another family decoded *silently* — an armed-timer cursor
+  became `(zero time, "inst-x")`, and because instance listing is `DESC` that predicate
+  matches nothing, so the operator got an empty page with a 200 and no diagnostic.
+
+- **Armed-timer cursors reject trailing data (ADR-0160).** `DecodeArmedTimerCursor`
+  accepted a valid payload with a second JSON value appended, returning the first
+  value's contents and no error. Not a signature change; a previously-accepted
+  malformed cursor is now an `ErrBadArmedTimerCursor`.
+
+- **Bounded armed-timer reads (ADR-0159).** `service.TimerAdmin` gained
+  `ListArmedPage(ctx, kernel.ArmedTimerFilter) (kernel.ArmedTimerPage, error)` —
+  a breaking interface addition for any consumer implementing that port. `GET
+  /admin/timers` is now paged (`limit`, `cursor`, `total` query parameters) instead of
+  returning every armed timer in one body, and its response carries `next_cursor`,
+  `has_more` and an opt-in `total_count`; a consumer that read the whole array
+  unconditionally must follow the cursor. `kernel.TimerStore.ListArmed` is unchanged.
+  (Backfilled — this entry was missing when ADR-0159 shipped.)
+
 - **ProcessInstance audit view: snake_case wire format, node-visit history, and a
   human-task audit trail (ADR-0144–0151).** The instance JSON is now a single coherent,
   snake_case document. Concretely:

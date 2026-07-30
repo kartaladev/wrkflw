@@ -196,9 +196,16 @@ func (m *MemInstanceStore) List(_ context.Context, filter InstanceFilter) (Insta
 		})
 	}
 
-	// sort DESC by (StartedAt, InstanceID)
+	// sort DESC by (StartedAt, InstanceID).
+	//
+	// time.Time.Compare, not cmp.Compare over UnixNano: UnixNano is undefined
+	// outside 1678–2262 and overflows NEGATIVE at year 10000, which sorted such
+	// a row as the OLDEST here while every SQL backend sorts it newest — a real
+	// divergence from the InstanceLister contract this type implements
+	// (ADR-0160). Compare is also exact, where UnixNano truncates nothing but
+	// silently wraps.
 	slices.SortFunc(all, func(a, b InstanceSummary) int {
-		if c := cmp.Compare(b.StartedAt.UnixNano(), a.StartedAt.UnixNano()); c != 0 {
+		if c := b.StartedAt.Compare(a.StartedAt); c != 0 {
 			return c
 		}
 		return cmp.Compare(b.InstanceID, a.InstanceID)
@@ -242,7 +249,11 @@ func (m *MemInstanceStore) List(_ context.Context, filter InstanceFilter) (Insta
 	var nextCursor string
 	if hasMore && len(all) > 0 {
 		last := all[len(all)-1]
-		nextCursor = EncodeCursor(last.StartedAt, last.InstanceID)
+		var err error
+		nextCursor, err = EncodeCursor(last.StartedAt, last.InstanceID)
+		if err != nil {
+			return InstancePage{}, err
+		}
 	}
 
 	page := InstancePage{

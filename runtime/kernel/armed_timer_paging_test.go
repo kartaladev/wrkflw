@@ -112,13 +112,16 @@ func TestDecodeArmedCursorRejectsGarbage(t *testing.T) {
 		{
 			// The failure this guards is silent, so it is the dangerous one: an
 			// INSTANCE cursor is also base64-of-JSON and also carries an
-			// "instance_id", so without a discriminator it decodes cleanly to
-			// (zero, "inst-x", "") — and that triple as a keyset predicate
-			// matches nearly every row. The operator pastes the wrong cursor,
-			// gets 200 and page one back, and pages forever without noticing.
-			// That is precisely what ErrBadArmedTimerCursor exists to prevent.
+			// "instance_id", so an undiscriminated, non-strict decode would
+			// yield (zero, "inst-x", "") — and that triple as a keyset
+			// predicate matches nearly every row. The operator pastes the wrong
+			// cursor, gets 200 and page one back, and pages forever.
+			//
+			// Which guard actually fires: DisallowUnknownFields, because
+			// "started_at" is unknown to armedTimerCursorPayload — NOT the kind
+			// check, which this direction never reaches (ADR-0160).
 			name:   "an instance cursor is not an armed-timer cursor",
-			cursor: kernel.EncodeCursor(time.Date(2026, 7, 30, 9, 0, 0, 0, time.UTC), "inst-x"),
+			cursor: mustEncodeInstanceCursor(t, time.Date(2026, 7, 30, 9, 0, 0, 0, time.UTC), "inst-x"),
 			assert: func(t *testing.T, err error) {
 				require.ErrorIs(t, err, kernel.ErrBadArmedTimerCursor)
 			},
