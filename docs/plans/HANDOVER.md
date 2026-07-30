@@ -16,36 +16,22 @@ top to bottom; it is meant to stay short enough that you can.
 
 | | |
 |---|---|
-| `main` | **`bfa4a1d`**, pushed, clean — ADR-0159 merged `--no-ff` and pushed |
-| `feat/instance-cursor-hardening` | **ADR-0160 — implemented, full local gate green, NOT merged** |
+| `main` | **ADR-0160 merged `--no-ff` and pushed**, clean |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — parked design bundle, **docs only, zero code**, local-disk only |
 | Latest ADR | **0160**. Next free number is **0161** — 0155–0158 are reserved by the parked branch |
 | v0.1.0 | not tagged |
 
+**ADR-0160 (strict instance-listing cursors) shipped.** Full gate passed on the
+merged tree: build/vet clean, `go test -race -count=1 ./...` exit 0 (64
+packages, 0 FAIL, 0 skips, Docker up), `golangci-lint` 0 issues,
+`runtime/kernel` 88.7%, `internal/persistence/store` 87.6%, repo total 73.3%
+(unchanged — pre-existing `examples/` drag). `/code-review` 3 findings → 3
+folded; `/security-review` 0 vulnerabilities. Plan, with audit adjudications and
+mutation-verify evidence: `docs/plans/2026-07-30-instance-cursor-hardening.md`.
+
 ## Next work — run these in order
 
-### 1. Finish delivering ADR-0160 (instance-cursor hardening)
-
-The branch is code-complete and locally gated: build/vet clean, `go test -race
--count=1 ./...` exit 0 (64 packages, **0 FAIL, 0 skips**, Docker up),
-`golangci-lint` 0 issues, `runtime/kernel` 88.6% and
-`internal/persistence/store` 87.6% (both ≥85%), repo total 73.3% (unchanged,
-pre-existing `examples/` drag).
-
-**What remains is the Delivery Gate, and it needs the owner:**
-
-```bash
-/code-review        # disable-model-invocation — only the owner can run it
-/security-review
-```
-
-Fold all findings into the feature commit with `git commit --amend` — never
-stack fixups. Then merge `--no-ff` to `main` and push.
-
-Plan (with the full `▶ Progress` block, audit adjudications and mutation-verify
-evidence): `docs/plans/2026-07-30-instance-cursor-hardening.md`.
-
-### 2. Restart the parked delivery bundle at ADR-0158
+### 1. Restart the parked delivery bundle at ADR-0158
 
 The signal/message delivery-correctness bundle was split into four deliveries;
 ADR-0158 (first-match-per-family) is delivery #1. All three auditors rejected the
@@ -68,10 +54,22 @@ finding came from the fan-out semantics layered on top.
    store it fine. Needs a reject-vs-normalise decision, so it needs its own ADR.
 3. `Upsert` can persist `State: Claimed, Claim: nil` — the read path upholds the
    invariant, the write path does not.
-4. **ADR-0159 names two symbols that do not exist** (`0159:96` says
+4. **ADR-0159 names two symbols that do not exist** (`0159:93` says
    `EncodeArmedCursor` / `DecodeArmedCursor`; the shipped names are
    `EncodeArmedTimerCursor` / `DecodeArmedTimerCursor`). That ADR is merged and
    pushed, so it takes its own small `docs:` commit, not an amend.
+5. **`TestPgxNotifierListenDrainsBeforePollInterval` is load-flaky.** It failed
+   once during a full `go test -race ./...` on 2026-07-31, then passed in
+   isolation, on a full-package re-run, and on a repeat full-suite run.
+   **Pre-existing, not caused by ADR-0160** — the only `internal/` file that
+   delivery touches is `lister.go`, which is not in the pgx-notifier/relay path.
+   Root cause is the assertion budget: `require.Eventually(..., 5*time.Second,
+   25ms)` at `internal/persistence/store/notifier_pgx_test.go:98` waits on a
+   NOTIFY-driven relay drain while a dozen Postgres and MySQL containers boot
+   concurrently. Interacts with backlog item "suite speed" below — reusing a DSN
+   instead of booting per package would likely dissolve it. Fix by widening the
+   budget or removing the container-boot contention; do not silence the
+   assertion, it is guarding a real property (NOTIFY wakeup vs a 30s poll).
 
 ## Where the detail lives
 
