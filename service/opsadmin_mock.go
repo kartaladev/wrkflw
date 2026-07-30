@@ -104,41 +104,41 @@ func (m *MockTimerAdmin) EXPECT() *MockTimerAdminMockRecorder {
 	return m.recorder
 }
 
-// ListArmed mocks base method.
-func (m *MockTimerAdmin) ListArmed(ctx context.Context) ([]kernel.ArmedTimer, error) {
+// ListArmedPage mocks base method.
+func (m *MockTimerAdmin) ListArmedPage(ctx context.Context, filter kernel.ArmedTimerFilter) (kernel.ArmedTimerPage, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListArmed", ctx)
-	ret0, _ := ret[0].([]kernel.ArmedTimer)
+	ret := m.ctrl.Call(m, "ListArmedPage", ctx, filter)
+	ret0, _ := ret[0].(kernel.ArmedTimerPage)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// ListArmed indicates an expected call of ListArmed.
-func (mr *MockTimerAdminMockRecorder) ListArmed(ctx any) *MockTimerAdminListArmedCall {
+// ListArmedPage indicates an expected call of ListArmedPage.
+func (mr *MockTimerAdminMockRecorder) ListArmedPage(ctx, filter any) *MockTimerAdminListArmedPageCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListArmed", reflect.TypeOf((*MockTimerAdmin)(nil).ListArmed), ctx)
-	return &MockTimerAdminListArmedCall{Call: call}
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListArmedPage", reflect.TypeOf((*MockTimerAdmin)(nil).ListArmedPage), ctx, filter)
+	return &MockTimerAdminListArmedPageCall{Call: call}
 }
 
-// MockTimerAdminListArmedCall wrap *gomock.Call
-type MockTimerAdminListArmedCall struct {
+// MockTimerAdminListArmedPageCall wrap *gomock.Call
+type MockTimerAdminListArmedPageCall struct {
 	*gomock.Call
 }
 
 // Return rewrite *gomock.Call.Return
-func (c *MockTimerAdminListArmedCall) Return(arg0 []kernel.ArmedTimer, arg1 error) *MockTimerAdminListArmedCall {
+func (c *MockTimerAdminListArmedPageCall) Return(arg0 kernel.ArmedTimerPage, arg1 error) *MockTimerAdminListArmedPageCall {
 	c.Call = c.Call.Return(arg0, arg1)
 	return c
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockTimerAdminListArmedCall) Do(f func(context.Context) ([]kernel.ArmedTimer, error)) *MockTimerAdminListArmedCall {
+func (c *MockTimerAdminListArmedPageCall) Do(f func(context.Context, kernel.ArmedTimerFilter) (kernel.ArmedTimerPage, error)) *MockTimerAdminListArmedPageCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockTimerAdminListArmedCall) DoAndReturn(f func(context.Context) ([]kernel.ArmedTimer, error)) *MockTimerAdminListArmedCall {
+func (c *MockTimerAdminListArmedPageCall) DoAndReturn(f func(context.Context, kernel.ArmedTimerFilter) (kernel.ArmedTimerPage, error)) *MockTimerAdminListArmedPageCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

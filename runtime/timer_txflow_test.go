@@ -76,6 +76,12 @@ func (f *faultTimerWriter) ListArmed(ctx context.Context) ([]kernel.ArmedTimer, 
 	return f.inner.ListArmed(ctx)
 }
 
+// ArmedTimer delegates unchanged: this double injects faults on the WRITE path
+// (UpsertJob/DeleteJob) only, so reads must behave exactly like the real store.
+func (f *faultTimerWriter) ArmedTimer(ctx context.Context, instanceID, timerID string) (kernel.ArmedTimer, bool, error) {
+	return f.inner.ArmedTimer(ctx, instanceID, timerID)
+}
+
 func (f *faultTimerWriter) UpsertJob(ctx context.Context, spec kernel.JobSpec) error {
 	f.mu.Lock()
 	f.upserts++

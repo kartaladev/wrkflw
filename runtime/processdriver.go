@@ -683,14 +683,19 @@ func (driver *ProcessDriver) deliverLoop(
 		// armedRecurring reports whether the fired timer is armed with a
 		// recurring trigger, so timerJobsFor knows a recurring timer must
 		// survive its fire (the native scheduler re-arms it) rather than be
-		// consumed. It reads the armed set lazily — timerJobsFor only calls it
-		// for a TimerFired trigger — and defaults to non-recurring (safe:
-		// consume) on any lookup failure or unknown timer. It stays nil when no
-		// timer store is configured: recurrence is then undeterminable and the
-		// fired timer is left alone (see timerJobsFor).
-		var armedRecurring func(timerID string) bool
+		// consumed. It is called lazily — timerJobsFor only invokes it for a
+		// TimerFired trigger — and performs ONE primary-key-exact read, not a
+		// scan of the armed set (ADR-0159).
+		//
+		// Its second return value distinguishes "the store says this timer is
+		// one-shot" from "the store could not answer": the latter leaves the
+		// fired timer alone rather than cancelling it. It stays nil when no timer
+		// store is configured, which timerJobsFor treats identically.
+		var armedRecurring func(timerID string) (recurring, determinable bool)
 		if driver.timerStore != nil {
-			armedRecurring = func(timerID string) bool { return driver.armedTimerRecurring(stepCtx, st.InstanceID, timerID) }
+			armedRecurring = func(timerID string) (bool, bool) {
+				return driver.armedTimerRecurring(stepCtx, st.InstanceID, timerID)
+			}
 		}
 		armJobs, cancelKeys := driver.timerJobsFor(stepCtx, def, res.Commands, t, st.InstanceID, armedRecurring)
 

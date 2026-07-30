@@ -413,7 +413,16 @@ func (ar AdminRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOpti
 	if ar.Timers != nil {
 		tmDep := ar.Timers
 		rt.GET(bp+"/admin/timers", observe(inst, http.MethodGet, bp+"/admin/timers", func(gc *ginlib.Context) {
-			status, body, err := httpcore.AdminTimers(gc.Request.Context(), tmDep)
+			q := httpcore.ListArmedTimersQuery{Cursor: gc.Query("cursor")}
+			if lim := gc.Query("limit"); lim != "" {
+				if n, err := strconv.Atoi(lim); err == nil {
+					q.Limit = n
+				}
+			}
+			if tot := gc.Query("total"); tot == "true" || tot == "1" {
+				q.IncludeTotal = true
+			}
+			status, body, err := httpcore.AdminTimers(gc.Request.Context(), tmDep, q)
 			if err != nil {
 				writeErr(cfg, gc, err)
 				return

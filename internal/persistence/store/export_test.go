@@ -62,3 +62,15 @@ const PgxNotifierReconnectBackoffForTest = pgxNotifierReconnectBackoff
 func WaitBackoffForTest(n dialect.Notifier, ctx context.Context) error {
 	return n.(*pgxNotifier).waitBackoff(ctx)
 }
+
+// ListArmedPageSQLForTest exposes the statement and bind arguments
+// [TimerStore.ListArmedPage] actually issues, so plan-shape tests can EXPLAIN
+// the real query instead of a hand-copied duplicate that drifts from it.
+// It MUST NOT be called from non-test code.
+func (s *TimerStore) ListArmedPageSQLForTest(cursor string, fetch int) (string, []any, error) {
+	sqlText, args, err := s.listArmedPageSQL(cursor, fetch)
+	if err != nil {
+		return "", nil, err
+	}
+	return s.dialect.Rebind(sqlText), args, nil
+}

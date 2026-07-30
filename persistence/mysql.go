@@ -104,11 +104,20 @@ func MigrateMySQL(ctx context.Context, db *sql.DB) error {
 // Load, the scheduler's own automatic self-rehydration on Start (ADR-0134). The
 // db must already have migrations applied. Mirrors NewTimerStore for Postgres.
 //
+// Alongside ListArmed, the returned store serves kernel.TimerStore's ArmedTimer
+// point lookup — a primary-key-exact read of one (instanceID, timerID) pair, used
+// by the timer-fire path to test recurrence without reading the whole armed table
+// (ADR-0159); a missing row is (zero, false, nil), not an error. The concrete
+// store additionally satisfies service.TimerAdmin (Stats plus the keyset-paged
+// ListArmedPage) for admin listing; neither method is on the returned
+// kernel.TimerStore interface, so reach them via `admin, ok := ts.(service.TimerAdmin)`.
+//
 // Example:
 //
 //	db, _ := sql.Open("mysql", dsn)
 //	persistence.MigrateMySQL(ctx, db)
-//	ts := persistence.NewMySQLTimerStore(db)
+//	ts, err := persistence.NewMySQLTimerStore(db)
+//	if err != nil { /* handle */ }
 //	armed, err := ts.ListArmed(ctx)
 func NewMySQLTimerStore(db *sql.DB) (kernel.TimerStore, error) {
 	return store.NewTimerStore(db, dialect.NewMySQL())

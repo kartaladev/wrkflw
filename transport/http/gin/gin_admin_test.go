@@ -2,12 +2,17 @@ package gin_test
 
 import (
 	"errors"
+	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
 	ginlib "github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/kartaladev/wrkflw/runtime/kernel"
@@ -239,37 +244,135 @@ func TestAdminRoutes_RelayStats(t *testing.T) {
 	}
 }
 
+// TestAdminRoutes_Timers exercises GET /admin/timers end-to-end through the gin
+// router: query-string parsing into the filter, the aggregate gate behind
+// total, the handler-side limit clamp, and the 400 mapping for a bad cursor
+// (ADR-0159). A route that drops the cursor silently re-serves page one
+// forever, which no status-code-only assertion would catch.
 func TestAdminRoutes_Timers(t *testing.T) {
 	t.Parallel()
 
 	fireAt := time.Now().Add(time.Minute)
 
-	m := service.NewMockTimerAdmin(gomock.NewController(t))
-	m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 2}, nil)
-	m.EXPECT().ListArmed(gomock.Any()).Return(
-		[]kernel.ArmedTimer{
-			{
-				InstanceID: "inst-1",
-				DefID:      "def-a",
-				DefVersion: 1,
-				TimerID:    "t1",
-				NextRun:    fireAt,
+	tests := map[string]struct {
+		path    string
+		buildTA func(t *testing.T) service.TimerAdmin
+		assert  func(t *testing.T, resp httpResp)
+	}{
+		"total=true → aggregates present, and the store is asked for no total": {
+			path: "/admin/timers?limit=1&cursor=opaque-cursor&total=true",
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 2, NextFireAt: &fireAt}, nil)
+				// IncludeTotal is deliberately false even though the request asked
+				// for the total: Stats already returns the count and MIN(next_run)
+				// in ONE aggregate query and has to run regardless (NextFireAt is
+				// not derivable from the page). Forwarding IncludeTotal here would
+				// make the store issue a SECOND count(*) whose result is discarded.
+				// Do not "helpfully" re-add it.
+				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{
+					Limit:        1,
+					Cursor:       "opaque-cursor",
+					IncludeTotal: false,
+				}).Return(kernel.ArmedTimerPage{
+					Items: []kernel.ArmedTimer{
+						{InstanceID: "inst-1", DefID: "def-a", DefVersion: 1, TimerID: "t1", NextRun: fireAt},
+					},
+					NextCursor: "cursor-2",
+					HasMore:    true,
+				}, nil)
+				return m
 			},
-		}, nil)
-
-	srv := newAdminSrv(t, ginadapter.AdminRoutes{
-		Svc:    fakeAdminSvc{},
-		Timers: m,
-	})
-
-	resp := get(t, srv, "/admin/timers")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("want 200, got %d", resp.StatusCode)
+			assert: func(t *testing.T, resp httpResp) {
+				require.Equal(t, http.StatusOK, resp.StatusCode)
+				var body map[string]any
+				decodeJSON(t, resp, &body)
+				assert.EqualValues(t, 2, body["total_count"], "total_count is the table total from Stats")
+				assert.NotContains(t, body, "count", "count is the retired pre-ADR-0159 field name")
+				assert.Contains(t, body, "next_fire_at")
+				assert.Equal(t, "cursor-2", body["next_cursor"])
+				assert.Equal(t, true, body["has_more"])
+			},
+		},
+		"total=1 enables the aggregates just like total=true": {
+			path: "/admin/timers?limit=1&total=1",
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 2}, nil)
+				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{
+					Limit:        1,
+					IncludeTotal: false,
+				}).Return(kernel.ArmedTimerPage{}, nil)
+				return m
+			},
+			assert: func(t *testing.T, resp httpResp) {
+				require.Equal(t, http.StatusOK, resp.StatusCode)
+				var body map[string]any
+				decodeJSON(t, resp, &body)
+				assert.EqualValues(t, 2, body["total_count"])
+			},
+		},
+		"no total → no aggregate query, no total, limit defaulted": {
+			path: "/admin/timers",
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				// Deliberately no Stats expectation: calling it would fail the test.
+				// The unset limit is clamped to the kernel default before the port
+				// is reached, so the port never sees a zero limit.
+				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{Limit: 50}).
+					Return(kernel.ArmedTimerPage{Items: []kernel.ArmedTimer{{InstanceID: "inst-1", TimerID: "t1"}}}, nil)
+				return m
+			},
+			assert: func(t *testing.T, resp httpResp) {
+				require.Equal(t, http.StatusOK, resp.StatusCode)
+				var body map[string]any
+				decodeJSON(t, resp, &body)
+				assert.NotContains(t, body, "total_count", "a plain paged request must not report a table total it never queried")
+				assert.NotContains(t, body, "count")
+				assert.Equal(t, false, body["has_more"])
+			},
+		},
+		"limit above the maximum is clamped before the port sees it": {
+			path: "/admin/timers?limit=" + strconv.Itoa(math.MaxInt),
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{Limit: 200}).
+					Return(kernel.ArmedTimerPage{}, nil)
+				return m
+			},
+			assert: func(t *testing.T, resp httpResp) {
+				require.Equal(t, http.StatusOK, resp.StatusCode)
+			},
+		},
+		"malformed cursor → 400 from the route, not a silent reset to page one": {
+			path: "/admin/timers?cursor=garbage",
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m.EXPECT().ListArmedPage(gomock.Any(), gomock.Any()).
+					Return(kernel.ArmedTimerPage{}, fmt.Errorf("decode cursor: %w", kernel.ErrBadArmedTimerCursor))
+				return m
+			},
+			assert: func(t *testing.T, resp httpResp) {
+				assert.Equal(t, http.StatusBadRequest, resp.StatusCode, "body=%s", resp.Body)
+			},
+		},
 	}
-	var body map[string]any
-	decodeJSON(t, resp, &body)
-	if body["count"] == nil {
-		t.Fatal("want count in timers response")
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := newAdminSrv(t, ginadapter.AdminRoutes{
+				Svc:    fakeAdminSvc{},
+				Timers: tc.buildTA(t),
+			})
+			tc.assert(t, get(t, srv, tc.path))
+		})
 	}
 }
 

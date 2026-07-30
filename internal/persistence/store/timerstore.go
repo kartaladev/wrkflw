@@ -103,6 +103,165 @@ func (s *TimerStore) ListArmed(ctx context.Context) ([]kernel.ArmedTimer, error)
 	return out, nil
 }
 
+// ArmedTimer implements [kernel.TimerStore]. It reads the single wrkflw_timers
+// row for (instanceID, timerID) — a primary-key-exact lookup on every backend
+// (PRIMARY KEY (instance_id, timer_id)), so the timer-fire hot path no longer
+// scans the whole table to answer one recurrence question (ADR-0159).
+//
+// A missing row is (zero, false, nil): not-found is a normal outcome, never an
+// error. err is reserved for genuine infrastructure failures, and the caller
+// must treat it as "recurrence undeterminable" rather than "not recurring".
+//
+// It reads through the pool-backed querier, matching [TimerStore.ListArmed] and
+// deliberately NOT [transaction.JoinOrBegin] as the write methods below do: the
+// fire path calls this before the state-commit transaction is opened, so joining
+// an ambient transaction would change read visibility mid-step.
+//
+// Unlike ListArmed, this cannot be spoiled by a corrupt sibling row — ListArmed
+// aborts on the first unscannable row anywhere in the table, this reads only one.
+func (s *TimerStore) ArmedTimer(ctx context.Context, instanceID, timerID string) (kernel.ArmedTimer, bool, error) {
+	q := s.querier()
+
+	rows, err := q.Query(ctx, s.dialect.Rebind(`
+		SELECT instance_id, def_id, def_version, timer_id, next_run, kind, trigger_payload
+		FROM   wrkflw_timers
+		WHERE  instance_id = ? AND timer_id = ?`), instanceID, timerID)
+	if err != nil {
+		return kernel.ArmedTimer{}, false, fmt.Errorf("workflow-store: armed timer %q/%q: %w", instanceID, timerID, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return kernel.ArmedTimer{}, false, fmt.Errorf("workflow-store: armed timer %q/%q: %w", instanceID, timerID, err)
+		}
+		return kernel.ArmedTimer{}, false, nil
+	}
+
+	a, err := s.scanArmedTimer(rows)
+	if err != nil {
+		return kernel.ArmedTimer{}, false, err
+	}
+	return a, true, nil
+}
+
+// ListArmedPage returns one keyset-paginated page of armed timers, ordered by
+// (next_run ASC, instance_id ASC, timer_id ASC) — the same total order
+// [TimerStore.ListArmed] uses, which is what makes the three-column cursor a
+// valid resume point (ADR-0159).
+//
+// filter.Cursor is the opaque token produced by [kernel.EncodeArmedTimerCursor]; an
+// empty cursor starts from the beginning, and the keyset predicate is then
+// omitted from the statement entirely. A malformed cursor is an error, never a
+// silent reset to page one — an operator paging a large table would otherwise
+// loop without noticing.
+//
+// filter.Limit is CLAMPED via [kernel.NormalizeLimit] rather than rejected, and
+// clamped here only, so no caller can widen it. The clamp must happen before
+// the +1: math.MaxInt+1 overflows to math.MinInt, and while Postgres and MySQL
+// reject a negative LIMIT, SQLite reads it as NO limit and returns the table.
+//
+// The count query is issued only when filter.IncludeTotal, so ordinary paging
+// costs no count(*). TotalCount is a table total and does NOT equal len(Items).
+func (s *TimerStore) ListArmedPage(ctx context.Context, filter kernel.ArmedTimerFilter) (kernel.ArmedTimerPage, error) {
+	limit := kernel.NormalizeLimit(filter.Limit)
+	fetch := limit + 1 // one extra row detects HasMore
+
+	querySQL, queryArgs, err := s.listArmedPageSQL(filter.Cursor, fetch)
+	if err != nil {
+		return kernel.ArmedTimerPage{}, err
+	}
+
+	q := s.querier()
+	rows, err := q.Query(ctx, s.dialect.Rebind(querySQL), queryArgs...)
+	if err != nil {
+		return kernel.ArmedTimerPage{}, fmt.Errorf("workflow-store: list armed timers page: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	items := make([]kernel.ArmedTimer, 0, fetch)
+	for rows.Next() {
+		a, err := s.scanArmedTimer(rows)
+		if err != nil {
+			return kernel.ArmedTimerPage{}, err
+		}
+		items = append(items, a)
+	}
+	if err := rows.Err(); err != nil {
+		return kernel.ArmedTimerPage{}, fmt.Errorf("workflow-store: iterate armed timers page: %w", err)
+	}
+
+	hasMore := len(items) > limit
+	if hasMore {
+		items = items[:limit]
+	}
+
+	var nextCursor string
+	if hasMore && len(items) > 0 {
+		last := items[len(items)-1]
+		var err error
+		nextCursor, err = kernel.EncodeArmedTimerCursor(last.NextRun, last.InstanceID, last.TimerID)
+		if err != nil {
+			return kernel.ArmedTimerPage{}, err
+		}
+	}
+
+	page := kernel.ArmedTimerPage{Items: items, NextCursor: nextCursor, HasMore: hasMore}
+
+	if filter.IncludeTotal {
+		var total int
+		if err := q.QueryRow(ctx, `SELECT count(*) FROM wrkflw_timers`).Scan(&total); err != nil {
+			return kernel.ArmedTimerPage{}, fmt.Errorf("workflow-store: count armed timers: %w", err)
+		}
+		page.TotalCount = total
+	}
+
+	return page, nil
+}
+
+// listArmedPageSQL builds the paged SELECT and its bind arguments in ? style,
+// ready for [dialect.Dialect.Rebind]. It is separate from [TimerStore.ListArmedPage]
+// so tests can EXPLAIN the statement the store actually issues rather than a
+// hand-copied duplicate that silently drifts from it.
+//
+// The cursor's next_run is bound through [timeArg], exactly as [Lister.List]
+// does. Binding a raw time.Time on a TEXT-timestamp backend makes the driver
+// stringify it non-ISO8601, the predicate then matches nothing, and every
+// listing truncates at one page with no error at all.
+//
+// Caveat on SQLite: [parseTimeText] deliberately still READS the pre-ADR-0151
+// trimmed RFC3339Nano encoding, but [timeArg] always WRITES the fixed-width
+// nine-digit form, and the two are not byte-comparable — stored "…09:00:00Z"
+// versus bound "…09:00:00.000000000Z" compares 'Z' (0x5A) against '.' (0x2E),
+// so the stored value sorts ABOVE the cursor and the row is served again. Such
+// a row at a page boundary repeats (and with Limit 1 does not terminate). Those
+// rows already mis-order under ListArmed's plain ORDER BY, so this is inherited
+// rather than introduced, and it is unreachable in practice: ADR-0151 predates
+// any tagged release. It is recorded because the codebase advertises legacy
+// readability and keyset paging is a consumer that claim does not cover.
+func (s *TimerStore) listArmedPageSQL(cursor string, fetch int) (string, []any, error) {
+	const baseSel = `
+		SELECT instance_id, def_id, def_version, timer_id, next_run, kind, trigger_payload
+		FROM   wrkflw_timers`
+	const orderLimit = ` ORDER BY next_run, instance_id, timer_id LIMIT ?`
+
+	if cursor == "" {
+		return baseSel + orderLimit, []any{fetch}, nil
+	}
+
+	nextRun, instanceID, timerID, err := kernel.DecodeArmedTimerCursor(cursor)
+	if err != nil {
+		return "", nil, fmt.Errorf("workflow-store: list armed timers page: decode cursor: %w", err)
+	}
+
+	// trimLeadingAND: the capability carries "AND " so it can be appended to an
+	// existing WHERE; here it is the only predicate and follows WHERE directly.
+	pred := trimLeadingAND(s.dialect.ArmedTimerKeysetPredicate())
+	args := s.dialect.ArmedTimerKeysetArgs(timeArg(s.dialect, nextRun), instanceID, timerID)
+
+	return baseSel + ` WHERE ` + pred + orderLimit, append(args, fetch), nil
+}
+
 // UpsertJob implements [kernel.TimerWriter]. It writes (or updates) spec's
 // wrkflw_timers row via the shared [upsertTimer] SQL, joining the ambient
 // ctx-transaction if one is present ([transaction.JoinOrBegin], ADR-0134) so

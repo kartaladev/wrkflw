@@ -322,26 +322,68 @@ type timerItemView struct {
 }
 
 // timerListResponse is the JSON body returned by AdminTimers.
+//
+// TotalCount and NextFireAt are table-wide aggregates, present only when the
+// request asked for them (total=true); they are pointers so an ordinary paged
+// request omits them entirely rather than reporting a zero total that would
+// read as "no timers" beside a non-empty page (ADR-0159).
+//
+// The field is `total_count`, matching [adminListResponse], and NOT the
+// pre-ADR-0159 `count`. That is deliberate: `count` used to equal len(items)
+// because the endpoint returned the whole table, and it now means the table
+// total instead. Renaming makes the semantic change visible to a consumer
+// rather than silently reinterpreting a field they already parse.
 type timerListResponse struct {
-	Count      int64           `json:"count"`
+	TotalCount *int64          `json:"total_count,omitempty"`
 	NextFireAt *time.Time      `json:"next_fire_at,omitempty"`
 	Items      []timerItemView `json:"items"`
+	NextCursor string          `json:"next_cursor"`
+	HasMore    bool            `json:"has_more"`
 }
 
-// AdminTimers returns the count, next fire time, and full list of armed timers.
+// AdminTimers returns one page of armed timers, with a continuation cursor.
 // Returns (200, timerListResponse, nil) on success.
-func AdminTimers(ctx context.Context, a service.TimerAdmin) (int, any, error) {
-	stats, err := a.Stats(ctx)
-	if err != nil {
-		return 0, nil, err
+//
+// The listing is paged rather than whole-table: the armed-timer population is
+// unbounded, and an admin endpoint that reads all of it is a denial-of-service
+// vector against the operator's own database (ADR-0159). A malformed q.Cursor
+// propagates kernel.ErrBadArmedTimerCursor, which [ClassifyError] maps to 400 so an
+// operator sees the mistake instead of silently restarting at page one.
+//
+// q.Limit is CLAMPED here via [kernel.NormalizeLimit], matching
+// [AdminListInstances]. The SQL store clamps again — the function is
+// idempotent, so that costs nothing — but service.TimerAdmin is a public port a
+// consumer may implement themselves, and an unclamped limit must not reach
+// their code with the obligation living only in a doc comment.
+//
+// The aggregate query behind TotalCount/NextFireAt runs only when q.IncludeTotal.
+func AdminTimers(ctx context.Context, a service.TimerAdmin, q ListArmedTimersQuery) (int, any, error) {
+	var stats kernel.TimerStats
+	if q.IncludeTotal {
+		var err error
+		stats, err = a.Stats(ctx)
+		if err != nil {
+			return 0, nil, err
+		}
 	}
-	armed, err := a.ListArmed(ctx)
+
+	page, err := a.ListArmedPage(ctx, kernel.ArmedTimerFilter{
+		Limit:  kernel.NormalizeLimit(q.Limit),
+		Cursor: q.Cursor,
+		// IncludeTotal is deliberately NOT forwarded. Stats above already
+		// returns the count and MIN(next_run) from ONE aggregate query, and
+		// NextFireAt is not derivable from ArmedTimerPage at all — so Stats
+		// has to run regardless. Setting IncludeTotal here would issue a
+		// second, redundant count(*) over the same table, making total=true
+		// strictly more database work than before this change. That would
+		// invert the point of the whole delivery.
+	})
 	if err != nil {
 		return 0, nil, err
 	}
 
-	items := make([]timerItemView, len(armed))
-	for i, t := range armed {
+	items := make([]timerItemView, len(page.Items))
+	for i, t := range page.Items {
 		items[i] = timerItemView{
 			InstanceID: t.InstanceID,
 			DefID:      t.DefID,
@@ -351,11 +393,17 @@ func AdminTimers(ctx context.Context, a service.TimerAdmin) (int, any, error) {
 			Kind:       t.Kind.String(),
 		}
 	}
-	return http.StatusOK, timerListResponse{
-		Count:      stats.Armed,
-		NextFireAt: stats.NextFireAt,
+
+	resp := timerListResponse{
 		Items:      items,
-	}, nil
+		NextCursor: page.NextCursor,
+		HasMore:    page.HasMore,
+	}
+	if q.IncludeTotal {
+		resp.TotalCount = &stats.Armed
+		resp.NextFireAt = stats.NextFireAt
+	}
+	return http.StatusOK, resp, nil
 }
 
 // lineageCallRefView is the snake_case REST projection of a kernel.CallLinkRef.

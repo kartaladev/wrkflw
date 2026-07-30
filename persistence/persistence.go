@@ -182,6 +182,18 @@ var (
 	_ kernel.CallLinkStore  = (*store.CallLinkStore)(nil)
 	_ kernel.TimerStore     = (*store.TimerStore)(nil)
 	_ kernel.ChainLinkStore = (*store.ChainLinkStore)(nil)
+
+	// NOTE: the service.TimerAdmin assertion for *store.TimerStore deliberately
+	// lives in the external test package (persistence_timeradmin_test.go), not
+	// here. It is a real guard — the NewXxxTimerStore constructors return the
+	// kernel.TimerStore INTERFACE, so reaching Stats/ListArmedPage needs a type
+	// assertion, and without the guard a TimerAdmin signature drift degrades to
+	// a runtime ok == false and a silently unregistered admin route. But
+	// importing service from here would point the storage façade at the service
+	// layer, and the day anything in service's transitive closure needs
+	// persistence that becomes a hard import cycle surfacing as a build break in
+	// unrelated work. A test-package assertion gives the same compile-time
+	// protection with no production edge (ADR-0159).
 )
 
 // ErrInstanceExists is returned by Store.Create when an instance id already
@@ -417,11 +429,25 @@ func NewCallLinkStore(pool *pgxpool.Pool, opts ...CallLinkOption) (kernel.CallLi
 // both read the same durable ListArmed rows and re-arm with scheduler.Scheduler.Activate.
 // The pool must already have migrations applied.
 //
+// Alongside ListArmed, the returned store serves kernel.TimerStore's ArmedTimer
+// point lookup: a primary-key-exact read of a single (instanceID, timerID) pair,
+// so the timer-fire path can ask whether the timer that just fired is recurring
+// without reading the whole armed table (ADR-0159). A missing row is
+// (zero, false, nil) — not-found is not an error.
+//
+// The concrete store additionally satisfies service.TimerAdmin — Stats plus the
+// keyset-paged ListArmedPage — for admin listing of armed timers. Neither method
+// is on the kernel.TimerStore interface this constructor returns, so reach them
+// through a type assertion:
+//
+//	admin, ok := ts.(service.TimerAdmin)
+//
 // Example:
 //
 //	pool, _ := pgxpool.New(ctx, dsn)
 //	persistence.Migrate(ctx, pool)
-//	ts := persistence.NewTimerStore(pool)
+//	ts, err := persistence.NewTimerStore(pool)
+//	if err != nil { /* handle */ }
 //	armed, err := ts.ListArmed(ctx)
 func NewTimerStore(pool *pgxpool.Pool) (kernel.TimerStore, error) {
 	return store.NewTimerStore(pool, dialect.NewPostgres())

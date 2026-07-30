@@ -1,11 +1,16 @@
 package httpcore_test
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
 	"net/http"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/kartaladev/wrkflw/definition/model"
@@ -886,72 +891,163 @@ func TestAdminRelayStats(t *testing.T) {
 	}
 }
 
-// TestAdminTimers exercises httpcore.AdminTimers.
+// TestAdminTimers exercises httpcore.AdminTimers, which pages armed timers
+// rather than returning the whole table (ADR-0159). The aggregate fields are
+// gated behind total=true so an ordinary paged request issues no count(*).
 func TestAdminTimers(t *testing.T) {
 	t.Parallel()
 
 	fireAt := time.Now().Add(5 * time.Minute)
 
 	tests := map[string]struct {
+		query   httpcore.ListArmedTimersQuery
 		buildTA func(t *testing.T) service.TimerAdmin
 		assert  func(t *testing.T, status int, body any, err error)
 	}{
-		"success → 200 with timer list": {
+		"success → 200 with a page and its continuation cursor": {
+			query: httpcore.ListArmedTimersQuery{Limit: 1},
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
 				m := service.NewMockTimerAdmin(gomock.NewController(t))
-				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 1, NextFireAt: &fireAt}, nil)
-				m.EXPECT().ListArmed(gomock.Any()).Return(
-					[]kernel.ArmedTimer{
-						{InstanceID: "inst-1", DefID: "d", DefVersion: 1, TimerID: "t1", NextRun: fireAt},
+				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{Limit: 1}).Return(
+					kernel.ArmedTimerPage{
+						Items:      []kernel.ArmedTimer{{InstanceID: "inst-1", DefID: "d", DefVersion: 1, TimerID: "t1", NextRun: fireAt}},
+						NextCursor: "cursor-2",
+						HasMore:    true,
 					}, nil)
 				return m
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				if status != http.StatusOK {
-					t.Fatalf("want 200, got %d", status)
-				}
-				if body == nil {
-					t.Fatal("want non-nil body")
-				}
+				require.NoError(t, err)
+				assert.Equal(t, http.StatusOK, status)
+				raw, marshalErr := json.Marshal(body)
+				require.NoError(t, marshalErr)
+				var got map[string]any
+				require.NoError(t, json.Unmarshal(raw, &got))
+				assert.Equal(t, "cursor-2", got["next_cursor"])
+				assert.Equal(t, true, got["has_more"])
+				assert.Len(t, got["items"], 1)
+				assert.NotContains(t, got, "total_count", "a plain paged request must not report a table total it never queried")
+				assert.NotContains(t, got, "count", "the pre-ADR-0159 field name is gone; total_count replaced it")
+				assert.NotContains(t, got, "next_fire_at")
+			},
+		},
+		"total=true → aggregates present, and the filter still asks the store for no total": {
+			query: httpcore.ListArmedTimersQuery{Limit: 1, Cursor: "opaque-cursor", IncludeTotal: true},
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 7, NextFireAt: &fireAt}, nil)
+				// IncludeTotal MUST stay false here even though the request asked
+				// for the total. Stats above already returns the count and
+				// MIN(next_run) from ONE aggregate query, and NextFireAt cannot be
+				// derived from ArmedTimerPage — so Stats runs regardless. Forwarding
+				// IncludeTotal would make the store issue a SECOND count(*) whose
+				// result AdminTimers then discards, i.e. total=true would cost more
+				// database work than before ADR-0159. Do not "helpfully" re-add it.
+				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{
+					Limit:        1,
+					Cursor:       "opaque-cursor",
+					IncludeTotal: false,
+				}).Return(
+					kernel.ArmedTimerPage{
+						Items:      []kernel.ArmedTimer{{InstanceID: "inst-1", TimerID: "t1", NextRun: fireAt}},
+						NextCursor: "cursor-2",
+						HasMore:    true,
+					}, nil)
+				return m
+			},
+			assert: func(t *testing.T, status int, body any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, http.StatusOK, status)
+				raw, marshalErr := json.Marshal(body)
+				require.NoError(t, marshalErr)
+				var got map[string]any
+				require.NoError(t, json.Unmarshal(raw, &got))
+				assert.EqualValues(t, 7, got["total_count"], "total_count is the table total from Stats, not the page size")
+				assert.NotContains(t, got, "count", "the total is reported as total_count; a stray count would be the retired field name")
+				assert.Len(t, got["items"], 1)
+				assert.Contains(t, got, "next_fire_at")
+			},
+		},
+		"limit above the maximum is clamped by the handler, not passed through": {
+			query: httpcore.ListArmedTimersQuery{Limit: math.MaxInt},
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				// The handler clamps via kernel.NormalizeLimit before the port is
+				// reached, matching AdminListInstances. The SQL store clamps again
+				// (idempotent, free), but service.TimerAdmin is a public port a
+				// consumer may implement, so an unclamped limit must never arrive
+				// at their code.
+				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{Limit: 200}).
+					Return(kernel.ArmedTimerPage{}, nil)
+				return m
+			},
+			assert: func(t *testing.T, status int, _ any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, http.StatusOK, status)
+			},
+		},
+		"unset limit is defaulted by the handler, never sent as zero": {
+			query: httpcore.ListArmedTimersQuery{},
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{Limit: 50}).
+					Return(kernel.ArmedTimerPage{}, nil)
+				return m
+			},
+			assert: func(t *testing.T, status int, _ any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, http.StatusOK, status)
+			},
+		},
+		"malformed cursor → 400, never a silent reset to page one": {
+			query: httpcore.ListArmedTimersQuery{Cursor: "!!!"},
+			buildTA: func(t *testing.T) service.TimerAdmin {
+				t.Helper()
+				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m.EXPECT().ListArmedPage(gomock.Any(), gomock.Any()).
+					Return(kernel.ArmedTimerPage{}, fmt.Errorf("wrap: %w", kernel.ErrBadArmedTimerCursor))
+				return m
+			},
+			assert: func(t *testing.T, status int, body any, err error) {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, kernel.ErrBadArmedTimerCursor)
+				gotStatus, _ := httpcore.ClassifyError(err)
+				assert.Equal(t, http.StatusBadRequest, gotStatus)
+				assert.Zero(t, status)
+				assert.Nil(t, body)
 			},
 		},
 		"stats error → propagated": {
+			query: httpcore.ListArmedTimersQuery{IncludeTotal: true},
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
 				m := service.NewMockTimerAdmin(gomock.NewController(t))
 				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{}, errors.New("db error"))
-				// ListArmed may or may not be called depending on short-circuit behavior.
-				m.EXPECT().ListArmed(gomock.Any()).Return(nil, nil).AnyTimes()
+				m.EXPECT().ListArmedPage(gomock.Any(), gomock.Any()).Return(kernel.ArmedTimerPage{}, nil).AnyTimes()
 				return m
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
-				if err == nil {
-					t.Fatal("want error from stats")
-				}
-				if status != 0 || body != nil {
-					t.Fatalf("want (0, nil) on error, got (%d, %v)", status, body)
-				}
+				require.Error(t, err)
+				assert.Zero(t, status)
+				assert.Nil(t, body)
 			},
 		},
-		"listArmed error → propagated": {
+		"listArmedPage error → propagated": {
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
 				m := service.NewMockTimerAdmin(gomock.NewController(t))
-				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 0}, nil)
-				m.EXPECT().ListArmed(gomock.Any()).Return(nil, errors.New("list error"))
+				m.EXPECT().ListArmedPage(gomock.Any(), gomock.Any()).
+					Return(kernel.ArmedTimerPage{}, errors.New("list error"))
 				return m
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
-				if err == nil {
-					t.Fatal("want error from listArmed")
-				}
-				if status != 0 || body != nil {
-					t.Fatalf("want (0, nil) on error, got (%d, %v)", status, body)
-				}
+				require.Error(t, err)
+				assert.Zero(t, status)
+				assert.Nil(t, body)
 			},
 		},
 	}
@@ -959,7 +1055,7 @@ func TestAdminTimers(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			status, body, err := httpcore.AdminTimers(t.Context(), tc.buildTA(t))
+			status, body, err := httpcore.AdminTimers(t.Context(), tc.buildTA(t), tc.query)
 			tc.assert(t, status, body, err)
 		})
 	}

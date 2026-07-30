@@ -145,6 +145,32 @@ func (sqliteDialect) KeysetCursorPredicate() string {
 // twice (once for < and once for =) then cursorID.
 func (sqliteDialect) KeysetCursorArgCount() int { return 3 }
 
+// ArmedTimerKeysetPredicate returns the SQLite row-value form of the
+// three-column armed-timer keyset predicate.
+//
+// This deliberately diverges from [sqliteDialect.KeysetCursorPredicate] above,
+// whose OR decomposition exists because SQLite does not guarantee row-value
+// semantics for MIXED-TYPE columns. That caveat does not apply here: next_run,
+// instance_id and timer_id are all TEXT-affinity and all three binds are
+// strings, so the comparison is uniformly lexicographic.
+//
+// The shape was measured, not assumed. Row value yields one
+// `SEARCH … USING INDEX wrkflw_timers_keyset_idx ((next_run,instance_id,timer_id)>(?,?,?))`
+// on both distinct-valued and duplicate-heavy fixtures; the expanded form
+// yields two SEARCH operations (an OR decomposition) or a flat
+// `SCAN … USING INDEX`. Note the plan is a SEARCH, never a covering-index
+// scan — the projection selects trigger_payload and other non-indexed columns.
+func (sqliteDialect) ArmedTimerKeysetPredicate() string {
+	return "AND (next_run, instance_id, timer_id) > (?, ?, ?) "
+}
+
+// ArmedTimerKeysetArgs binds the cursor triple once each, matching the
+// row-value predicate's three placeholders. next_run arrives as the
+// fixed-width RFC3339 TEXT form (see [sqliteDialect.TimestampsAsText]).
+func (sqliteDialect) ArmedTimerKeysetArgs(nextRun any, instanceID, timerID string) []any {
+	return []any{nextRun, instanceID, timerID}
+}
+
 // TimestampsAsText reports that SQLite stores timestamp columns as fixed-width
 // RFC3339 TEXT strings (ADR-0080, ADR-0151). The modernc.org/sqlite driver does
 // not natively encode time.Time to ISO8601; callers must format values as UTC

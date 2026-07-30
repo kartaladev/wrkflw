@@ -134,11 +134,20 @@ func NewSQLiteAdvisoryLockOwnership() (kernel.InstanceOwnership, io.Closer, erro
 // SQLite is single-node and in-process; this constructor is well-suited for
 // embedded deployments, CLI tools, integration tests, and local development.
 //
+// Alongside ListArmed, the returned store serves kernel.TimerStore's ArmedTimer
+// point lookup — a primary-key-exact read of one (instanceID, timerID) pair, used
+// by the timer-fire path to test recurrence without reading the whole armed table
+// (ADR-0159); a missing row is (zero, false, nil), not an error. The concrete
+// store additionally satisfies service.TimerAdmin (Stats plus the keyset-paged
+// ListArmedPage) for admin listing; neither method is on the returned
+// kernel.TimerStore interface, so reach them via `admin, ok := ts.(service.TimerAdmin)`.
+//
 // Example:
 //
 //	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
 //	persistence.MigrateSQLite(ctx, db)
-//	ts := persistence.NewSQLiteTimerStore(db)
+//	ts, err := persistence.NewSQLiteTimerStore(db)
+//	if err != nil { /* handle */ }
 //	armed, err := ts.ListArmed(ctx)
 func NewSQLiteTimerStore(db *sql.DB) (kernel.TimerStore, error) {
 	return store.NewTimerStore(db, dialect.NewSQLite())

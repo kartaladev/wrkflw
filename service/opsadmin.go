@@ -21,15 +21,22 @@ type RelayStatsAdmin interface {
 }
 
 // TimerAdmin is the optional admin port for inspecting armed timers.
-// The concrete Postgres TimerStore satisfies TimerAdmin directly.
+// The concrete SQL TimerStore satisfies TimerAdmin directly.
 type TimerAdmin interface {
 	// Stats returns aggregate statistics about the armed-timer table.
 	Stats(ctx context.Context) (kernel.TimerStats, error)
-	// ListArmed returns all currently armed timers in (FireAt, InstanceID, TimerID)
-	// order.
-	ListArmed(ctx context.Context) ([]kernel.ArmedTimer, error)
+	// ListArmedPage returns one page of armed timers in
+	// (NextRun, InstanceID, TimerID) order.
+	//
+	// It is deliberately paged rather than whole-table: an admin listing must
+	// not be an unbounded read whose cost grows with the timer population
+	// (ADR-0159). Implementations clamp filter.Limit via
+	// [kernel.NormalizeLimit] rather than rejecting it, and issue the total
+	// count only when filter.IncludeTotal.
+	ListArmedPage(ctx context.Context, filter kernel.ArmedTimerFilter) (kernel.ArmedTimerPage, error)
 }
 
-// Note: kernel.MemTimerStore implements only ListArmed (it has no Stats method),
-// so it does NOT satisfy the full TimerAdmin — only the Postgres/MySQL TimerStore
-// does. MemTimerStore is a test helper, not a full TimerAdmin implementation.
+// Note: kernel.MemTimerStore is deliberately NOT a TimerAdmin. It implements
+// the read port [kernel.TimerStore] — ListArmed plus the ArmedTimer point
+// lookup — but neither Stats nor ListArmedPage. It is a test helper, not an
+// admin-inspectable store; only the SQL TimerStore satisfies TimerAdmin.
