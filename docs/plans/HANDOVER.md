@@ -12,34 +12,145 @@ top to bottom; it is meant to stay short enough that you can.
 > with the plan. This file carries only: where `main` is, what is in flight, and
 > what to do next.
 
-## State — 2026-07-31
+## State — updated 2026-08-01
+
+**▶ Pick up here:** delivery 1 is **written, implemented, audited and
+self-reviewed** on `feat/stale-command-filter` (its tip commit — do not quote a
+SHA here, every amend moves it), working tree clean,
+**not merged and not pushed**. It is blocked on two things only, both requiring
+the owner:
+
+1. `/code-review` and `/security-review` on the branch (both are
+   `disable-model-invocation` — a session cannot invoke them). Fold any findings
+   with `git commit --amend`; the commit is unpushed, so amending is safe.
+2. **Ask before using Docker.** The owner asked (2026-07-31) that sessions not
+   touch the Docker daemon without permission, because other sessions hammer it.
+   Everything verified so far is container-free — `engine` is provably so (`go
+   list -deps -test ./engine/...` has zero testcontainers/dbtest hits). The one
+   remaining Docker step is the **full-suite re-run on the MERGED tree** before
+   merging, which is the ADR-0160 lesson (that merge surfaced a red run the
+   branch never showed). The branch-level full suite already passed green before
+   the restriction: exit 0, 0 FAIL, 0 skips.
 
 | | |
 |---|---|
-| `main` | **ADR-0160 merged `--no-ff` and pushed**, clean |
-| `feat/durable-waiters-delivery-correctness` | `434535d` — parked design bundle, **docs only, zero code**, local-disk only |
-| Latest ADR | **0160**. Next free number is **0161** — 0155–0158 are reserved by the parked branch |
+| `main` | `f7b4884` — ADR-0160 merged and pushed, clean, **untouched by this work** |
+| `feat/stale-command-filter` | **delivery 1 of 3, IMPLEMENTED, gate pending** — branch tip |
+| `parked/scope-and-fanout-design` | ADR-0158 + ADR-0162 drafts, docs only, audited but re-packaged |
+| `feat/signal-arm-fanout` | `67cb055` — **superseded** 3-ADR packaging. It carries a **stale `docs/adr/0161-…md`**; the authoritative ADR-0161 is on `feat/stale-command-filter`. Kept only because the `audit-signal-arm-fanout-r1/-r2` tags point into it |
+| `feat/durable-waiters-delivery-correctness` | `434535d` — the older parked bundle, docs only |
+| Latest ADR on `main` | 0160. **0161 is claimed by the in-flight branch, 0162 by delivery 2, 0158 by delivery 3.** 0155–0157 stay reserved by the older parked branch. Next genuinely free number is **0163** |
 | v0.1.0 | not tagged |
 
-**ADR-0160 (strict instance-listing cursors) shipped.** Full gate passed on the
-merged tree: build/vet clean, `go test -race -count=1 ./...` exit 0 (64
-packages, 0 FAIL, 0 skips, Docker up), `golangci-lint` 0 issues,
-`runtime/kernel` 88.7%, `internal/persistence/store` 87.6%, repo total 73.3%
-(unchanged — pre-existing `examples/` drag). `/code-review` 3 findings → 3
-folded; `/security-review` 0 vulnerabilities. Plan, with audit adjudications and
-mutation-verify evidence: `docs/plans/2026-07-30-instance-cursor-hardening.md`.
+## In flight — a three-delivery sequence
 
-## Next work — run these in order
+Auditing the parked signal/message bundle's engine-pure half turned one ADR into
+three, and the audit established that the dependency runs the **opposite** way
+from the original packaging. ADR-0158 is an *amplifier* of the defects the other
+two fix, so it ships last:
 
-### 1. Restart the parked delivery bundle at ADR-0158
+1. **ADR-0161 — stale-command filtering.** ✅ implemented; `/code-review` done
+   (3 findings, 3 folded), **`/security-review` still pending**, then the
+   merged-tree full-suite re-run (the delivery's only Docker step).
+   `Step` drops accumulated commands whose awaiter it cancelled in the same pass,
+   and logs one Warn per drop. Plan (with full evidence, adjudications and what is
+   deliberately left undone): `docs/plans/2026-07-31-stale-command-filter.md`.
+   Verified container-free: `-race ./engine/...` exit 0,
+   `golangci-lint ./engine/...` 0 issues, `engine` 90.8%, all three filter
+   functions 100%, guards mutation-verified (the review round added a 12-mutation
+   re-run that exposed one unpinned guard — the `FireAndForget` exemption, which
+   the pre-scan let every existing row skip).
+2. **ADR-0162 — scope-lifecycle correctness.** Not started. Subtree teardown on
+   abnormal scope destruction, **plus** the four defects the audit found orbiting
+   it (below). Draft ADR on `parked/scope-and-fanout-design`.
+3. **ADR-0158 — a broadcast signal fires every matching arm per family.** Not
+   started. Draft ADR on `parked/scope-and-fanout-design`; lands on a clean base
+   so "does not ship an amplified defect" is true by construction.
 
-The signal/message delivery-correctness bundle was split into four deliveries;
-ADR-0158 (first-match-per-family) is delivery #1. All three auditors rejected the
-original monolith — do not resurrect it. Freeze the tree at a tag before
-re-auditing: last round the bundle mutated under an auditor mid-run. The decisive
-design point is that the restart- and multi-replica-safety requirement is met by
-the durable projection **alone**, with no semantic change; every dangerous
-finding came from the fan-out semantics layered on top.
+Five Opus audit briefs over two rounds produced ~64 findings against the earlier
+packaging. Those belonging to deliveries 2 and 3 are recorded in the folded
+drafts on the parked branch and **must be re-audited with those bundles** — they
+have not been through rule #9 in their split form.
+
+## Defects the audit found, queued for delivery 2
+
+All verified against `main`; none are caused by the in-flight work.
+
+1. **An instance can wedge permanently.** The three sub-process drain checks
+   (`engine/step_nodes.go:306,357,408`) enumerate **direct children only**, so a
+   grandchild scope holding the live token is invisible. `closeScope` then prunes
+   the subtree transitively (`state_compensation.go:290-310`), leaving a token
+   whose `ScopeID` is absent from `s.Scopes`. `defForScope` errors
+   (`step_state.go:26-27`), `drive` propagates it (`step.go:166-169`), and
+   **every subsequent `Step` fails identically**. Repro: a 3-level nest where the
+   middle scope's token has descended and a sibling branch reaches the middle
+   scope's end event. Fix with a `tokensInScopeSubtree` built on the
+   `descendantScopeIDs` helper ADR-0162 introduces.
+2. **An interrupt leaves descendant scopes running.** Both abnormal teardowns
+   (`step_eventsubprocess.go:189-207`, `step_errors.go:377-394`) match tokens on
+   exact scope equality. This is ADR-0162's core.
+3. **Zombie scopes.** After a root-level interrupting event sub-process, cancelled
+   descendant scopes are never closed, so a *completed* instance can carry open
+   `Scopes` entries.
+4. **Compensation records silently dropped.** Neither abnormal teardown calls
+   `archiveCompensations`, which the normal exit (`step_nodes.go:422`) always
+   does — so compensable work inside a torn-down subtree becomes unreachable.
+5. **Cross-step orphaned tasks and dangling incidents.** `cancelTokenWaits` never
+   touches `s.Tasks` or `s.Incidents`, so cancelling a token parked on a
+   `UserTask` in an earlier step leaves an inbox task nothing can complete.
+   ADR-0161 fixes only the same-step case.
+
+6. **A force-terminated instance can be resurrected.** No terminal transition
+   clears `s.Compensating` — not `forceTerminate` (`engine/step_nodes.go:478-504`),
+   `handleUnhandledError` (`engine/step_errors.go:246`), `handleSubInstanceFailed`
+   (`engine/step_triggers.go:830`) nor `handleCancelRequested`'s immediate tail —
+   which contradicts the invariant asserted in `beginCompensation`'s own comment
+   (`engine/step_compensation.go:300-303`). A step can therefore commit with
+   `Status == StatusTerminated` **and** a live cursor carrying a stale
+   `ResumeNode`. A later plain `CompensateRequested` then passes the terminal
+   guard — scoped strictly to `t.ReverseNode != ""` at
+   `engine/step_compensation.go:131` — and `beginCompensation` inherits the stale
+   `ResumeNode` at `:306`, so `applyFinish` sets `Status = StatusRunning`, clears
+   `EndedAt` and places a token at the stale node. Repro: a fork whose first
+   branch reaches a `CompensateThrow` and whose second reaches an
+   `End(WithForceTermination)`, then deliver `CompensateRequested`. Fix with a
+   single `endWalk()` helper called wherever `EndedAt` is stamped. ADR-0161's
+   terminal exclusion is defensive against this and stays correct once it is
+   fixed.
+
+7. **An interrupted scope leaves its human tasks open, across step boundaries.**
+   `propagateError`'s enclosing-scope teardown (`engine/step_errors.go:377-395`)
+   calls `cancelTokenWaits` per token, which cancels timers, arms and the token
+   but **never touches `s.Tasks`**. `humantask.Cancelled` is written in only three
+   places (`engine/state.go:301`, `engine/step_timers.go:89`, and ADR-0161's
+   filter), none of them on this path. Reproduced: a sub-process containing
+   `fork ⇒ {review: UserTask, work: ServiceTask}` with an error boundary; an
+   `ActionFailed` in a later step leaves `task … state=unclaimed open=true` on a
+   **completed** instance, with no `UpdateTask` emitted — an inbox entry nothing
+   can ever complete, still served by `ClaimableBy`/`AssignedTo`. Collapsing the
+   same topology into one step now yields `Cancelled`, because ADR-0161's filter
+   catches it — so the outcome depends on step granularity. Fix with a
+   `cancelOpenTasksInScope(errScopeID)` sibling of `cancelOpenTasks` in that
+   `consume` closure. Pre-existing; ADR-0161 records the asymmetry in its
+   Consequences so it is not read as intentional.
+
+8. **`cancelOpenTasks` hands live engine state to the task store.**
+   `engine/state.go:302` emits `UpdateTask{Task: s.Tasks[i]}` — a shallow copy
+   sharing the `Claim`/`Completion` pointees, the `Vars` map and the
+   candidate/eligibility slices with the record it commits as instance state.
+   Latent only because both in-repo stores copy on ingest (`humantask/memory.go:35`;
+   the SQL store marshals to JSON), but `TaskStore` is public API and a consumer
+   store that retains the value verbatim would share mutable actor state.
+   `HumanTask.Clone()` is the one-line fix — the same one ADR-0161's filter took
+   after `/code-review` flagged it there. Pre-existing, long-standing; belongs to
+   whichever delivery next touches that sweep.
+
+⚠ `descendantScopeIDs` cannot be a straight extraction from `closeScope`:
+`closeScope` opens with `if s.scopeByID(scopeID) == nil { return }`, and
+`scopeByID("")` is **always** nil because the root scope is implicit. Carrying
+that guard into the helper makes root-level teardown a silent no-op; removing it
+from `closeScope` turns `closeScope("")` into an instance-wide scope wipe. The
+helper must have no guard; `closeScope` must keep its own.
 
 ## After that — pre-v0.1.0 blockers
 
@@ -50,26 +161,30 @@ finding came from the fan-out semantics layered on top.
 2. **A zero `next_run` cannot be armed on MySQL.** `runtime/timerops.go:156-159`
    arms with a zero `nextRun` when `TriggerSpec.Next` reports `ok == false`;
    `DATETIME(6) NOT NULL` rejects the `'0000-00-00'` the driver emits under strict
-   mode, and `jobStore.Save` propagates it, so the step fails. Postgres and SQLite
-   store it fine. Needs a reject-vs-normalise decision, so it needs its own ADR.
+   mode, so the step fails. Postgres and SQLite store it fine. Needs a
+   reject-vs-normalise decision, so it needs its own ADR.
 3. `Upsert` can persist `State: Claimed, Claim: nil` — the read path upholds the
    invariant, the write path does not.
 4. **ADR-0159 names two symbols that do not exist** (`0159:93` says
    `EncodeArmedCursor` / `DecodeArmedCursor`; the shipped names are
-   `EncodeArmedTimerCursor` / `DecodeArmedTimerCursor`). That ADR is merged and
-   pushed, so it takes its own small `docs:` commit, not an amend.
-5. **`TestPgxNotifierListenDrainsBeforePollInterval` is load-flaky.** It failed
-   once during a full `go test -race ./...` on 2026-07-31, then passed in
-   isolation, on a full-package re-run, and on a repeat full-suite run.
-   **Pre-existing, not caused by ADR-0160** — the only `internal/` file that
-   delivery touches is `lister.go`, which is not in the pgx-notifier/relay path.
-   Root cause is the assertion budget: `require.Eventually(..., 5*time.Second,
-   25ms)` at `internal/persistence/store/notifier_pgx_test.go:98` waits on a
-   NOTIFY-driven relay drain while a dozen Postgres and MySQL containers boot
-   concurrently. Interacts with backlog item "suite speed" below — reusing a DSN
-   instead of booting per package would likely dissolve it. Fix by widening the
-   budget or removing the container-boot contention; do not silence the
-   assertion, it is guarding a real property (NOTIFY wakeup vs a 30s poll).
+   `EncodeArmedTimerCursor` / `DecodeArmedTimerCursor`,
+   `runtime/kernel/armed_timer_paging.go:64,81`). That ADR is merged and pushed,
+   so it takes its own small `docs:` commit, not an amend.
+5. **`TestPgxNotifierListenDrainsBeforePollInterval` is load-flaky.** Failed once
+   during a full `go test -race ./...` on 2026-07-31, then passed in isolation and
+   on two full re-runs. Pre-existing. Root cause is the assertion budget:
+   `require.Eventually(..., 5*time.Second, 25ms)` at
+   `internal/persistence/store/notifier_pgx_test.go:98` waits on a NOTIFY-driven
+   relay drain while a dozen containers boot concurrently. Interacts with the
+   suite-speed item; do not silence the assertion — it guards NOTIFY wakeup vs a
+   30s poll.
+6. **`processtest` cannot drive a boundary-arm-only park.** `Classify` derives
+   `AwaitingSignals` from `Token.AwaitSignal` only (`processtest/park.go:107`),
+   not from `state.SignalWaiters()`, so `Harness.PublishSignal`
+   (`processtest/handlers.go:89-97`) passes forever on a definition parked purely
+   on signal boundary arms. Same class as the bug ADR-0154 fixed in `runtime/`,
+   still live in the **public** harness. Blocks consumers from testing
+   delivery 3's headline scenario.
 
 ## Where the detail lives
 
