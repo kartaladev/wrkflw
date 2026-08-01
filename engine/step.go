@@ -96,6 +96,19 @@ func Step(ctx context.Context, def *model.ProcessDefinition, st InstanceState, t
 	if idErr := sp.ids.err; idErr != nil {
 		return StepResult{}, idErr
 	}
+	// Drop the commands whose awaiter this step destroyed (ADR-0161). drive
+	// accumulates every token's commands in one pass, so a later token can cancel
+	// an earlier one's park — forceTerminate nils s.Tokens, handleUnhandledError
+	// fails the instance while LEAVING siblings parked, propagateError tears down
+	// a scope, beginCompensation cancels everything, and an interrupting arm
+	// consumes its host (that last one only via the signal broadcast path, which
+	// fires several arms in one step; dispatchArmCascade is first-match-wins for
+	// timer and message, so those can never destroy an earlier command). Runs on &res.State, not sp: each handler
+	// returns its own StepResult{State: *s} shallow copy, so mutating the clone
+	// would depend on backing-array sharing. Runs AFTER the id-error check above,
+	// because a failed generator mints empty ids that must surface as this call's
+	// error rather than reach the filter.
+	res.Commands = dropStaleTokenCommands(ctx, &res.State, res.Commands)
 	// Scrub the transient seam so it never escapes into a caller's state.
 	res.State.ids = idSource{}
 	return res, nil
