@@ -14,52 +14,44 @@ top to bottom; it is meant to stay short enough that you can.
 
 ## State — updated 2026-08-01
 
-**▶ Pick up here:** delivery 1 is **written, implemented, audited and
-self-reviewed** on `feat/stale-command-filter` (its tip commit — do not quote a
-SHA here, every amend moves it), working tree clean,
-**not merged and not pushed**. It is blocked on two things only, both requiring
-the owner:
+**▶ Pick up here: nothing is in flight. `main` is clean and pushed. The next work
+is delivery 2 — ADR-0162, scope-lifecycle correctness** (draft on
+`parked/scope-and-fanout-design`, defects listed below). It has **not** been
+through the rule-#9 audit in its split form: re-audit the spec + ADR + plan
+bundle together before writing any code.
 
-1. `/code-review` and `/security-review` on the branch (both are
-   `disable-model-invocation` — a session cannot invoke them). Fold any findings
-   with `git commit --amend`; the commit is unpushed, so amending is safe.
-2. **Ask before using Docker.** The owner asked (2026-07-31) that sessions not
-   touch the Docker daemon without permission, because other sessions hammer it.
-   Everything verified so far is container-free — `engine` is provably so (`go
-   list -deps -test ./engine/...` has zero testcontainers/dbtest hits). The one
-   remaining Docker step is the **full-suite re-run on the MERGED tree** before
-   merging, which is the ADR-0160 lesson (that merge surfaced a red run the
-   branch never showed). The branch-level full suite already passed green before
-   the restriction: exit 0, 0 FAIL, 0 skips.
+⚠ **Ask before using Docker** (standing owner instruction, 2026-07-31 — other
+sessions saturate the daemon). `engine` is provably container-free (`go list
+-deps -test ./engine/...` → zero testcontainers/dbtest hits), so engine-only
+verification never needs permission. The full suite does. The ADR-0160 lesson
+stands: run it on the **merged** tree, not just the branch.
 
 | | |
 |---|---|
-| `main` | `f7b4884` — ADR-0160 merged and pushed, clean, **untouched by this work** |
-| `feat/stale-command-filter` | **delivery 1 of 3, IMPLEMENTED, gate pending** — branch tip |
-| `parked/scope-and-fanout-design` | ADR-0158 + ADR-0162 drafts, docs only, audited but re-packaged |
-| `feat/signal-arm-fanout` | `67cb055` — **superseded** 3-ADR packaging. It carries a **stale `docs/adr/0161-…md`**; the authoritative ADR-0161 is on `feat/stale-command-filter`. Kept only because the `audit-signal-arm-fanout-r1/-r2` tags point into it |
+| `main` | `bcde851` — **ADR-0161 merged (`--no-ff`) and PUSHED 2026-08-01**, clean |
+| `feat/stale-command-filter` | merged; delete or ignore |
+| `parked/scope-and-fanout-design` | ADR-0158 + ADR-0162 drafts, docs only, audited but re-packaged — **delivery 2 starts here** |
+| `feat/signal-arm-fanout` | `67cb055` — **superseded** 3-ADR packaging. It carries a **stale `docs/adr/0161-…md`**; the authoritative ADR-0161 is on `main`. Kept only because the `audit-signal-arm-fanout-r1/-r2` tags point into it |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — the older parked bundle, docs only |
-| Latest ADR on `main` | 0160. **0161 is claimed by the in-flight branch, 0162 by delivery 2, 0158 by delivery 3.** 0155–0157 stay reserved by the older parked branch. Next genuinely free number is **0163** |
+| Latest ADR on `main` | **0161**. 0162 is claimed by delivery 2, 0158 by delivery 3; 0155–0157 stay reserved by the older parked branch. Next genuinely free number is **0163** |
 | v0.1.0 | not tagged |
 
-## In flight — a three-delivery sequence
+## The three-delivery sequence — 1 of 3 shipped
 
 Auditing the parked signal/message bundle's engine-pure half turned one ADR into
 three, and the audit established that the dependency runs the **opposite** way
 from the original packaging. ADR-0158 is an *amplifier* of the defects the other
 two fix, so it ships last:
 
-1. **ADR-0161 — stale-command filtering.** ✅ implemented; `/code-review` done
-   (3 findings, 3 folded), **`/security-review` still pending**, then the
-   merged-tree full-suite re-run (the delivery's only Docker step).
-   `Step` drops accumulated commands whose awaiter it cancelled in the same pass,
-   and logs one Warn per drop. Plan (with full evidence, adjudications and what is
-   deliberately left undone): `docs/plans/2026-07-31-stale-command-filter.md`.
-   Verified container-free: `-race ./engine/...` exit 0,
-   `golangci-lint ./engine/...` 0 issues, `engine` 90.8%, all three filter
-   functions 100%, guards mutation-verified (the review round added a 12-mutation
-   re-run that exposed one unpinned guard — the `FireAndForget` exemption, which
-   the pre-scan let every existing row skip).
+1. **ADR-0161 — stale-command filtering.** ✅ **SHIPPED** — merge `bcde851`,
+   feature bundle `e37ab93`, pushed 2026-08-01. `Step` drops accumulated commands
+   whose awaiter it cancelled in the same pass, cancels a dropped `AwaitHuman`'s
+   still-open record, and logs one Warn per drop. Gate on the merged tree:
+   `go test -race -count=1 ./...` exit 0, **64 ok / 0 FAIL / 0 skips**,
+   `golangci-lint run ./...` 0 issues, `engine` **90.8%** with all three filter
+   functions 100%, repo total 73.4%. `/code-review` 3 findings → 3 folded;
+   `/security-review` **0 vulnerabilities**. Full evidence, adjudications and what
+   is deliberately left undone: `docs/plans/2026-07-31-stale-command-filter.md`.
 2. **ADR-0162 — scope-lifecycle correctness.** Not started. Subtree teardown on
    abnormal scope destruction, **plus** the four defects the audit found orbiting
    it (below). Draft ADR on `parked/scope-and-fanout-design`.
@@ -74,7 +66,8 @@ have not been through rule #9 in their split form.
 
 ## Defects the audit found, queued for delivery 2
 
-All verified against `main`; none are caused by the in-flight work.
+All verified against `main`; none are caused by ADR-0161 (items 5, 7 and 8 are
+the ones it touches at the edges — read those notes before assuming scope).
 
 1. **An instance can wedge permanently.** The three sub-process drain checks
    (`engine/step_nodes.go:306,357,408`) enumerate **direct children only**, so a
