@@ -19,7 +19,28 @@ import (
 	"github.com/kartaladev/wrkflw/definition/flow"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
 )
+
+// requireCompensationStart asserts the command stream a compensation walk emits
+// on its FIRST step: the UpdateTask that reconciles the parked user task the walk
+// just tore down, followed by exactly one compensation InvokeAction. Since
+// ADR-0163 beginCompensation cancels every token, and a token parked on an open
+// UserTask now takes its task with it — before, the task was left open on an
+// instance whose token had been consumed, so no one could ever complete it.
+func requireCompensationStart(t *testing.T, cmds []engine.Command) engine.InvokeAction {
+	t.Helper()
+
+	require.Len(t, cmds, 2,
+		"the parked task's UpdateTask plus exactly one compensation InvokeAction")
+	ut, ok := cmds[0].(engine.UpdateTask)
+	require.True(t, ok, "the token-attached task cleanup is emitted first, got %T", cmds[0])
+	assert.Equal(t, humantask.Cancelled, ut.Task.State,
+		"the user task the compensation walk tore down must be Cancelled")
+	ia, ok := cmds[1].(engine.InvokeAction)
+	require.True(t, ok, "expected a compensation InvokeAction, got %T", cmds[1])
+	return ia
+}
 
 // compensableDef returns a minimal process:
 //
@@ -529,9 +550,7 @@ func TestCompensateRequestedRollsBackInReverseOrder(t *testing.T) {
 	assert.Equal(t, engine.StatusCompensating, r5.State.Status)
 
 	// First compensation InvokeAction must be for step3's action (most recently completed).
-	require.Len(t, r5.Commands, 1, "CompensateRequested emits exactly one InvokeAction (for step3)")
-	ia3, ok := r5.Commands[0].(engine.InvokeAction)
-	require.True(t, ok, "first compensation command must be InvokeAction for c3")
+	ia3 := requireCompensationStart(t, r5.Commands)
 	assert.Equal(t, "c3", ia3.Name, "first compensation must be for step3 (c3)")
 
 	// Advance: complete compensation for step3 → next in reverse is step2.
@@ -586,9 +605,7 @@ func TestCompensateRequestedFullRollback(t *testing.T) {
 		engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompensating, r5.State.Status)
-	require.Len(t, r5.Commands, 1)
-	ia3, ok := r5.Commands[0].(engine.InvokeAction)
-	require.True(t, ok)
+	ia3 := requireCompensationStart(t, r5.Commands)
 	assert.Equal(t, "c3", ia3.Name)
 
 	r6, err := engine.Step(t.Context(), def, r5.State,
@@ -725,8 +742,7 @@ func TestArchiveCompensationOrderingReversed(t *testing.T) {
 		engine.StepOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompensating, r4.State.Status)
-	require.Len(t, r4.Commands, 1)
-	ia1 := r4.Commands[0].(engine.InvokeAction)
+	ia1 := requireCompensationStart(t, r4.Commands)
 	assert.Equal(t, "inner-comp", ia1.Name,
 		"first emitted compensation must be inner-comp (most recently completed)")
 

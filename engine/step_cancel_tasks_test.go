@@ -217,6 +217,13 @@ func TestCancelWithCompensationReconcilesOpenTasks(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, engine.StatusCompensating, r2.State.Status)
+
+	// Positional (ADR-0088 ordering): the task cancel now comes from
+	// beginCompensation's own preCmds rather than an explicit prepend, so pin
+	// that it still lands before the walk's InvokeAction.
+	ia := requireCompensationStart(t, r2.Commands)
+	assert.Equal(t, "refund", ia.Name, "the compensation walk's first invocation must be the recorded action")
+
 	uts := findUpdateTasks(r2.Commands)
 	require.Len(t, uts, 1, "the parked task must be cancelled on cancel-with-compensation")
 	assert.Equal(t, humantask.Cancelled, uts[0].Task.State)
@@ -224,4 +231,131 @@ func TestCancelWithCompensationReconcilesOpenTasks(t *testing.T) {
 	task := r2.State.TaskByID(uts[0].Task.TaskID)
 	require.NotNil(t, task)
 	assert.Equal(t, humantask.Cancelled, task.State, "state must reflect the cancelled task")
+}
+
+// TestInterruptingBoundaryCancelsHostTask asserts that an interrupting boundary
+// firing on a UserTask host in a LATER step than the one that minted the task
+// closes that task: the record goes Cancelled and exactly one UpdateTask is
+// emitted. Before ADR-0163 the host token was consumed while the task stayed
+// unclaimed and open, leaving an inbox entry on a still-running instance that
+// no token could ever complete.
+func TestInterruptingBoundaryCancelsHostTask(t *testing.T) {
+	t.Parallel()
+
+	def := interruptingMessageBoundaryDef()
+	t0 := time.Date(2026, 8, 2, 10, 0, 0, 0, time.UTC)
+
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "i1"},
+		engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r1.State.Tasks, 1, "setup: step 1 mints the task")
+	require.True(t, r1.State.Tasks[0].IsOpen(), "setup: the task starts open")
+
+	r2, err := engine.Step(t.Context(), def, r1.State,
+		engine.NewMessageReceived(t0.Add(time.Hour), "cancel", "", nil), engine.StepOptions{})
+	require.NoError(t, err)
+
+	require.Len(t, r2.State.Tasks, 1)
+	assert.Equal(t, humantask.Cancelled, r2.State.Tasks[0].State,
+		"the interrupted host's task must be cancelled")
+	assert.False(t, r2.State.Tasks[0].IsOpen())
+
+	updates := findUpdateTasks(r2.Commands)
+	require.Len(t, updates, 1, "exactly one UpdateTask reconciles the task store")
+	assert.Equal(t, humantask.Cancelled, updates[0].Task.State)
+}
+
+// errorBoundaryOverSubProcessWithUserTaskDef builds:
+//
+//	outer: outer-start → sub (KindSubProcess) → outer-end
+//	                      ↑ interrupting error boundary "E1" → end-escalated
+//
+//	inner: inner-start → pfork ⇒ { review (UserTask), work (ServiceTask) } → pjoin → inner-end
+//
+// Failing "work" with code E1 tears the whole sub-process scope down while the
+// sibling branch is still parked on the open UserTask.
+func errorBoundaryOverSubProcessWithUserTaskDef() *model.ProcessDefinition {
+	inner := &model.ProcessDefinition{
+		ID: "inner-fork-usertask", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("inner-start"),
+			gateway.NewParallel("pfork"),
+			activity.NewUserTask("review", activity.WithEligibleRoles("r")),
+			activity.NewServiceTask("work", activity.WithTaskAction("work-action")),
+			gateway.NewParallel("pjoin"),
+			event.NewEnd("inner-end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "if1", Source: "inner-start", Target: "pfork"},
+			{ID: "if2", Source: "pfork", Target: "review"},
+			{ID: "if3", Source: "pfork", Target: "work"},
+			{ID: "if4", Source: "review", Target: "pjoin"},
+			{ID: "if5", Source: "work", Target: "pjoin"},
+			{ID: "if6", Source: "pjoin", Target: "inner-end"},
+		},
+	}
+	return &model.ProcessDefinition{
+		ID: "outer-err-boundary-usertask", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("outer-start"),
+			activity.NewSubProcess("sub", inner),
+			event.NewBoundary("bnd-sub-err", "sub", event.WithBoundaryErrorCode("E1")),
+			event.NewEnd("outer-end"),
+			event.NewEnd("end-escalated"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "of1", Source: "outer-start", Target: "sub"},
+			{ID: "of2", Source: "sub", Target: "outer-end"},
+			{ID: "of3", Source: "bnd-sub-err", Target: "end-escalated"},
+		},
+	}
+}
+
+// TestErrorBoundaryTeardownCancelsUserTaskAcrossStepBoundary asserts that an
+// error boundary tearing down an enclosing sub-process scope cancels a UserTask
+// parked on a sibling branch inside that scope. Before ADR-0163 the task stayed
+// unclaimed and open on a COMPLETED instance, and whether it did depended on
+// step granularity: ADR-0161's stale-command filter cancels it when the mint and
+// the teardown collapse into one step, and nothing cancels it when they do not.
+// Step granularity is not a property a definition author can see or control.
+func TestErrorBoundaryTeardownCancelsUserTaskAcrossStepBoundary(t *testing.T) {
+	t.Parallel()
+
+	def := errorBoundaryOverSubProcessWithUserTaskDef()
+	t0 := time.Date(2026, 8, 2, 10, 0, 0, 0, time.UTC)
+
+	// ── Step 1: start → fork ⇒ review parked (task minted) + work invoked.
+	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "eb1"},
+		engine.NewStartInstance(t0, nil), engine.StepOptions{})
+	require.NoError(t, err)
+	require.Len(t, r1.State.Tasks, 1, "setup: the UserTask branch mints exactly one task")
+	require.True(t, r1.State.Tasks[0].IsOpen(),
+		"setup: the task must still be OPEN — a closed task here means the topology is wrong")
+
+	var workCmdID string
+	for _, c := range r1.Commands {
+		if ia, ok := c.(engine.InvokeAction); ok && ia.Name == "work-action" {
+			workCmdID = ia.CommandID
+		}
+	}
+	require.NotEmpty(t, workCmdID, "setup: the ServiceTask branch must have been invoked")
+
+	// ── Step 2 (a SEPARATE Step call — the granularity is load-bearing):
+	// fail "work" with the boundary's error code.
+	r2, err := engine.Step(t.Context(), def, r1.State,
+		engine.NewActionFailed(t0.Add(time.Hour), workCmdID, "E1", false), engine.StepOptions{})
+	require.NoError(t, err)
+
+	require.Equal(t, engine.StatusCompleted, r2.State.Status,
+		"the boundary routes to an end event, so the instance completes")
+	assert.Empty(t, r2.State.Scopes, "the erroring sub-process scope must be torn down")
+
+	require.Len(t, r2.State.Tasks, 1)
+	assert.Equal(t, humantask.Cancelled, r2.State.Tasks[0].State,
+		"the sibling branch's task must not survive the scope teardown")
+	assert.False(t, r2.State.Tasks[0].IsOpen())
+
+	updates := findUpdateTasks(r2.Commands)
+	require.Len(t, updates, 1, "exactly one UpdateTask reconciles the task store")
+	assert.Equal(t, humantask.Cancelled, updates[0].Task.State)
 }

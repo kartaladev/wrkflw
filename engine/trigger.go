@@ -307,11 +307,15 @@ func NewSubInstanceFailed(at time.Time, commandID, errMsg string) SubInstanceFai
 // is NOT re-run). An empty ToNode means "roll back everything" — the instance
 // ends in StatusTerminated when all records are exhausted.
 //
-// Sub-process compensation (ADR-0013): when a sub-process scope closes normally,
-// its accumulated CompensationRecords are hoisted into the parent scope (or root)
-// before closeScope is called. As a result, completed sub-process activities are
-// rollback-able via this trigger — their records appear in RootCompensations in
-// completion order alongside root-level records, and the reverse walk reaches them
+// Sub-process compensation (ADR-0013 → ADR-0039 → ADR-0162): every scope close
+// archives its accumulated CompensationRecords by scope (keyed by the sub-process
+// node ID) before closeScope is called — the normal sub-process exit, both
+// event-sub-process exits, and the two abnormal teardowns (error boundary,
+// interrupting event sub-process) via cancelScopeSubtree. Archived records reach
+// RootCompensations via consolidateArchiveIntoRoot when a compensation walk
+// begins. As a result, completed sub-process activities are rollback-able via
+// this trigger — their records are folded into RootCompensations in completion
+// order alongside root-level records, and the reverse walk reaches them
 // naturally.
 //
 // Scope-targeted compensation (Compensate command) remains RESERVED for future use
