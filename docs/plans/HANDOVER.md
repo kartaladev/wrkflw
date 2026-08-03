@@ -43,21 +43,34 @@ the branch.
 
 ## The immediate next steps
 
-1. **⚠ Finish the delivery-2b premise sweep, then fold it in.** The bundle
-   survived its rule-#9 audit, but against `main` @ `17e148b`; 2a (merge
-   `168fb06`) has since rewritten `engine/step_nodes.go`,
-   `engine/step_triggers.go`, `engine/step_errors.go`, `engine/state.go` and
-   `engine/step_cancel.go`. The verified findings so far — including the
-   dangerous one — are recorded in
-   `docs/plans/2026-08-02-terminal-transitions.md`'s `▶ Progress` block **on the
+1. **⚠ Fold the completed premise sweep into the 2b bundle, and get one owner
+   decision.** The sweep is **DONE** and lives at
+   `docs/plans/2026-08-04-delivery-2b-premise-sweep.md` **on the
    `parked/terminal-transitions` branch** (`git show
-   parked/terminal-transitions:docs/plans/2026-08-02-terminal-transitions.md`).
-   A sweep was dispatched on 2026-08-04 and had not reported when the session
-   ended; **assume its output is lost and redo it.** The brief: check every
-   `engine/*.go:NNN` citation in the plan and ADR-0164 against current source
-   and replace with symbol names; check every claim about what code currently
-   does; and check the design-level interactions with 2a that a line sweep
-   would miss (listed at the end of that Progress block).
+   parked/terminal-transitions:docs/plans/2026-08-04-delivery-2b-premise-sweep.md`).
+   Its corrections are **not yet folded into the phase steps**. Four things it
+   found, in order of importance:
+   - **Two dangerous instructions**, not one. Besides the `:318` deletion that
+     would remove ADR-0162's drain check, `exitNestedEventSubprocessScope` has
+     the identical ordering problem at a site the plan never mentions — and
+     there the "just delete it" fix is **unsafe**, because that call must still
+     run on the non-terminal resume path. The sweep gives the correct
+     restructure for both.
+   - **⚠ OWNER DECISION (§4, I-3):** `endInstance` clearing `s.Incidents`
+     wholesale makes terminal instances report no incident to
+     `runtime/outbox.go`'s `terminalEventErr`, `runtime/processdriver_action.go`'s
+     `terminalErr`, the `service/` ProcessInstance audit view, and the
+     `incident_count` column. An instance cancelled while parked on an incident
+     would report `"cancelled"` instead of the concrete failure. Accept and
+     record it in ADR-0164's Consequences, or narrow the clear to token-linked
+     incidents (ADR-0163's actual wording is "incidents do not outlive **the
+     token they describe**", which wholesale clearing over-delivers on).
+   - **Non-negotiable doc fix:** ADR-0164 **never mentions incidents at all**,
+     yet shipped, pushed code (`engine/step_cancel.go:53-55` and ADR-0163)
+     forward-references it for exactly that. Fix ADR-0164 or those citations
+     point at a decision that does not exist.
+   - **Phase 4's arm-retirement test would be dead** under its own mutation
+     unless it is pinned to the `exitRootScope` path.
 2. **Then implement 2b** with `superpowers:subagent-driven-development` — one
    subagent at a time, since every file is in package `engine` (concurrent
    agents in one working tree break each other's `go test` compile).
