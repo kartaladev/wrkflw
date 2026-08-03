@@ -14,11 +14,9 @@ top to bottom; it is meant to stay short enough that you can.
 
 ## State — updated 2026-08-03
 
-**▶ Pick up here: delivery 2a is IMPLEMENTED on `feat/scope-lifecycle-correctness`
-and is waiting at the Delivery Gate. All six phases landed, every review is
-clean, and the branch is one commit. What remains needs the owner: the repo-wide
-suite on the merged tree, then `/code-review` and `/security-review`, then merge
-`--no-ff` and push.**
+**▶ Pick up here: delivery 2a is SHIPPED — merge `168fb06`, bundle `fff4de1`,
+PUSHED 2026-08-04. The Delivery Gate passed in full. Next work is delivery 2b:
+rebase `parked/terminal-transitions` onto the new `main`.**
 
 ⚠ **Ask before using Docker** (standing owner instruction, 2026-07-31 — other
 sessions saturate the daemon). `engine` is provably container-free (`go list
@@ -30,35 +28,47 @@ the branch.
 
 | | |
 |---|---|
-| `main` | `17e148b` — ADR-0161 merged and pushed 2026-08-01, clean |
-| `feat/scope-lifecycle-correctness` | **delivery 2a, IMPLEMENTED, unpushed.** One commit. Amend it; never stack |
+| `main` | `168fb06` — **delivery 2a merged and pushed 2026-08-04**, clean |
+| `feat/scope-lifecycle-correctness` | merged and pushed; delete or ignore |
 | `parked/terminal-transitions` | `18f1aa9` — **delivery 2b**, ADR-0164 + the ADR-0109 correction + `docs/plans/2026-08-02-terminal-transitions.md`. Branched off `main`, so it carries **no stale copy** of the 2a docs. Rebase onto the new `main` after 2a merges |
 | `parked/scope-and-fanout-design` | ADR-0158 draft (delivery 3) + a superseded ADR-0162 draft. **Do not read its 0162** — the authoritative one is on the delivery-2a branch |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept only because `audit-signal-arm-fanout-r1/-r2` tags point into it |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — older parked bundle, docs only |
-| Latest ADR on `main` | **0161**. 0162/0163 land with 2a, 0164 with 2b, 0158 with delivery 3, 0155–0157 reserved by the older parked branch. Next free is **0165** |
+| Latest ADR on `main` | **0163**. 0164 lands with 2b, 0158 with delivery 3, 0155–0157 reserved by the older parked branch. Next free is **0165** |
 | v0.1.0 | not tagged |
 
 ## The immediate next steps
 
-Delivery 2a's plan (`docs/plans/2026-08-02-scope-lifecycle-correctness.md`) has
-the detail; its `▶ Progress` block carries the numbers and the adjudications.
-Steps 6.1 and 6.2 are done. What is left, in order:
-
-1. **Step 6.3 — the repo-wide suite, on the MERGED tree.** Merge `--no-ff`
-   locally first, then `go test -race -count=1 ./...`. Verify by **exit code**,
-   never a piped tail. Watch for the known load-flake
-   `TestPgxNotifierListenDrainsBeforePollInterval`
-   (`internal/persistence/store/notifier_pgx_test.go:98`) — re-run it in
-   isolation before calling it a regression; it is pre-existing and unrelated.
-2. **Step 6.5 — the Delivery Gate.** `/code-review` then `/security-review`, both
-   **owner-run** (`disable-model-invocation`). Fold every finding into the single
-   commit with `--amend`, never a fixup. Then merge `--no-ff` to `main` and
-   **push** — standing cadence is push-on-merge.
-3. **Then delivery 2b:** rebase `parked/terminal-transitions` onto the new
-   `main`. Its plan is written and audited.
-4. **Then delivery 3** (ADR-0158 fan-out), which **still needs its own rule-#9
+1. **Delivery 2b — ADR-0164, terminal transitions.** Rebase
+   `parked/terminal-transitions` onto the new `main`. Its plan is written and
+   audited: `docs/plans/2026-08-02-terminal-transitions.md`. It also carries
+   audit finding C1 (incidents outliving their token on terminal paths) and O1
+   (a stranded compensation `ActionCompleted` returning `ErrTokenNotFound`).
+   **2a left two gaps explicitly for it** — see "Known gaps" below.
+2. **Then delivery 3** (ADR-0158 fan-out), which **still needs its own rule-#9
    audit in split form**.
+
+### Delivery 2a's gate record (2026-08-04)
+
+Merged-tree verification: `go test -race -count=1 ./...` **EXIT=0, 64 ok, 0
+FAIL**; `golangci-lint run ./...` 0 issues; `engine` **91.6%** (floor 85, prior
+baseline 90.8%); repo 73.5%; **16/16 mutations produced their predicted
+failure**; `go doc -all ./engine` 108 declarations unchanged.
+
+`/code-review` found **2 findings, both real, both fixed and re-reviewed**:
+- A `SubProcess` whose scope was closed by the **event-sub-process** path never
+  had its own `CompensateAction` recorded — it was **silently non-compensable**.
+  `exitRegularSubprocessScope` was the only site recording it. Fixed by
+  extracting `recordSubProcessCompensation` and calling it from both sites.
+  ⚠ Fixing it revealed the **pre-existing** regular-site call was itself
+  unpinned — removing it broke zero tests. Both sites are now mutation-verified.
+- A code comment stated the incident-retirement invariant more broadly than the
+  code enforces it, disagreeing with ADR-0163's already-narrowed wording.
+
+`/security-review`: **0 vulnerabilities.** Assessed net security-positive — the
+shallow→deep `UpdateTask` copy removed a path by which a consumer-supplied
+`TaskStore` could mutate committed engine state's eligibility spec, candidate
+list or claim actor.
 
 ### What the pending repo-wide run should be watched for
 
