@@ -14,9 +14,13 @@ top to bottom; it is meant to stay short enough that you can.
 
 ## State — updated 2026-08-03
 
-**▶ Pick up here: delivery 2a is SHIPPED — merge `168fb06`, bundle `fff4de1`,
-PUSHED 2026-08-04. The Delivery Gate passed in full. Next work is delivery 2b:
-rebase `parked/terminal-transitions` onto the new `main`.**
+**▶ Pick up here: delivery 2b (ADR-0164) is the next work, and it is NOT ready to
+implement. Its branch `parked/terminal-transitions` is rebased onto the current
+`main`, but the bundle was audited against the PRE-2a base and delivery 2a then
+rewrote the very files 2b edits. A premise sweep must complete and be folded in
+before Phase 1. ⚠ One of the plan's instructions would, if followed literally,
+DELETE ADR-0162's drain check and silently re-open the permanent-instance-wedge
+defect — read that branch's plan `▶ Progress` block before anything else.**
 
 ⚠ **Ask before using Docker** (standing owner instruction, 2026-07-31 — other
 sessions saturate the daemon). `engine` is provably container-free (`go list
@@ -39,14 +43,38 @@ the branch.
 
 ## The immediate next steps
 
-1. **Delivery 2b — ADR-0164, terminal transitions.** Rebase
-   `parked/terminal-transitions` onto the new `main`. Its plan is written and
-   audited: `docs/plans/2026-08-02-terminal-transitions.md`. It also carries
-   audit finding C1 (incidents outliving their token on terminal paths) and O1
-   (a stranded compensation `ActionCompleted` returning `ErrTokenNotFound`).
-   **2a left two gaps explicitly for it** — see "Known gaps" below.
-2. **Then delivery 3** (ADR-0158 fan-out), which **still needs its own rule-#9
+1. **⚠ Finish the delivery-2b premise sweep, then fold it in.** The bundle
+   survived its rule-#9 audit, but against `main` @ `17e148b`; 2a (merge
+   `168fb06`) has since rewritten `engine/step_nodes.go`,
+   `engine/step_triggers.go`, `engine/step_errors.go`, `engine/state.go` and
+   `engine/step_cancel.go`. The verified findings so far — including the
+   dangerous one — are recorded in
+   `docs/plans/2026-08-02-terminal-transitions.md`'s `▶ Progress` block **on the
+   `parked/terminal-transitions` branch** (`git show
+   parked/terminal-transitions:docs/plans/2026-08-02-terminal-transitions.md`).
+   A sweep was dispatched on 2026-08-04 and had not reported when the session
+   ended; **assume its output is lost and redo it.** The brief: check every
+   `engine/*.go:NNN` citation in the plan and ADR-0164 against current source
+   and replace with symbol names; check every claim about what code currently
+   does; and check the design-level interactions with 2a that a line sweep
+   would miss (listed at the end of that Progress block).
+2. **Then implement 2b** with `superpowers:subagent-driven-development` — one
+   subagent at a time, since every file is in package `engine` (concurrent
+   agents in one working tree break each other's `go test` compile).
+3. **Then the Delivery Gate**: verification, `/code-review`,
+   `/security-review`, merge `--no-ff`, push.
+4. **Then delivery 3** (ADR-0158 fan-out), which **still needs its own rule-#9
    audit in split form**.
+
+### The lesson 2b is currently demonstrating
+
+**An audited bundle decays when its base moves.** The audit was valid; the base
+was not held still. The decay is invisible because the documents still read as
+authoritative — a line-numbered instruction that once pointed at dead code now
+points at a just-shipped fix, and its stated justification makes deleting that
+fix sound reasoned. **Before implementing any bundle whose base has advanced,
+re-verify its premises against current source.** Prefer symbol names to line
+numbers when writing plans, for exactly this reason.
 
 ### Delivery 2a's gate record (2026-08-04)
 
