@@ -43,8 +43,7 @@ the branch.
 
 ## The immediate next steps
 
-1. **⚠ Fold the completed premise sweep into the 2b bundle, and get one owner
-   decision.** The sweep is **DONE** and lives at
+1. **⚠ Fold the completed premise sweep into the 2b bundle, — its one owner decision is resolved.** The sweep is **DONE** and lives at
    `docs/plans/2026-08-04-delivery-2b-premise-sweep.md` **on the
    `parked/terminal-transitions` branch** (`git show
    parked/terminal-transitions:docs/plans/2026-08-04-delivery-2b-premise-sweep.md`).
@@ -56,15 +55,18 @@ the branch.
      there the "just delete it" fix is **unsafe**, because that call must still
      run on the non-terminal resume path. The sweep gives the correct
      restructure for both.
-   - **⚠ OWNER DECISION (§4, I-3):** `endInstance` clearing `s.Incidents`
-     wholesale makes terminal instances report no incident to
-     `runtime/outbox.go`'s `terminalEventErr`, `runtime/processdriver_action.go`'s
-     `terminalErr`, the `service/` ProcessInstance audit view, and the
-     `incident_count` column. An instance cancelled while parked on an incident
-     would report `"cancelled"` instead of the concrete failure. Accept and
-     record it in ADR-0164's Consequences, or narrow the clear to token-linked
-     incidents (ADR-0163's actual wording is "incidents do not outlive **the
-     token they describe**", which wholesale clearing over-delivers on).
+   - **✅ OWNER DECISION, RESOLVED 2026-08-04 (§4, I-3): narrow the incident
+     clear.** `endInstance` must **not** do `s.Incidents = nil`; it clears only
+     incidents whose token no longer exists. Wholesale clearing would blind
+     `runtime/outbox.go`'s `terminalEventErr`, `processdriver_action.go`'s
+     `terminalErr`, the `service/` audit view and `incident_count` — an instance
+     cancelled while parked on an incident would report `"cancelled"` instead of
+     the real failure. Narrowing is also literally what shipped ADR-0163
+     promises: *"incidents do not outlive the token they describe."*
+     ⚠ **This makes the two-vs-four correction load-bearing rather than
+     cosmetic**, and the sweep flags an ordering trap: the incident sweep must
+     run **before** `s.Tokens = nil`, or every incident looks orphaned and the
+     narrowing collapses back into the wholesale clear.
    - **Non-negotiable doc fix:** ADR-0164 **never mentions incidents at all**,
      yet shipped, pushed code (`engine/step_cancel.go:53-55` and ADR-0163)
      forward-references it for exactly that. Fix ADR-0164 or those citations
