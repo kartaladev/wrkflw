@@ -205,11 +205,20 @@ func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s 
 		if err != nil {
 			return StepResult{}, err
 		}
-		// Ordering: [def.CancelActions…, per-node CancelActions…, task cancels…, compensation walk…]
-		// Reconcile the human-task projection before the compensation walk so a
-		// cancel-with-compensation instance also closes its parked tasks (ADR-0088).
-		taskCancelCmds := s.cancelOpenTasks()
-		res.Commands = append(append(append(cancelActionCmds, nodeCancelCmds...), taskCancelCmds...), res.Commands...)
+		// Ordering: [def.CancelActions…, per-node CancelActions…, compensation walk…].
+		// The explicit task-cancel prepend ADR-0088 documented here is gone. Since
+		// ADR-0163, beginCompensation cancels each token's open task inside its own
+		// preCmds, so for any state this engine version produces the sweep that used
+		// to sit here has nothing left to find — the same UpdateTask commands are
+		// still emitted, one call site earlier.
+		//
+		// That is not an absolute: an instance persisted before ADR-0163 can carry a
+		// leaked task (open, with no live token), which no per-token teardown
+		// reaches. Dropping the sweep stays safe for those, because
+		// stepCompensationFinish runs cancelOpenTasks over whatever remains at walk
+		// end, before the instance reaches its terminal state — a legacy leak is
+		// reconciled there rather than lost.
+		res.Commands = append(append(cancelActionCmds, nodeCancelCmds...), res.Commands...)
 		return res, nil
 	}
 
@@ -376,7 +385,9 @@ func handleHumanClaimed(s *InstanceState, t HumanClaimed) (StepResult, error) {
 	// view renders who claimed and when, not just an ID.
 	task.Claim = &humantask.Claim{Actor: t.Actor, At: t.OccurredAt()}
 	task.State = humantask.Claimed
-	return StepResult{State: *s, Commands: []Command{UpdateTask{Task: *task}}}, nil
+	// Clone before the record escapes to a consumer-supplied TaskStore: task
+	// points into s.Tasks, which is committed as instance state (ADR-0163).
+	return StepResult{State: *s, Commands: []Command{UpdateTask{Task: task.Clone()}}}, nil
 }
 
 // handleHumanCandidatesResolved processes a HumanCandidatesResolved trigger: it
@@ -408,7 +419,9 @@ func handleHumanCandidatesResolved(s *InstanceState, t HumanCandidatesResolved) 
 	// refresh path, to the resolver), so aliasing it here would let a later
 	// mutation reach committed instance state.
 	task.Candidates = authz.CloneActors(t.Candidates)
-	return StepResult{State: *s, Commands: []Command{UpdateTask{Task: *task}}}, nil
+	// Clone before the record escapes to a consumer-supplied TaskStore: task
+	// points into s.Tasks, which is committed as instance state (ADR-0163).
+	return StepResult{State: *s, Commands: []Command{UpdateTask{Task: task.Clone()}}}, nil
 }
 
 // handleHumanReassigned processes a HumanReassigned trigger: updates the task
@@ -425,7 +438,9 @@ func handleHumanReassigned(s *InstanceState, t HumanReassigned) (StepResult, err
 	// and no roles or attributes.
 	task.Claim = &humantask.Claim{Actor: authz.Actor{ID: t.To}, At: t.OccurredAt()}
 	task.State = humantask.Claimed
-	return StepResult{State: *s, Commands: []Command{UpdateTask{Task: *task}}}, nil
+	// Clone before the record escapes to a consumer-supplied TaskStore: task
+	// points into s.Tasks, which is committed as instance state (ADR-0163).
+	return StepResult{State: *s, Commands: []Command{UpdateTask{Task: task.Clone()}}}, nil
 }
 
 // handleTimerFired processes a TimerFired trigger: dispatches in priority order
@@ -625,7 +640,9 @@ func handleHumanCompleted(ctx context.Context, def *model.ProcessDefinition, s *
 	}
 	tok.State = TokenActive
 	tok.AwaitCommand = ""
-	cmds := []Command{UpdateTask{Task: *task}}
+	// Clone before the record escapes to a consumer-supplied TaskStore: task
+	// points into s.Tasks, which is committed as instance state (ADR-0163).
+	cmds := []Command{UpdateTask{Task: task.Clone()}}
 	// Cancel any deadline or reminder timers that were guarding this task.
 	cmds = appendCancelTimers(cmds, s.cancelTimersByTaskID(t.TaskID, ""))
 	// Cancel any boundary arms on this host token (token ID is the same as the

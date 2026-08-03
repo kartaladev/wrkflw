@@ -280,33 +280,104 @@ func (s *InstanceState) consolidateArchiveIntoRoot() {
 	})
 }
 
-// closeScope removes the Scope with the given scopeID from s.Scopes, along
-// with every descendant scope reachable via the ParentID chain (a scope whose
-// ParentID is scopeID, or whose ParentID is itself a removed descendant). It
-// is a no-op if no scope with that ID exists (also covering the case where
-// scopeID was already closed). Callers remain responsible for any per-scope
-// cleanup outside s.Scopes (cancelling tokens, arms, timers) before invoking
-// closeScope; this only prunes the scope tree itself (ADR-0130).
+// descendantScopeIDs returns scopeID plus every scope transitively nested inside
+// it. A single forward pass over s.Scopes suffices because openScope always
+// appends a child after its parent (ScopeSeq is monotonically increasing and a
+// scope's ParentID must already exist when it is opened), so by the time a scope
+// is visited its parent's membership is already known.
+//
+// It deliberately has NO existence guard, unlike closeScope. scopeByID("") is
+// ALWAYS nil because the root scope is implicit — no Scope entry exists for it —
+// so guarding here would make every root-level teardown a silent no-op. The
+// returned set therefore contains scopeID itself even when no such Scope exists,
+// which is exactly what a root-level teardown needs (ADR-0162).
+func (s *InstanceState) descendantScopeIDs(scopeID string) map[string]bool {
+	ids := map[string]bool{scopeID: true}
+	for _, sc := range s.Scopes {
+		if ids[sc.ID] || ids[sc.ParentID] {
+			ids[sc.ID] = true
+		}
+	}
+	return ids
+}
+
+// closeScope removes the Scope with the given scopeID from s.Scopes, along with
+// every descendant scope reachable via the ParentID chain. It is a no-op if no
+// scope with that ID exists (also covering the case where scopeID was already
+// closed). Callers remain responsible for any per-scope cleanup outside s.Scopes
+// (cancelling tokens, arms, timers, archiving compensation records) before
+// invoking closeScope; this only prunes the scope tree itself (ADR-0130).
+//
+// The existence guard is load-bearing and must NOT be pushed into
+// descendantScopeIDs: removing it here would turn closeScope("") — the implicit
+// root — into an instance-wide scope wipe.
 func (s *InstanceState) closeScope(scopeID string) {
 	if s.scopeByID(scopeID) == nil {
 		return
 	}
-
-	// doomed collects scopeID plus every descendant scope ID. A single
-	// forward pass over s.Scopes suffices because openScope always appends a
-	// child after its parent (ScopeSeq is monotonically increasing and a
-	// scope's ParentID must already exist when it is opened), so by the time
-	// a scope is visited its parent's doomed status is already known.
-	doomed := map[string]bool{scopeID: true}
+	doomed := s.descendantScopeIDs(scopeID)
 	out := make([]Scope, 0, len(s.Scopes))
 	for _, sc := range s.Scopes {
-		if doomed[sc.ID] || doomed[sc.ParentID] {
-			doomed[sc.ID] = true
+		if doomed[sc.ID] {
 			continue
 		}
 		out = append(out, sc)
 	}
 	s.Scopes = out
+}
+
+// closeScopeDescendants prunes every scope nested inside scopeID from s.Scopes,
+// KEEPING scopeID itself. The interrupting event-sub-process teardown needs
+// exactly this shape: the enclosing scope stays open so the drain code can
+// detect its children, while its descendants must not survive the interrupt
+// (ADR-0162). No existence guard, for the same reason descendantScopeIDs has
+// none — the root scope is implicit, and its descendants are real.
+func (s *InstanceState) closeScopeDescendants(scopeID string) {
+	doomed := s.descendantScopeIDs(scopeID)
+	out := make([]Scope, 0, len(s.Scopes))
+	for _, sc := range s.Scopes {
+		if sc.ID != scopeID && doomed[sc.ID] {
+			continue
+		}
+		out = append(out, sc)
+	}
+	s.Scopes = out
+}
+
+// tokensInScopeSubtree counts tokens in scopeID and in every scope nested inside
+// it. The sub-process drain checks need this rather than tokensInScope: a
+// grandchild scope holding the live token must keep the subtree from being
+// declared drained, or closeScope prunes it and leaves a token naming a scope
+// that no longer exists — which wedges the instance permanently (ADR-0162).
+func (s *InstanceState) tokensInScopeSubtree(scopeID string) int {
+	ids := s.descendantScopeIDs(scopeID)
+	count := 0
+	for i := range s.Tokens {
+		if ids[s.Tokens[i].ScopeID] {
+			count++
+		}
+	}
+	return count
+}
+
+// hasChildScopeWithTokens reports whether any child scope of parentID — other
+// than exceptID — still holds a token anywhere in its own subtree. It is the
+// single form of the "can this scope exit yet?" question that all four scope
+// exits in engine/step_nodes.go ask — exitEventSubprocessScope,
+// exitRootEventSubprocessScope, exitNestedEventSubprocessScope and
+// exitRegularSubprocessScope. Before ADR-0162 three of them hand-rolled it over
+// tokensInScope, which sees only DIRECT children, and the fourth had no check at
+// all, which is how the fourth stayed broken.
+//
+// exceptID == "" means "no exception": the root scope is implicit and has no
+// Scope entry, so no real scope ever has an empty ID.
+func (s *InstanceState) hasChildScopeWithTokens(parentID, exceptID string) bool {
+	for _, sc := range s.Scopes {
+		if sc.ParentID == parentID && sc.ID != exceptID && s.tokensInScopeSubtree(sc.ID) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // scopeByID returns a pointer to the Scope with the given id, or nil if no

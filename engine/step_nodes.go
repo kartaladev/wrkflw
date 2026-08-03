@@ -280,6 +280,20 @@ func exitSubprocessScope(c *stepCtx, currentScopeID string) ([]Command, bool, er
 // nil — the root-level branch must not treat that nil as "enclosing scope
 // already closed".
 func exitEventSubprocessScope(c *stepCtx, currentScopeID, parentScopeID string) ([]Command, bool, error) {
+	// A descendant scope holding a live token must keep this scope from being
+	// pruned: closeScope cascades (ADR-0130), so closing here would orphan that
+	// token and wedge the instance permanently. The self check upstream (in
+	// exitSubprocessScope) is exact-match and cannot see it — this site had NO
+	// descendant check at all (ADR-0162 problem 6). stop=false matches the other
+	// "not drained yet" returns on this path: stop=true would halt drive and park
+	// the instance rather than letting the remaining tokens advance.
+	if c.s.hasChildScopeWithTokens(currentScopeID, "") {
+		return nil, false, nil
+	}
+	// Archive before closing, exactly as exitRegularSubprocessScope does. Without
+	// this, compensable work completed inside any event sub-process is dropped on
+	// its NORMAL exit.
+	c.s.archiveCompensations(currentScopeID)
 	c.s.closeScope(currentScopeID)
 
 	if parentScopeID == "" {
@@ -299,17 +313,9 @@ func exitRootEventSubprocessScope(c *stepCtx, currentScopeID string) ([]Command,
 	if c.s.tokensInScope("") > 0 {
 		return cmds, false, nil
 	}
-	// Check if any other child scopes of the root still have tokens.
-	hasOtherRootChildren := false
-	for _, sc := range c.s.Scopes {
-		if sc.ParentID == "" && sc.ID != currentScopeID {
-			if c.s.tokensInScope(sc.ID) > 0 {
-				hasOtherRootChildren = true
-				break
-			}
-		}
-	}
-	if hasOtherRootChildren {
+	// Subtree, not the immediate scope: a grandchild holding the live token must
+	// keep the root from being declared drained (ADR-0162).
+	if c.s.hasChildScopeWithTokens("", currentScopeID) {
 		return cmds, false, nil
 	}
 	// Interrupting root-level ESP completed: all root tokens were cancelled
@@ -327,48 +333,56 @@ func exitRootEventSubprocessScope(c *stepCtx, currentScopeID string) ([]Command,
 }
 
 // exitNestedEventSubprocessScope handles nested event sub-process scope exit
-// (parentScopeID != ""): non-interrupting when the enclosing scope (or a
-// sibling child scope) still has tokens, or was already closed defensively;
-// otherwise the interrupting event sub-process has completed, so it closes
-// the enclosing scope and resumes in the grandparent scope.
+// (parentScopeID != ""). It either just closes the child scope, or ALSO closes
+// the enclosing scope and resumes in the grandparent.
+//
+// Which of the two it does is decided purely by DRAIN STATE — whether the
+// enclosing scope and its other children still hold tokens — and NOT by whether
+// the event sub-process was interrupting. Interrupting is only the common way to
+// reach the second branch (the interrupt cancelled the enclosing scope's tokens,
+// so the event sub-process is the last thing running inside it). A
+// NON-interrupting event sub-process reaches exactly the same branch whenever it
+// OUTLIVES its enclosing scope: the enclosing scope drains normally but is held
+// open by exitRegularSubprocessScope's child check, so when this event
+// sub-process finally finishes it is the one that prunes the enclosing scope —
+// which is why the archive below is not interrupt-specific.
+// TestNestedEventSubprocessExitArchivesEnclosingScope drives that path.
 func exitNestedEventSubprocessScope(c *stepCtx, currentScopeID, parentScopeID string) ([]Command, bool, error) {
 	var cmds []Command
-	// Check what kind of event sub-process this is:
-	// If the parent scope (enclosingScopeID) still has tokens or is still
-	// a normal running scope, this was NON-interrupting → just close child.
-	// If the parent scope has 0 tokens (they were all cancelled by interrupting
-	// fire) AND no other child scopes of the parent have tokens, the
-	// interrupting event sub-process is done → close enclosing scope and
-	// resume the grandparent.
 	enclosingScope := c.s.scopeByID(parentScopeID)
 	if enclosingScope == nil {
 		// Enclosing scope was already closed (defensive).
 		return cmds, false, nil
 	}
 	if c.s.tokensInScope(parentScopeID) > 0 {
-		// Enclosing scope still has tokens → non-interrupting case.
-		// Child is done; enclosing scope keeps running. No further action.
+		// Enclosing scope is still working → close the child only and leave it
+		// running. Deliberately EXACT-match, not subtree: a non-interrupting event
+		// sub-process running alongside carries its own ScopeID, and counting the
+		// subtree here would make a scope wait forever on a sibling it does not own
+		// (ADR-0162).
 		return cmds, false, nil
 	}
-	// No tokens in enclosing scope. Check if any other children still running.
-	hasOtherChildren := false
-	for _, sc := range c.s.Scopes {
-		if sc.ParentID == parentScopeID && sc.ID != currentScopeID {
-			if c.s.tokensInScope(sc.ID) > 0 {
-				hasOtherChildren = true
-				break
-			}
-		}
-	}
-	if hasOtherChildren {
+	// No tokens in enclosing scope. Check if any other children still running —
+	// SUBTREE-wide, so a grandchild holding the live token blocks the exit
+	// (ADR-0162).
+	if c.s.hasChildScopeWithTokens(parentScopeID, currentScopeID) {
 		return cmds, false, nil
 	}
-	// Interrupting event sub-process completed: close enclosing scope and
-	// resume in the grandparent.
+	// The enclosing scope has fully drained and this event sub-process was the
+	// last thing running inside it (whether because an interrupt emptied it or
+	// because it drained normally and was held open for this child): close the
+	// enclosing scope and resume in the grandparent.
 	grandparentScopeID := enclosingScope.ParentID
 	enclosingNodeID := enclosingScope.NodeID
 	// Cancel remaining event sub-process arms for the enclosing scope.
 	cmds = appendCancelTimers(cmds, c.s.removeEventTriggeredSubprocessArmsForScope(parentScopeID))
+	// Archive the enclosing scope's records before pruning it: it may have
+	// recorded compensable work before it drained — whether an interrupt emptied
+	// it or it completed normally and waited on this child (ADR-0162). Harmless
+	// when cancelScopeSubtree already archived it on the interrupting path:
+	// archiveCompensations nils the scope's records, so the second call returns
+	// at its len == 0 guard.
+	c.s.archiveCompensations(parentScopeID)
 	c.s.closeScope(parentScopeID)
 
 	// Resume execution: place a token on the enclosing sub-process
@@ -377,6 +391,16 @@ func exitNestedEventSubprocessScope(c *stepCtx, currentScopeID, parentScopeID st
 	if gpErr != nil {
 		return cmds, false, fmt.Errorf("workflow-engine: event sub-process exit: %w", gpErr)
 	}
+	// If the ENCLOSING sub-process node itself carries a CompensateAction, record
+	// it in the grandparent scope — the same step exitRegularSubprocessScope
+	// takes, in the same position (after the scope is closed, before the resume).
+	// This exit closes that scope in strictly more cases since ADR-0162 added the
+	// child-scope deferral to the regular exit, so omitting the record here left
+	// the sub-process silently non-compensable. A record written here cannot
+	// dangle on the error return below: Step discards the working clone whenever
+	// a handler returns an error, so the state carrying it never escapes.
+	recordSubProcessCompensation(c, grandparentDef, enclosingNodeID, grandparentScopeID)
+
 	if found := resumeInParentScope(c, grandparentDef, enclosingNodeID, grandparentScopeID); !found {
 		if grandparentScopeID == "" {
 			// Root scope: no outgoing flows from the sub-process → instance completes.
@@ -401,17 +425,12 @@ func exitNestedEventSubprocessScope(c *stepCtx, currentScopeID, parentScopeID st
 func exitRegularSubprocessScope(c *stepCtx, currentScopeID, subNodeID, parentScopeID string) ([]Command, bool, error) {
 	var cmds []Command
 	// Check if there are any active child scopes (non-interrupting event
-	// sub-processes running alongside).
-	hasActiveChildren := false
-	for _, sc := range c.s.Scopes {
-		if sc.ParentID == currentScopeID {
-			if c.s.tokensInScope(sc.ID) > 0 {
-				hasActiveChildren = true
-				break
-			}
-		}
-	}
-	if hasActiveChildren {
+	// sub-processes running alongside, or a nested sub-process still working).
+	// SUBTREE-wide: a grandchild holding the live token leaves its own parent
+	// scope empty, so a direct-children scan would declare the subtree drained
+	// and closeScope would prune the grandchild out from under that token
+	// (ADR-0162).
+	if c.s.hasChildScopeWithTokens(currentScopeID, "") {
 		// Still waiting for child scopes to drain. Do not exit this scope yet.
 		return cmds, false, nil
 	}
@@ -432,16 +451,42 @@ func exitRegularSubprocessScope(c *stepCtx, currentScopeID, subNodeID, parentSco
 	// If the sub-process node itself carries a CompensateAction, record
 	// it in the parent scope. The snapshot is taken after the scope is
 	// closed (consistent: the sub-process completed at this point).
-	if spNode, spOK := parentDef.Node(subNodeID); spOK {
-		if sp, spIsSubProc := spNode.(activity.SubProcess); spIsSubProc && sp.CompensateAction != "" {
-			c.s.recordCompensation(parentScopeID, subNodeID, sp.CompensateAction, c.at, copyVars(c.s.Variables))
-		}
-	}
+	recordSubProcessCompensation(c, parentDef, subNodeID, parentScopeID)
 
 	if found := resumeInParentScope(c, parentDef, subNodeID, parentScopeID); !found {
 		return cmds, false, fmt.Errorf("workflow-engine: sub-process exit: node %q has no outgoing flows in parent definition", subNodeID)
 	}
 	return cmds, true, nil
+}
+
+// recordSubProcessCompensation records enclosingNodeID's OWN CompensateAction —
+// the one declared on the sub-process node itself, not on any activity inside it
+// — as a compensation snapshot in the scope that ENCLOSES that node. It is the
+// engine's only site for that record, and it is shared by BOTH exits that can
+// close a sub-process's scope: the regular drain exit
+// (exitRegularSubprocessScope) and exitNestedEventSubprocessScope, which prunes
+// the enclosing scope whenever a nested event sub-process is the last thing
+// running inside it — because it outlived a normal drain or because an interrupt
+// emptied the scope around it (ADR-0162). Living at only the first of the two is
+// what made a sub-process closed by the event-sub-process path silently
+// non-compensable.
+//
+// Call it AFTER the sub-process's own scope has been closed, mirroring the
+// regular exit: the variable snapshot is then the state the sub-process finished
+// with, and nothing that follows can reopen the scope.
+//
+// No-op when parentDef has no such node, the node is not a SubProcess, or it
+// declares no CompensateAction.
+func recordSubProcessCompensation(c *stepCtx, parentDef *model.ProcessDefinition, enclosingNodeID, parentScopeID string) {
+	node, ok := parentDef.Node(enclosingNodeID)
+	if !ok {
+		return
+	}
+	sp, isSubProcess := node.(activity.SubProcess)
+	if !isSubProcess || sp.CompensateAction == "" {
+		return
+	}
+	c.s.recordCompensation(parentScopeID, enclosingNodeID, sp.CompensateAction, c.at, copyVars(c.s.Variables))
 }
 
 // resumeInParentScope looks up enclosingNodeID's outgoing flows in parentDef

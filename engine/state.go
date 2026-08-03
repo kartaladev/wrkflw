@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"slices"
 	"time"
 
 	"github.com/kartaladev/wrkflw/humantask"
@@ -288,6 +289,20 @@ func (s *InstanceState) TaskByID(taskID string) *humantask.HumanTask {
 	return nil
 }
 
+// removeIncidentsForToken drops every incident raised against tokenID. An empty
+// tokenID matches nothing (ADR-0152: an empty key names nothing, and admitting
+// it would make every token with a blank ID wipe the incident list). The
+// remaining records keep their relative order so command output stays
+// deterministic.
+func (s *InstanceState) removeIncidentsForToken(tokenID string) {
+	if tokenID == "" {
+		return
+	}
+	s.Incidents = slices.DeleteFunc(s.Incidents, func(inc Incident) bool {
+		return inc.TokenID == tokenID
+	})
+}
+
 // cancelOpenTasks marks every OPEN human task (Unclaimed or Claimed) Cancelled
 // and returns an UpdateTask command for each, so the TaskStore projection is
 // reconciled when the instance is terminated — otherwise a cancelled instance
@@ -299,7 +314,13 @@ func (s *InstanceState) cancelOpenTasks() []Command {
 	for i := range s.Tasks {
 		if s.Tasks[i].IsOpen() {
 			s.Tasks[i].State = humantask.Cancelled
-			cmds = append(cmds, UpdateTask{Task: s.Tasks[i]})
+			// Clone before the record escapes: the command is handed to a
+			// consumer-supplied TaskStore while the record it was built from is
+			// committed as instance state, so a shallow copy would share the
+			// Claim/Completion pointees, the Vars map and the actor slices
+			// across that boundary (ADR-0163). HumanTask.Clone is the single
+			// deep-copy definition for a task.
+			cmds = append(cmds, UpdateTask{Task: s.Tasks[i].Clone()})
 		}
 	}
 	return cmds

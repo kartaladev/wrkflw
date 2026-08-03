@@ -87,7 +87,10 @@ func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *I
 	// (c) Mark the task Cancelled and emit UpdateTask.
 	if task != nil {
 		task.State = humantask.Cancelled
-		cmds = append(cmds, UpdateTask{Task: *task})
+		// Clone before the record escapes: task points into s.Tasks, which is
+		// committed as instance state, while the command is handed to a
+		// consumer-supplied TaskStore (ADR-0163).
+		cmds = append(cmds, UpdateTask{Task: task.Clone()})
 	}
 
 	// (d) Cancel any other timers (e.g. reminder timers) for this task.

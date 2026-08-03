@@ -125,14 +125,25 @@ func armEventTriggeredSubprocesses(def *model.ProcessDefinition, s *InstanceStat
 //  4. deadline/in-wait timer record.
 //  5. Standalone parked token.
 //
-// For interrupting (!ea.NonInterrupting):
+// For interrupting (!ea.NonInterrupting) — every step from 2 to 5 applies to the
+// enclosing scope's whole SUBTREE, not just the enclosing scope itself
+// (ADR-0162); steps 5 and 6 are the two effects that subtree teardown added:
 //  1. Verify the enclosing scope is still active (if not, clean no-op).
-//  2. Cancel ALL tokens in the enclosing scope (consuming them + closing visits).
-//  3. Cancel all other event-subprocess arms for the same scope (emit CancelTimer for timer arms).
-//  4. Cancel all boundary arms for tokens that were in the scope.
-//  5. Open a NEW child scope for the event sub-process (parent = enclosing scope).
-//  6. Place a token on the event sub-process's start node in that child scope.
-//  7. Drive forward. When this child scope drains (KindEndEvent path), it exits via the
+//  2. Cancel ALL tokens in the enclosing scope AND in every scope nested inside
+//     it (consuming them + closing visits).
+//  3. Cancel all other event-subprocess arms for the enclosing scope and for each
+//     of its descendant scopes (emit CancelTimer for timer arms).
+//  4. Cancel all boundary arms for tokens that were anywhere in that subtree.
+//  5. Archive the compensation records of every scope in the subtree, so work
+//     completed inside it stays compensable (it used to be discarded with the
+//     scope).
+//  6. Close the descendant scopes, KEEPING the enclosing scope open so the drain
+//     code can still detect its children. A completed instance would otherwise
+//     carry the cancelled descendants as zombie Scopes entries.
+//  7. Open a NEW child scope for the event sub-process (parent = enclosing scope).
+//     This must happen AFTER step 6, or the new child is pruned immediately.
+//  8. Place a token on the event sub-process's start node in that child scope.
+//  9. Drive forward. When this child scope drains (KindEndEvent path), it exits via the
 //     ENCLOSING scope's parent (since the enclosing scope is now "completed" by the
 //     event sub-process completion).
 //
@@ -182,31 +193,23 @@ func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefi
 	var cmds []Command
 
 	if !ea.NonInterrupting {
-		// Interrupting: cancel all tokens in the enclosing scope, keep the enclosing
-		// scope itself open (so the drain code can detect its children), then open a
-		// child scope for the event sub-process.
-
-		// Collect all tokens in the enclosing scope (snapshot to avoid mutating while iterating).
-		var tokensToCancel []Token
-		for _, tok := range s.Tokens {
-			if tok.ScopeID == ea.EnclosingScopeID {
-				tokensToCancel = append(tokensToCancel, tok)
-			}
-		}
-		// Cancel deadline/reminder timers and boundary arms for each token in scope, then consume.
-		// (Fix 1: cancelTokenWaits also cancels armed events for an event-based-gateway-parked
-		// token — its AwaitCommand starts with the "evtgw:" sentinel — so their timers do not
-		// fire as stale orphans later.)
-		for _, tok := range tokensToCancel {
-			cmds = append(cmds, cancelTokenWaits(s, &tok, at, CloseKindBoundaryInterrupted)...)
-		}
-
-		// Cancel sibling event-subprocess arms for the same enclosing scope (all arms,
-		// including this one). Emit CancelTimer for timer arms.
-		// removeEventTriggeredSubprocessArmsForScope removes ALL arms for the scope including this one.
-		cmds = appendCancelTimers(cmds, s.removeEventTriggeredSubprocessArmsForScope(ea.EnclosingScopeID))
+		// Interrupting: cancel every token in the enclosing scope AND in all its
+		// descendant scopes, retire their arms and archive their compensation
+		// records (ADR-0162 — before it, a token an earlier arm had pushed into a
+		// nested sub-process survived the interrupt). Cancellation stays
+		// cancelTokenWaits per token, so deadline/reminder timers, in-wait
+		// reminders, boundary arms and event-gateway arms (the "evtgw:" sentinel)
+		// are retired exactly as before — only the set of tokens widens.
+		//
+		// The enclosing scope itself stays open so the drain code can detect its
+		// children; its descendants are closed, or a completed instance would carry
+		// zombie Scopes entries.
+		cmds = append(cmds, cancelScopeSubtree(s, ea.EnclosingScopeID, at, CloseKindBoundaryInterrupted)...)
+		s.closeScopeDescendants(ea.EnclosingScopeID)
 
 		// Open a child scope for the event sub-process, parented to the ENCLOSING scope.
+		// This happens AFTER closeScopeDescendants, or the freshly opened child would
+		// be pruned immediately.
 		// NodeID = the event sub-process node ID.
 		// The drain code (KindEndEvent case) detects this as an event sub-process scope
 		// (by checking the node kind in the parent definition) and handles completion:

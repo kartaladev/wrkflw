@@ -375,21 +375,13 @@ func propagateError(ctx context.Context, top *model.ProcessDefinition, s *Instan
 	}
 	if found {
 		consume := func(cmds []Command) []Command {
-			// Cancel all tokens in the erroring scope, then close it.
-			tokensToCancel := make([]Token, 0, len(s.Tokens))
-			for _, tok := range s.Tokens {
-				if tok.ScopeID == errScopeID {
-					tokensToCancel = append(tokensToCancel, tok)
-				}
-			}
-			for _, tok := range tokensToCancel {
-				// Cancel deadline/reminder timers, in-wait reminder, boundary arms,
-				// and (for an event-based-gateway token) armed events, then consume
-				// the token.
-				cmds = append(cmds, cancelTokenWaits(s, &tok, at, CloseKindBoundaryInterrupted)...)
-			}
-			// Cancel ESP arms for the scope.
-			cmds = appendCancelTimers(cmds, s.removeEventTriggeredSubprocessArmsForScope(errScopeID))
+			// Cancel every token in the erroring scope AND in all its descendant
+			// scopes, retire their arms, archive their compensation records, then
+			// close the whole subtree. closeScope already prunes descendants
+			// (ADR-0130); before ADR-0162 it did so while leaving their tokens
+			// alive, so those tokens ended up naming a scope that no longer
+			// existed and every subsequent Step failed in defForScope.
+			cmds = append(cmds, cancelScopeSubtree(s, errScopeID, at, CloseKindBoundaryInterrupted)...)
 			s.closeScope(errScopeID)
 			return cmds
 		}

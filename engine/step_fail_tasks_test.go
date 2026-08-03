@@ -152,15 +152,28 @@ func TestFailureWithCompensationReconcilesOpenTasks(t *testing.T) {
 	}
 	require.NotEmpty(t, refundCmdID, "compensation walk must emit refund")
 
-	// Step 4: refund completes → walk finishes as StatusFailed; task reconciled.
+	// The task is reconciled when the walk BEGINS, not when it finishes: since
+	// ADR-0163 beginCompensation's per-token teardown cancels the open task
+	// attached to the token it consumes. Before, the task stayed open across the
+	// whole walk even though its token was already gone.
+	uts := findUpdateTasks(r2.Commands)
+	require.Len(t, uts, 1, "the parked task must be cancelled when the compensation walk begins")
+	assert.Equal(t, humantask.Cancelled, uts[0].Task.State)
+	require.Len(t, r2.State.Tasks, 1)
+	assert.Equal(t, humantask.Cancelled, r2.State.Tasks[0].State)
+
+	// Step 4: refund completes → walk finishes as StatusFailed. Nothing is left
+	// open, so the terminal sweep emits no further UpdateTask.
 	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(at.Add(3*time.Second), refundCmdID, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
 	require.Equal(t, engine.StatusFailed, r3.State.Status)
-	uts := findUpdateTasks(r3.Commands)
-	require.Len(t, uts, 1, "the parked task must be cancelled when compensation finishes as Failed")
-	assert.Equal(t, humantask.Cancelled, uts[0].Task.State)
+	require.Len(t, r3.State.Tasks, 1)
+	assert.Equal(t, humantask.Cancelled, r3.State.Tasks[0].State,
+		"the task stays Cancelled on the failed instance")
+	assert.Empty(t, findUpdateTasks(r3.Commands),
+		"the task was already reconciled at the start of the walk")
 }
 
 // TestSubInstanceFailureReconcilesOpenTasks: a failed child instance fails the

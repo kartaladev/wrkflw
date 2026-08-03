@@ -14,6 +14,16 @@ import (
 	"github.com/kartaladev/wrkflw/definition/model"
 )
 
+// RemoveIncidentsForToken exposes (*InstanceState).removeIncidentsForToken for engine_test.
+func RemoveIncidentsForToken(s *InstanceState, tokenID string) {
+	s.removeIncidentsForToken(tokenID)
+}
+
+// CancelOpenTasks exposes (*InstanceState).cancelOpenTasks for engine_test.
+func CancelOpenTasks(s *InstanceState) []Command {
+	return s.cancelOpenTasks()
+}
+
 // OpenScope exposes (*InstanceState).openScope for engine_test.
 func OpenScope(s *InstanceState, nodeID, parentScopeID string) string {
 	return s.openScope(nodeID, parentScopeID)
@@ -27,6 +37,26 @@ func TokensInScope(s *InstanceState, scopeID string) int {
 // CloseScope exposes (*InstanceState).closeScope for engine_test.
 func CloseScope(s *InstanceState, scopeID string) {
 	s.closeScope(scopeID)
+}
+
+// DescendantScopeIDs exposes (*InstanceState).descendantScopeIDs for engine_test.
+func DescendantScopeIDs(s *InstanceState, scopeID string) map[string]bool {
+	return s.descendantScopeIDs(scopeID)
+}
+
+// CloseScopeDescendants exposes (*InstanceState).closeScopeDescendants for engine_test.
+func CloseScopeDescendants(s *InstanceState, scopeID string) {
+	s.closeScopeDescendants(scopeID)
+}
+
+// TokensInScopeSubtree exposes (*InstanceState).tokensInScopeSubtree for engine_test.
+func TokensInScopeSubtree(s *InstanceState, scopeID string) int {
+	return s.tokensInScopeSubtree(scopeID)
+}
+
+// HasChildScopeWithTokens exposes (*InstanceState).hasChildScopeWithTokens for engine_test.
+func HasChildScopeWithTokens(s *InstanceState, parentID, exceptID string) bool {
+	return s.hasChildScopeWithTokens(parentID, exceptID)
 }
 
 // ScopeByID exposes (*InstanceState).scopeByID for engine_test.
