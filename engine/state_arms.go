@@ -168,15 +168,21 @@ func appendCancelTimers(cmds []Command, timerIDs []string) []Command {
 // event-gateway and boundary timer arms, and event-sub-process arms across all
 // scopes — and clears the corresponding state.
 //
-// It is the sweep for ABNORMAL termination: cancel, unhandled error, child
-// failure, force-terminate, and the compensation-walk terminate. Normal
-// completion does NOT run it — exitRootScope ends the instance without a sweep,
-// and a repeatable non-interrupting root event-sub arm is deliberately allowed
-// to survive into a terminal snapshot (ADR-0124). Do not wire this into the
-// normal-completion path.
+// It is the sweep for EVERY terminal transition — normal completion included.
+// Since ADR-0164 all eight terminal sites route through endInstance, which calls
+// it unconditionally, so a completed instance no longer carries live arms,
+// timers or boundaries.
+//
+// This deliberately narrows an ADR-0124 corollary. That ADR reasoned a
+// repeatable non-interrupting root event-sub arm surviving into a terminal
+// snapshot was harmless, because the runtime refuses to hold correlation waiters
+// for terminal instances and the fire path is status-guarded; the arm is now
+// retired at completion instead, so the condition never arises. ADR-0124's
+// actual decision — non-interrupting arms are repeatable rather than one-shot —
+// is unaffected.
 //
 // Keeping it as one definition means a newly added arm family is retired across
-// all the abnormal paths at once.
+// all the terminal paths at once.
 func (s *InstanceState) cancelAllScheduledWork() []Command {
 	cmds := s.cancelAllTimers()
 	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)

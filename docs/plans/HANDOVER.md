@@ -12,15 +12,23 @@ top to bottom; it is meant to stay short enough that you can.
 > with the plan. This file carries only: where `main` is, what is in flight, and
 > what to do next.
 
-## State — updated 2026-08-03
+## State — updated 2026-08-04
 
-**▶ Pick up here: delivery 2b (ADR-0164) is the next work, and it is NOT ready to
-implement. Its branch `parked/terminal-transitions` is rebased onto the current
-`main`, but the bundle was audited against the PRE-2a base and delivery 2a then
-rewrote the very files 2b edits. A premise sweep must complete and be folded in
-before Phase 1. ⚠ One of the plan's instructions would, if followed literally,
-DELETE ADR-0162's drain check and silently re-open the permanent-instance-wedge
-defect — read that branch's plan `▶ Progress` block before anything else.**
+**▶ Pick up here: delivery 2b (ADR-0164) is IMPLEMENTED and sitting at the
+Delivery Gate on `parked/terminal-transitions` @ `b13483c` — one squashed feature
+bundle, 21 files, engine-verified and clean. What remains is owner-gated and
+nothing else: (1) the full repo suite, which needs Docker; (2) `/code-review`;
+(3) `/security-review`; then merge `--no-ff` into `main` and push.** Fold any
+findings with `--amend` — the commit is local and unpushed. The per-delivery
+detail, every adjudication, and the deferred list live in that delivery's plan
+`▶ Progress` block (`docs/plans/2026-08-02-terminal-transitions.md`).
+
+⚠ **Two resurrection routes were found AT THE GATE, after the bundle had already
+survived a rule-#9 audit and a premise sweep** — a surviving sibling token plus an
+in-flight `ActionCompleted`/`ActionFailed` flipped an already **Failed** instance
+to **Completed**. Both are fixed and pinned. The lesson is in the plan: the design
+audits validated the design, and the *built thing* still carried defects only an
+adversarial pass over shipped code could find.
 
 ⚠ **Ask before using Docker** (standing owner instruction, 2026-07-31 — other
 sessions saturate the daemon). `engine` is provably container-free (`go list
@@ -32,9 +40,9 @@ the branch.
 
 | | |
 |---|---|
-| `main` | `168fb06` — **delivery 2a merged and pushed 2026-08-04**, clean |
+| `main` | `85fbb38` — delivery 2a merged and pushed 2026-08-04, plus handover docs, clean |
+| `parked/terminal-transitions` | `b13483c` — **delivery 2b, IMPLEMENTED, at the gate.** One squashed bundle off `main` @ `85fbb38`: ADR-0164, the ADR-0109 correction note, the plan, the premise sweep, and the code |
 | `feat/scope-lifecycle-correctness` | merged and pushed; delete or ignore |
-| `parked/terminal-transitions` | `18f1aa9` — **delivery 2b**, ADR-0164 + the ADR-0109 correction + `docs/plans/2026-08-02-terminal-transitions.md`. Branched off `main`, so it carries **no stale copy** of the 2a docs. Rebase onto the new `main` after 2a merges |
 | `parked/scope-and-fanout-design` | ADR-0158 draft (delivery 3) + a superseded ADR-0162 draft. **Do not read its 0162** — the authoritative one is on the delivery-2a branch |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept only because `audit-signal-arm-fanout-r1/-r2` tags point into it |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — older parked bundle, docs only |
@@ -43,53 +51,47 @@ the branch.
 
 ## The immediate next steps
 
-1. **⚠ Fold the completed premise sweep into the 2b bundle, — its one owner decision is resolved.** The sweep is **DONE** and lives at
-   `docs/plans/2026-08-04-delivery-2b-premise-sweep.md` **on the
-   `parked/terminal-transitions` branch** (`git show
-   parked/terminal-transitions:docs/plans/2026-08-04-delivery-2b-premise-sweep.md`).
-   Its corrections are **not yet folded into the phase steps**. Four things it
-   found, in order of importance:
-   - **Two dangerous instructions**, not one. Besides the `:318` deletion that
-     would remove ADR-0162's drain check, `exitNestedEventSubprocessScope` has
-     the identical ordering problem at a site the plan never mentions — and
-     there the "just delete it" fix is **unsafe**, because that call must still
-     run on the non-terminal resume path. The sweep gives the correct
-     restructure for both.
-   - **✅ OWNER DECISION, RESOLVED 2026-08-04 (§4, I-3): narrow the incident
-     clear.** `endInstance` must **not** do `s.Incidents = nil`; it clears only
-     incidents whose token no longer exists. Wholesale clearing would blind
-     `runtime/outbox.go`'s `terminalEventErr`, `processdriver_action.go`'s
-     `terminalErr`, the `service/` audit view and `incident_count` — an instance
-     cancelled while parked on an incident would report `"cancelled"` instead of
-     the real failure. Narrowing is also literally what shipped ADR-0163
-     promises: *"incidents do not outlive the token they describe."*
-     ⚠ **This makes the two-vs-four correction load-bearing rather than
-     cosmetic**, and the sweep flags an ordering trap: the incident sweep must
-     run **before** `s.Tokens = nil`, or every incident looks orphaned and the
-     narrowing collapses back into the wholesale clear.
-   - **Non-negotiable doc fix:** ADR-0164 **never mentions incidents at all**,
-     yet shipped, pushed code (`engine/step_cancel.go:53-55` and ADR-0163)
-     forward-references it for exactly that. Fix ADR-0164 or those citations
-     point at a decision that does not exist.
-   - **Phase 4's arm-retirement test would be dead** under its own mutation
-     unless it is pinned to the `exitRootScope` path.
-2. **Then implement 2b** with `superpowers:subagent-driven-development` — one
-   subagent at a time, since every file is in package `engine` (concurrent
-   agents in one working tree break each other's `go test` compile).
-3. **Then the Delivery Gate**: verification, `/code-review`,
-   `/security-review`, merge `--no-ff`, push.
-4. **Then delivery 3** (ADR-0158 fan-out), which **still needs its own rule-#9
+1. **Delivery Gate on 2b — steps 1 and 2 of 3 are DONE.** Branch head `5ad0083`.
+   - **Merged-tree suite: green, run TWICE** (before and after `/code-review`'s
+     fixes, because the first run certified a tree that no longer existed).
+     Latest: `-race ./...` **EXIT=0, 64 ok, 0 FAIL, 0 skips**; `golangci-lint
+     run ./...` **EXIT=0**; repo **73.6%**; engine **91.8%**; notifier load-flake
+     did not trip.
+   - **`/code-review`: 4 findings — 3 fixed, 1 owner-adjudicated.** It found
+     **three more unguarded handlers** of the same resurrection class
+     (`handleSubInstanceCompleted` High, `handleSubInstanceFailed` and
+     `handleResolveIncident` Medium). All three now guarded, RED-first and
+     mutation-verified; the `runtime/calllink` idempotency contract is pinned by
+     a new cross-layer test. Finding 4 (incident history) is owner-decided to
+     **revisit in its own ADR** — see the gaps section below.
+   - **`/security-review`: 0 vulnerabilities.** Cleared the `UpdateTask`
+     deep-copy at all eight construction sites, the authz paths, the four new
+     `slog` calls, and the widened compensation guard. Net assessment: strictly
+     less unauthorized-state-transition surface than before.
+2. **Then delivery 3** (ADR-0158 fan-out), which **still needs its own rule-#9
    audit in split form**.
 
-### The lesson 2b is currently demonstrating
+### The two lessons 2b produced
 
 **An audited bundle decays when its base moves.** The audit was valid; the base
 was not held still. The decay is invisible because the documents still read as
 authoritative — a line-numbered instruction that once pointed at dead code now
-points at a just-shipped fix, and its stated justification makes deleting that
+pointed at a just-shipped fix, and its stated justification made deleting that
 fix sound reasoned. **Before implementing any bundle whose base has advanced,
 re-verify its premises against current source.** Prefer symbol names to line
-numbers when writing plans, for exactly this reason.
+numbers when writing plans, for exactly this reason. 2b's steps were rewritten
+to name symbols; the `:318` instruction that would have deleted ADR-0162's drain
+check was removed, and the guard shipped intact.
+
+**A design audit cannot find a defect that only exists in the built thing.** The
+2b bundle survived a rule-#9 audit *and* a premise sweep, and the whole-branch
+review still found — and proved by execution — two resurrection routes in which
+a surviving sibling token flipped an already **Failed** instance to
+**Completed**. Neither is reachable from the design documents; both are obvious
+once you read `handleActionCompleted`/`handleActionFailed` next to their sibling
+`handleTimerFired`. Worse, one fix wave *introduced* an ADR sentence asserting
+the second route was safe. **Review the built thing adversarially, not just the
+design** — and re-verify any new claim a fix wave adds to an ADR.
 
 ### Delivery 2a's gate record (2026-08-04)
 
@@ -132,7 +134,7 @@ The final whole-branch review named these, by package, in priority order:
   to round-trip exactly through `Store.Load`.
 - **`transport/`** — no exposure.
 
-## The three-delivery sequence — 1 of 3 shipped, 2a at the gate
+## The three-delivery sequence — 2 of 3 shipped, 2b at the gate
 
 Auditing the parked signal/message bundle turned one ADR into three, and
 established that the dependency runs the **opposite** way from the original
@@ -141,9 +143,10 @@ packaging: ADR-0158 amplifies the defects the other two fix, so it ships last.
 1. **ADR-0161 — stale-command filtering.** ✅ **SHIPPED** — merge `bcde851`,
    bundle `e37ab93`, pushed 2026-08-01.
 2. **Scope-lifecycle correctness — split into 2a and 2b.**
-   - **2a** — ADR-0162 + ADR-0163. ✅ **IMPLEMENTED, at the gate.**
+   - **2a** — ADR-0162 + ADR-0163. ✅ **SHIPPED** — merge `168fb06`, pushed
+     2026-08-04.
    - **2b** — ADR-0164 (terminal transitions; a terminal instance is never
-     resumed), parked at `18f1aa9`, designed and audited, not started.
+     resumed). ✅ **IMPLEMENTED, at the gate**, `b13483c`.
 3. **ADR-0158 — a broadcast signal fires every matching arm per family.** Not
    started. Draft on `parked/scope-and-fanout-design`. **Still needs its own
    rule-#9 audit in split form.**
@@ -177,12 +180,21 @@ guarding the helper makes root-level teardown a silent no-op; removing it from
 
 ## Known gaps accepted in 2a — carried forward deliberately
 
-- **Zombie scopes are closed only on the two abnormal-teardown paths.** Four
-  terminal transitions still set a terminal `Status` without pruning `s.Scopes`
-  (`forceTerminate`, `handleCancelRequested`'s and `handleUnhandledError`'s
-  immediate branches, `handleSubInstanceFailed`'s tail). Closing that is
-  `endInstance`'s job in **ADR-0164, delivery 2b**. ADR-0162 states this
-  explicitly rather than claiming the general case.
+- ⚠⚠ **Zombie scopes are STILL open, and 2b did not close them despite ADR-0162
+  saying it would.** Four terminal transitions still set a terminal `Status`
+  without pruning `s.Scopes`. Shipped ADR-0162 says *"Closing that is
+  `endInstance`'s job in ADR-0164 (delivery 2b). Until 2b lands, this ADR claims
+  the narrower thing that is true"* — but `endInstance` as delivered sweeps
+  status, `EndedAt`, the cursor, orphaned incidents, tasks and scheduled work, and
+  **never touches `s.Scopes`**. So ADR-0162's sentence goes stale the moment 2b
+  merges.
+  Deliberate: pruning scopes at a terminal site interacts with
+  `archiveCompensations`, the persisted snapshot shape and the `service/` audit
+  view, none of which ADR-0164 analysed, and bolting it on at the gate would push
+  an unaudited change through the one path every terminal transition now takes.
+  **ADR-0164's Consequences records this explicitly so the reference resolves to
+  a decision rather than dangling. It needs its own ADR — treat it as a
+  first-class backlog item, not a footnote.**
 - **A newly reachable hard error.** A nested *non-interrupting* event
   sub-process inside an event sub-process can now produce "enclosing node %q has
   no outgoing flows in grandparent definition". Pre-fix that topology was a
@@ -195,6 +207,40 @@ guarding the helper makes root-level teardown a silent no-op; removing it from
   `firstActive`. Fix is to thread `stopped` as a value. **Backlog.**
 - Smaller follow-ups (fixture duplication, two test-file placements, an
   unexercised sibling-sparing guard) are listed in the plan's `▶ Progress`.
+
+## Known gaps accepted in 2b — carried forward deliberately
+
+- ⚠⚠ **THE BIG ONE — `tokenAwaiting` has no status check and `drive` has no
+  status guard.** Three successive review passes found **1 → 2 → 5** resurrection
+  routes of this one shape, each increase arriving *after* the ADR claimed
+  closure. 2b guarded **five of fifteen** handlers individually
+  (`handleActionCompleted`, `handleActionFailed`, `handleSubInstanceCompleted`,
+  `handleSubInstanceFailed`, `handleResolveIncident`, alongside the pre-existing
+  `handleTimerFired`/`handleHumanCandidatesResolved`). **The class is NOT closed**
+  — the rest are protected by convention only, and a handler added later gets
+  nothing by construction.
+  **Owner-decided: the structural fix is its own ADR.** It must classify every
+  trigger as resumption-shaped vs deliberately terminal-tolerant and enforce it in
+  `Step`'s dispatch, threading three shipped carve-outs: a plain full rollback
+  must still work on a terminal instance, cancel re-delivery is deliberate, and
+  `HumanCompleted` must keep erroring (external caller via `service.CompleteTask`).
+  It should also decide whether `service/` surfaces "instance is terminal" for an
+  admin `ResolveIncident` the engine now silently refuses.
+- **Incident history on the two token-dropping paths — owner-decided to REVISIT.**
+  The narrow sweep still erases every incident at `forceTerminate` and cancel's
+  immediate branch, so the audit view renders empty, `incident_count` drops to 0,
+  and `terminalEventErr` degrades to `"cancelled"`. Token linkage ships in 2b (it
+  discharges ADR-0163's forward reference), but the retention design gets its own
+  ADR — most likely carrying the incident error into the **terminal event
+  payload**, which is the right layer and also fixes the "reports `cancelled`
+  instead of the real failure" case.
+- **`processtest/park.go`'s `Park.Incidents` is the one unpinned consumer** of
+  the incident-lifetime change: its own test drives a synthetic `StatusRunning`
+  state and passes either way. Same family as the still-open harness gap where
+  `Classify` derives `AwaitingSignals` from `Token.AwaitSignal` only.
+- Two test-hygiene minors triaged CARRY by the final review — an injected task
+  reusing `NodeID:"gate"`, and two conditional `CancelTimer` assertions gated by
+  a preceding exact-slice assertion. Detail in the plan's `▶ Progress`.
 
 ## After that — pre-v0.1.0 blockers
 

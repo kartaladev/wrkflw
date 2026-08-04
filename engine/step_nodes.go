@@ -212,14 +212,10 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 // the root scope (tok.ScopeID == ""): instance completion when all tokens are
 // gone. The token is always parked after this (drive() sees stopped=true).
 func exitRootScope(c *stepCtx) []Command {
-	var cmds []Command
 	if len(c.s.Tokens) == 0 {
-		c.s.Status = StatusCompleted
-		ended := c.at
-		c.s.EndedAt = &ended
-		cmds = append(cmds, CompleteInstance{Result: copyVars(c.s.Variables)})
+		return c.s.endInstance(StatusCompleted, c.at, CompleteInstance{Result: copyVars(c.s.Variables)})
 	}
-	return cmds
+	return nil
 }
 
 // exitSubprocessScope handles KindEndEvent token consumption when the token
@@ -320,15 +316,29 @@ func exitRootEventSubprocessScope(c *stepCtx, currentScopeID string) ([]Command,
 	}
 	// Interrupting root-level ESP completed: all root tokens were cancelled
 	// and no sibling child scopes remain. The instance is now complete.
-	// Cancel any remaining ESP arms for the root scope.
-	cmds = appendCancelTimers(cmds, c.s.removeEventTriggeredSubprocessArmsForScope(""))
-	// Instance completes: all tokens gone, no active root children.
+	//
+	// Instance completes: all tokens gone, no active root children. endInstance's
+	// own cancelAllScheduledWork retires the root ESP arms (and everything else the
+	// instance still owns), so the arm retirement below is NOT hoisted above this
+	// branch: doing so would put CancelTimers on both sides of CompleteInstance and
+	// break the [task cancels…, terminal, scheduled-work cancels…] order every
+	// terminal path now emits (ADR-0164).
 	if len(c.s.Tokens) == 0 {
-		c.s.Status = StatusCompleted
-		ended := c.at
-		c.s.EndedAt = &ended
-		cmds = append(cmds, CompleteInstance{Result: copyVars(c.s.Variables)})
+		return append(cmds, c.s.endInstance(StatusCompleted, c.at,
+			CompleteInstance{Result: copyVars(c.s.Variables)})...), true, nil
 	}
+	// DEFENSIVE, and unreachable today: the two guards above already established
+	// that the root scope holds no token and no child subtree does either, and
+	// currentScopeID was drained and closed by the caller — so nothing can be left
+	// for len(c.s.Tokens) != 0 to find, and this tail is 0-covered. It is kept
+	// rather than deleted because deleting it would make correctness depend on that
+	// unreachability argument holding forever. On the reachable path the root ESP
+	// arms are retired by endInstance's cancelAllScheduledWork, not here.
+	//
+	// Contrast exitNestedEventSubprocessScope below, whose identical-looking tail IS
+	// live: its resume places a token in the grandparent scope, so a non-completing
+	// return there is ordinary.
+	cmds = appendCancelTimers(cmds, c.s.removeEventTriggeredSubprocessArmsForScope(""))
 	return cmds, true, nil
 }
 
@@ -374,8 +384,15 @@ func exitNestedEventSubprocessScope(c *stepCtx, currentScopeID, parentScopeID st
 	// enclosing scope and resume in the grandparent.
 	grandparentScopeID := enclosingScope.ParentID
 	enclosingNodeID := enclosingScope.NodeID
-	// Cancel remaining event sub-process arms for the enclosing scope.
-	cmds = appendCancelTimers(cmds, c.s.removeEventTriggeredSubprocessArmsForScope(parentScopeID))
+	// The enclosing scope's remaining event sub-process arms are retired at each
+	// non-completing return below rather than here. They MUST still be retired on
+	// every one of those paths — leaving them armed after their scope closes is the
+	// defect this call exists to prevent — but on the completing path endInstance's
+	// own cancelAllScheduledWork owns the sweep, and retiring them here first would
+	// put CancelTimers on both sides of CompleteInstance, breaking the
+	// [task cancels…, terminal, scheduled-work cancels…] order every terminal path
+	// now emits (ADR-0164). closeScope only prunes s.Scopes, so deferring the call
+	// past it is state-equivalent.
 	// Archive the enclosing scope's records before pruning it: it may have
 	// recorded compensable work before it drained — whether an interrupt emptied
 	// it or it completed normally and waited on this child (ADR-0162). Harmless
@@ -405,15 +422,15 @@ func exitNestedEventSubprocessScope(c *stepCtx, currentScopeID, parentScopeID st
 		if grandparentScopeID == "" {
 			// Root scope: no outgoing flows from the sub-process → instance completes.
 			if len(c.s.Tokens) == 0 {
-				c.s.Status = StatusCompleted
-				ended := c.at
-				c.s.EndedAt = &ended
-				cmds = append(cmds, CompleteInstance{Result: copyVars(c.s.Variables)})
+				return append(cmds, c.s.endInstance(StatusCompleted, c.at,
+					CompleteInstance{Result: copyVars(c.s.Variables)})...), true, nil
 			}
 		} else {
 			return cmds, false, fmt.Errorf("workflow-engine: event sub-process exit: enclosing node %q has no outgoing flows in grandparent definition", enclosingNodeID)
 		}
 	}
+	// Not completing: retire the enclosing scope's remaining ESP arms (see above).
+	cmds = appendCancelTimers(cmds, c.s.removeEventTriggeredSubprocessArmsForScope(parentScopeID))
 	return cmds, true, nil
 }
 
@@ -521,32 +538,23 @@ func resumeInParentScope(c *stepCtx, parentDef *model.ProcessDefinition, enclosi
 // Intentionally does not invoke node/def CancelActions or run compensation —
 // this is a modeled terminate, not an admin cancel (unlike handleCancelRequested).
 func forceTerminate(c *stepCtx, ev event.EndEvent) ([]Command, bool, error) {
-	ended := c.at
-	c.s.EndedAt = &ended
 	// Close every open visit and drop all tokens (including this end-event token).
+	// This runs BEFORE endInstance so its removeOrphanedIncidents sweep sees the
+	// empty token set and retires the incidents those tokens carried (ADR-0164).
 	for i := range c.s.Tokens {
 		tok := &c.s.Tokens[i]
 		c.s.closeVisitAs(tok.ID, tok.NodeID, c.at, CloseKindTerminated)
 	}
 	c.s.Tokens = nil
 
-	// Reconcile open human tasks before the terminal command (matches ADR-0088).
-	cmds := c.s.cancelOpenTasks()
-
 	if ev.Outcome == event.OutcomeAbort {
-		c.s.Status = StatusTerminated
 		reason := ev.TerminationReason
 		if reason == "" {
 			reason = "force-terminated"
 		}
-		cmds = append(cmds, FailInstance{Err: reason})
-	} else {
-		c.s.Status = StatusCompleted
-		cmds = append(cmds, CompleteInstance{Result: copyVars(c.s.Variables)})
+		return c.s.endInstance(StatusTerminated, c.at, FailInstance{Err: reason}), true, nil
 	}
-
-	cmds = append(cmds, c.s.cancelAllScheduledWork()...)
-	return cmds, true, nil
+	return c.s.endInstance(StatusCompleted, c.at, CompleteInstance{Result: copyVars(c.s.Variables)}), true, nil
 }
 
 // subProcessStrategy handles KindSubProcess node entry.

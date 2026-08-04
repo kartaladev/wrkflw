@@ -322,6 +322,11 @@ func NewSubInstanceFailed(at time.Time, commandID, errMsg string) SubInstanceFai
 // and is not yet emitted. It is intended for BPMN compensation boundary/throw event
 // handling, which requires a producer not yet built. CompensateRequested is the
 // only supported compensation entry point today.
+//
+// Delivering this trigger with a non-empty ToNode against an already-terminal
+// instance is rejected with a workflow-engine error rather than resurrecting
+// it (ADR-0164). A plain full rollback (ToNode and ReverseNode both empty) is
+// still accepted.
 type CompensateRequested struct {
 	baseTrigger
 	// ToNode is the rollback target node ID. Compensation runs from the most-recently
@@ -349,6 +354,11 @@ type CompensateRequested struct {
 // given time. toNode is the rollback target (empty = full rollback). The reverse
 // fields (ReverseNode, ResetVars) are left at their zero values; use
 // NewReverseToStart to build a full-reverse-and-resume trigger instead.
+//
+// Delivering this trigger with a non-empty ToNode against an already-terminal
+// instance is rejected with a workflow-engine error rather than resurrecting
+// it (ADR-0164). A plain full rollback (ToNode and ReverseNode both empty) is
+// still accepted.
 func NewCompensateRequested(at time.Time, toNode string) CompensateRequested {
 	return CompensateRequested{baseTrigger: baseTrigger{at: at}, ToNode: toNode}
 }
@@ -370,6 +380,12 @@ func NewReverseToStart(at time.Time, startNode string) CompensateRequested {
 // start-of-visit snapshot — the target-reverse form of ReverseInstance's
 // WithTargetNode option. ReverseNode and ResetVars are left at their zero values
 // (this is not a full-reverse-to-start walk; see NewReverseToStart for that).
+//
+// Delivering this trigger against an already-terminal instance is rejected
+// with a workflow-engine error rather than resurrecting it (ADR-0164): this
+// constructor always sets a non-empty ToNode, so there is no plain-full-
+// rollback carve-out reachable through it — see NewCompensateRequested for
+// that.
 func NewReverseToNode(at time.Time, toNode string) CompensateRequested {
 	return CompensateRequested{baseTrigger: baseTrigger{at: at}, ToNode: toNode, RestoreTargetVars: true}
 }

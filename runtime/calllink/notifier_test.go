@@ -13,6 +13,7 @@ import (
 	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/definition/gateway"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/humantask"
@@ -341,4 +342,156 @@ func TestNewCallNotifierFailsFast(t *testing.T) {
 			tc.assert(t, n, err)
 		})
 	}
+}
+
+// terminalParentDef returns a parent that calls notifierChildDef on one branch
+// of a fork while the other branch can be driven into an unhandled error.
+//
+//	parent-start → fork ⇒ { call(CallActivity notifier-child) → parent-end
+//	                        gate(UserTask "worker") → parent-boom(error end E9) }
+//
+// The fork is what makes the scenario reachable: handleUnhandledError's
+// immediate-fail branch sets StatusFailed WITHOUT dropping tokens, so the
+// call-activity token outlives the parent's death still awaiting its child.
+func terminalParentDef() *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      "notifier-terminal-parent",
+		Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("parent-start"),
+			gateway.NewParallel("fork"),
+			activity.NewCallActivity("call", model.Latest("notifier-child")),
+			event.NewEnd("parent-end"),
+			activity.NewUserTask("gate", activity.WithEligibleRoles("worker")),
+			event.NewEnd("parent-boom", event.WithErrorCode("E9")),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "ntf0", Source: "parent-start", Target: "fork"},
+			{ID: "ntf1", Source: "fork", Target: "call"},
+			{ID: "ntf2", Source: "call", Target: "parent-end"},
+			{ID: "ntf3", Source: "fork", Target: "gate"},
+			{ID: "ntf4", Source: "gate", Target: "parent-boom"},
+		},
+	}
+}
+
+// TestCallNotifierRetiresLinkWhenParentIsTerminal pins the CROSS-LAYER contract
+// that ADR-0164's terminal guard on handleSubInstanceCompleted depends on.
+//
+// DrainOnce keys its idempotency off the delivery error
+// (runtime/calllink/notifier.go): it retries only when the error is non-nil AND
+// not engine.ErrTokenNotFound, and marks the link notified on success OR
+// ErrTokenNotFound alike. Before ADR-0164 a terminal parent produced
+// ErrTokenNotFound (or, worse, silently resumed); it now produces a nil error
+// from the guard. Both land on the SAME branch, so the link is still retired.
+//
+// This test exists because that is a load-bearing inference, and an inference is
+// not evidence. Without it, a future change to either side could silently turn a
+// terminal no-op into an infinite redelivery loop (link never marked notified)
+// or a dropped notification (link marked notified while the parent was in fact
+// resumable). It asserts BOTH failure modes are absent: the first drain reports
+// the link notified, and the second drain is a clean no-op.
+func TestCallNotifierRetiresLinkWhenParentIsTerminal(t *testing.T) {
+	ctx := t.Context()
+
+	clk := clockwork.NewRealClock()
+	cl := kernel.NewMemCallLinkStore()
+	store := runtimetest.MustMemStore(t, kernel.WithCallLinks(cl))
+
+	worker := authz.Actor{ID: "bob", Roles: []string{"worker"}}
+	child := notifierChildDef()
+	parent := terminalParentDef()
+	reg := kernel.NewMapDefinitionRegistry(child, parent)
+
+	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"worker": {worker}})
+	tasks := humantask.NewMemTaskStore()
+	az := authz.RoleAuthorizer{}
+
+	driver := runtimetest.MustProcessDriver(t, nil, store,
+		runtime.WithClock(clk),
+		runtime.WithCallLinkStore(cl),
+		runtime.WithDefinitions(reg),
+		runtime.WithHumanTasks(resolver, tasks, az),
+	)
+	svc := runtimetest.MustTaskService(t, tasks, az)
+
+	// ── Step 1: the parent parks on BOTH branches; the child starts and parks ──
+	const parentID = "notifier-terminal-parent-i1"
+	st, err := driver.Drive(ctx, parent, parentID, nil)
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusRunning, st.Status, "parent must park running on both branches")
+
+	children, err := cl.ChildrenOf(ctx, parentID)
+	require.NoError(t, err)
+	require.Len(t, children, 1, "the call activity must have recorded exactly one child link")
+	childID := children[0].ChildInstanceID
+
+	// Two open human tasks: the parent's "gate" and the child's "child-task".
+	claimable, err := tasks.ClaimableBy(ctx, worker)
+	require.NoError(t, err)
+	require.Len(t, claimable, 2, "setup: the parent's gate and the child's task must both be open")
+	var parentGateTaskID, childTaskID string
+	for _, ht := range claimable {
+		switch ht.NodeID {
+		case "gate":
+			parentGateTaskID = ht.TaskID
+		case "child-task":
+			childTaskID = ht.TaskID
+		}
+	}
+	require.NotEmpty(t, parentGateTaskID, "setup: the parent's gate task must be claimable")
+	require.NotEmpty(t, childTaskID, "setup: the child's task must be claimable")
+
+	// ── Step 2: kill the PARENT while the call token is still in flight ───────
+	gateTrg, err := svc.Complete(ctx, parentGateTaskID, worker, engine.CompletionInput{})
+	require.NoError(t, err)
+	parentFailed, err := driver.ApplyTrigger(ctx, parent, parentID, gateTrg)
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusFailed, parentFailed.Status,
+		"control: the unhandled error must have FAILED the parent")
+
+	var callTokenSurvives bool
+	for _, tok := range parentFailed.Tokens {
+		if tok.NodeID == "call" {
+			callTokenSurvives = true
+		}
+	}
+	require.True(t, callTokenSurvives,
+		"control: the call-activity token must outlive the parent's failure — "+
+			"that survival is what makes a late SubInstanceCompleted reach the handler")
+
+	// ── Step 3: the child completes, flipping its link to terminal ────────────
+	childTrg, err := svc.Complete(ctx, childTaskID, worker, engine.CompletionInput{Output: map[string]any{"childResult": "done"}})
+	require.NoError(t, err)
+	childFinal, err := driver.ApplyTrigger(ctx, child, childID, childTrg)
+	require.NoError(t, err)
+	require.Equal(t, engine.StatusCompleted, childFinal.Status, "control: the child must complete")
+
+	// ── Step 4: DrainOnce delivers to a parent that has been dead since step 2 ─
+	deliverFn := calllink.CallDeliverFunc(func(ctx2 context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error {
+		_, derr := driver.ApplyTrigger(ctx2, def, instanceID, trg)
+		return derr
+	})
+	notifier := runtimetest.MustCallNotifier(t, cl, deliverFn, reg)
+
+	notified, err := notifier.DrainOnce(ctx)
+	require.NoError(t, err, "delivering to a terminal parent must not surface as a drain error")
+	assert.Equal(t, 1, notified,
+		"the link must be RETIRED: a terminal parent's no-op lands on DrainOnce's "+
+			"success branch exactly as ErrTokenNotFound did, so the link is marked notified")
+
+	// Failure mode 1 — an infinite redelivery loop, if the link stayed claimable.
+	notified2, err := notifier.DrainOnce(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 0, notified2,
+		"second DrainOnce must be a clean no-op — a still-claimable link would retry forever")
+
+	// Failure mode 2 — a resurrected parent, if the guard were absent.
+	parentAfter, _, err := store.Load(ctx, parentID)
+	require.NoError(t, err)
+	assert.Equal(t, engine.StatusFailed, parentAfter.Status,
+		"the parent must still be Failed: a child completing after its parent died "+
+			"must never flip the parent to Completed (ADR-0164)")
+	assert.NotContains(t, parentAfter.Variables, "childResult",
+		"a dead parent must not absorb the child's output either")
 }

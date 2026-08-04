@@ -37,11 +37,13 @@ func filterableCommand(c Command) bool {
 // Status = StatusCompensating immediately before calling it, which is what makes
 // the non-terminal condition safe for the in-flight case.
 //
-// The terminal exclusion is the mirror image: no terminal transition clears the
-// cursor today (a separate defect, queued in docs/plans/HANDOVER.md), so a step
-// that starts a walk and then force-terminates would otherwise keep a
-// compensation action alive for a terminated instance, whose ActionCompleted
-// would land on a non-StatusCompensating state and fail.
+// The terminal exclusion is the mirror image: a step that starts a walk and then
+// force-terminates would otherwise keep a compensation action alive for a
+// terminated instance, whose ActionCompleted would land on a
+// non-StatusCompensating state and fail. Since ADR-0164 endInstance also zeroes
+// the cursor at every terminal site, so this exclusion is now defence in depth
+// rather than the only defence — it still earns its place, because the token
+// half below has no such backstop.
 //
 // Empty values are skipped: an empty key names nothing (ADR-0152), and admitting
 // it would turn every malformed command id into a live awaiter. See ADR-0161.
@@ -49,7 +51,7 @@ func liveAwaiters(s *InstanceState) map[string]struct{} {
 	out := make(map[string]struct{}, len(s.Tokens)+1)
 	// A terminal instance can never consume a resumption trigger, so nothing it
 	// still holds is a live awaiter. The exclusion CANNOT be scoped to the cursor
-	// alone: handleUnhandledError's immediate-fail branch (step_errors.go:244-255)
+	// alone: handleUnhandledError's immediate-fail branch
 	// sets StatusFailed and reconciles tasks and timers but never clears
 	// s.Tokens, so every sibling survives with its AwaitCommand intact and a
 	// token-only set would re-admit it — leaving the filter a no-op on exactly the
@@ -71,7 +73,7 @@ func liveAwaiters(s *InstanceState) map[string]struct{} {
 // dropStaleTokenCommands returns cmds without the commands whose awaiter s no
 // longer holds. For a dropped AwaitHuman whose record is still OPEN it also
 // cancels that record and emits the UpdateTask that keeps the task store in
-// step — the same open-only rule cancelOpenTasks (state.go:297-306) applies. A
+// step — the same open-only rule cancelOpenTasks applies. A
 // ghost id, or a record already Completed or Cancelled, is dropped without any
 // update; that guard is what keeps a terminal path from emitting a second
 // UpdateTask for a record cancelOpenTasks already reconciled.

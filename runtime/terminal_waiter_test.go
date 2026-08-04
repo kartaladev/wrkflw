@@ -1,9 +1,14 @@
 package runtime
 
 // terminal_waiter_test.go — white-box (package runtime) test that a terminal
-// instance holds no correlation waiter, even when a repeatable root event-sub arm
-// is still armed in its snapshot (ADR-0124). Uses the unexported findMessageWaiter
-// to assert directly on the msgWaiters table.
+// instance holds no correlation waiter and, since ADR-0164, no armed root
+// event-sub-process either. ADR-0124's repeatability decision is untouched: the
+// arm survives every delivery for as long as the instance RUNS (asserted
+// mid-test). Withdrawn is only its survival INTO a terminal snapshot — every
+// terminal transition now routes through endInstance, whose
+// cancelAllScheduledWork retires the arm, so the waiter table is cleaned for an
+// instance that no longer carries the arm at all. Uses the unexported
+// findMessageWaiter to assert directly on the msgWaiters table.
 
 import (
 	"context"
@@ -82,8 +87,16 @@ func TestCompletedInstanceHoldsNoEventSubWaiter(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompleted, final.Status, "main path completes")
 
-	// The instance is terminal: it must hold NO waiter, even though its snapshot
-	// may still carry the armed (repeatable) root event-sub arm. Otherwise a later
+	// ADR-0164: completion routes through endInstance, whose
+	// cancelAllScheduledWork retires every arm the instance still owns — so a
+	// terminal snapshot carries no root event-sub arm at all. Pinned positively
+	// here because it is the premise the waiter assertion below now rests on: the
+	// arm was verified STILL ARMED one delivery earlier, so this is a real state
+	// transition, not a vacuous emptiness check.
+	assert.Empty(t, final.EventTriggeredSubprocesses,
+		"ADR-0164: completion retires the root event-sub arm, so a terminal snapshot carries none")
+
+	// The instance is terminal: it must hold NO waiter. Otherwise a later
 	// "cancel" would misroute to this dead instance.
 	_, ok := driver.findMessageWaiter("cancel", "order-1")
 	assert.False(t, ok, "a completed instance must hold no event-sub message waiter (ADR-0124)")

@@ -242,17 +242,12 @@ func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *
 		return res.Commands, nil
 	}
 
-	// No compensation records: immediate failure (unchanged behaviour).
-	s.Status = StatusFailed
-	ended := at
-	s.EndedAt = &ended
-	var cmds []Command
-	// Reconcile the human-task projection: a parallel branch parked at a UserTask
-	// must not be left open in the TaskStore when the instance fails (ADR-0089).
-	cmds = append(cmds, s.cancelOpenTasks()...)
-	cmds = append(cmds, FailInstance{Err: errorCode})
-	cmds = append(cmds, s.cancelAllScheduledWork()...)
-	return cmds, nil
+	// No compensation records: immediate failure. endInstance reconciles the
+	// human-task projection (a parallel branch parked at a UserTask must not be
+	// left open in the TaskStore when the instance fails — ADR-0089) and cancels
+	// the scheduled work, in the same order as before (ADR-0164). This branch does
+	// NOT drop tokens, so the incidents whose token survives are deliberately kept.
+	return s.endInstance(StatusFailed, at, FailInstance{Err: errorCode}), nil
 }
 
 // propagateError propagates a thrown errorCode to the nearest matching boundary error handler (BPMN-style error propagation).
