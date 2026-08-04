@@ -267,9 +267,16 @@ func TestStaleCommandFilterKeepsCompensationInvoke(t *testing.T) {
 }
 
 // TestStaleCommandFilterDropsCompensationInvokeWhenTerminal pins the mirror
-// image: no terminal transition clears s.Compensating (a separate queued
-// defect), so a step that starts a walk and then force-terminates must not leave
-// a compensation action alive for a terminated instance.
+// image: a step that starts a walk and then force-terminates must not leave a
+// compensation action alive for a terminated instance.
+//
+// The assertion is unchanged by ADR-0164; its POSITIVE CONTROL had to move.
+// It used to read the id back from r2.State.Compensating.ActiveCmdID, which
+// doubled as proof that a walk had started — endInstance now zeroes that cursor
+// at the terminal site, so the control reads the throw node's History visit
+// instead and the dropped command is identified by its action name. "refund-action"
+// is emitted by nothing but the compensation walk in this fixture, so the two
+// forms name the same command.
 func TestStaleCommandFilterDropsCompensationInvokeWhenTerminal(t *testing.T) {
 	t.Parallel()
 
@@ -301,19 +308,25 @@ func TestStaleCommandFilterDropsCompensationInvokeWhenTerminal(t *testing.T) {
 
 	// Two positive controls: the walk started AND the instance then went
 	// terminal. Both are needed — the state under test is the combination.
-	require.NotEmpty(t, r2.State.Compensating.ActiveCmdID,
+	var reachedThrow bool
+	for _, v := range r2.State.History {
+		if v.NodeID == "throw" {
+			reachedThrow = true
+		}
+	}
+	require.True(t, reachedThrow,
 		"control: the walk must have started before the terminate")
 	require.True(t, r2.State.Status.IsTerminal(),
 		"control: the sibling branch must have force-terminated the instance")
 
-	assert.False(t, invokeActionByID(r2.Commands, r2.State.Compensating.ActiveCmdID),
+	assert.False(t, hasInvokeActionForName(r2.Commands, "refund-action"),
 		"a terminated instance awaits nothing; the compensation action must not run")
 }
 
 // TestStaleCommandFilterDropsOnUnhandledError pins the destroyer that the
 // force-terminate fixtures do NOT cover. handleUnhandledError's immediate-fail
-// branch (step_errors.go:244-255) sets StatusFailed, stamps EndedAt and
-// reconciles tasks and timers — but it never clears s.Tokens. Every sibling
+// branch sets StatusFailed, stamps EndedAt and reconciles tasks and timers — but
+// it never clears s.Tokens. Every sibling
 // therefore survives with its AwaitCommand intact, so a live-awaiter set built
 // from tokens alone re-admits it and the filter becomes a no-op on this path.
 //

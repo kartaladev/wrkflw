@@ -214,8 +214,11 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 // TestFailurePathCallActivity verifies that when a child process FAILS:
 //   - The child's call link is flipped to terminal with Completed=false.
 //   - DrainOnce delivers SubInstanceFailed to the parent.
-//   - The parent reaches StatusFailed (grounded in engine/step.go SubInstanceFailed
-//     handling: sets StatusFailed + emits FailInstance + clears all tokens/timers).
+//   - The parent reaches StatusFailed (grounded in handleSubInstanceFailed's
+//     no-boundary fallback, which routes through endInstance: it sets
+//     StatusFailed, cancels open tasks, emits FailInstance and cancels all
+//     timers/arms. It does NOT drop the parent's tokens — a sibling branch keeps
+//     its token, and its AwaitCommand with it, ADR-0164).
 //   - The delivered Err text is non-empty.
 //
 // This scenario reuses asyncFailingChildDef / asyncFailingParentDef fixtures
@@ -268,9 +271,12 @@ func TestFailurePathCallActivity(t *testing.T) {
 	assert.NotEmpty(t, n.Outcome.Err, "Outcome.Err must be non-empty")
 
 	// ── step 3: DrainOnce delivers SubInstanceFailed → parent fails ──────────
-	// Engine behavior (engine/step.go case SubInstanceFailed): finds the parked
-	// token by CommandID, sets StatusFailed, emits FailInstance, cancels all
-	// timers/arms. So parent must reach StatusFailed after DrainOnce.
+	// Engine behavior (handleSubInstanceFailed, no matching boundary): finds the
+	// parked token by CommandID, then routes through endInstance — StatusFailed,
+	// open tasks cancelled, FailInstance emitted in the canonical position AFTER
+	// those cancels (ADR-0164 Decision 1 moved it there from FIRST), then all
+	// timers/arms cancelled. Tokens are NOT dropped. So the parent must reach
+	// StatusFailed after DrainOnce.
 	notified, err := notifier.DrainOnce(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 1, notified, "DrainOnce must report 1 notified link")

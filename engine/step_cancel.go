@@ -45,14 +45,14 @@ func cancelTokenWaits(s *InstanceState, tok *Token, at time.Time, closeKind Clos
 	//
 	// Scoped to the paths that cancel a TOKEN — this function's call sites — and
 	// deliberately NOT "on every path" (ADR-0163). Four terminal transitions end
-	// an instance without coming through here, and each still leaves s.Incidents
-	// populated: forceTerminate (step_nodes.go) and handleCancelRequested's
-	// immediate-termination branch (step_triggers.go) drop every token wholesale,
-	// while handleUnhandledError's immediate-failure branch (step_errors.go) and
-	// handleSubInstanceFailed's tail (step_triggers.go) end the instance with its
-	// tokens still in place. Closing that is endInstance's job in ADR-0164
-	// (delivery 2b, audit finding C1), which clears s.Incidents at the single
-	// terminal site. Until 2b lands, this call claims the narrower thing.
+	// an instance without coming through here: forceTerminate (step_nodes.go) and
+	// handleCancelRequested's immediate-termination branch (step_triggers.go) drop
+	// every token wholesale, while handleUnhandledError's immediate-failure branch
+	// (step_errors.go) and handleSubInstanceFailed's tail (step_triggers.go) end
+	// the instance with its tokens still in place. All four now route through
+	// endInstance, whose removeOrphanedIncidents retires the incidents whose token
+	// is gone (ADR-0164, delivery 2b, audit finding C1) — token linkage, not a
+	// wholesale clear, so the two sites that keep their tokens keep their incidents.
 	s.removeIncidentsForToken(tok.ID)
 
 	tokPtr := s.tokenByID(tok.ID)

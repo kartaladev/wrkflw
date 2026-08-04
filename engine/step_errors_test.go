@@ -716,8 +716,11 @@ func cancelUserTaskDef() *model.ProcessDefinition {
 //   - EndedAt is set to the trigger's OccurredAt.
 //   - A terminal FailInstance{Err:"cancelled"} command is emitted.
 //   - Any outstanding armed timers receive a CancelTimer command.
-//   - A late trigger after cancellation (HumanCompleted) returns ErrTokenNotFound
+//   - A late HumanCompleted trigger after cancellation returns ErrTokenNotFound
 //     (clean deterministic error, not a panic).
+//   - A late ActionCompleted trigger after cancellation is a no-op (ADR-0164/O1:
+//     a terminal instance can never consume a resumption trigger, so a stray
+//     command against one is tolerated rather than surfaced as an error).
 func TestCancelRequestedTerminates(t *testing.T) {
 	at := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
 	cancelAt := at.Add(5 * time.Second)
@@ -798,13 +801,29 @@ func TestCancelRequestedTerminates(t *testing.T) {
 		require.NotNil(t, cancelTimer, "CancelTimer must be emitted for the outstanding boundary timer")
 
 		// Late trigger after cancellation: ActionCompleted for the already-cancelled
-		// token → ErrTokenNotFound (deterministic, no panic).
-		_, lateErr := engine.Step(t.Context(), def, r2.State,
+		// token. Before ADR-0164/O1 this returned ErrTokenNotFound; a terminal
+		// instance can never consume a resumption trigger, so a stray command
+		// against one is now tolerated as a no-op instead (the same tolerance
+		// handleResolveIncident already applies to a missing token).
+		r3, lateErr := engine.Step(t.Context(), def, r2.State,
 			engine.NewActionCompleted(cancelAt.Add(time.Second), invokeCmd.CommandID, nil), engine.StepOptions{})
-		require.Error(t, lateErr, "a late ActionCompleted after cancel must return an error")
-		assert.ErrorIs(t, lateErr, engine.ErrTokenNotFound, "late trigger must return ErrTokenNotFound")
-		assert.ErrorIs(t, lateErr, engine.ErrInvalidTransition,
-			"a late/wrong-state trigger is classifiable as an invalid transition")
+		require.NoError(t, lateErr, "a late ActionCompleted against a terminal instance must be a no-op, not an error")
+
+		// Tokens is normalized to nil when empty on both sides before comparing:
+		// a representation artifact of how Step clones its input (an empty,
+		// non-nil leftover slice on one side vs a freshly-cloned nil slice on
+		// the other), not a real difference this assertion is meant to police.
+		r2State, r3State := r2.State, r3.State
+		if len(r2State.Tokens) == 0 {
+			r2State.Tokens = nil
+		}
+		if len(r3State.Tokens) == 0 {
+			r3State.Tokens = nil
+		}
+		assert.Equal(t, r2State, r3State,
+			"a late ActionCompleted against a terminal instance must leave state unchanged")
+		assert.Empty(t, r3.Commands,
+			"a pure no-op must not emit any command either")
 	})
 
 	t.Run("user-task-parked", func(t *testing.T) {
@@ -846,12 +865,20 @@ func TestCancelRequestedTerminates(t *testing.T) {
 		require.NotNil(t, fi)
 		assert.Equal(t, "cancelled", fi.Err)
 
-		// Late trigger: HumanCompleted after cancel → ErrTokenNotFound.
+		// Late trigger: HumanCompleted after cancel → ErrTokenNotFound. This
+		// call site (handleHumanCompleted, not handleActionCompleted) is
+		// untouched by ADR-0164/O1, so it still errors — this is now the
+		// witness that a late trigger against a terminated instance still
+		// classifies as ErrInvalidTransition (a 409), a pin the
+		// service-task-with-boundary-timer subtest above used to carry before
+		// its ActionCompleted case became a no-op.
 		_, lateErr := engine.Step(t.Context(), def, r2.State,
 			engine.NewHumanCompleted(cancelAt.Add(time.Second), taskID, engine.CompletionInput{},
 				authz.Actor{ID: "u1"}), engine.StepOptions{})
 		require.Error(t, lateErr)
 		assert.ErrorIs(t, lateErr, engine.ErrTokenNotFound)
+		assert.ErrorIs(t, lateErr, engine.ErrInvalidTransition,
+			"a late/wrong-state trigger is classifiable as an invalid transition")
 	})
 
 	t.Run("already-terminal-is-noop-or-error", func(t *testing.T) {

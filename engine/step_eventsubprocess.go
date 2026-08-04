@@ -222,10 +222,12 @@ func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefi
 		// STAYS armed so it can fire again on the next delivery — BPMN
 		// non-interrupting is repeatable (ADR-0124). Each fire opens its own child
 		// scope; the arm is retired only when the enclosing scope closes
-		// (removeEventTriggeredSubprocessArmsForScope) or the instance ends. A root
-		// arm may therefore be present in a terminal snapshot; the runtime refuses
-		// to hold correlation waiters for terminal instances, and this fire path is
-		// status-guarded, so that is harmless.
+		// (removeEventTriggeredSubprocessArmsForScope) or the instance ends. Since
+		// ADR-0164 "the instance ends" covers NORMAL completion too — every terminal
+		// site routes through endInstance, whose cancelAllScheduledWork retires the
+		// arm — so a root arm no longer survives into a terminal snapshot. Only
+		// ADR-0124's harmlessness corollary is withdrawn; the repeatability decision
+		// this branch implements stands.
 
 		// Open a child scope for the event sub-process, parented to the enclosing scope.
 		// NodeID = the event sub-process node ID.

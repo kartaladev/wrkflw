@@ -235,6 +235,20 @@ unaffected:
   an instance could complete between that `Load` and the engine's `Step` —
   without this guard, such a race would silently resurrect a terminal
   instance into `StatusRunning`.
+
+  > **Correction (2026-08-02, [ADR-0164](0164-terminal-transitions-are-one-path.md)).**
+  > As written, this guard covered only the FULL reverse. `WithTargetNode`
+  > routes through `NewReverseToNode`, which sets `ToNode` and
+  > `RestoreTargetVars` but leaves `ReverseNode` empty
+  > (`engine/trigger.go:373-374`), so `t.ReverseNode != ""` never fired for a
+  > targeted reverse and the TOCTOU window described above stayed open for it —
+  > the facade pre-check was in fact the only line of defence. The sibling
+  > in-flight-walk guard below always tested both shapes
+  > (`t.ReverseNode != "" || t.RestoreTargetVars`), which is why the gap went
+  > unnoticed. ADR-0164 widens this guard to
+  > `(t.ReverseNode != "" || t.ToNode != "") && s.Status.IsTerminal()`, making
+  > the defense-in-depth claim above true for both variants. The decision
+  > recorded in this ADR is otherwise unchanged.
 - **In-flight-walk guard.** A reverse trigger arriving while a compensation
   walk is already active (`s.Status == StatusCompensating &&
   s.Compensating.ActiveCmdID != ""`) is rejected with a `workflow-engine:`

@@ -46,11 +46,11 @@ func (s Status) String() string {
 // StatusCompensating (mid-flight) are not terminal; an out-of-range Status
 // value is also treated as not terminal.
 //
-// Used by stepCompensateRequested to reject a reverse trigger
-// (CompensateRequested.ReverseNode != "") against an already-terminal
-// instance (ADR-0109 hardening) — a defense-in-depth guard against the TOCTOU
-// race where an instance completes between a caller's pre-check Load and the
-// engine's own state.
+// Used by stepCompensateRequested to reject a trigger that would resume the
+// instance (CompensateRequested.ReverseNode != "" or ToNode != "") against an
+// already-terminal instance (ADR-0109 hardening, widened by ADR-0164) — a
+// defense-in-depth guard against the TOCTOU race where an instance completes
+// between a caller's pre-check Load and the engine's own state.
 func (s Status) IsTerminal() bool {
 	switch s {
 	case StatusCompleted, StatusFailed, StatusTerminated:
@@ -301,6 +301,64 @@ func (s *InstanceState) removeIncidentsForToken(tokenID string) {
 	s.Incidents = slices.DeleteFunc(s.Incidents, func(inc Incident) bool {
 		return inc.TokenID == tokenID
 	})
+}
+
+// removeOrphanedIncidents drops every incident whose TokenID names a token that
+// is no longer present, and keeps the rest in slice order so command output
+// stays deterministic. It is the terminal-site counterpart of
+// removeIncidentsForToken (ADR-0163): the two terminal paths that drop every
+// token — forceTerminate and handleCancelRequested's immediate branch — never
+// route through cancelTokenWaits, so without this an incident outlives the token
+// it describes.
+//
+// Deliberately NOT s.Incidents = nil. A terminal instance whose tokens survive
+// (handleUnhandledError's immediate branch, handleSubInstanceFailed's tail)
+// keeps its incidents, because runtime/outbox.go's terminalEventErr, the
+// service/ audit view and incident_count all read them after the instance is
+// terminal (ADR-0164 Decision 3).
+//
+// An incident with an empty TokenID is KEPT, mirroring removeIncidentsForToken:
+// an empty key names nothing (ADR-0152), so such a record names no token to be
+// orphaned FROM. Leaving it to tokenByID would invert that rule — tokenByID("")
+// reports nil, which this predicate would read as "the token is gone" and
+// delete an incident the keep-token sites are supposed to keep. No production
+// path builds one today (the sole construction site, handleUnhandledError under
+// the raiseIncident policy, is called with tok.ID), so this is a guard against
+// the next terminal site rather than a live defect.
+func (s *InstanceState) removeOrphanedIncidents() {
+	s.Incidents = slices.DeleteFunc(s.Incidents, func(inc Incident) bool {
+		return inc.TokenID != "" && s.tokenByID(inc.TokenID) == nil
+	})
+}
+
+// endInstance performs the terminal transition: status, EndedAt, a cleared
+// compensation cursor, the orphaned-incident sweep, and the projection sweeps
+// every terminal path owes.
+//
+// Clearing s.Compensating makes beginCompensation's documented invariant
+// ("s.Compensating is the zero cursor here") true by construction.
+//
+// Call it at the site's existing terminal position. The two sites that drop
+// tokens do so BEFORE this call, which is what lets removeOrphanedIncidents
+// retire their incidents; hoisting it above the token drop would silently
+// retain them.
+//
+// The terminal command is threaded through rather than appended by the caller so
+// the emitted order stays [task cancels…, terminal, scheduled-work cancels…] —
+// exactly what applyTerminate, handleUnhandledError, forceTerminate and
+// handleCancelRequested emit today. Pass nil where a site emits no terminal
+// command of its own.
+func (s *InstanceState) endInstance(status Status, at time.Time, terminal Command) []Command {
+	s.Status = status
+	ended := at
+	s.EndedAt = &ended
+	s.Compensating = compensationCursor{}
+	s.removeOrphanedIncidents()
+	cmds := s.cancelOpenTasks()
+	if terminal != nil {
+		cmds = append(cmds, terminal)
+	}
+	return append(cmds, s.cancelAllScheduledWork()...)
 }
 
 // cancelOpenTasks marks every OPEN human task (Unclaimed or Claimed) Cancelled

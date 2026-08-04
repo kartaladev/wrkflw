@@ -117,18 +117,17 @@ func stepCompensateRequested(ctx context.Context, def *model.ProcessDefinition, 
 		}
 		return StepResult{State: *s}, nil
 	}
-	// Reject a reverse trigger (ADR-0109 ReverseInstance) against an
-	// already-terminal instance instead of silently resurrecting it. This is a
-	// defense-in-depth guard: the runtime facade (ProcessDriver.ReverseInstance)
-	// already rejects a terminal instance on its own pre-check Load, but a
-	// concurrent completion between that Load and this Step call (TOCTOU) would
-	// otherwise slip through undetected. Scoped STRICTLY to reverse intent
-	// (t.ReverseNode != "") — a plain admin/partial CompensateRequested keeps
-	// today's behaviour (e.g. cancel/error terminal paths that re-deliver
-	// CompensateRequested on an already-terminal instance as a no-op-ish
-	// full rollback).
-	if t.ReverseNode != "" && s.Status.IsTerminal() {
-		return StepResult{}, fmt.Errorf("workflow-engine: cannot reverse a terminal instance (status %v)", s.Status)
+	// Reject a compensation trigger that would RESUME an already-terminal
+	// instance instead of silently resurrecting it. ToNode joins ReverseNode
+	// because applyFinish's shared resume block — which walkPartial reaches via
+	// stepCompensationFinish's plan — sets StatusRunning, clears EndedAt and
+	// places a token, exactly as a full reverse would.
+	//
+	// A PLAIN full rollback (both fields empty) is deliberately still allowed.
+	// Rejecting here, before beginCompensation, is load-bearing: guarding at the
+	// resume site instead would let the rollback's InvokeActions fire first.
+	if (t.ReverseNode != "" || t.ToNode != "") && s.Status.IsTerminal() {
+		return StepResult{}, fmt.Errorf("workflow-engine: cannot resume a terminal instance (status %v)", s.Status)
 	}
 	s.Status = StatusCompensating
 	// A rollback that resumes execution (full reverse, or a partial rollback to a
@@ -758,30 +757,33 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 }
 
 // applyTerminate reproduces the terminal-outcome finish: map an unset FinalStatus
-// to StatusTerminated, stamp EndedAt, clear the walk's records, then reconcile the
+// to StatusTerminated, clear the walk's records, then hand the terminal
+// transition to endInstance — which stamps the status and EndedAt, reconciles the
 // human-task projection (a parked UserTask on a sibling branch must not be left
-// open once the instance terminates — ADR-0088/0089), emit FailInstance when a
-// finalErr is set, and cancel outstanding timers/arms/boundaries. Command list
-// and ordering are unchanged from the pre-refactor terminate branch.
+// open once the instance terminates — ADR-0088/0089), emits FailInstance when a
+// finalErr is set, and cancels outstanding timers/arms/boundaries. Command list
+// and ordering are unchanged from the pre-refactor terminate branch; only the
+// record clearing moved ahead of the status assignment, which it never read.
 func applyTerminate(s *InstanceState, plan finishPlan, at time.Time) StepResult {
 	finalStatus := plan.finalStatus
 	if finalStatus == 0 {
 		finalStatus = StatusTerminated
 	}
-	s.Status = finalStatus
-	ended := at
-	s.EndedAt = &ended
 
 	// Terminate plans never set scopeWideThrow (a scope-wide throw always resumes),
 	// so this nils the whole scope list as before; routed through the shared helper
-	// for a single clearing path.
+	// for a single clearing path. It reads only finishPlan fields and never inspects
+	// s.Status, so running it BEFORE the status assignment that moved into
+	// endInstance is behaviour-preserving (ADR-0164).
 	applyPlanRecordClearing(s, plan)
 
-	var cmds []Command
-	cmds = append(cmds, s.cancelOpenTasks()...)
+	// endInstance's cursor clear is REDUNDANT here — stepCompensationFinish already
+	// zeroed s.Compensating one call up — and deliberately not special-cased: one
+	// unconditional terminal path is the point (ADR-0164).
+	var terminal Command
 	if plan.finalErr != "" {
-		cmds = append(cmds, FailInstance{Err: plan.finalErr})
+		terminal = FailInstance{Err: plan.finalErr}
 	}
-	cmds = append(cmds, s.cancelAllScheduledWork()...)
+	cmds := s.endInstance(finalStatus, at, terminal)
 	return StepResult{State: *s, Commands: cmds}
 }
