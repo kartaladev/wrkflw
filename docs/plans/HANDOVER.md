@@ -14,14 +14,20 @@ top to bottom; it is meant to stay short enough that you can.
 
 ## State — updated 2026-08-04
 
-**▶ Pick up here: delivery 2b (ADR-0164) is IMPLEMENTED and sitting at the
-Delivery Gate on `parked/terminal-transitions` @ `b13483c` — one squashed feature
-bundle, 21 files, engine-verified and clean. What remains is owner-gated and
-nothing else: (1) the full repo suite, which needs Docker; (2) `/code-review`;
-(3) `/security-review`; then merge `--no-ff` into `main` and push.** Fold any
-findings with `--amend` — the commit is local and unpushed. The per-delivery
-detail, every adjudication, and the deferred list live in that delivery's plan
-`▶ Progress` block (`docs/plans/2026-08-02-terminal-transitions.md`).
+**▶ Pick up here: delivery 2b (ADR-0164) is ✅ SHIPPED — merge `583537f`, bundle
+`6f5930e`, PUSHED 2026-08-04. The three-delivery sequence is now 3 of 3 designed
+and 3 of 3 shipped for deliveries 1–2b; the remaining work is delivery 3
+(ADR-0158 fan-out), which still needs its own rule-#9 audit in split form.**
+
+The per-delivery detail, every adjudication, and the deferred list live in that
+delivery's plan `▶ Progress` block
+(`docs/plans/2026-08-02-terminal-transitions.md`).
+
+⚠ **Before starting delivery 3, read "Known gaps accepted in 2b" below.** 2b owes
+**three follow-up ADRs**, and one of them (the structural trigger guard) is the
+kind of gap that grows: three successive review passes found 1 → 2 → 5 instances
+of the same resurrection defect, each increase arriving *after* an ADR claimed the
+class was closed.
 
 ⚠ **Two resurrection routes were found AT THE GATE, after the bundle had already
 survived a rule-#9 audit and a premise sweep** — a surviving sibling token plus an
@@ -40,18 +46,18 @@ the branch.
 
 | | |
 |---|---|
-| `main` | `85fbb38` — delivery 2a merged and pushed 2026-08-04, plus handover docs, clean |
-| `parked/terminal-transitions` | `b13483c` — **delivery 2b, IMPLEMENTED, at the gate.** One squashed bundle off `main` @ `85fbb38`: ADR-0164, the ADR-0109 correction note, the plan, the premise sweep, and the code |
+| `main` | `583537f` — **delivery 2b merged and pushed 2026-08-04**, clean |
+| `parked/terminal-transitions` | `6f5930e` — merged; delete or ignore |
 | `feat/scope-lifecycle-correctness` | merged and pushed; delete or ignore |
 | `parked/scope-and-fanout-design` | ADR-0158 draft (delivery 3) + a superseded ADR-0162 draft. **Do not read its 0162** — the authoritative one is on the delivery-2a branch |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept only because `audit-signal-arm-fanout-r1/-r2` tags point into it |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — older parked bundle, docs only |
-| Latest ADR on `main` | **0163**. 0164 lands with 2b, 0158 with delivery 3, 0155–0157 reserved by the older parked branch. Next free is **0165** |
+| Latest ADR on `main` | **0164**. 0158 lands with delivery 3; 0155–0157 reserved by the older parked branch. Next free is **0165** — and 2b owes **three** of them (see the 2b gaps section) |
 | v0.1.0 | not tagged |
 
 ## The immediate next steps
 
-1. **Delivery Gate on 2b — steps 1 and 2 of 3 are DONE.** Branch head `5ad0083`.
+1. **✅ DONE — Delivery Gate on 2b passed 3 of 3, merged `583537f`, pushed.**
    - **Merged-tree suite: green, run TWICE** (before and after `/code-review`'s
      fixes, because the first run certified a tree that no longer existed).
      Latest: `-race ./...` **EXIT=0, 64 ok, 0 FAIL, 0 skips**; `golangci-lint
@@ -68,8 +74,20 @@ the branch.
      deep-copy at all eight construction sites, the authz paths, the four new
      `slog` calls, and the widened compensation guard. Net assessment: strictly
      less unauthorized-state-transition surface than before.
-2. **Then delivery 3** (ADR-0158 fan-out), which **still needs its own rule-#9
-   audit in split form**.
+2. **▶ NEXT: pick one of these two.**
+   - **Delivery 3** (ADR-0158, broadcast signal fan-out) — draft on
+     `parked/scope-and-fanout-design`, **still needs its own rule-#9 audit in
+     split form**. ⚠ Its headline scenario is currently **untestable by
+     consumers**: `processtest`'s `Classify` derives `AwaitingSignals` from
+     `Token.AwaitSignal` only, so `Harness.PublishSignal` passes forever on a
+     definition parked purely on signal boundary arms. Consider fixing the
+     harness first, or delivery 3 ships a feature its own public test harness
+     cannot exercise.
+   - **The structural terminal guard ADR** — the first of 2b's three owed ADRs,
+     and the one most likely to grow teeth if left. See the 2b gaps section.
+
+   Whichever comes first: 2b's audit history says budget an adversarial pass over
+   the **built** code, not just the design bundle.
 
 ### The two lessons 2b produced
 
