@@ -366,19 +366,84 @@ func TestHumanCompletedAdvancesAndAudits(t *testing.T) {
 	assert.Empty(t, approveVisit.CloseKind)
 }
 
-// TestHumanCompletedUnknownTaskIDErrors verifies that completing a
-// non-existent task id returns ErrTokenNotFound.
-func TestHumanCompletedUnknownTaskIDErrors(t *testing.T) {
+// TestHumanTaskTriggersAgreeOnUnknownTaskID pins that ALL FOUR human-task
+// triggers report the SAME sentinel for the same condition — an id this instance
+// has no task record for and no token parked on — so a consumer cannot get two
+// different HTTP statuses for one id.
+//
+// They converge on engine.ErrTokenNotFound (→ ErrInvalidTransition → 422), not on
+// humantask.ErrTaskNotFound (→ 404), and the reason is what can actually REACH
+// this branch. service.deliverTaskTrigger reads the task store FIRST
+// (service/service.go), so a genuinely unknown id is answered
+// humantask.ErrTaskNotFound there and never reaches the engine. The engine's
+// branch therefore fires only for a GHOST — an id the store knows and instance
+// state does not — which is a state conflict, not a missing task. Reporting 404
+// for a task the store still holds would be actively misleading.
+//
+// ⚠ What makes this test able to fail: ADR-0165 Phase 5 briefly moved
+// HumanCompleted to humantask.ErrTaskNotFound, and a first pass at this
+// convergence moved the other three with it; every row then failed the ErrorIs
+// assertion. Phase 6.4 converged the other way instead. See ADR-0165's
+// correction block.
+//
+// The instance is RUNNING, so dispatch's terminal guard is not involved — this is
+// purely the "no such task record" key.
+//
+// This subsumes the former single-trigger TestHumanCompletedUnknownTaskIDErrors:
+// its HumanCompleted row runs the identical scenario, and keeping both would have
+// left two tests asserting one behaviour with rationales free to drift apart.
+// The neighbouring TestHumanCompletedMissingTaskRecordErrors is NOT subsumed — it
+// covers the other half of the no-record branch, where a token IS parked.
+func TestHumanTaskTriggersAgreeOnUnknownTaskID(t *testing.T) {
+	t.Parallel()
+
 	at := time.Date(2026, 6, 21, 9, 0, 0, 0, time.UTC)
-	def := userTaskDef()
 	actor := authz.Actor{ID: "carol", Roles: []string{"manager"}}
 
-	r1 := startUserTask(t, def, at)
+	type testCase struct {
+		name    string
+		trigger engine.Trigger
+	}
 
-	_, err := engine.Step(t.Context(), def, r1.State,
-		engine.NewHumanCompleted(at.Add(time.Minute), "no-such-token", engine.CompletionInput{Output: map[string]any{"approved": true}}, actor),
-		engine.StepOptions{})
-	require.ErrorIs(t, err, engine.ErrTokenNotFound)
+	cases := []testCase{
+		{
+			name:    "HumanClaimed",
+			trigger: engine.NewHumanClaimed(at.Add(time.Minute), "no-such-task", actor),
+		},
+		{
+			name:    "HumanReassigned",
+			trigger: engine.NewHumanReassigned(at.Add(time.Minute), "no-such-task", "carol", "dave", actor),
+		},
+		{
+			name:    "HumanCandidatesResolved",
+			trigger: engine.NewHumanCandidatesResolved(at.Add(time.Minute), "no-such-task", []authz.Actor{actor}),
+		},
+		{
+			name: "HumanCompleted",
+			trigger: engine.NewHumanCompleted(at.Add(time.Minute), "no-such-task",
+				engine.CompletionInput{Output: map[string]any{"approved": true}}, actor),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			def := userTaskDef()
+			r1 := startUserTask(t, def, at)
+
+			_, err := engine.Step(t.Context(), def, r1.State, tc.trigger, engine.StepOptions{})
+
+			require.ErrorIs(t, err, engine.ErrTokenNotFound,
+				"an id with no task record and no parked token is a wrong-state transition")
+			require.ErrorIs(t, err, engine.ErrInvalidTransition,
+				"it must classify 422 through ErrInvalidTransition, not 404")
+			assert.NotErrorIs(t, err, humantask.ErrTaskNotFound,
+				"reaching this branch through the service means the STORE still holds the task "+
+					"(deliverTaskTrigger short-circuits a genuinely unknown id), so 404 would "+
+					"deny a task that exists")
+		})
+	}
 }
 
 // TestHumanCompletedMissingTaskRecordErrors verifies that HumanCompleted fails fast

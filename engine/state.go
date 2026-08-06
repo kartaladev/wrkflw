@@ -46,11 +46,12 @@ func (s Status) String() string {
 // StatusCompensating (mid-flight) are not terminal; an out-of-range Status
 // value is also treated as not terminal.
 //
-// Used by stepCompensateRequested to reject a trigger that would resume the
-// instance (CompensateRequested.ReverseNode != "" or ToNode != "") against an
-// already-terminal instance (ADR-0109 hardening, widened by ADR-0164) — a
-// defense-in-depth guard against the TOCTOU race where an instance completes
-// between a caller's pre-check Load and the engine's own state.
+// It is the key [Step] tests before dispatching any trigger to its handler: each
+// [Trigger] declares what it does on a terminal instance, and that declaration is
+// applied in one place rather than re-checked per handler (ADR-0165). The check
+// is also the defence against the TOCTOU race in which an instance reaches a
+// terminal status between a caller's own pre-check load and the engine's state —
+// a caller-side check can only ever be advisory.
 func (s Status) IsTerminal() bool {
 	switch s {
 	case StatusCompleted, StatusFailed, StatusTerminated:

@@ -118,6 +118,57 @@ func Step(ctx context.Context, def *model.ProcessDefinition, st InstanceState, t
 // Step can wrap every handler return with the id-generation seam's setup and
 // teardown in one place.
 func dispatch(ctx context.Context, def *model.ProcessDefinition, sp *InstanceState, trg Trigger, opt StepOptions) (StepResult, error) {
+	// One structural guard replacing the per-handler copies (ADR-0165). It lives
+	// here rather than in Step so Step's validateTriggerKey and cloneState keep
+	// running first: a malformed trigger (ADR-0152) is a shape defect and must
+	// lose to this state-dependent check, and a rejected trigger must still be
+	// judged against a private clone rather than the caller's state.
+	//
+	// StatusCompensating is NOT terminal, so in-flight compensation walks are
+	// unaffected.
+	if sp.Status.IsTerminal() {
+		policy := trg.terminalPolicy()
+		// BOTH refusal flavours log, under ONE constant message with the flavour
+		// as a structured attribute. Erroring is not a substitute for the record:
+		// handleResolveIncident's own guard emitted a Warn for a rejected admin
+		// action, and a caller's 422 is not visible to the operator reading logs,
+		// so an error-only arm would be the single replaced site that REGRESSES
+		// rather than relocates.
+		//
+		// instance_id/trigger/status/outcome on every line, plus the trigger's own
+		// identity field when it has one. Collapsing eight per-handler guards into
+		// one must not cost the operator that field: "why did my timer do nothing"
+		// is answered by timer_id, not by the trigger's type name (ADR-0165).
+		// triggerIdentityAttr reads the same registry validateTriggerKey uses, so
+		// there is no second mapping — and no per-trigger message map — to drift.
+		if policy == rejectSilently || policy == rejectWithError {
+			outcome := "dropped"
+			if policy == rejectWithError {
+				outcome = "errored"
+			}
+			attrs := []any{
+				"instance_id", sp.InstanceID,
+				"trigger", triggerTypeName(trg),
+				"status", sp.Status.String(),
+				"outcome", outcome,
+			}
+			if identity, ok := triggerIdentityAttr(trg); ok {
+				attrs = append(attrs, identity)
+			}
+			slog.WarnContext(ctx, "trigger rejected on terminal instance", attrs...)
+		}
+
+		switch policy {
+		case rejectSilently:
+			return StepResult{State: *sp, Commands: nil}, nil
+		case rejectWithError:
+			return StepResult{}, fmt.Errorf("%w (status %v)", ErrInstanceTerminal, sp.Status)
+		case allowOnTerminal:
+			// Fall through to the handler: the trigger deliberately operates on a
+			// terminal instance (a plain full rollback, ADR-0164's carve-out).
+		}
+	}
+
 	switch t := trg.(type) {
 	case StartInstance:
 		return handleStartInstance(ctx, def, sp, t, opt)

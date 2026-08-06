@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/model"
@@ -58,6 +59,38 @@ func eligibleRange(records []CompensationRecord, toNode string) (start, stopExcl
 	return start, stopExclusive
 }
 
+// hasCompensationRecordsToWalk reports whether a root-scope compensation walk
+// started now would find anything to compensate.
+//
+// It deliberately mirrors beginCompensation's OWN decision rather than
+// approximating it. That function calls consolidateArchiveIntoRoot before it
+// counts, folding every ArchivedCompensations entry into RootCompensations, and
+// only then asks eligibleRange for a start index — which, for the empty ToNode
+// this predicate's caller has already established, is simply len(records)-1. So
+// "records to walk" means root records OR archived ones, and a check written as
+// len(s.RootCompensations) == 0 would be wrong rather than merely conservative:
+// a sub-process whose scope closed before the instance terminated leaves its
+// record archived, with RootCompensations empty and a real walk still pending.
+// That state is reachable and is pinned by
+// TestCompensateRequestedOnTerminalInstance's archived-records row.
+//
+// Empty archive slices are counted as absent, matching consolidateArchiveIntoRoot:
+// appending an empty slice contributes no record.
+//
+// It does NOT consolidate: this runs on a path that may reject, and a predicate
+// must not mutate the state it is asked about.
+func hasCompensationRecordsToWalk(s *InstanceState) bool {
+	if len(s.RootCompensations) > 0 {
+		return true
+	}
+	for _, records := range s.ArchivedCompensations {
+		if len(records) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // stepCompensateRequested handles a CompensateRequested trigger. It sets the
 // instance to StatusCompensating, then delegates to beginCompensation to cancel
 // in-flight tokens, look up compensation records, and emit the first
@@ -78,8 +111,11 @@ func stepCompensateRequested(ctx context.Context, def *model.ProcessDefinition, 
 	// silently discarding ResetVars and terminating the instance instead of
 	// resuming it — the engine-level twin of the WithTargetNode("") footgun
 	// already guarded at the runtime facade (ADR-0109 hardening, finding #5).
-	// Checked first, ahead of the state-dependent guards below, because it is
-	// a pure trigger-shape validation independent of s.Status.
+	// Checked first, ahead of the two state-dependent guards below — the
+	// in-flight-walk check and the terminal nothing-to-compensate check — because
+	// it is a pure trigger-shape validation independent of s.Status. That
+	// ordering is what makes the minimal malformed shapes keep reporting the
+	// shape error even on a terminal instance (ADR-0165).
 	if t.ResetVars && t.ReverseNode == "" {
 		return StepResult{}, fmt.Errorf("workflow-engine: ResetVars requires ReverseNode (use NewReverseToStart)")
 	}
@@ -117,17 +153,52 @@ func stepCompensateRequested(ctx context.Context, def *model.ProcessDefinition, 
 		}
 		return StepResult{State: *s}, nil
 	}
-	// Reject a compensation trigger that would RESUME an already-terminal
-	// instance instead of silently resurrecting it. ToNode joins ReverseNode
-	// because applyFinish's shared resume block — which walkPartial reaches via
-	// stepCompensationFinish's plan — sets StatusRunning, clears EndedAt and
-	// places a token, exactly as a full reverse would.
+	// The one terminal condition that is NOT a property of the trigger, and so
+	// cannot live in terminalPolicy: refuse a plain full rollback on a terminal
+	// instance when there is nothing left to compensate (ADR-0165 Decision 5,
+	// predicate corrected during implementation).
 	//
-	// A PLAIN full rollback (both fields empty) is deliberately still allowed.
-	// Rejecting here, before beginCompensation, is load-bearing: guarding at the
-	// resume site instead would let the rollback's InvokeActions fire first.
-	if (t.ReverseNode != "" || t.ToNode != "") && s.Status.IsTerminal() {
-		return StepResult{}, fmt.Errorf("workflow-engine: cannot resume a terminal instance (status %v)", s.Status)
+	// dispatch has already refused every resume-shaped rollback by the time
+	// control reaches here, so on a terminal instance this can only be the plain
+	// full rollback allowOnTerminal waves through. ADR-0164 carve-out #1 keeps
+	// working: with records to walk, compensating a finished instance is a
+	// legitimate admin action and the walk proceeds untouched.
+	//
+	// Without them the walk is not merely pointless, it is destructive:
+	// beginCompensation finds no eligible record and goes straight to
+	// stepCompensationFinish, which re-runs the terminal transition — flipping
+	// StatusFailed to StatusTerminated, dropping any token that survived the
+	// original transition, and overwriting EndedAt so the recorded moment of
+	// death moves. No compensation action is emitted in exchange, and the caller
+	// is told nothing.
+	//
+	// ⚠ Decision 5 as written in ADR-0165 had this predicate INVERTED — it
+	// refused the walk when records survive and admitted it when they do not,
+	// on the assumption that "no records" meant "nothing happens". Measurement
+	// showed the opposite on both halves. The decision's intent stands; only its
+	// expression was wrong.
+	//
+	// The refusal is an error, not a silent drop, because the only caller that
+	// can still reach this path is an explicit admin action: CancelRequested was
+	// reclassified to rejectSilently and is now stopped at dispatch, so the
+	// "internal machinery re-delivers this and must not see an error" rationale
+	// no longer applies here.
+	if s.Status.IsTerminal() && !hasCompensationRecordsToWalk(s) {
+		// The SAME operator record dispatch leaves for the two refusals it can
+		// make, under the same message: this is the third refusal of the same
+		// class, and dispatch's own rule is that erroring is not a substitute for
+		// the record — a caller's 422 is invisible to the operator reading logs.
+		// The reason attribute is what tells the two apart, since an operator
+		// grepping the message alone would otherwise see one line and conclude
+		// the trigger never reached a handler.
+		slog.WarnContext(ctx, "trigger rejected on terminal instance",
+			"instance_id", s.InstanceID,
+			"trigger", triggerTypeName(t),
+			"status", s.Status.String(),
+			"outcome", "errored",
+			"reason", "nothing left to compensate",
+		)
+		return StepResult{}, fmt.Errorf("%w: nothing left to compensate (status %v)", ErrInstanceTerminal, s.Status)
 	}
 	s.Status = StatusCompensating
 	// A rollback that resumes execution (full reverse, or a partial rollback to a

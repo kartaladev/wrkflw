@@ -43,7 +43,18 @@ type TaskService struct {
 // ErrTaskNotOpen is returned by [TaskService.RefreshCandidates] when the task has
 // already been completed or cancelled. A closed task's candidate list is part of
 // its audit record and is never rewritten.
-var ErrTaskNotOpen = errors.New("workflow-runtime: task is not open")
+//
+// It is an ALIAS of [engine.ErrTaskNotOpen], not a distinct sentinel: both
+// errors.Is(err, task.ErrTaskNotOpen) and errors.Is(err, engine.ErrTaskNotOpen)
+// hold, so one condition has one identity across the two layers.
+//
+// Aliasing also makes it wrap engine.ErrInvalidTransition, where the previous
+// standalone errors.New wrapped nothing: a route mounted over
+// [TaskService.RefreshCandidates] now classifies 422 through
+// httpcore.ClassifyError instead of falling through to a 500 with an empty body.
+// This module ships no HTTP route for RefreshCandidates, so that improvement is
+// realised only by a consumer who mounts one. See ADR-0165.
+var ErrTaskNotOpen = engine.ErrTaskNotOpen
 
 // ErrNoActorResolver is returned by [TaskService.RefreshCandidates] when the
 // service was constructed without an [humantask.ActorResolver]; see

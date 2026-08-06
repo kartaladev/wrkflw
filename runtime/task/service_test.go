@@ -417,6 +417,14 @@ func TestTaskServiceRefreshCandidates(t *testing.T) {
 			taskID:   "tok-refresh",
 			assert: func(t *testing.T, _ engine.Trigger, err error) {
 				require.ErrorIs(t, err, task.ErrTaskNotOpen)
+				// The runtime sentinel is an alias of the engine's, and it wraps
+				// ErrInvalidTransition — which is what carries it to HTTP 422
+				// instead of falling through httpcore.ClassifyError to a 500 with
+				// an empty body. Pinned here because nothing else in this package
+				// would notice the alias being replaced by a fresh errors.New.
+				// See ADR-0165.
+				assert.ErrorIs(t, err, engine.ErrTaskNotOpen)
+				assert.ErrorIs(t, err, engine.ErrInvalidTransition)
 			},
 		},
 		{

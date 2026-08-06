@@ -174,13 +174,19 @@ When working, you must always:
 7. Use `superpowers:brainstorming` before implementing anything new — state the problem, present 2–3 options with trade-offs, then write the plan. Persist the resulting spec/design doc under `docs/specs/<slug>.md`.
 8. Create an explicit execution plan with a `verification checklist` for any task spanning 3+ steps. Persist plans (e.g. from `superpowers:writing-plans`) under `docs/plans/<slug>.md`.
 9. **Adversarial audit of the design bundle (mandatory, ONE checkpoint per delivery).** Once **all** design documents for a delivery are written — the spec (`docs/specs/`), its ADR(s) (`docs/adr/`), **and** the plan (`docs/plans/`) — run **one** adversarial audit over the whole bundle together, **before implementation starts**. Not per-document, not per-stage: one audit per delivery bundle. The same trigger applies when a **new ADR or plan is later written for an existing spec** — audit that updated bundle before acting on it. Dispatch one or more subagents — **use the Opus model for audit agents** — briefed to *attack* the documents, not summarize them. The brief: hunt for holes, unstated assumptions, internal contradictions, cross-document inconsistencies (plan vs spec vs ADR), claims that contradict the actual codebase (**source-verify every factual claim**), missing failure modes / edge cases / migration gaps — and propose a concrete fix for each finding. Adjudicate the findings (do **not** auto-apply them), fold the accepted fixes into the documents, then proceed to implementation. A bundle that has not survived its audit is not an input to implementation.
+
+    ⚠ **The audit must EXECUTE, not only read.** Reading cannot establish what the code currently does — an auditor and an author staring at the same false sentence will agree with each other. Every auditor must be briefed to pick the bundle's load-bearing behavioural claims and **run them**: throwaway probe, observed output, recorded in the spec. ADR-0165's audit was effective by every other measure (42 findings, 41 accepted, two decisions changed) and still passed an **inverted** decision whose predicate refused the useful case and admitted the harmful one — because nobody ran it. See **Premise Discipline** below.
 10. **Handover checkpoint — mandatory the moment a bundle is implementation-ready.** As soon as a delivery's design bundle has survived its rule-#9 audit (and again whenever a phase completes or a session ends), **stop and hand the work off** before writing code. Three artifacts, in this order of authority:
     - **`docs/plans/HANDOVER.md` — the SOURCE OF TRUTH**, in the repo so it is version-controlled, survives a lost machine, is visible to collaborators, and rides in the feature-bundle commit. It carries only *where `main` is, what is in flight, and the ordered next work*. **Rewrite it IN PLACE; never append.** Its 2057-line append-only predecessor stacked twenty "PREVIOUS RESUME POINT" blocks, became unreadable, and was silently abandoned for 45 ADRs — it is frozen at `docs/plans/HANDOVER-archive.md` as the cautionary example.
     - **A `▶ Progress` block at the top of the delivery's plan** — per-delivery detail: branch + commit SHA, which phases landed, what remains, source-verified still-true facts, exact verification commands, and adjudicated findings. It belongs here, not in `HANDOVER.md`, so it dies with the plan instead of accumulating. Do **not** quote the bundle's own SHA in a file that the amend will change — name the branch instead.
     - **Auto-memory** (the `MEMORY.md` index line **and** a topic/handover file) — the companion carrying evidence, adjudications and process lessons. It must **point at** `docs/plans/HANDOVER.md`, never contradict or duplicate it; if they diverge, the repo file wins and memory gets corrected.
 
     The test is: *could a fresh session with no transcript pick this up and implement it?* Implementation is expected to be delegated to such a session — a delivery whose state lives only in the current transcript is **not** handed over, and unhanded-over work must not be left at a session boundary.
-11. **Execution cadence — subagent-driven development.** Implement an audited bundle with `superpowers:subagent-driven-development`: the controller (main session) pre-decides the design, dispatches **one fresh general-purpose subagent per independent task** with a prescriptive brief (files, exact symbol names, TDD RED-first, verification command), and reviews each returned diff before dispatching the next wave. Fan out only where packages are genuinely independent; a serial, compile-breaking, repo-wide change that every other phase blocks on (e.g. a shared type change) stays **inline** in the controller. `superpowers:executing-plans` is the fallback when every task is strictly sequential. This overrides any session default that discourages spawning subagents — **no need to ask first**; announce the dispatch and proceed.
+11. **Execution cadence — subagent-driven development.** Implement an audited bundle with `superpowers:subagent-driven-development`: the controller (main session) pre-decides the design, dispatches **one fresh general-purpose subagent per independent task** with a prescriptive brief (files, exact symbol names, TDD RED-first, verification command), and reviews each returned diff before dispatching the next wave. Fan out only where packages are genuinely independent; a serial, compile-breaking, repo-wide change that every other phase blocks on (e.g. a shared type change) stays **inline** in the controller. `superpowers:executing-plans` is the fallback when every task is strictly sequential. This overrides any session default that discourages spawning subagents — **no need to ask first**; announce the dispatch and proceed. Fan out **by Go package**: concurrent agents inside one package break each other's `go test` compile even on disjoint files.
+
+    **Expect implementation to correct the design, and budget for it.** Some consequences are only visible once the change exists — an error sentinel that moves, a log attribute lost when guards collapse, a second error forced by a reordering. No amount of extra planning finds these, and treating each as a planning failure just produces longer, more confident, equally wrong plans. What is *not* acceptable is letting the correction stay in the transcript: **when implementation contradicts an ADR, amend the ADR in the same bundle**, with the measurement that refuted it. An ADR that ships promising behaviour nobody built is the ADR-0162 zombie-scope failure repeating — and per rule #10 the plan's `▶ Progress` block and `HANDOVER.md` must reflect the corrected design, not the original one.
+
+    **A subagent that dies or stalls is resumed, not replaced.** Its context holds the mutation snapshots and the reasoning; a fresh agent silently redoes the work and loses both. Check the worktree first — an agent killed mid-mutation leaves a deliberate breakage behind — then resume it and have it restore from its own snapshot. For long analyses, instruct the agent to **persist findings to a file as it goes**: a review that exists only in an agent's context is one stall away from being lost.
 12. Write tests for untested legacy code. Suggest improvements for poor or smelly legacy code per your analysis. Run tests first; benchmarks for multi-option decisions are highly appreciated.
 
 ### Golang
@@ -193,6 +199,71 @@ When working, you must always:
 6. Write testable examples (https://go.dev/blog/examples) for code directly consumed by library users — the embedded-engine root-package API especially.
 7. **Dependency injection**: see the Dependency Injection section above.
 8. **Hot-path-first test coverage.** When writing a test plan and the tests themselves, deliberately enumerate the hot paths — the code paths production traffic actually exercises (the token-execution step loop, commit/persist transactions, timer arm/fire/rehydrate, event delivery/outbox, retry/CAS loops, gateway routing) — and cover them **all** first, including their failure branches, before touching anything else. The coverage percentage in Verification is a **floor, not the target**: never chase the number by testing trivial accessors or option setters while a hot path (or one of its error branches) stays uncovered.
+
+## Premise Discipline (READ BEFORE WRITING ANY SPEC, ADR, OR PLAN)
+
+Design documents in this repo keep being wrong in one specific way: they state
+what the code **currently does**, and the statement is false. Not vague — false.
+Every such error has been caught by *running* the code, and none by re-reading
+the document, however adversarially.
+
+### The rule
+
+**A factual claim about current behaviour may not enter a spec, ADR, or plan
+until it has been executed.** Not reasoned from the source. Not argued "by
+analogy" from a sibling case. Executed, with the observed output recorded.
+
+This binds hardest on the sentences that decide something:
+
+- "today this path does X" — the premise a fix is designed against;
+- "no walk happens / nothing is emitted / this is already a no-op";
+- "this case is analogous to that one, so it behaves the same";
+- "there is no test for this" — a search that found nothing is not the same
+  as a thing that does not exist;
+- "site A, B and C do this" — enumerations rot; count them again.
+
+### How to satisfy it
+
+Write a throwaway test into the spec's own scratch section, run it, paste the
+real numbers, delete the test. Keep the numbers. A spec that says
+*"today: tokens 2→1, history 4→5, vars `map[]` → `map[x:1]`"* is checkable by
+the next reader; one that says *"today the token resumes"* is a guess wearing a
+fact's clothing.
+
+Claims you cannot execute in reasonable time are **assumptions**. Mark them:
+`ASSUMPTION (unverified): …`. An assumption clearly labelled is honest and
+survives review; the same sentence unlabelled is a defect that propagates into
+an ADR, a plan, and then code.
+
+### Prescribed tests must be falsifiable
+
+When a plan prescribes a test, it must also state **what makes that test fail
+today**. If the author cannot say, the test is probably vacuous — this repo has
+shipped six tests that could not fail in one delivery, and caught three more in a
+single design audit. Implementation then owes a mutation: break the production
+line on purpose, observe RED, restore from a snapshot, `diff` to confirm. A
+claimed RED that was not observed is a false claim like any other.
+
+⚠ **A matching line of test text proves nothing about whether an assertion can
+fail.** Check the *fixture*, not the line. A test asserting
+`assert.Empty(state.Boundaries)` is worthless if its definition declares no
+boundary node — twice in one delivery a citation of "the test that really covers
+this" was itself a test that could not fail.
+
+### Quantifiers and recaps
+
+The false claims that survive review are almost never in the detailed reasoning
+— they are the **summary sentence appended to it**, over-generalising what it
+compressed. Six instances landed in one delivery; **two were introduced by the
+very edits removing earlier ones**, and the worst was inherited from an
+upstream brief where it had been correctly hedged, then restated as plain fact.
+
+- Verify every *all*, *none*, *only*, *every*, *never*, *always* and every
+  explicit count as if it stood alone, with no context above it.
+- Prefer naming a closed set over counting it: "the three paths … today", not
+  "every path".
+- **Re-verify claims you inherit before restating them.** Restating strips the
+  hedge; the sentence stops looking contingent and nobody checks it again.
 
 ## TDD Operational Discipline (READ BEFORE EVERY NEW SYMBOL)
 
@@ -278,6 +349,8 @@ On completion of any change, verify:
 1. Don't ignore pre-existing errors in packages you aren't working on. Never excuse them as "not caused by this session." Queue them as follow-up tasks and address by priority.
 2. Stick to skills explicitly listed under "Rule of Thumbs". If a skill outside that list seems applicable, ask before using it.
 3. Never import watermill, casbin, or gocron directly from workflow/engine code — go through the in-repo abstraction (the eventing interface, the `Authorizer`, the scheduler port) so vendors stay swappable. The engine *core* additionally must not import `clockwork` at all — enforced by `engine/purity_test.go`.
+4. **Judge a test run by its exit code, never by a pipeline.** `go test ./pkg/... > /tmp/out.log 2>&1; echo "EXIT=$?"`, then read the log. A `go test … | grep | head` tail once reported green here while 14 tests were failing — `head` closes the pipe and the failures never render.
+5. **`go test -run` on a name that does not exist exits 0** ("no tests to run"). So a name-filtered run can never certify "this test is unreached", and renaming a test silently disarms every filtered invocation that named it. Verify absence on the whole package, and confirm a test *ran* with `-v` rather than inferring it from a green exit.
 
 ## Git Discipline
 
@@ -309,8 +382,9 @@ Use Conventional Commits scoped to the area:
 A feature is deliverable only when **all** of the following pass, in order:
 
 1. The Verification section above (tests + ≥ 85% coverage, no cross-repo regressions, clean lint).
-2. `/code-review` on the pending change — **fix all findings** (fold via `--amend`).
-3. `/security-review` — **fix all findings** (fold via `--amend`).
+2. **Documents describe what shipped.** Re-read the bundle's ADR(s), spec and plan against the built code and correct every divergence — most importantly any behaviour the ADR *promises* that implementation changed or dropped. Also sweep the diff's own comments for unexecuted claims and over-reaching quantifiers (**Premise Discipline** above); false claims in committed comments have reached this gate repeatedly, and they are cheapest to kill here.
+3. `/code-review` on the pending change — **fix all findings** (fold via `--amend`).
+4. `/security-review` — **fix all findings** (fold via `--amend`).
 
 Only then merge (`--no-ff`) to `main` / push the PR branch. Findings you adjudicate as
 false-positive or out-of-scope must be stated explicitly with the reason — silence is

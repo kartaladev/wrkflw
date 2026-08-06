@@ -334,15 +334,26 @@ func driveToForceTerminatedWithBothRecords(t *testing.T, def *model.ProcessDefin
 	return r3.State
 }
 
-// TestTerminalResumeGuard pins ADR-0164 Decision 2/4: stepCompensateRequested's
-// terminal guard must reject any CompensateRequested shape that would RESUME an
-// already-terminal instance (a non-empty ToNode, whether from a raw partial
-// rollback or the NewReverseToNode facade path, both of which leave ReverseNode
-// empty) while still allowing a PLAIN full rollback (both ToNode and
-// ReverseNode empty) to walk — that carve-out is deliberate: internal
-// cancel/error paths re-deliver a plain full rollback against an
-// already-terminal instance, and compensating a completed instance whose
-// records are still present is a legitimate admin action.
+// TestTerminalResumeGuard pins ADR-0164 Decision 2/4: a CompensateRequested
+// shape that would RESUME an already-terminal instance (a non-empty ToNode,
+// whether from a raw partial rollback or the NewReverseToNode facade path, both
+// of which leave ReverseNode empty) must be rejected, while a PLAIN full
+// rollback (both ToNode and ReverseNode empty) must still walk — that carve-out
+// is deliberate: internal cancel/error paths re-deliver a plain full rollback
+// against an already-terminal instance, and compensating a completed instance
+// whose records are still present is a legitimate admin action.
+//
+// ⚠ ADR-0165 moved WHERE that rejection happens without changing WHETHER it
+// happens. CompensateRequested is the one trigger whose terminalPolicy reads its
+// receiver: rejectWithError when ReverseNode or ToNode is set, allowOnTerminal
+// otherwise. dispatch's single guard therefore refuses the first two cases
+// before stepCompensateRequested is ever entered, and waves the third one
+// through — so all three properties are unchanged and only the SENTINEL moved.
+// The cases below assert engine.ErrInstanceTerminal instead of the old
+// "cannot resume a terminal instance" string, which no longer exists; the
+// wrapped ErrInvalidTransition classification (409/422) is identical either way.
+// This test remains ADR-0109's only pin and carve-out #1's only regression
+// cover, which is why it was rewritten rather than dropped.
 //
 // All three cases share one fixture (resumableForceTerminatedDef) and one
 // drive helper (driveToForceTerminatedWithBothRecords) — engine.Step clones
@@ -365,9 +376,12 @@ func TestTerminalResumeGuard(t *testing.T) {
 			// A raw partial rollback (non-empty ToNode, ReverseNode empty) slipped
 			// past the old ReverseNode-only guard.
 			trigger: engine.NewCompensateRequested(terminalT0.Add(time.Hour), "svc"),
-			assert: func(t *testing.T, _ engine.StepResult, err error) {
+			assert: func(t *testing.T, r engine.StepResult, err error) {
 				require.Error(t, err)
-				assert.ErrorContains(t, err, "cannot resume a terminal instance")
+				assert.ErrorIs(t, err, engine.ErrInstanceTerminal)
+				assert.ErrorIs(t, err, engine.ErrInvalidTransition,
+					"the rejection must stay classifiable as an invalid transition")
+				assert.Empty(t, r.Commands, "a rejected resume must dispatch no compensation action")
 			},
 		},
 		{
@@ -377,12 +391,20 @@ func TestTerminalResumeGuard(t *testing.T) {
 			// ReverseNode empty, so it also slipped past the old guard — the case
 			// that makes the ADR-0109 correction honest.
 			trigger: engine.NewReverseToNode(terminalT0.Add(time.Hour), "svc"),
-			assert: func(t *testing.T, _ engine.StepResult, err error) {
+			assert: func(t *testing.T, r engine.StepResult, err error) {
 				require.Error(t, err)
-				assert.ErrorContains(t, err, "cannot resume a terminal instance")
+				assert.ErrorIs(t, err, engine.ErrInstanceTerminal)
+				assert.ErrorIs(t, err, engine.ErrInvalidTransition,
+					"the rejection must stay classifiable as an invalid transition")
+				assert.Empty(t, r.Commands, "a rejected resume must dispatch no compensation action")
 			},
 		},
 		{
+			// Unchanged by ADR-0165, and deliberately so: this shape's policy is
+			// allowOnTerminal, so dispatch's guard falls through to the handler and
+			// the walk runs exactly as before. It is the row that stops the new
+			// blanket guard from swallowing the one CompensateRequested shape that
+			// must survive it.
 			name:    "plain_full_rollback_allowed",
 			trigger: engine.NewCompensateRequested(terminalT0.Add(time.Hour), ""),
 			assert: func(t *testing.T, r engine.StepResult, err error) {
@@ -1311,8 +1333,8 @@ func TestSubInstanceFailedOnFailedInstanceWithSurvivingSiblingIsNoOp(t *testing.
 			"silently rewriting when the instance actually died")
 }
 
-// TestResolveIncidentOnFailedInstanceWithSurvivingSiblingIsNoOp pins the route
-// that THIS ADR's own Decision 3 opened.
+// TestResolveIncidentOnFailedInstanceWithSurvivingSiblingIsRejected pins the
+// route that ADR-0164's own Decision 3 opened.
 //
 // removeOrphanedIncidents deliberately KEEPS an incident whose token survived a
 // terminal transition. That is exactly the state — StatusFailed, a live
@@ -1322,12 +1344,22 @@ func TestSubInstanceFailedOnFailedInstanceWithSurvivingSiblingIsNoOp(t *testing.
 // action REALLY RUNS against a dead instance.
 //
 // The follow-on damage is what makes this worse than a wasted invocation: that
-// action's ActionCompleted is then swallowed by the guard added earlier in this
-// delivery, leaving the token permanently TokenActive on a terminal instance
-// with its incident already deleted — it can be neither re-raised nor
-// re-resolved. Decision 3's rationale enumerated only READ consumers of
-// s.Incidents; this is the WRITE consumer nobody considered.
-func TestResolveIncidentOnFailedInstanceWithSurvivingSiblingIsNoOp(t *testing.T) {
+// action's ActionCompleted is then swallowed by the guard ADR-0164 added,
+// leaving the token permanently TokenActive on a terminal instance with its
+// incident already deleted — it can be neither re-raised nor re-resolved.
+// Decision 3's rationale enumerated only READ consumers of s.Incidents; this is
+// the WRITE consumer nobody considered.
+//
+// ⚠ ADR-0165 changed the OUTCOME this test pins, which is why it was rewritten
+// (and renamed off "IsNoOp") rather than dropped: ADR-0164 shipped the refusal
+// as a SILENT no-op, so an admin was told their resolution worked when it did
+// not. ResolveIncident's caller is a synchronous admin API, so ADR-0165
+// classifies it rejectWithError and the refusal is now surfaced as
+// engine.ErrInstanceTerminal — which wraps ErrInvalidTransition, the
+// classification service/ already maps to a conflict. The state post-conditions
+// below are unchanged and remain this test's real payload: they are what would
+// catch the guard being removed altogether.
+func TestResolveIncidentOnFailedInstanceWithSurvivingSiblingIsRejected(t *testing.T) {
 	t.Parallel()
 
 	def := terminalSurvivingSiblingDef("p-terminal-resolve-incident",
@@ -1375,17 +1407,28 @@ func TestResolveIncidentOnFailedInstanceWithSurvivingSiblingIsNoOp(t *testing.T)
 	// An admin resolves the incident on the dead instance.
 	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewResolveIncident(terminalT0.Add(3*time.Second), incID, 3), engine.StepOptions{})
-	require.NoError(t, err)
 
-	assert.Equal(t, engine.StatusFailed, r4.State.Status,
-		"resolving an incident must not revive a terminal instance")
+	assert.ErrorIs(t, err, engine.ErrInstanceTerminal,
+		"an admin must be TOLD the instance is dead, not handed a silent no-op that reads as success")
+	assert.ErrorIs(t, err, engine.ErrInvalidTransition,
+		"the refusal must stay classifiable as an invalid transition, or service/ stops mapping it to a conflict")
 	assert.Empty(t, r4.Commands,
 		"the resolve must NOT re-invoke the stalled service action — a side-effecting "+
 			"action must never run against a dead instance")
-	assert.Len(t, r4.State.Incidents, 1,
+
+	// The state the caller is left holding. Asserted through committedAfter (see
+	// step_terminal_policy_test.go) rather than r4.State: Step returns the ZERO
+	// StepResult on error, so a caller that receives one keeps r3.State. Written
+	// this way the post-conditions mean the same thing whether the refusal is
+	// silent or surfaced — which is exactly what let them survive ADR-0165's
+	// change of outcome unedited.
+	after := committedAfter(r3.State, r4, err)
+	assert.Equal(t, engine.StatusFailed, after.Status,
+		"resolving an incident must not revive a terminal instance")
+	assert.Len(t, after.Incidents, 1,
 		"the incident must survive the refused resolve, or it can never be re-raised "+
 			"nor re-resolved")
-	for _, tok := range r4.State.Tokens {
+	for _, tok := range after.Tokens {
 		if tok.ID == incTokenID {
 			assert.Equal(t, engine.TokenIncident, tok.State,
 				"the token must stay TokenIncident: flipping it to TokenActive on a "+
