@@ -290,6 +290,13 @@ func (e harnessEnv) advanceTimers(ctx context.Context) (engine.InstanceState, er
 // command id, never by "some timer somewhere is pending" (which would misclassify
 // a genuine async call-activity park that merely coexists with an unrelated
 // deadline timer).
+//
+// The promotion also accepts an ARM-derived signal/message reason (ADR-0166 D3).
+// Once [Classify] enumerates boundary, event-gateway and event-subprocess arms,
+// such an arm outranks async-child/unknown in the ladder, so without this the
+// promotion would never fire on a definition carrying a live arm and the shipped
+// [AutoTimers] recipe — which acts only on ReasonTimer — would pass forever. A
+// genuine TOKEN signal-catch still outranks a timer; only an arm yields to it.
 func (e harnessEnv) classify(state engine.InstanceState) Park {
 	p := Classify(state)
 	if p.Reason == ReasonTerminal {
@@ -303,7 +310,7 @@ func (e harnessEnv) classify(state engine.InstanceState) Park {
 			continue
 		}
 		p.HasArmedTimers = true
-		if p.Reason == ReasonAsyncChild || p.Reason == ReasonUnknown {
+		if p.Reason == ReasonAsyncChild || p.Reason == ReasonUnknown || armDerivedReason(p) {
 			p.Reason = ReasonTimer
 			p.Node = tok.NodeID
 		}

@@ -120,18 +120,49 @@ type Park struct {
     Reason           Reason               // primary classification (convenience)
     Node             string               // parked node id
     OpenTasks        []humantask.HumanTask
-    AwaitingSignals  []string
-    AwaitingMessages []string
+    AwaitingSignals  []string                // every source, not just token catches
+    AwaitingMessages []engine.MessageWaiter  // {Name, CorrelationKey} pairs
     HasArmedTimers   bool
     Incidents        []engine.Incident
 }
 ```
+
+`AwaitingSignals` and `AwaitingMessages` come from the engine's own authorities,
+`InstanceState.SignalWaiters()` and `InstanceState.MessageWaiters()`, so they span
+**all four** sources the engine can be woken by: token signal/message catches,
+armed boundaries, event-based-gateway arms, and event-subprocess arms. An instance
+parked purely on an *arm* therefore classifies as a signal/message park and is
+driveable by `PublishSignal` / `DeliverMessage` — nothing sets a token field for an
+arm (ADR-0166).
+
+`AwaitingMessages` carries `engine.MessageWaiter`, not a bare name, because an arm
+may expect a **correlation key** and the arm slices on `InstanceState` are
+unexported — reading it off the `Park` is a custom handler's only way to discover
+it. `DeliverMessage` still matches by name alone.
 
 `Reason` is one of `ReasonTerminal`, `ReasonHumanTask`, `ReasonIncident`,
 `ReasonSignal`, `ReasonMessage`, `ReasonTimer`, `ReasonAsyncChild`, `ReasonUnknown`
 (that is also the priority order when several apply). Switch on `Reason` for the
 common case, or read the discrete fields to handle a *secondary* park (e.g. fire a
 reminder timer while a task is still open).
+
+Because arms compete in that ladder like token awaits, a definition carrying a
+live arm may report `ReasonSignal`/`ReasonMessage` where it previously reported
+`ReasonAsyncChild` or `ReasonMessage`. One case is carved out: a timer catch that
+merely *coexists* with an arm still promotes to `ReasonTimer`, so `AutoTimers()`
+keeps working. A genuine token signal-catch still outranks a timer.
+
+> **The timer promotion is a `Harness` feature.** An armed timer is visible only in
+> the scheduler, which the free-function `DriveToCompletion` does not own — so on
+> the free path a timer catch classifies as `ReasonAsyncChild`, never `ReasonTimer`,
+> and an arm-derived park never yields to a coexisting timer. If your handler
+> switches on `Reason` for timer parks, drive through a `Harness`.
+
+> **Not closed for timers.** `HasArmedTimers` reads `state.Timers` only, so a
+> boundary or event-gateway **timer** arm is still invisible to it and a definition
+> parked purely on a timer arm remains undriveable through the harness. That gap
+> needs an engine-side timer authority mirroring `SignalWaiters` and is filed as a
+> follow-up.
 
 ---
 
@@ -150,6 +181,22 @@ processtest.Chain(h1, h2, ...)                  // first non-Pass decision wins
 `AutoTimers` and `Chain` are **package functions**; `CompleteTasks`,
 `PublishSignal`, and `DeliverMessage` are **`Harness` methods** (they need the
 harness's clock and task service — see [Quirks](#quirks--gotchas)).
+
+`PublishSignal` and `DeliverMessage` treat the two kinds of waiter differently,
+because they behave differently:
+
+- a **token** signal/message catch is **never bounded**. It is *consumed* when it
+  fires, so it cannot re-match; every match is a real one — including a catch that
+  a loop returns to, and two sequential catches of the same name.
+- an **arm** (boundary / event-gateway / event-subprocess) is **bounded**, because
+  a non-interrupting arm stays armed after firing and would otherwise re-match an
+  unchanged park until the drive hit its step limit. An arm-derived delivery fires
+  once per instance per **parked node**: two arms of one name on different
+  activities both fire, while one arm re-matching its own unchanged park fires
+  once.
+
+The bound is per handler value and per instance, so sharing one handler across
+concurrent drives behaves the same as one handler per drive.
 
 ### Recipes
 

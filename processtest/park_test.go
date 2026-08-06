@@ -126,7 +126,7 @@ func TestClassify(t *testing.T) {
 			},
 			assert: func(t *testing.T, p processtest.Park) {
 				assert.Equal(t, processtest.ReasonMessage, p.Reason)
-				assert.Equal(t, []string{"PaymentReceived"}, p.AwaitingMessages)
+				assert.Equal(t, []engine.MessageWaiter{{Name: "PaymentReceived"}}, p.AwaitingMessages)
 			},
 		},
 		{
