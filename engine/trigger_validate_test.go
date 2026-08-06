@@ -75,18 +75,14 @@ func TestValidateTriggerKey(t *testing.T) {
 	}
 }
 
-// TestValidateTriggerKindsAreExhaustive fails when a Trigger variant is added and
-// classified neither as validated nor exempt, so a new variant cannot silently
-// fall through validateTriggerKey's default arm. Modelled on AllTriggerKinds in
-// internal/persistence/store/trigger_codec_test.go.
-func TestValidateTriggerKindsAreExhaustive(t *testing.T) {
-	t.Parallel()
-
-	at := time.Unix(0, 0).UTC()
-
-	// Every variant of the sealed Trigger interface. Adding a variant without
-	// adding it here fails the codec's own exhaustiveness test too.
-	all := []Trigger{
+// allTriggerVariants returns one value of every variant of the sealed Trigger
+// interface, all stamped at. It is the single list that drives every
+// exhaustiveness property the engine asserts over triggers: this file's
+// classification check and TestTriggerTerminalPolicies' policy table (ADR-0165).
+// Adding a variant without adding it here fails the codec's own exhaustiveness
+// test too.
+func allTriggerVariants(at time.Time) []Trigger {
+	return []Trigger{
 		NewStartInstance(at, nil),
 		NewActionCompleted(at, "c", nil),
 		NewActionFailed(at, "c", "e", false),
@@ -103,22 +99,66 @@ func TestValidateTriggerKindsAreExhaustive(t *testing.T) {
 		NewCancelRequested(at),
 		NewResolveIncident(at, "i", 0),
 	}
+}
+
+// TestValidateTriggerKindsAreExhaustive fails when a Trigger variant is added and
+// classified neither as validated nor exempt, so a new variant cannot silently
+// fall through validateTriggerKey's default arm. Modelled on AllTriggerKinds in
+// internal/persistence/store/trigger_codec_test.go.
+func TestValidateTriggerKindsAreExhaustive(t *testing.T) {
+	t.Parallel()
+
+	at := time.Unix(0, 0).UTC()
+
+	all := allTriggerVariants(at)
+
+	// assertKeyRowSound exercises a row's extractor against the variant its key
+	// names. The bare type assertion inside read is not checkable by the
+	// compiler, so a row paired with the wrong concrete type would otherwise
+	// panic inside Step on the engine's hot path. Fail here instead.
+	//
+	// It also pins logKey, which nothing else does: an accessor with no log
+	// attribute name would make dispatch's terminal guard emit the identity value
+	// under the empty key (ADR-0165).
+	assertKeyRowSound := func(t *testing.T, set, name string, k triggerKey, trg Trigger) {
+		t.Helper()
+		assert.NotPanics(t, func() { k.read(trg) },
+			"trigger %s: %s[%q].read asserts a different concrete type than its key names", name, set, name)
+		assert.NotEmpty(t, k.logKey,
+			"trigger %s: %s[%q] registers a read accessor but no logKey, so its identity would be "+
+				"logged under the empty attribute name", name, set, name)
+	}
 
 	for _, trg := range all {
 		name := triggerTypeName(trg)
 		k, validated := validatedTriggerKinds[name]
-		_, exempt := exemptTriggerKinds[name]
+		ex, exempt := exemptTriggerKinds[name]
 		assert.True(t, validated != exempt,
 			"trigger %s must be classified exactly once: validated=%v exempt=%v", name, validated, exempt)
-		if !validated {
-			continue
+
+		switch {
+		case validated:
+			assertKeyRowSound(t, "validatedTriggerKinds", name, k, trg)
+		case exempt && ex.key.read != nil:
+			// ⚠ Exempt rows are NOT exempt from this check. They gained optional
+			// identity accessors in ADR-0165 so dispatch's terminal guard can log
+			// timer_id and friends, and those accessors carry the SAME unchecked
+			// type assertion — but they were unreachable here while this loop did
+			// `if !validated { continue }`, which is how a mis-paired exempt row
+			// (StartInstance's accessor reading t.(TimerFired).TimerID) passed the
+			// whole suite green.
+			//
+			// That mis-pairing was NOT latent. dispatch logs both rejectSilently
+			// and rejectWithError, and calls triggerIdentityAttr on both arms, so a
+			// StartInstance — which is rejectWithError — delivered to a terminal
+			// instance would have panicked inside Step on the bad assertion.
+			// Executed, not reasoned: that delivery emits
+			// `outcome=errored start_node_id=…`, which is the accessor running.
+			// (An earlier version of this comment claimed the opposite, that
+			// rejectWithError "is never logged".) This loop is the only thing
+			// standing between such a row and a hot-path panic.
+			assertKeyRowSound(t, "exemptTriggerKinds", name, ex.key, trg)
 		}
-		// Exercise the row's extractor against the variant its key names. The
-		// bare type assertion inside read is not checkable by the compiler, so a
-		// row paired with the wrong concrete type would otherwise panic inside
-		// Step on the engine's hot path. Fail here instead.
-		assert.NotPanics(t, func() { k.read(trg) },
-			"trigger %s: validatedTriggerKinds[%q].read asserts a different concrete type than its key names", name, name)
 	}
 	assert.Len(t, all, len(validatedTriggerKinds)+len(exemptTriggerKinds),
 		"every Trigger variant must appear in exactly one classification set")

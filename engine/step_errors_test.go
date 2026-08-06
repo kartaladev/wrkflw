@@ -865,42 +865,70 @@ func TestCancelRequestedTerminates(t *testing.T) {
 		require.NotNil(t, fi)
 		assert.Equal(t, "cancelled", fi.Err)
 
-		// Late trigger: HumanCompleted after cancel → ErrTokenNotFound. This
+		// Late trigger: HumanCompleted after cancel → ErrInstanceTerminal. This
 		// call site (handleHumanCompleted, not handleActionCompleted) is
 		// untouched by ADR-0164/O1, so it still errors — this is now the
 		// witness that a late trigger against a terminated instance still
 		// classifies as ErrInvalidTransition (a 409), a pin the
 		// service-task-with-boundary-timer subtest above used to carry before
 		// its ActionCompleted case became a no-op.
+		//
+		// ⚠ Before ADR-0165 this returned engine.ErrTokenNotFound — a
+		// true-but-useless statement ("no token awaits that id") that a caller
+		// could not tell apart from a typo'd task id. HumanCompleted is now
+		// classified rejectWithError, so the reason the caller gets is the actual
+		// one. The ErrInvalidTransition assertion is what keeps the 409/422
+		// classification pinned across the swap.
 		_, lateErr := engine.Step(t.Context(), def, r2.State,
 			engine.NewHumanCompleted(cancelAt.Add(time.Second), taskID, engine.CompletionInput{},
 				authz.Actor{ID: "u1"}), engine.StepOptions{})
 		require.Error(t, lateErr)
-		assert.ErrorIs(t, lateErr, engine.ErrTokenNotFound)
+		assert.ErrorIs(t, lateErr, engine.ErrInstanceTerminal)
 		assert.ErrorIs(t, lateErr, engine.ErrInvalidTransition,
 			"a late/wrong-state trigger is classifiable as an invalid transition")
+		assert.NotErrorIs(t, lateErr, engine.ErrTokenNotFound,
+			"ErrInstanceTerminal must NOT wrap ErrTokenNotFound: a dead instance and a "+
+				"missing token are conditions ADR-0165 deliberately keeps apart, and a "+
+				"refactor that re-merged them would silently undo the whole point")
 	})
 
-	t.Run("already-terminal-is-noop-or-error", func(t *testing.T) {
-		// Cancelling an already-completed instance: CancelRequested is handled by
-		// the CancelRequested case in Step regardless of current Status. The logic
-		// is idempotent — there are no tokens or timers to cancel — so it succeeds
-		// (NoError) and overwrites Status to StatusTerminated. The resulting state
-		// has empty tokens and no harmful side effects.
+	t.Run("already-terminal-is-dropped-silently", func(t *testing.T) {
+		// Cancelling an already-terminal instance is a NO-OP (ADR-0165, the
+		// CancelRequested paragraph: reclassified from allowOnTerminal to
+		// rejectSilently by the rule-#9 audit).
 		//
-		// Callers must NOT send CancelRequested to an already-terminal instance in
-		// production; this subtest only ensures no panic and deterministic behaviour.
+		// ⚠ This subtest previously asserted the opposite — that the cancel
+		// "idempotently overwrites" Status to StatusTerminated — and that overwrite
+		// was found to be a live RESURRECTION ROUTE: forceTerminate never clears
+		// RootCompensations, so re-entering the cancel path on a terminal instance
+		// whose compensation records survived re-fires every compensation action
+		// against a dead instance and publishes a second terminal event. The
+		// rewrite keeps this test as that route's regression cover.
+		//
+		// It stays SILENT rather than erroring because propagateCancel's child loop
+		// logs and swallows every error, so an error here would reach no one.
 		def := cancelUserTaskDef()
+		completedAt := cancelAt.Add(-time.Hour)
 		completedState := engine.InstanceState{
-			InstanceID: "i-cancel-term",
-			Status:     engine.StatusCompleted,
+			InstanceID:        "i-cancel-term",
+			Status:            engine.StatusCompleted,
+			EndedAt:           &completedAt,
+			RootCompensations: []engine.CompensationRecord{{NodeID: "svc", Action: "refund-action"}},
 		}
-		// Should not panic; the result is deterministic.
+
 		r, err := engine.Step(t.Context(), def, completedState,
 			engine.NewCancelRequested(cancelAt), engine.StepOptions{})
-		require.NoError(t, err, "CancelRequested on a completed instance must not error (idempotent)")
-		// Post-cancel: status is terminal (Terminated), tokens still empty.
-		assert.Equal(t, engine.StatusTerminated, r.State.Status)
+
+		require.NoError(t, err, "a dropped cancel must stay silent, not surface an error nobody reads")
+		assert.Empty(t, r.Commands,
+			"a dropped cancel must re-fire no compensation action against a dead instance")
+		assert.Equal(t, engine.StatusCompleted, r.State.Status,
+			"a dropped cancel must not stamp StatusTerminated over the terminal status")
+		require.NotNil(t, r.State.EndedAt)
+		assert.Equal(t, completedAt, *r.State.EndedAt,
+			"a dropped cancel must not rewrite when the instance actually ended")
+		assert.Len(t, r.State.RootCompensations, 1,
+			"a dropped cancel must leave the surviving compensation records untouched")
 		assert.Empty(t, r.State.Tokens)
 	})
 }

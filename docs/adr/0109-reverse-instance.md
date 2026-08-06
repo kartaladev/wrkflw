@@ -1,7 +1,20 @@
 # 0109. `ProcessDriver.ReverseInstance` — reverse/rollback facade
 
-- Status: Accepted
+- Status: Accepted, amended by
+  [ADR-0165](0165-triggers-declare-their-terminal-policy.md)
 - Date: 2026-07-09
+
+> **Amended by [ADR-0165](0165-triggers-declare-their-terminal-policy.md)
+> (2026-08-05).** The facade and its terminal pre-check are unchanged. What
+> changed is the engine-side defence behind it: the hand-written guard in
+> `stepCompensateRequested` that this ADR's correction documents is gone, and
+> `CompensateRequested` now declares its own `terminalPolicy()` — `rejectWithError`
+> when `ReverseNode` or `ToNode` is set, `allowOnTerminal` otherwise — enforced in
+> `Step`'s `dispatch`. The refusal now returns `engine.ErrInstanceTerminal`
+> instead of an unsentinelled `"cannot resume a terminal instance"` string, so
+> `service/` classifies it `ErrConflict` and transports map it to 422. The
+> plain-full-rollback carve-out survives, narrowed: it is refused when the
+> instance is terminal *and* compensation records survive.
 
 ## Context
 

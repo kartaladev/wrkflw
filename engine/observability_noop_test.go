@@ -97,6 +97,17 @@ func installCaptureHandler(t *testing.T) *captureHandler {
 // unchanged — see TestHandleTimerFired_TerminalInstanceNoOps) AND emits a Warn
 // slog record carrying the instance id and timer id, so an operator can spot a
 // late-arriving timer against a dead instance instead of it vanishing silently.
+//
+// ⚠ ADR-0165 moved the emitting site, not the guarantee. The record now comes
+// from dispatch's single terminal guard rather than handleTimerFired's own, so
+// the MESSAGE is the guard's uniform "trigger rejected on terminal instance"
+// instead of the old timer-specific "timer fired on terminal instance" — one
+// constant message plus structured attributes, which is both the point of
+// collapsing eight guards and the better logging shape (an operator filters on
+// trigger=engine.TimerFired rather than grepping prose). Every OTHER assertion
+// below is unchanged and deliberately so: Warn level, instance_id, and above
+// all timer_id are what this test exists to protect, and they are exactly what a
+// naive collapse would have silently dropped.
 func TestHandleTimerFired_TerminalInstanceNoOp_LogsWarn(t *testing.T) {
 	h := installCaptureHandler(t)
 
@@ -114,7 +125,7 @@ func TestHandleTimerFired_TerminalInstanceNoOp_LogsWarn(t *testing.T) {
 	assert.Empty(t, res.Commands, "a terminal instance must not fire the boundary")
 	assert.Equal(t, StatusFailed, res.State.Status, "status unchanged")
 
-	rec, ok := h.find("timer fired on terminal instance")
+	rec, ok := h.find("trigger rejected on terminal instance")
 	require.True(t, ok, "expected a Warn log for a late timer against a terminal instance")
 	assert.Equal(t, slog.LevelWarn, rec.Level)
 
@@ -125,6 +136,218 @@ func TestHandleTimerFired_TerminalInstanceNoOp_LogsWarn(t *testing.T) {
 	timerID, ok := attrString(rec, "timer_id")
 	assert.True(t, ok, "expected timer_id attribute")
 	assert.Equal(t, "bt1", timerID)
+}
+
+// TestTerminalGuardLogsTriggerIdentity pins the enrichment that keeps site 1
+// diagnosable after ADR-0165 collapsed eight per-handler guards into one.
+//
+// A single generic log line would have cost the operator the ONE field they
+// actually need — "why did my timer do nothing" is not answered by
+// instance_id/trigger/status alone. The guard therefore appends the trigger's
+// own identity field, read through the SAME registry validateTriggerKey uses
+// (validatedTriggerKinds / exemptTriggerKinds), so there is no second
+// hand-maintained mapping to drift.
+//
+// The cases are the shapes that registry can present, and the table is what
+// stops the enrichment rotting when a trigger is added or reclassified:
+//   - validated  → the row's accessor supplies the value (ActionCompleted).
+//   - exempt WITH an identity field → the exempt row's optional accessor
+//     supplies it (TimerFired). This is the case a naive
+//     "validatedTriggerKinds only" implementation silently drops, and it is
+//     precisely the timer case site 1 asserts.
+//   - no identity field at all → the attribute is OMITTED cleanly, with no
+//     empty string and no "<nil>" (CancelRequested).
+//   - rejectWithError → the SAME line, distinguished only by outcome=errored
+//     (ResolveIncident). Erroring is not a substitute for the record: the
+//     caller's 422 is invisible to the operator reading logs, and
+//     handleResolveIncident's own guard emitted a Warn, so an error-only arm
+//     would make it the single replaced site that regressed.
+//
+// Not parallel, and no t.Parallel() in the subtests: installCaptureHandler
+// swaps the process-global slog.Default().
+func TestTerminalGuardLogsTriggerIdentity(t *testing.T) {
+	at := time.Unix(1, 0)
+	def := &model.ProcessDefinition{ID: "p-terminal-guard-log", Version: 1}
+	terminal := InstanceState{InstanceID: "i1", Status: StatusFailed}
+
+	type testCase struct {
+		name    string
+		trigger Trigger
+		// wantErr is true for the rejectWithError rows, whose Step call returns
+		// ErrInstanceTerminal while still emitting the same log line.
+		wantErr bool
+		assert  func(t *testing.T, rec slog.Record)
+	}
+
+	cases := []testCase{
+		{
+			name:    "validated trigger logs its own identity field",
+			trigger: NewActionCompleted(at, "cmd-7", nil),
+			assert: func(t *testing.T, rec slog.Record) {
+				commandID, ok := attrString(rec, "command_id")
+				assert.True(t, ok, "expected command_id attribute")
+				assert.Equal(t, "cmd-7", commandID)
+				outcome, _ := attrString(rec, "outcome")
+				assert.Equal(t, "dropped", outcome)
+			},
+		},
+		{
+			name:    "exempt trigger with an identity field still logs it",
+			trigger: NewTimerFired(at, "bt1"),
+			assert: func(t *testing.T, rec slog.Record) {
+				timerID, ok := attrString(rec, "timer_id")
+				assert.True(t, ok,
+					"TimerFired is EXEMPT from validateTriggerKey but still carries a TimerID; "+
+						"an implementation reading only validatedTriggerKinds drops exactly this attribute")
+				assert.Equal(t, "bt1", timerID)
+				outcome, _ := attrString(rec, "outcome")
+				assert.Equal(t, "dropped", outcome)
+			},
+		},
+		{
+			name:    "trigger with no identity field omits the attribute cleanly",
+			trigger: NewCancelRequested(at),
+			assert: func(t *testing.T, rec slog.Record) {
+				var keys []string
+				rec.Attrs(func(a slog.Attr) bool {
+					keys = append(keys, a.Key)
+					assert.NotEqual(t, "", a.Value.String(),
+						"no attribute may be logged with an empty value")
+					assert.NotEqual(t, "<nil>", a.Value.String(),
+						"no attribute may be logged as <nil>")
+					return true
+				})
+				assert.Equal(t, []string{"instance_id", "trigger", "status", "outcome"}, keys,
+					"a trigger carrying no identity key must add no identity attribute")
+			},
+		},
+		{
+			// ⚠ What makes this able to fail: CompensateRequested's exempt row
+			// registered NO accessor, justified by the false claim that "its
+			// terminalPolicy is never rejectSilently, so the guard never logs it".
+			// dispatch logs BOTH refusal flavours, and a ToNode-carrying rollback is
+			// rejectWithError — so the line WAS emitted, with no node id on it, and
+			// an operator could not tell which rollback was refused. Executed before
+			// the fix: `msg="trigger rejected on terminal instance"
+			// trigger=engine.CompensateRequested outcome=errored` and nothing more.
+			name:    "a refused targeted rollback names the node it targeted",
+			trigger: NewReverseToNode(at, "svc-charge"),
+			wantErr: true,
+			assert: func(t *testing.T, rec slog.Record) {
+				target, ok := attrString(rec, "rollback_target")
+				assert.True(t, ok,
+					"a rollback refused on a terminal instance must name its target node; "+
+						"instance_id/trigger/status/outcome alone cannot tell an operator "+
+						"WHICH rollback was refused")
+				assert.Equal(t, "svc-charge", target)
+				outcome, _ := attrString(rec, "outcome")
+				assert.Equal(t, "errored", outcome)
+			},
+		},
+		{
+			name:    "rejectWithError logs the same line with outcome=errored",
+			trigger: NewResolveIncident(at, "inc-3", 1),
+			wantErr: true,
+			assert: func(t *testing.T, rec slog.Record) {
+				incidentID, ok := attrString(rec, "incident_id")
+				assert.True(t, ok,
+					"handleResolveIncident's replaced guard logged incident_id at Warn; "+
+						"an error-only arm would lose that record entirely")
+				assert.Equal(t, "inc-3", incidentID)
+				outcome, _ := attrString(rec, "outcome")
+				assert.Equal(t, "errored", outcome,
+					"the two refusal flavours share one message and are told apart by this attribute")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := installCaptureHandler(t)
+
+			res, err := Step(t.Context(), def, terminal, tc.trigger, StepOptions{})
+			if tc.wantErr {
+				require.ErrorIs(t, err, ErrInstanceTerminal)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Empty(t, res.Commands)
+
+			rec, ok := h.find("trigger rejected on terminal instance")
+			require.True(t, ok, "expected a Warn log for a trigger refused on a terminal instance")
+			assert.Equal(t, slog.LevelWarn, rec.Level)
+
+			// The four fields every line carries regardless of trigger type.
+			instanceID, ok := attrString(rec, "instance_id")
+			assert.True(t, ok, "expected instance_id attribute")
+			assert.Equal(t, "i1", instanceID)
+			trigger, ok := attrString(rec, "trigger")
+			assert.True(t, ok, "expected trigger attribute")
+			assert.Equal(t, triggerTypeName(tc.trigger), trigger)
+			status, ok := attrString(rec, "status")
+			assert.True(t, ok, "expected status attribute")
+			assert.Equal(t, "failed", status)
+			_, ok = attrString(rec, "outcome")
+			assert.True(t, ok, "expected outcome attribute")
+
+			tc.assert(t, rec)
+		})
+	}
+}
+
+// TestTerminalRollbackWithNothingToCompensateIsLogged covers the THIRD refusal of
+// a trigger on a terminal instance — the one dispatch cannot make, because its
+// predicate reads state rather than the trigger (ADR-0165 Decision 5): a plain
+// full rollback is waved through as allowOnTerminal, then refused inside
+// stepCompensateRequested when no record survives to walk.
+//
+// dispatch's own reasoning is what makes this a gap rather than a style point:
+// it logs BOTH refusal flavours because "a caller's 422 is not visible to the
+// operator reading logs", and refuses to let an error-only arm be the single
+// replaced site that regresses. This third refusal returned exactly such an
+// error-only 422 — an admin full-rollback of a finished instance vanished from
+// the logs entirely.
+//
+// ⚠ What makes this test able to fail: before the fix the branch returned its
+// error with no slog call anywhere on the path, so h.find returned ok=false.
+//
+// Not parallel: installCaptureHandler swaps the process-global slog.Default().
+func TestTerminalRollbackWithNothingToCompensateIsLogged(t *testing.T) {
+	h := installCaptureHandler(t)
+
+	at := time.Unix(1, 0)
+	def := &model.ProcessDefinition{ID: "p-terminal-rollback-log", Version: 1}
+	// Terminal, and carrying NO compensation records — so the walk would find
+	// nothing and only re-stamp the terminal transition.
+	terminal := InstanceState{InstanceID: "i1", Status: StatusFailed}
+
+	// A PLAIN full rollback: both ToNode and ReverseNode empty, so terminalPolicy
+	// is allowOnTerminal and dispatch does not refuse it.
+	_, err := Step(t.Context(), def, terminal, NewCompensateRequested(at, ""), StepOptions{})
+
+	require.ErrorIs(t, err, ErrInstanceTerminal)
+
+	rec, ok := h.find("trigger rejected on terminal instance")
+	require.True(t, ok,
+		"the third refusal must leave the SAME operator record as the two dispatch makes; "+
+			"a 422 the caller sees is not a record the operator sees")
+	assert.Equal(t, slog.LevelWarn, rec.Level)
+
+	instanceID, ok := attrString(rec, "instance_id")
+	assert.True(t, ok)
+	assert.Equal(t, "i1", instanceID)
+	trigger, ok := attrString(rec, "trigger")
+	assert.True(t, ok)
+	assert.Equal(t, "engine.CompensateRequested", trigger)
+	outcome, ok := attrString(rec, "outcome")
+	assert.True(t, ok)
+	assert.Equal(t, "errored", outcome,
+		"it is a refusal that errors, so it shares the errored outcome with dispatch's rejectWithError arm")
+	reason, ok := attrString(rec, "reason")
+	assert.True(t, ok,
+		"this refusal is NOT interchangeable with dispatch's: same message and instance, "+
+			"different cause, so the line must say which one fired")
+	assert.Equal(t, "nothing left to compensate", reason)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

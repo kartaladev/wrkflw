@@ -1,7 +1,19 @@
 # 164. Terminal transitions are one path, and a terminal instance is never resumed
 
-- Status: Accepted
+- Status: Accepted, amended by
+  [ADR-0165](0165-triggers-declare-their-terminal-policy.md)
 - Date: 2026-08-02
+
+> **Amended by [ADR-0165](0165-triggers-declare-their-terminal-policy.md)
+> (2026-08-05).** The invariant below stands; its *mechanism* does not. This ADR
+> enforced "a terminal instance is never resumed" by hand-copying an
+> `if s.Status.IsTerminal()` guard into individual trigger handlers, which left
+> the remaining handlers silently unguarded — ADR-0165 closed six such
+> resurrection routes, plus a seventh (`CancelRequested`) that this ADR's own
+> tolerant carve-out opened. Every per-handler guard described below has been
+> removed; the policy is now declared per trigger on the sealed `Trigger`
+> interface and enforced once in `Step`'s `dispatch`. Read the guard-placement
+> sections here as history.
 
 > Third ADR of the scope-lifecycle-correctness delivery, alongside
 > [ADR-0162](0162-scope-teardown-cascades-to-descendants.md) and

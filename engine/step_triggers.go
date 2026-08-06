@@ -77,33 +77,6 @@ func resolveManualStart(def *model.ProcessDefinition) (string, error) {
 // waiting for the completed command, records compensation if applicable, merges
 // output variables, and drives forward.
 func handleActionCompleted(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t ActionCompleted, opt StepOptions) (StepResult, error) {
-	// A terminal instance can never consume a resumption trigger, so a late
-	// ActionCompleted is a stale straggler, not an error — the same tolerance
-	// handleTimerFired and handleHumanCandidatesResolved apply, and in the same
-	// place: at the TOP, before any lookup. The position is load-bearing.
-	// Three terminal paths keep s.Tokens (handleUnhandledError's immediate-fail
-	// branch, handleSubInstanceFailed's tail, and applyTerminate — only
-	// forceTerminate and handleCancelRequested's immediate branch nil them), so a
-	// surviving sibling still
-	// carries its AwaitCommand and tokenAwaiting — which matches on AwaitCommand
-	// alone, with no status check — would hand it back. drive has no status guard
-	// either, so that token could run to an end event and flip a FAILED instance
-	// to Completed. A guard inside the `tok == nil` branch below cannot see this
-	// case at all. ADR-0161's liveAwaiters filter does not cover it: that drops
-	// commands emitted in the SAME step, whereas this one was dispatched earlier
-	// and is already in flight.
-	//
-	// StatusCompensating is NOT terminal, so an in-flight compensation walk is
-	// unaffected by guarding above the cursor dispatch below.
-	if s.Status.IsTerminal() {
-		slog.WarnContext(ctx, "action completed on terminal instance",
-			"instance_id", s.InstanceID,
-			"command_id", t.CommandID,
-			"status", s.Status.String(),
-		)
-		return StepResult{State: *s, Commands: nil}, nil
-	}
-
 	// If the engine is in compensation mode AND this ActionCompleted corresponds
 	// to the in-flight compensation action (cursor.ActiveCmdID), advance the
 	// compensation cursor rather than doing normal token routing. This keeps
@@ -114,9 +87,10 @@ func handleActionCompleted(ctx context.Context, def *model.ProcessDefinition, s 
 
 	tok := s.tokenAwaiting(t.CommandID)
 	if tok == nil {
-		// Unreachable for a terminal instance — the guard at the top already
-		// returned — so a non-terminal instance with no matching token is a
-		// genuine caller error.
+		// Unreachable for a terminal instance — dispatch's structural guard
+		// returned before this handler was entered (ADR-0165) — so reaching here
+		// means a non-terminal instance with no matching token, which is a genuine
+		// caller error.
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 	}
 	// Cancel any boundary arms on this host token before advancing.
@@ -288,28 +262,6 @@ func handleCompensateRequested(ctx context.Context, def *model.ProcessDefinition
 // handleActionFailed processes an ActionFailed trigger: handles retry scheduling,
 // recovery flows, boundary error propagation, and compensation advancement.
 func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t ActionFailed, opt StepOptions) (StepResult, error) {
-	// Symmetric twin of handleActionCompleted's guard, in the same position and
-	// for the same reason: a terminal instance can never consume a resumption
-	// trigger, so a late ActionFailed is a stale straggler, not an error.
-	// The route is real, not theoretical — an ActionFailed whose token outlived a
-	// terminal transition (handleUnhandledError's immediate-fail branch,
-	// handleSubInstanceFailed's tail, applyTerminate) is dispatched normally:
-	// with an error boundary on its node, propagateError routes to the recovery
-	// path, which can run to a normal end as the last token and flip a FAILED
-	// instance to Completed; without one, it emits a DUPLICATE FailInstance and
-	// re-runs endInstance on an already-terminal instance.
-	//
-	// StatusCompensating is NOT terminal, so the best-effort compensation
-	// advance below — and every legitimate walk — stays reachable.
-	if s.Status.IsTerminal() {
-		slog.WarnContext(ctx, "action failed on terminal instance",
-			"instance_id", s.InstanceID,
-			"command_id", t.CommandID,
-			"status", s.Status.String(),
-		)
-		return StepResult{State: *s, Commands: nil}, nil
-	}
-
 	// Best-effort compensation: if the engine is compensating and the failed
 	// command is the active compensation action, skip that record and advance
 	// the walk rather than re-entering propagateError/retry (ADR-0034 §2.5).
@@ -319,6 +271,10 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 
 	tok := s.tokenAwaiting(t.CommandID)
 	if tok == nil {
+		// Unreachable for a terminal instance — dispatch's structural guard
+		// returned before this handler was entered (ADR-0165; the route it closes
+		// is on ActionFailed.terminalPolicy). So reaching here means a
+		// non-terminal instance with no matching token, a genuine caller error.
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 	}
 	// Cancel any boundary arms on this host token before propagating.
@@ -429,10 +385,20 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 
 // handleHumanClaimed processes a HumanClaimed trigger: updates the task state
 // to Claimed and emits an UpdateTask command.
+//
+// Errors with [ErrTaskNotOpen] when the task is already Completed or Cancelled.
+// That is the task-lifetime key, independent of the instance-status key
+// dispatch enforces (ADR-0165 Decision 6): ADR-0163 closes a task with the token
+// it is attached to — an interrupting boundary or a breached deadline — while the
+// instance carries on down the alternative path, so a closed task on a RUNNING
+// instance is reachable and the status guard cannot see it.
 func handleHumanClaimed(s *InstanceState, t HumanClaimed) (StepResult, error) {
 	task := s.TaskByID(t.TaskID)
 	if task == nil {
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskID)
+	}
+	if !task.IsOpen() {
+		return StepResult{}, fmt.Errorf("%w: task %q", ErrTaskNotOpen, t.TaskID)
 	}
 	// Record the full claiming actor and the claim time (ADR-0147): the instance
 	// view renders who claimed and when, not just an ID.
@@ -453,14 +419,11 @@ func handleHumanClaimed(s *InstanceState, t HumanClaimed) (StepResult, error) {
 // completed or cancelled, its candidate list is part of the audit record and a
 // late refresh must not rewrite history.
 func handleHumanCandidatesResolved(s *InstanceState, t HumanCandidatesResolved) (StepResult, error) {
-	// A resolution arriving against an already-terminal instance is a clean no-op,
-	// mirroring handleTimerFired. Reached when a sibling branch terminates the
-	// instance in the same step that opened this task, or when a caller delivers a
-	// stale refresh; committing here would version a dead instance and re-publish
-	// its task to the store.
-	if s.Status.IsTerminal() {
-		return StepResult{State: *s, Commands: nil}, nil
-	}
+	// A terminal instance never reaches here: dispatch's structural guard returns
+	// first (ADR-0165; the route it closes is on
+	// HumanCandidatesResolved.terminalPolicy). The !task.IsOpen() check below is
+	// the INDEPENDENT task-lifetime key — a task cancelled by an interrupting
+	// boundary on a still-running instance — not a stand-in for it.
 	task := s.TaskByID(t.TaskID)
 	if task == nil {
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskID)
@@ -479,10 +442,16 @@ func handleHumanCandidatesResolved(s *InstanceState, t HumanCandidatesResolved) 
 
 // handleHumanReassigned processes a HumanReassigned trigger: updates the task
 // assignment and emits an UpdateTask command.
+//
+// Errors with [ErrTaskNotOpen] on an already Completed or Cancelled task, for the
+// same reason as [handleHumanClaimed] — see its doc comment.
 func handleHumanReassigned(s *InstanceState, t HumanReassigned) (StepResult, error) {
 	task := s.TaskByID(t.TaskID)
 	if task == nil {
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskID)
+	}
+	if !task.IsOpen() {
+		return StepResult{}, fmt.Errorf("%w: task %q", ErrTaskNotOpen, t.TaskID)
 	}
 	// A task carries at most one claim: reassignment overwrites it rather than
 	// appending, so there is no claim history (ADR-0147). The reassignment
@@ -509,19 +478,11 @@ func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *Inst
 	// 4) deadline/in-wait timer record (task-guarded timers).
 	// 5) standalone intermediate catch event (token parks on TimerID).
 
-	// A TimerFired against an already-terminal instance is a clean no-op. An
-	// unhandled error can fail an instance without sweeping its sibling boundary,
-	// deadline, or event-sub arms, so a late timer must not fire any of them on a
-	// terminal instance.
-	if s.Status.IsTerminal() {
-		slog.WarnContext(ctx, "timer fired on terminal instance",
-			"instance_id", s.InstanceID,
-			"timer_id", t.TimerID,
-			"status", s.Status.String(),
-		)
-		return StepResult{State: *s, Commands: nil}, nil
-	}
-
+	// A terminal instance never reaches this cascade: dispatch's structural guard
+	// returns first (ADR-0165; the route it closes — a late timer firing a
+	// boundary, deadline or event-sub arm that the terminal transition never
+	// swept — is on TimerFired.terminalPolicy).
+	//
 	// 1)-3) Gateway arm / boundary arm / event sub-process arm cascade,
 	// first-match-wins (dispatchArmCascade — no payload to merge for timer).
 	if cmds, matched, err := dispatchArmCascade(ctx, def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), nil,
@@ -632,18 +593,60 @@ func applyOutcomeExposure(s *InstanceState, ut activity.UserTask, outcome string
 
 // handleHumanCompleted processes a HumanCompleted trigger: merges output,
 // completes the task, advances the token, cancels guarding timers, and drives forward.
+//
+// Errors with [ErrTaskNotOpen] on an already Completed or Cancelled task — the
+// task-lifetime key described on [handleHumanClaimed].
 func handleHumanCompleted(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t HumanCompleted, opt StepOptions) (StepResult, error) {
+	// The task record is resolved BEFORE the token (ADR-0165 Decision 6). The
+	// lookup order is what makes the task-lifetime guard reachable at all: with
+	// tokenAwaiting first the guard below is dead code, because the three paths
+	// that close a task on a live instance today each also detach its token.
+	// cancelTokenWaits consumes the token outright (interrupting boundary, scope
+	// cancellation); a breached deadline clears the token's AwaitCommand before
+	// cancelling the task and moves it onto the alternative path; and
+	// dropStaleTokenCommands only closes tasks whose awaiter is already gone.
+	// Verified by mutation rather than inspection: reverting this order alone,
+	// with the guard left in place, reddens both closed-task HumanCompleted rows
+	// in step_task_lifetime_guard_test.go.
+	//
+	// The reorder is therefore a deliberate error change, not a refactor: those
+	// paths reported ErrTokenNotFound ("no such task", to a caller) and now report
+	// ErrTaskNotOpen ("the task exists, you are too late").
+	//
+	// The no-record branch below must NOT collapse the two cases the pre-reorder
+	// order told apart, which is why it re-checks the token rather than answering
+	// with one sentinel (ADR-0165 correction, Phase 6.4):
+	//
+	//   - no record AND no parked token — the id is a GHOST. Reached through
+	//     service.deliverTaskTrigger, which reads the task store FIRST and answers
+	//     a genuinely unknown id itself, this can only mean the store holds a task
+	//     that instance state does not. That is a wrong-state transition, so it
+	//     stays [ErrTokenNotFound] (→ ErrInvalidTransition → 422). Answering 404
+	//     would deny a task the store still holds.
+	//   - no record but a token IS parked on it — the record vanished from under a
+	//     live token, an invariant violation, and [humantask.ErrTaskNotFound] is
+	//     the pre-existing answer that TestHumanCompletedMissingTaskRecordErrors
+	//     pins. Unchanged.
+	//
+	// All four human-task handlers agree on the first case; only this one can
+	// observe the second, because only it looks a token up at all.
+	task := s.TaskByID(t.TaskID)
+	if task == nil {
+		if s.tokenAwaiting(t.TaskID) == nil {
+			return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskID)
+		}
+		return StepResult{}, fmt.Errorf("workflow-engine: human-completed for token %q has no task record: %w", t.TaskID, humantask.ErrTaskNotFound)
+	}
+	if !task.IsOpen() {
+		return StepResult{}, fmt.Errorf("%w: task %q", ErrTaskNotOpen, t.TaskID)
+	}
+	// An OPEN task without a parked token is the remaining invariant violation
+	// (token and task are created together in KindUserTask, and the paths that
+	// separate them close the task on the way out). Advancing silently would
+	// corrupt state without emitting UpdateTask, so the trigger is rejected.
 	tok := s.tokenAwaiting(t.TaskID)
 	if tok == nil {
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.TaskID)
-	}
-	// Fail-fast: a parked token without a matching HumanTask record is an
-	// invariant violation (token and task are always created together in
-	// KindUserTask). Advancing silently would corrupt state without emitting
-	// UpdateTask, so we reject the trigger with a descriptive error.
-	task := s.TaskByID(t.TaskID)
-	if task == nil {
-		return StepResult{}, fmt.Errorf("workflow-engine: human-completed for token %q has no task record: %w", t.TaskID, humantask.ErrTaskNotFound)
 	}
 	humanTdef, humanTdefErr := defForScope(def, s, tok.ScopeID)
 	if humanTdefErr != nil {
@@ -832,36 +835,15 @@ func handleSubInstanceCompleted(ctx context.Context, def *model.ProcessDefinitio
 	// A child process instance (started by StartSubInstance) has finished
 	// successfully. Resume the parent token that was parked at the call-activity
 	// node, merge the child's output variables into the parent, then drive forward.
-	//
-	// Mirror of ActionCompleted in the guard too, not just the resume: a terminal
-	// instance can never consume a resumption trigger. This route is delivered
-	// ASYNCHRONOUSLY by runtime/calllink's CallNotifier.DrainOnce, which performs
-	// no parent-status check, so the parent can have gone terminal at any point
-	// since the child was started. Three terminal paths keep s.Tokens
-	// (handleUnhandledError's immediate-fail branch, handleSubInstanceFailed's
-	// tail, applyTerminate), so the call-activity token survives with its
-	// AwaitCommand intact and tokenAwaiting — which has no status check — hands it
-	// straight back; drive has no status guard either, so the token can reach an
-	// end event as the last one and flip a FAILED instance to Completed while
-	// terminalOutboxEvent suppresses the second event.
-	//
-	// Returning nil (rather than ErrTokenNotFound) is safe for the notifier: its
-	// idempotency branch marks the link notified on success OR ErrTokenNotFound
-	// alike, so a no-op still retires the link instead of retrying forever.
-	// Pinned by runtime/calllink's terminal-parent test.
-	if s.Status.IsTerminal() {
-		slog.WarnContext(ctx, "sub-instance completed on terminal instance",
-			"instance_id", s.InstanceID,
-			"command_id", t.CommandID,
-			"status", s.Status.String(),
-		)
-		return StepResult{State: *s, Commands: nil}, nil
-	}
 
 	// Mirror of ActionCompleted: find the parked token by CommandID, merge vars,
 	// activate the token, move along its single outgoing flow, then drive.
 	tok := s.tokenAwaiting(t.CommandID)
 	if tok == nil {
+		// Unreachable for a terminal instance — dispatch's structural guard
+		// returned before this handler was entered (ADR-0165; the route it closes,
+		// and why returning nil there does not make CallNotifier retry forever, is
+		// on SubInstanceCompleted.terminalPolicy).
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 	}
 	mergeVars(s, t.Output)
@@ -891,26 +873,12 @@ func handleSubInstanceFailed(ctx context.Context, def *model.ProcessDefinition, 
 	// cancel the call-activity token, fire the boundary's outgoing flow, and
 	// drive. When no boundary matches, fall back to the original behavior:
 	// FailInstance and cancel all timers/arms to clean up.
-	//
-	// Guarded first, symmetrically with handleSubInstanceCompleted and for the
-	// same reason: the CallNotifier delivers this asynchronously with no
-	// parent-status check, and the call-activity token survives the three
-	// token-keeping terminal paths. With a matching error boundary the unguarded
-	// handler routes to recovery and drives, flipping a FAILED instance to
-	// Completed; with no boundary it re-runs the endInstance tail below on an
-	// already-terminal instance, overwriting EndedAt with a later timestamp and
-	// emitting a DUPLICATE FailInstance.
-	if s.Status.IsTerminal() {
-		slog.WarnContext(ctx, "sub-instance failed on terminal instance",
-			"instance_id", s.InstanceID,
-			"command_id", t.CommandID,
-			"status", s.Status.String(),
-		)
-		return StepResult{State: *s, Commands: nil}, nil
-	}
 
 	tok := s.tokenAwaiting(t.CommandID)
 	if tok == nil {
+		// Unreachable for a terminal instance — dispatch's structural guard
+		// returned before this handler was entered (ADR-0165; the route it closes
+		// is on SubInstanceFailed.terminalPolicy).
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 	}
 
@@ -1041,27 +1009,11 @@ func handleResolveIncident(ctx context.Context, def *model.ProcessDefinition, s 
 	// a missing token (removed by a concurrent path) clears the record and
 	// returns without re-invoking.
 	//
-	// A terminal instance is refused outright, BEFORE the incident is removed.
-	// This delivery's own removeOrphanedIncidents sweep is what makes the route
-	// reachable: it deliberately KEEPS an incident whose token survived a
-	// terminal transition (ADR-0164 Decision 3), which is exactly the state —
-	// StatusFailed, a live TokenIncident token, a live incident — an admin can
-	// still address. Unguarded, this deletes the incident, flips the token back
-	// to TokenActive and re-invokes the stalled service action, so a
-	// SIDE-EFFECTING action really runs against a dead instance; its
-	// ActionCompleted is then swallowed by that handler's own terminal guard,
-	// stranding the token TokenActive on a terminal instance with its incident
-	// already gone — neither re-raisable nor re-resolvable. Decision 3's
-	// rationale enumerated only READ consumers of s.Incidents; this is the write
-	// consumer.
-	if s.Status.IsTerminal() {
-		slog.WarnContext(ctx, "incident resolution on terminal instance",
-			"instance_id", s.InstanceID,
-			"incident_id", t.IncidentID,
-			"status", s.Status.String(),
-		)
-		return StepResult{State: *s, Commands: nil}, nil
-	}
+	// A terminal instance never reaches here: dispatch's structural guard returns
+	// ErrInstanceTerminal first, BEFORE the incident is removed below (ADR-0165).
+	// That ordering is the whole point — the route it closes, and ADR-0164
+	// Decision 3's write-consumer lesson behind it, is on
+	// ResolveIncident.terminalPolicy.
 
 	idx := -1
 	for i := range s.Incidents {

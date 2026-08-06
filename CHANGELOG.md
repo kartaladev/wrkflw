@@ -17,6 +17,93 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **Triggers declare their own terminal policy, enforced once in `Step` (ADR-0165).**
+  A terminal process instance (`StatusCompleted`, `StatusFailed`, `StatusTerminated`)
+  can no longer be resurrected by a late trigger. Previously the guard was hand-copied
+  into eight individual handlers, so the handlers that lacked a copy silently let a
+  dead instance come back to life.
+
+  - **`engine.Trigger` gained an unexported method**, `terminalPolicy()`. No external
+    implementation can exist — `isTrigger()` already seals the interface — so nothing
+    outside the module breaks. Inside it, a new trigger type now fails to compile until
+    its author declares a policy; that compile error is the mechanism.
+
+  - **Two new sentinels**, `engine.ErrInstanceTerminal` and `engine.ErrTaskNotOpen`.
+    Both wrap `engine.ErrInvalidTransition`, so the existing `service/` → `ErrConflict`
+    → HTTP **422** mapping picks them up with no change to either layer.
+
+  - **`runtime/task.ErrTaskNotOpen` is now an alias of `engine.ErrTaskNotOpen`.**
+    `errors.Is` against either identity holds. The error *message* changes from
+    `workflow-runtime: task is not open` to `workflow-engine: human task is not
+    open`. The alias also makes the sentinel wrap `ErrInvalidTransition`, where the
+    previous standalone `errors.New` wrapped nothing: a route mounted over
+    `RefreshTaskCandidates` now classifies **422** through
+    `httpcore.ClassifyError` where it previously fell through to a **500 with an
+    empty body**. (This engine ships no HTTP route for that method, so the change
+    is visible only to a consumer who mounts one.)
+
+  - **Error-sentinel change.** `StartInstance`, `HumanClaimed`, `HumanReassigned`,
+    `HumanCompleted` and `ResolveIncident` delivered to a terminal instance now return
+    `engine.ErrInstanceTerminal`. What each did *before* is not one story — the table
+    below is authoritative, and most of these did not return an error at all. They
+    split by how the instance became terminal: where the terminal transition consumed
+    the tokens (cancel, force-terminate), the old code found no awaiting token and
+    returned `engine.ErrTokenNotFound` — a true-but-useless statement about a dead
+    instance, indistinguishable from a mistyped task id. Where a token *survived* the
+    transition, there was no error at all and the trigger was applied to the dead
+    instance, which is the damage the table describes. A consumer classifying by
+    `ErrInvalidTransition` is unaffected. A consumer matching
+    `errors.Is(err, engine.ErrTokenNotFound)` to detect a dead instance must switch.
+    The two sentinels are deliberately siblings, not parent and child.
+
+  Behaviour on a terminal instance, before → after:
+
+  | Trigger | Before | After |
+  |---|---|---|
+  | `StartInstance` | flipped `Failed` → `Running` with `EndedAt` still set, seeded a second start token, re-minted tasks | `ErrInstanceTerminal` |
+  | `HumanClaimed`, `HumanReassigned` | re-opened the cancelled task and emitted `UpdateTask` | `ErrInstanceTerminal` |
+  | `HumanCompleted` | completed post-mortem, appended a falsified history visit, and on a single-token instance flipped `Failed` → `Completed` | `ErrInstanceTerminal` |
+  | `ResolveIncident` | silently did nothing | `ErrInstanceTerminal` |
+  | `SignalReceived`, `MessageReceived` | merged the payload into the dead instance's `Variables` and drove a surviving token to a post-mortem end event | clean no-op, no error |
+  | `CancelRequested` | re-entered the compensation walk on a force-terminated instance, re-firing every `InvokeAction` and publishing a **second** terminal event | clean no-op, no error |
+  | `CompensateRequested` with `ToNode`/`ReverseNode` | rejected with an unsentinelled string | `ErrInstanceTerminal` (so now 422, not 500) |
+  | `CompensateRequested`, plain full rollback, records surviving | walked | still walks (legitimate admin rollback, ADR-0164) |
+  | `CompensateRequested`, plain full rollback, no records | flipped `Failed` → `Terminated`, discarded a surviving token and rewrote `EndedAt` while performing no compensation at all | `ErrInstanceTerminal` |
+
+  `ActionCompleted`, `ActionFailed`, `HumanCandidatesResolved`, `TimerFired`,
+  `SubInstanceCompleted` and `SubInstanceFailed` keep their existing silent-no-op
+  behaviour; they are delivered asynchronously by the engine's own machinery, whose
+  callers cannot tell a no-op from success and must not retry.
+
+  **Separately, human-task triggers now check task lifetime**, a second key the
+  instance-status guard cannot see: ADR-0163 closes a task while the instance keeps
+  running. `HumanClaimed`, `HumanReassigned` and `HumanCompleted` against a task that
+  is already `Completed` or `Cancelled` return `engine.ErrTaskNotOpen` instead of
+  re-opening it.
+
+  Making that guard reachable required `HumanCompleted` to resolve the task before
+  the token, which moves one more error, toward precision and without changing an
+  HTTP status: on the **deadline-breach** path, `ErrTokenNotFound` →
+  `engine.ErrTaskNotOpen`.
+
+  **All four human-task triggers agree on an id with no task record**, reporting
+  `engine.ErrTokenNotFound` (→ `ErrInvalidTransition` → **422**). This is unchanged
+  behaviour, restated because it was briefly not true: an earlier cut of this
+  delivery moved `HumanCompleted` to `humantask.ErrTaskNotFound` (→ 404) on the
+  grounds that the service layer answers an unknown id that way. That reasoning was
+  backwards. `service.deliverTaskTrigger` reads the task store **first**, so a
+  genuinely unknown id never reaches the engine at all; the engine's branch fires
+  only for a **ghost** — an id the store knows and instance state does not — which
+  is a state conflict, and answering 404 would deny a task the store still holds.
+  `HumanCompleted` alone can also distinguish the invariant violation where a token
+  *is* parked on a vanished record, and that case keeps its pre-existing
+  `humantask.ErrTaskNotFound`.
+
+  `HumanCandidatesResolved` deliberately keeps its **silent** no-op on a closed
+  task rather than erroring: a closed task's candidate list is frozen audit, and
+  the runtime restates candidates on its own schedule rather than in response to a
+  synchronous call.
+
 - **Instance-listing cursors are strict, and `kernel.EncodeCursor` returns an error
   (ADR-0160).** Two changes for consumers who implement `kernel.InstanceLister`
   themselves:

@@ -395,11 +395,23 @@ func TestEventStartSubprocess_Nested_Interrupting(t *testing.T) {
 	}
 	assert.True(t, found)
 
-	// ---- Step 4: late HumanCompleted must error with ErrTokenNotFound ----
+	// ---- Step 4: late HumanCompleted must error ----
+	//
+	// ⚠ Before ADR-0165 this returned engine.ErrTokenNotFound. The instance is
+	// COMPLETED by this point, so "no token awaits that id" was a
+	// true-but-useless answer the caller could not tell apart from a typo'd task
+	// id; HumanCompleted is now classified rejectWithError and the caller is told
+	// the actual reason. The ErrInvalidTransition assertion pins that the 409/422
+	// classification survived the swap.
 	_, err = engine.Step(t.Context(), def, r3.State,
 		engine.NewHumanCompleted(at.Add(3*time.Second), taskID, engine.CompletionInput{}, authz.Actor{ID: "alice"}), engine.StepOptions{})
 	require.Error(t, err)
-	require.ErrorIs(t, err, engine.ErrTokenNotFound)
+	require.ErrorIs(t, err, engine.ErrInstanceTerminal)
+	assert.ErrorIs(t, err, engine.ErrInvalidTransition,
+		"a late trigger against a completed instance stays classifiable as an invalid transition")
+	assert.NotErrorIs(t, err, engine.ErrTokenNotFound,
+		"ErrInstanceTerminal must NOT wrap ErrTokenNotFound: a dead instance and a missing "+
+			"token are conditions ADR-0165 deliberately keeps apart")
 }
 
 // TestEventStartSubprocess_Nested_NonInterrupting mirrors

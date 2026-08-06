@@ -19,8 +19,52 @@ var (
 
 	// ErrTokenNotFound is returned when a trigger targets a command/task id that
 	// is not awaiting. It is one kind of invalid transition and wraps
-	// ErrInvalidTransition so errors.Is holds for both sentinels.
+	// [ErrInvalidTransition] so errors.Is holds for both sentinels.
 	ErrTokenNotFound = fmt.Errorf("workflow-engine: no token awaiting command: %w", ErrInvalidTransition)
+
+	// ErrInstanceTerminal is returned when a trigger that requires a live instance
+	// is delivered to one that has already reached a terminal status
+	// (StatusCompleted, StatusFailed, StatusTerminated). It is the error half of
+	// the terminal contract every [Trigger] declares and [Step] applies: a trigger
+	// whose sender is a synchronous external caller fails with this, while one
+	// delivered by the engine's own asynchronous machinery is dropped silently
+	// instead, returning the state unchanged and no error at all.
+	// [CompensateRequested] takes either outcome — or neither — depending on its
+	// payload and on what is left to compensate; each trigger type's own doc
+	// comment states which applies.
+	//
+	// It wraps [ErrInvalidTransition] so errors.Is holds for both sentinels, which
+	// is what makes the service layer classify it as its ErrConflict and the HTTP
+	// transports map it to 422 with no change to either layer. An UNWRAPPED
+	// sentinel here would instead fall through the transports' error classifier to
+	// a 500 with an empty body. Those layers live outside this package and are not
+	// imported by it; the coupling is the wrapping, nothing more.
+	//
+	// It is deliberately a sibling of, not a parent of, [ErrTokenNotFound]: callers
+	// such as the call-link notifier key their idempotency branch on
+	// [ErrTokenNotFound] and must not swallow a terminal-instance rejection.
+	// See ADR-0165.
+	ErrInstanceTerminal = fmt.Errorf("workflow-engine: instance is terminal: %w", ErrInvalidTransition)
+
+	// ErrTaskNotOpen is returned when a trigger that requires an open human task is
+	// delivered to one already Completed or Cancelled. This is a second key the
+	// instance-status guard cannot see: ADR-0163 closes a task while the instance
+	// keeps running, so a closed task on a live instance is reachable.
+	//
+	// Among the triggers, [HumanClaimed], [HumanReassigned] and [HumanCompleted]
+	// report it, because each of them answers a synchronous external caller.
+	// [HumanCandidatesResolved] deliberately does not: a closed task's candidate
+	// list is part of its audit record and stays frozen, so restating it is
+	// pointless rather than a caller error, and the trigger is a silent no-op
+	// there instead.
+	//
+	// It is deliberately distinct from [humantask.ErrTaskNotFound], which means the
+	// record is absent: a closed task is present, and a caller must be able to tell
+	// "no such task" from "too late". It wraps [ErrInvalidTransition] for the same
+	// classification reason as [ErrInstanceTerminal]. runtime/task aliases this, so
+	// errors.Is(err, task.ErrTaskNotOpen) and errors.Is(err, engine.ErrTaskNotOpen)
+	// both hold. See ADR-0165.
+	ErrTaskNotOpen = fmt.Errorf("workflow-engine: human task is not open: %w", ErrInvalidTransition)
 
 	// ErrNoMatchingFlow is returned when a gateway has no matching/default outgoing
 	// flow. It is a definition/data error, not a wrong-state transition.
@@ -42,17 +86,17 @@ var (
 	// completed without one. A declared set is a closed, mandatory value domain:
 	// the outcome typically routes a downstream exclusive gateway, so accepting a
 	// blank one would publish no routing variable and fail the step later with
-	// ErrNoMatchingFlow. It is deliberately distinct from ErrInvalidOutcome so a
-	// caller can tell "you sent nothing" from "you sent a value I do not accept".
+	// [ErrNoMatchingFlow]. It is deliberately distinct from [ErrInvalidOutcome] so
+	// a caller can tell "you sent nothing" from "you sent a value I do not accept".
 	// A manual UserTask is exempt — it is forbidden from declaring outcomes
-	// (model.ErrManualTaskOutcome) and completes on a bare trigger. See ADR-0146.
+	// ([model.ErrManualTaskOutcome]) and completes on a bare trigger. See ADR-0146.
 	ErrOutcomeRequired = errors.New("workflow-engine: user task requires a completion outcome")
 
 	// ErrEmptyTriggerKey is returned when an inbound trigger's identity key is
 	// empty. An identity key names one specific record; the empty string names
 	// none, so the trigger cannot be dispatched.
 	//
-	// It is deliberately NOT wrapped in ErrInvalidTransition: the instance state is
+	// It is deliberately NOT wrapped in [ErrInvalidTransition]: the instance state is
 	// irrelevant here, the trigger itself is malformed. Transports classify it 400,
 	// alongside the other caller-correctable input sentinels. See ADR-0152.
 	ErrEmptyTriggerKey = errors.New("workflow-engine: trigger identity key is empty")
