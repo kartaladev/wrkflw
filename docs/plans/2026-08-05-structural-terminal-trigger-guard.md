@@ -6,16 +6,19 @@ Branch: `feat/terminal-trigger-guard`
 
 ## ▶ Progress
 
-**IMPLEMENTED THROUGH PHASE 6.3. UNMERGED. Next step is the delivery gate, which
-only the owner can run.** Base: `main` @ `8832021`, unmoved.
+**✅ SHIPPED — merged `--no-ff` and PUSHED 2026-08-06.** `main` moved
+`8832021` → **`ec25ffd`** (merge), carrying one squashed feature bundle
+`d8854e5`. The ten pre-squash commits are preserved on
+`backup/terminal-trigger-guard-presquash` (`a3aa889`) as provenance only.
 
-Branch `feat/terminal-trigger-guard` (no SHA quoted — this file rides in the
-bundle and any amend would stale it). Phases land as **eight `wip(engine):`
-commits, one per phase, plus two `docs(engine):` commits — ten in all,
-deliberately NOT squashed**: squashing into one feature bundle is step 6.7 and
-belongs with the merge. ⚠ This count was wrong before (it said six while seven
-existed); re-derive it with `git log --oneline main..HEAD | wc -l`, do not
-trust the prose.
+The squash was verified lossless: squashed tree byte-identical to the
+ten-commit branch tree, and the merge tree byte-identical to the squashed one
+(`818d47f4…` on both sides), so the green suite run certifies exactly the
+content now on `main`. Build, lint and the container-free packages were re-run
+on the merged tree before pushing.
+
+⚠ The commit count in this block was wrong twice before (it said six while
+seven existed). Re-derive counts with `git log`, never from prose.
 
 | Phase | State |
 |---|---|
@@ -28,7 +31,7 @@ trust the prose.
 | 6.3 ADR amendments · 6.4 CHANGELOG | ✅ |
 | **6.5 full suite** | ✅ **green** — owner-approved Docker run, see below |
 | **6.6 gate** | ✅ **PASSED** — `/code-review` 5/5 fixed, `/security-review` 0 vulns |
-| **6.7 squash + merge + push** | ⛔ **owner only — the last step** |
+| **6.7 squash + merge + push** | ✅ **DONE** — merge `ec25ffd`, pushed 2026-08-06 |
 
 Verified continuously: `engine` coverage **91.9 %** (pre-delivery baseline 91.8 %,
 floor held), `golangci-lint run ./...` 0 issues, and package-scoped runs of

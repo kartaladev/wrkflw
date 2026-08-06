@@ -14,81 +14,80 @@ top to bottom; it is meant to stay short enough that you can.
 
 ## State — updated 2026-08-06
 
-**▶ Pick up here: ADR-0165 (structural terminal-trigger guard) has PASSED ITS
-FULL DELIVERY GATE and is UNMERGED on `feat/terminal-trigger-guard`. Suite green
-on the merged tree, `/code-review` 5-of-5 fixed and re-verified,
-`/security-review` 0 vulnerabilities. The ONLY thing left is step 3:
-squash → merge `--no-ff` → push.**
-
-`main` has not moved — the branch is unmerged.
+**▶ ADR-0165 (structural terminal-trigger guard) is SHIPPED — merged `--no-ff`
+and pushed 2026-08-06. Nothing is in flight. Pick the next delivery from
+"What's next" below; delivery 3 (ADR-0158) is the intended one, but its bundle
+is ~5 deliveries stale and needs re-verification before you act on it.**
 
 | | |
 |---|---|
-| `main` | `8832021` — delivery 2b merged and pushed 2026-08-04, clean |
-| **`feat/terminal-trigger-guard`** | **ADR-0165, implemented through Phase 6.3. Ten commits ahead of `main`: eight `wip(engine):`, one per phase, plus two `docs(engine):` — deliberately NOT squashed.** ⚠ No SHA quoted: this file rides in the bundle, so any amend would stale it (rule #10) |
-| `parked/scope-and-fanout-design` | ADR-0158 draft (delivery 3) + a superseded ADR-0162 draft. **Do not read its 0162.** ⚠ ~4 deliveries stale |
+| `main` | **`ec25ffd`** — ADR-0165 merged and PUSHED 2026-08-06, clean, in sync with `origin/main` |
+| `feat/terminal-trigger-guard` | merged into `main`; safe to delete |
+| `backup/terminal-trigger-guard-presquash` | `a3aa889` — the ten pre-squash commits, kept as provenance for the phase-by-phase history. Delete once you are confident you will not need it |
+| `parked/scope-and-fanout-design` | ADR-0158 draft (delivery 3) + a superseded ADR-0162 draft. **Do not read its 0162.** ⚠ ~5 deliveries stale |
 | `parked/terminal-transitions`, `feat/scope-lifecycle-correctness` | merged; delete or ignore |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept only for its audit tags |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — older parked bundle, docs only |
-| Latest ADR on `main` | **0164**. 0165 is on the feature branch. 0158 lands with delivery 3; 0155–0157 reserved by the older parked branch. Next free is **0166** |
+| Latest ADR on `main` | **0165**. 0158 lands with delivery 3; 0155–0157 reserved by the older parked branch. Next free is **0166** |
 | v0.1.0 | not tagged |
 
-## The immediate next step: run ADR-0165's delivery gate
+### How ADR-0165 shipped
 
-Steps 1 and 2 are done and the gate has passed. Only step 3 remains.
+One squashed feature bundle (`d8854e5`) under merge `ec25ffd`. The squashed tree
+was verified byte-identical to the ten-commit branch tree, and the merge tree
+byte-identical to the squashed one (`818d47f4…` both sides), so the green suite
+run certifies exactly the content on `main`.
 
-1. ~~**Full repo suite**~~ — ✅ **DONE and GREEN** (owner-approved Docker run, 2026-08-06), and **re-run green after `/code-review`'s fixes**. `go test -race -coverprofile=cover.out ./...` → EXIT=0, 64 packages, zero failures, zero data races; repo total **73.6 %**, `engine` **91.9 %**. Ran on the merged tree (`main` verified unmoved at `8832021` locally and at `origin`; branch is a straight descendant). ⚠ **Re-run again after any `/security-review` fix.**
-2. ~~**`/code-review`**, then **`/security-review`**~~ — ✅ **BOTH DONE** (2026-08-06). `/code-review`: 5 findings, 5 fixed, folded via `--amend`, suite + lint re-run green on the fixed tree. `/security-review`: **0 vulnerabilities** — nothing to fold, so the tree is unchanged since the suite re-run. Detail in the plan's `▶ Progress`.
-3. **Squash all ten branch commits into one feature bundle** (step 6.7) — verify the count with `git log --oneline main..HEAD | wc -l` rather than trusting this number — using the commit-message template at the bottom of the plan, then merge `--no-ff` and push.
+Gate 3/3: full suite on the merged tree **EXIT=0**, 64 packages, zero failures,
+zero data races under `-race`, repo **73.6 %**, `engine` **91.9 %** (baseline
+91.8 % held), lint 0 — re-run green after the review fixes.
+**`/code-review` 5 findings → 5 fixed.** **`/security-review` 0 vulnerabilities**,
+assessed a net tightening.
 
-⚠ **Run the suite on the MERGED tree, and re-run after any review-driven fix** —
-2b's first run certified a tree that no longer existed. This has now been honoured
-once (post-`/code-review`); `/security-review` gets the same treatment.
+⚠ **Two design claims died on execution in this delivery, not on review.**
+Decision 5's predicate shipped INVERTED and reddened four already-reviewed tests.
+Then `/code-review`'s Medium **reversed twice**: converging the four human-task
+handlers on 404 followed the ADR's own stated rationale and was backwards, because
+`service.deliverTaskTrigger` reads the task store on its FIRST line, so an unknown
+id never reaches the engine — the branch fires only for a **ghost**, which is a
+state conflict. The proof was `TestErrConflict_EngineWrongStateClassified`
+failing, not an argument: it must *seed a synthetic task* to reach the branch at
+all. ADR-0165 carries **seven** correction blocks; read them before trusting any
+sentence in it.
 
-### What is verified, and what is not
+## What's next
 
-The **full repo suite** is green under `-race` (EXIT=0, 64 packages, zero
-failures, zero data races) and `golangci-lint run ./...` reports 0 issues.
-`engine` coverage **91.9 %** (pre-delivery baseline 91.8 %, floor held); repo
-total **73.6 %**, unchanged from the known pre-existing figure.
+Nothing is in flight. Pick one:
 
-⚠ `service` sits at **52.6 %**, below the 85 % floor. It is **not** this
-delivery's regression — the branch adds only a test file there and touches no
-`service` production file, so this delivery could only have raised it. It is
-backlog item 4, and it is worth a decision of its own rather than silence.
+1. **Delivery 3 — ADR-0158, a broadcast signal fires every matching arm per
+   family.** The intended next delivery. Draft on `parked/scope-and-fanout-design`.
+   ⚠ **Still needs its own rule-#9 audit in split form**, and its bundle is now
+   ~5 deliveries stale: it predates 2a, 2b and 0165 entirely, still carries
+   superseded 0161/0162 drafts, and every engine file it touches
+   (`step_triggers.go`, `step_cancel.go`, `state.go`) has moved under it — 0165 in
+   particular deleted eight guards and reshaped `dispatch`.
+   **Re-verify every premise against source, by execution, before acting on it.**
+   ADR-0165 was its prerequisite and is now shipped: delivery 3 multiplies traffic
+   through `handleSignalReceived` and `handleMessageReceived`, both now guarded.
+   ⚠ Its headline scenario is still **untestable by consumers** — see blocker 6.
+2. **The two ADRs still owed by delivery 2b** — incident-history retention and
+   zombie scopes (below).
+3. **A pre-v0.1.0 blocker** from the list below.
 
-⚠ **`./runtime/...` is NOT container-free** — `main_test.go`,
-`rehydrate_durable_test.go`, `jobstore_rehydrate_durable_test.go` and
-`timer_txflow_test.go` import `internal/dbtest`. The list above is the whole
-container-free set.
+### Verification facts worth keeping
 
-The two items previously owed here are now **discharged** (phase 6.3, this
-session — detail in the plan's `▶ Progress` block):
-
-- **Both cross-layer pins are mutation-verified.** Flipping
-  `SubInstanceCompleted`/`SubInstanceFailed` to `rejectWithError` reddens
-  `TestCallNotifierMarksLinkNotifiedWhenParentIsTerminal`; flipping
-  `SignalReceived` reddens `TestSignalBusPublishToleratesATerminalFanOutTarget`.
-  In both, the control subtest stayed PASS, so the pins discriminate.
-  `engine/trigger.go` was restored byte-identical to `HEAD` after each.
-- **Phase 6.2's three godoc nits are fixed** — the `[Symbol]` doc-link style is
-  now consistent through `engine/errors.go`'s sentinel block,
-  `ErrInstanceTerminal` no longer names `httpcore.ClassifyError` by a bare
-  selector, and `CancelRequested`'s first paragraph now covers the
-  compensation-first branch it used to skip. A throwaway `go/doc` parser over
-  `./engine` reports **87 resolved doc links, zero unresolved** across var and
-  type comments. Note for future edits: cross-package links resolve against the
-  **package's** imports, not the file's.
-
-Phase 6.2's godoc sweep still has had **no independent review** — it landed
-after code work was paused, so the gate's `/code-review` is its first. It
-carries a self-verification record worth reading: it cut **four of its own draft
-sentences** that failed source-verification (the worst claimed
-`HumanCandidatesResolved` has "no caller to inform", when
-`runtime/task.TaskService.RefreshCandidates` is a synchronous API that builds
-exactly that trigger) and fixed **two pre-existing false claims** —
-`NewReverseToStart` and `NewReverseToNode` each said the constructor "always
-sets a non-empty" node, which an empty argument falsifies.
+- **Container-free packages**: `engine`, `runtime/calllink`, `runtime/signal`,
+  `runtime/task`, `service`, `processtest`, `transport/http`. ⚠ **`./runtime/...`
+  as a whole is NOT** — `main_test.go`, `rehydrate_durable_test.go`,
+  `jobstore_rehydrate_durable_test.go` and `timer_txflow_test.go` import
+  `internal/dbtest`.
+- **Baselines to hold**: `engine` **91.9 %**, repo **73.6 %**, lint 0.
+- ⚠ **`service` sits at 52.6 %**, below the 85 % floor — long pre-existing, not a
+  regression from any recent delivery. Backlog item 4; worth a decision rather
+  than silence.
+- **Cross-package godoc links resolve against the PACKAGE's imports, not the
+  file's** — verified by running `go/doc` over `./engine` (87 links resolved,
+  zero unresolved), after nearly reverting them on the opposite assumption.
 
 ## What this delivery changed about how we work
 
@@ -113,6 +112,16 @@ produced **six** over-claiming summary sentences, **two of them introduced by th
 edits removing earlier ones**, and the worst inherited from a controller brief
 where it had been correctly hedged. Watch every *all*, *none*, *only*, *every*.
 
+**The rule then proved itself twice more at the gate.** `/code-review`'s two Low
+findings both rested on a comment asserting that `rejectWithError` is never
+logged — `dispatch` logs *both* refusal flavours, and one probe settled it. And
+its Medium was resolved the wrong way first, by following a rationale the ADR
+itself stated; the correction came from a test going RED, not from re-reading.
+**When a fix's two halves guard different cases, mutate BOTH ways** — collapsing
+`handleHumanCompleted`'s ghost/corruption disambiguation reddens *different*
+tests in each direction, and that complementary pair is what proves neither half
+is decorative.
+
 ## Known gaps still owed by delivery 2b (ADR-0164)
 
 ADR-0165 discharged the first of three. Two remain, plus a small third it added:
@@ -130,22 +139,6 @@ ADR-0165 discharged the first of three. Two remain, plus a small third it added:
 - **Third, small:** `stepCompensateRequested`'s surviving-records check stays a
   hand-written in-handler guard because it reads state, not the trigger. Any
   future state-dependent terminal policy faces the same choice.
-
-## After ADR-0165 — delivery 3
-
-**ADR-0158 — a broadcast signal fires every matching arm per family.** Draft on
-`parked/scope-and-fanout-design`. **Still needs its own rule-#9 audit in split
-form**, and its bundle is now ~4 deliveries stale: it predates 2a, 2b and 0165
-entirely, still carries superseded 0161/0162 drafts, and every engine file it
-touches (`step_triggers.go`, `step_cancel.go`, `state.go`) has moved under it —
-0165 in particular deleted eight guards and reshaped `dispatch`.
-**Re-verify every premise against source, by execution, before acting on it.**
-
-ADR-0165 was its prerequisite: delivery 3 multiplies traffic through
-`handleSignalReceived` and `handleMessageReceived`, both of which are now
-guarded.
-
-⚠ Its headline scenario is still **untestable by consumers** — see blocker 6.
 
 ## Pre-v0.1.0 blockers
 
