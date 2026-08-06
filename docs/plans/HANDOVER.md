@@ -21,11 +21,11 @@ is ~5 deliveries stale and needs re-verification before you act on it.**
 
 | | |
 |---|---|
-| `main` | **`ec25ffd`** — ADR-0165 merged and PUSHED 2026-08-06, clean, in sync with `origin/main` |
-| `feat/terminal-trigger-guard` | merged into `main`; safe to delete |
+| `main` | ADR-0165 merged at **`ec25ffd`** and PUSHED 2026-08-06; this handover commit sits on top. ⚠ **Do not trust a `main` SHA written here** — this file is committed onto `main`, so any SHA it quotes for `main` is stale the moment it lands. Re-derive: `git rev-parse --short main` |
+| `feat/terminal-trigger-guard` | merged (`d8854e5`); safe to delete |
 | `backup/terminal-trigger-guard-presquash` | `a3aa889` — the ten pre-squash commits, kept as provenance for the phase-by-phase history. Delete once you are confident you will not need it |
 | `parked/scope-and-fanout-design` | ADR-0158 draft (delivery 3) + a superseded ADR-0162 draft. **Do not read its 0162.** ⚠ ~5 deliveries stale |
-| `parked/terminal-transitions`, `feat/scope-lifecycle-correctness` | merged; delete or ignore |
+| `parked/terminal-transitions`, `feat/scope-lifecycle-correctness`, `feat/stale-command-filter` | all fully merged into `main` (verified with `git merge-base --is-ancestor`); delete or ignore |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept only for its audit tags |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — older parked bundle, docs only |
 | Latest ADR on `main` | **0165**. 0158 lands with delivery 3; 0155–0157 reserved by the older parked branch. Next free is **0166** |
@@ -52,8 +52,13 @@ handlers on 404 followed the ADR's own stated rationale and was backwards, becau
 id never reaches the engine — the branch fires only for a **ghost**, which is a
 state conflict. The proof was `TestErrConflict_EngineWrongStateClassified`
 failing, not an argument: it must *seed a synthetic task* to reach the branch at
-all. ADR-0165 carries **seven** correction blocks; read them before trusting any
-sentence in it.
+all. ADR-0165 carries **six** `> **Correction …`  blocks (`grep -c '^> \*\*Correction'`);
+read them before trusting any sentence in it. There is also a separate inline
+"⚠ Two audit corrections" paragraph, which records design-audit changes rather
+than implementation ones.
+
+⚠ The squashed commit message `d8854e5` says **seven**. That is wrong and it is
+pushed, so it stays: a delivered commit is never amended. Trust the grep.
 
 ## What's next
 
@@ -191,9 +196,9 @@ ADR-0165 discharged the first of three. Two remain, plus a small third it added:
   plan in `docs/plans/`.
 - **ADR-0165's task-by-task record** — every mutation, adjudication and false
   claim — `.superpowers/sdd/2026-08-05-structural-terminal-trigger-guard/progress.md`.
-- **Decisions** — `docs/adr/NNNN-*.md`, Nygard template. ADR-0165 carries four
-  correction blocks added during implementation; read them, they supersede the
-  original text.
+- **Decisions** — `docs/adr/NNNN-*.md`, Nygard template. ADR-0165 carries **six**
+  correction blocks added during implementation and the gate; read them, they
+  supersede the original text.
 - **Designs** — `docs/specs/`. ADR-0165's spec §9 carries the full audit record.
 - **Conventions and gates** — `CLAUDE.md`, including the new **Premise Discipline**.
 - **Pre-2026-07-08 history** — `docs/plans/HANDOVER-archive.md`, frozen.
