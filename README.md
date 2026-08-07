@@ -141,7 +141,7 @@ nodes:
   - id: charge
     kind: serviceTask
     action: charge-card
-    compensateAction: refund-card
+    compensate_action: refund-card
   - id: e
     kind: endEvent
 flows:
@@ -861,14 +861,14 @@ nodes:
   - id: charge
     kind: serviceTask
     action: charge-card
-    compensateAction: refund-card
-    retryPolicy: { maxAttempts: 5, initialInterval: 1s, backoffCoef: 2.0 }
+    compensate_action: refund-card
+    retry_policy: { max_attempts: 5, initial_interval: 1s, backoff_coef: 2.0 }
   - id: approve
     kind: userTask
-    eligibleRoles: [manager]
-    deadlineDuration: "3h"
-    deadlineFlow: escalate
-    deadlineAction: notify-manager
+    eligible_roles: [manager]
+    deadline_duration: "3h"
+    deadline_flow: escalate
+    deadline_action: notify-manager
   - id: end
     kind: endEvent
 flows:
@@ -877,11 +877,15 @@ flows:
   - { id: f3, source: approve, target: end }
 ```
 
-Valid `kind` values: `startEvent`, `endEvent`, `errorEndEvent`,
+Valid `kind` values: `startEvent`, `endEvent`,
 `serviceTask`, `userTask`, `receiveTask`, `sendTask`, `businessRuleTask`, `subProcess`,
 `callActivity`, `intermediateCatchEvent`, `intermediateThrowEvent`,
 `compensationThrowEvent`, `boundaryEvent`, `exclusiveGateway`, `parallelGateway`,
 `inclusiveGateway`, `eventBasedGateway`.
+
+An error or terminate end is an `endEvent` carrying `end_behavior: error` (with
+`error_code`) or `end_behavior: terminate` — there is no separate kind for either
+(ADR-0127).
 
 ---
 

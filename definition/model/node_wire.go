@@ -1,8 +1,11 @@
 package model
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/kartaladev/wrkflw/definition/flow"
 	"github.com/kartaladev/wrkflw/definition/model/validate"
@@ -180,8 +183,39 @@ func (d ProcessDefinition) MarshalJSON() ([]byte, error) {
 // node into its concrete type via the kind discriminator.
 func (d *ProcessDefinition) UnmarshalJSON(data []byte) error {
 	var dw definitionWire
-	if err := json.Unmarshal(data, &dw); err != nil {
+	// Strictness must be applied here, inside the custom unmarshaler: an outer
+	// json.Decoder's DisallowUnknownFields is discarded once this method takes
+	// over, so this is the only place it survives (ADR-0167 D1).
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&dw); err != nil {
+		// Decode reports empty/whitespace-only input as a bare io.EOF where
+		// json.Unmarshal reported a *json.SyntaxError. Letting io.EOF escape
+		// would be a real behaviour change, not just a message change: a caller
+		// testing errors.Is(err, io.EOF) to mean "clean end of stream" would
+		// silently skip an empty or truncated definition. Translate it back so
+		// the EOF identity stays inside this method (ADR-0167 D3).
+		if errors.Is(err, io.EOF) {
+			return errors.New("workflow-definition: unexpected end of definition JSON")
+		}
 		return err
+	}
+	// Decode stops after one value, so unlike json.Unmarshal it would accept
+	// anything following it. Reject trailing data explicitly, otherwise this
+	// change would loosen a check while tightening another (ADR-0167).
+	//
+	// Two distinct causes reach here and both matter to whoever is debugging a
+	// rejected definition: a genuine second JSON value (err == nil), and corrupt
+	// trailing bytes (a *json.SyntaxError naming the offending character). Keep
+	// the underlying error when there is one rather than collapsing both to the
+	// same message — the same shape decodeCursorInto uses in
+	// runtime/kernel/cursorcodec.go. Trailing WHITESPACE is legal JSON framing
+	// and stays accepted; only a further value or garbage is rejected.
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return fmt.Errorf("workflow-definition: trailing data after definition: %w", err)
+		}
+		return errors.New("workflow-definition: trailing data after definition")
 	}
 	d.ID = dw.ID
 	d.Version = dw.Version

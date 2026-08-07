@@ -12,50 +12,79 @@ top to bottom; it is meant to stay short enough that you can.
 > with the plan. This file carries only: where `main` is, what is in flight, and
 > what to do next.
 
-## State — updated 2026-08-08
+## State — updated 2026-08-08 (implementation session)
 
-**▶ Pick up here: ADR-0167 (strict definition decoding) is on
-`feat/strict-definition-decoding`, has SURVIVED its rule-#9 audit, and is
-IMPLEMENTATION-READY. No code is written yet.** The plan has 10 tasks; start at
-Task 1. Everything below about ADR-0158 remains true but is now the delivery
-*after* this one.
+**▶ Pick up here: ADR-0167 (strict definition decoding) is IMPLEMENTED and has
+PASSED the full Delivery Gate on `feat/strict-definition-decoding`.**
+`/code-review` found 6, all fixed and folded; `/security-review` found 0.
+**All that remains is `git merge --no-ff` to `main` and the push** — held for
+owner confirmation, since merge-to-main is the one step this project's cadence
+says to confirm. ⚠ The branch is pushed, so the push needs `--force-with-lease`.
 
 ⚠ **Two bugs on `main` were found while re-deriving ADR-0158, both executed, both
 untested, both independent of any in-flight delivery — see "Bugs found on `main`"
-below. One reports a rolled-back process as `completed`.**
+below. One reports a rolled-back process as `completed`.** They are the work after
+this delivery, each needing its own ADR.
 
-### ADR-0167 — audited, ready to implement
+### ADR-0167 — implemented, awaiting the Delivery Gate
 
-Branch `feat/strict-definition-decoding` (rebased onto `main`; do not quote its
-SHA, the delivery amend changes it). Bundle: `docs/specs/` +
-`docs/adr/0167-*` + `docs/plans/2026-08-07-strict-definition-decoding.md`.
+Bundle: `docs/specs/2026-08-07-*` + `docs/adr/0167-*` + `docs/plans/2026-08-07-*`.
+Per-delivery detail lives in that plan's `▶ Progress` block — read it before
+touching anything; it carries the verification table, the mutation table and the
+four ways implementation corrected the design.
 
-Rule-#9 audit ran 2026-08-08, two Opus auditors in separate worktrees, both
-briefed to EXECUTE: **24 findings, 2 CRITICAL + 9 MAJOR, verdict "not safe to
-implement as written."** All CRITICAL/MAJOR accepted and folded. The design
-survived; the bundle around it did not.
+- **Scope:** two call sites. `ParseYAML` decodes via `yaml.NewDecoder` +
+  `KnownFields(true)`, mapping `io.EOF` back to today's empty-document meaning.
+  `ProcessDefinition.UnmarshalJSON` applies `DisallowUnknownFields()` to its
+  **internal** decode — the only place it survives a custom unmarshaler — plus an
+  explicit trailing-token check, because `Decoder.Decode` would otherwise *loosen*
+  what `json.Unmarshal` rejected. `ParseYAML` additionally drains the decoder so a
+  second YAML document cannot smuggle content past strictness, and caps the
+  per-field error count. 91 inserted production lines, comments included.
+- **Delivery Gate 4/4.** `/code-review` **6 findings → 6 fixed** (godoc lost on
+  `ParseYAML`; the ADR-0144 migration trigger; an untagged-field hole in the
+  over-strictness guard; no test on the store's real `json.Unmarshal` path; an
+  input-dependent error type; the bound missing from the multi-document loop).
+  `/security-review` **0 vulnerabilities** — fail-open, silent field-dropping,
+  error-text leakage to HTTP and YAML deserialization each checked by execution.
+- **Gates, run on the implemented tree:** `go test -race ./...` **EXIT=0, 64
+  packages, 0 races**; repo coverage **73.9 %** (baseline 73.8 %, no regression);
+  `definition/model` **94.9 %**; `go vet ./...` EXIT=0; `golangci-lint run ./...`
+  0 issues; **7 mutations applied, 7 caught**, all compiled and restored clean.
+- ⚠ **Docker was approved by the owner for that one suite run.** The
+  ask-before-Docker rule is unchanged for the next session.
+- ⚠ **It is a DATA migration.** `DefinitionStore.GetDefinition`/`Lookup` decode
+  persisted blobs through the now-strict `UnmarshalJSON`. New standing constraint:
+  **a `NodeWire` field may not be removed without a migration.** `go vet` cannot
+  prove this safe — it compiles, it does not decode.
 
-- **The audit's best catch: `README.md` is a LIVE instance of the bug.** Lines
-  144, 864, 865, 868 use camelCase, so the published quickstart yields
-  `EligibleRoles=[] CompensateAction="" RetryPolicy=<nil>` on `main` today. The
-  spec had called camelCase a hypothetical misspelling; it is the spelling the
-  repo prescribes. `examples/readme_quickstart/main.go` uses the correct tags —
-  they drifted apart silently. README is now in scope.
-- **Two regressions the plan would have shipped:** the JSON `Decoder` swap
-  *loosens* trailing-data rejection (`{…} trailing garbage` goes from rejected to
-  `err=<nil>`), and the prescribed `io.EOF` mutation **does not compile**, giving
-  a `MUTATED_EXIT=1` indistinguishable from a real RED.
-- **Blast radius was wrong:** `internal/` was never swept.
-  `DefinitionStore.GetDefinition`/`Lookup` decode persisted definitions through
-  the strict path, so this is a **data** migration. Both auditors found it
-  independently. `go vet` cannot prove it safe — it compiles without decoding.
-- **Decided (owner, 2026-08-08):** no `x-`/`_` extension-key carve-out, despite
-  anchors and `x-` keys parsing today. Reversible pre-v0.1.0.
-- Verified good: every test the plan calls RED-first genuinely fails today (the
-  auditor ran them verbatim), and `definition/model` measures 93.8 % patched.
+**Adversarial Opus stand-ins ran before the owner gate** (two, separate
+worktrees, both briefed to EXECUTE against a `main` baseline) and produced seven
+fixes, all folded. The one that matters: **YAML strictness stopped at the first
+document**, so everything after a `---` was silently discarded — a *live instance
+of the very bypass this ADR closes*, since an overlay document declaring
+`eligible_roles` parsed clean and still built a task with none. `ParseYAML` now
+rejects any later document carrying content, while a bare trailing `---` stays
+legal. Five further findings were adjudicated record-not-fix and are filed below.
 
-⚠ Task 6 Step 1's `go test -race ./...` **needs Docker** — ask first. The
-container-free proxy is in the plan's Global Constraints.
+**⚠⚠ The one lesson worth carrying out of this delivery.** The rule-#9 audit's
+README finding named four camelCase lines. Re-deriving the list found **seven** —
+`deadlineDuration`, `deadlineFlow`, `deadlineAction` were missed — so following
+the audited plan literally would have shipped a README that still did not parse.
+Execution also found a *second*, unrelated README defect the audit never saw:
+`errorEndEvent` was documented as a valid `kind` and has never been registered.
+**An enumeration inherited from an upstream document — even an audited one — must
+be re-counted, never restated.** That is ADR-0159's lesson arriving for the third
+time.
+
+⚠⚠ **And it recurred inside the fix for itself.** The `CHANGELOG.md` entry I wrote
+*while correcting* that rotted enumeration contained two fresh false claims,
+caught by the stand-in review: "seven camelCase keys" (seven is the number of
+*lines*; there are 10 occurrences of 9 distinct names), and "`errorEndEvent` has
+never been registered" — an over-reaching *never* that is simply false, since
+ADR-0127 retired it (`dcfe3f1`, with `Name: "errorEndEvent"` still present at
+`dcfe3f1^`). **Verify the recap sentence, not just the analysis it summarises** —
+the summary is where the false claims live.
 
 ### Bugs found on `main` (not caused by any in-flight delivery)
 
@@ -93,16 +122,17 @@ ADR-0166 (`processtest` sees every signal/message waiter source) shipped
 | | |
 |---|---|
 | `main` | ADR-0166 is the newest bundle. ⚠ **Do not trust a `main` SHA written here** — this file is committed onto `main`, so any SHA it quotes for `main` is stale the moment it lands. Re-derive: `git rev-parse --short main` |
+| **`feat/strict-definition-decoding`** | **ADR-0167, implemented and green; owner gate outstanding.** ⚠ Pushed deliberately, so folding review fixes needs `git push --force-with-lease` |
 | `feat/processtest-waiter-enumeration` | merged; safe to delete |
 | `feat/terminal-trigger-guard` | merged (ADR-0165); safe to delete |
 | `backup/terminal-trigger-guard-presquash` | `a3aa889` — ADR-0165's ten pre-squash commits, provenance only. Delete when you no longer want the phase-by-phase history |
 | **`parked/scope-and-fanout-design`** | **delivery 3's draft ADR-0158 lives here** (`docs/adr/0158-signal-fires-every-matching-arm.md`, plan `docs/plans/2026-07-31-signal-arm-fanout.md`). ⚠ It also carries a **superseded ADR-0162 draft — do not read it.** ⚠ Its diff vs `main` is now **~18,000 deleted lines** of tests that `main` has since gained: the branch predates 2a, 2b, 0165 and 0166 entirely |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept only for its audit tags |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — older parked bundle, docs only. Owner DECIDED not to push it; do not re-raise |
-| Latest ADR | **0166**. 0158 lands with delivery 3; 0155–0157 are reserved by the older parked branch. Next free is **0167** |
+| Latest ADR | **0166** on `main`; **0167 is written, audited and implemented** but unmerged on `feat/strict-definition-decoding`. 0158 lands with delivery 3; 0155–0157 are reserved by the older parked branch. Next free is **0168** |
 | v0.1.0 | not tagged |
 
-## ▶ The immediate next work: delivery 3 (ADR-0158)
+## ▶ The work after ADR-0167's gate: delivery 3 (ADR-0158)
 
 **A broadcast signal must fire every matching arm per family, not just the first.**
 The draft is on `parked/scope-and-fanout-design`. Its prerequisites are now both
@@ -225,9 +255,12 @@ ADR-0165 discharged the first of three. Two remain, plus a small third it added:
 
 ## Pre-v0.1.0 blockers
 
-1. **Strict definition decoding** (`DisallowUnknownFields` / `KnownFields(true)`).
-   Lenient decode plus a fail-open `AuthzSpec` means future `eligible_*` tag drift
-   silently degrades to allow-all.
+1. ✅ **Strict definition decoding — IMPLEMENTED 2026-08-08, awaiting the owner
+   Delivery Gate** on `feat/strict-definition-decoding` (ADR-0167). Both decoders
+   reject unknown fields, no opt-out. ⚠ Not closed until it merges to `main`.
+   ⚠ It does **not** close the fail-open `AuthzSpec` itself — a hand-authored
+   empty spec still admits everyone. That is deliberate design on the type and
+   takes its own ADR.
 2. **A zero `next_run` cannot be armed on MySQL.** `runtime/timerops.go` arms a
    zero `nextRun` when `TriggerSpec.Next` reports `ok == false`;
    `DATETIME(6) NOT NULL` rejects `'0000-00-00'` under strict mode. Postgres and
@@ -268,6 +301,60 @@ ADR-0165 discharged the first of three. Two remain, plus a small third it added:
    it. Closing it needs an engine-side `TimerWaiters()`/`ArmedTimerNodes()`
    authority mirroring `SignalWaiters` — its own ADR. **Until then, no document
    may claim the ADR-0154 class is closed in `processtest` outright.**
+
+## Follow-ups opened by ADR-0167's adversarial review
+
+Each was **executed**, none is caused by ADR-0167 alone, and each was
+deliberately left out of that delivery to keep an already-breaking change
+bounded. In priority order:
+
+0. ⚠ **BEFORE DEPLOYING ADR-0167: audit stored definitions for five camelCase
+   keys.** ADR-0144 (`8179c0b`) moved the definition wire to snake_case; the five
+   tags that were camelCase before it — `compensateAction`, `compensationAction`,
+   `completionAction`, `correlationKey`, `messageName` — now fail strict decoding
+   (each verified: `json: unknown field "compensateAction"`). A row written
+   before `8179c0b` carrying any of them stops loading and every instance of that
+   definition becomes unrunnable. Found by `/code-review`. ⚠ Its report said
+   ADR-0144 renamed "*every* `NodeWire` json tag" and listed `eligibleRoles`,
+   `retryPolicy`, `deadlineFlow`, `timerTrigger` — **re-derived, that is wrong**:
+   only those five ever existed as camelCase (`git grep -ho 'json:"[a-z]\+[A-Z]...'
+   8179c0b^`). The conclusion held; the enumeration did not. Again.
+
+1. **An undecodable stored definition degrades silently, not loudly**
+   (`internal/persistence/store/definitions.go`). Three of five `Lookup` call
+   sites treat any decode error as not-found: `runtime/jobstore.go` skips the
+   timer and logs `"definition not found"` — so **every armed timer for that
+   definition is skipped forever**, deadlines and reminders included, behind a
+   misleading log; `runtime/calllink/notifier.go` `continue`s on a comment
+   asserting the failure is transient (now false), so the queue retries forever;
+   `service/service.go` serves a definition-less view. No sentinel, no metric, no
+   fallback, no migration tool. Historical exposure is **nil today** — 74 wire
+   tags added across 26 commits, **zero ever removed** — so the guard is cheap
+   now and expensive after the first removal. Wants `ErrDefinitionUndecodable`,
+   Error-level logging at those three sites, and a deploy-time `VerifyAll`.
+2. **The persisted human-task eligibility blob is still leniently decoded**
+   (`internal/persistence/store/humantask_store.go`). `authz.AuthzSpec` has no
+   struct tags and is decoded with a plain `json.Unmarshal`: both
+   `{"Role":["manager"]}` and `{"RolesX":["manager"]}` give
+   `err=<nil>, roles=[] → ALLOWED`. The store's own comment calls this column
+   load-bearing for authorization. Engine-written, so narrower than the
+   definition path — but it is the **last lenient decode of an authz-bearing
+   struct in the repo**.
+3. **`eligible_privileges` is never evaluated by `RoleAuthorizer`**, so a task
+   secured only by privileges is allow-all under the default authorizer. Pairs
+   naturally with the fail-open `AuthzSpec` ADR below.
+4. **The fail-open `AuthzSpec` itself** — ADR-0167 explicitly does not close it.
+   Executed: an absent spec **and** `eligible_roles: []`, `eligible_roles:` and
+   `eligible_roles: null` all parse cleanly and yield allow-all, so an author
+   writing `[]` for "nobody" gets "everybody". Needs its own ADR; a Warn log when
+   authorizing on an empty spec is a cheap interim mitigation.
+5. **Memory amplification on deeply nested subprocesses: 10.5x.** Each nesting
+   level builds a `json.Decoder` that buffers its input, so cost is
+   O(input x depth) where `json.Unmarshal` decoded in place. Measured at depth
+   3000 / 806 KB: 4.40 GB allocated vs 0.42 GB baseline, wall time unchanged.
+   Depth self-limits near 3300 via `encoding/json`'s token guard; **input size is
+   unbounded and the library imposes no size limit anywhere**. Capping subprocess
+   nesting is a semantic decision about definitions, hence its own item.
 
 ## Standing constraints
 
