@@ -11,7 +11,7 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
-// TestArmedCursorRoundTrip verifies EncodeArmedTimerCursor and DecodeArmedTimerCursor are
+// TestArmedTimerCursorRoundTrip verifies EncodeArmedTimerCursor and DecodeArmedTimerCursor are
 // inverses, including at sub-second precision. The cursor is opaque: the empty
 // string is the structural first-page sentinel, and a zero NextRun is an
 // ordinary value the engine really produces (runtime/timerops.go arms
@@ -19,7 +19,7 @@ import (
 // round trip rather than aliasing "no cursor" (ADR-0159). Whether such a row
 // reaches the table is backend-dependent — MySQL rejects it — but the cursor
 // must not depend on which.
-func TestArmedCursorRoundTrip(t *testing.T) {
+func TestArmedTimerCursorRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
@@ -81,10 +81,10 @@ func TestArmedCursorRoundTrip(t *testing.T) {
 	}
 }
 
-// TestDecodeArmedCursorRejectsGarbage verifies malformed cursors surface
+// TestDecodeArmedTimerCursorRejectsGarbage verifies malformed cursors surface
 // ErrBadArmedTimerCursor — a distinct sentinel from ErrBadCursor, whose message
 // names an instance cursor and would misreport a timer cursor to an operator.
-func TestDecodeArmedCursorRejectsGarbage(t *testing.T) {
+func TestDecodeArmedTimerCursorRejectsGarbage(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
