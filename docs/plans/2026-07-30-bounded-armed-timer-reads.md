@@ -24,9 +24,9 @@ Landed, RED observed before each new symbol:
 
 - **S1.1** `kernel.TimerStore.ArmedTimer` (interface + `MemTimerStore` map
   lookup, `ListArmed` KEPT with the snapshot-consistency note); the cursor seam
-  `EncodeArmedCursor`/`DecodeArmedCursor`/`ErrBadArmedCursor`/
+  `EncodeArmedTimerCursor`/`DecodeArmedTimerCursor`/`ErrBadArmedTimerCursor`/
   `ArmedTimerFilter`/`ArmedTimerPage` in `runtime/kernel/armed_timer_lister.go`;
-  `ErrBadArmedCursor` wired into the 400 arm of `httpcore.ClassifyError`.
+  `ErrBadArmedTimerCursor` wired into the 400 arm of `httpcore.ClassifyError`.
 - **S1.2** `dialect.ArmedTimerKeysetPredicate()` / `ArmedTimerKeysetArgs(...)`
   returning the ARGS SLICE — row value on Postgres + SQLite (3 args), expanded
   lexicographic OR on MySQL (5 args). The existing two-column pair is untouched.
@@ -92,7 +92,7 @@ if they share a package. A = T1+T2+T3 (`internal/persistence/store`), B = T4
 
 1. **A zero `next_run` is NOT persistable on MySQL** — `DATETIME(6) NOT NULL`
    rejects the `'0000-00-00'` the driver emits under strict mode. ADR, spec, plan
-   and the `EncodeArmedCursor` doc comment all claimed it for all three backends.
+   and the `EncodeArmedTimerCursor` doc comment all claimed it for all three backends.
    All four corrected; the paging matrix asserts the rejection. The opaque-cursor
    argument is unaffected. **Backlog:** a timer whose trigger cannot compute a next
    run cannot be armed at all on MySQL, and `jobStore.Save` propagates the error so
@@ -266,15 +266,15 @@ direct lookup on the existing `armed` map under `s.mu`.
 Add, in the idiom of `lister.go`'s existing `EncodeCursor`/`DecodeCursor`/
 `ErrBadCursor`/`NormalizeLimit`:
 
-- `EncodeArmedCursor(nextRun time.Time, instanceID, timerID string) string` — the
+- `EncodeArmedTimerCursor(nextRun time.Time, instanceID, timerID string) string` — the
   **same base64 envelope as `EncodeCursor`** (`lister.go:26-44`). `time.Time`'s JSON
   form is lossless, so do **not** try to encode a fixed-width nine-digit layout here.
   You could not anyway: `textTimeLayout` is unexported
   (`internal/persistence/store/time_codec.go:26`) and `store` imports `kernel`
   (`timerstore.go:17`), so `kernel` cannot import `store`; duplicating the constant
   would split one serialization decision across two packages.
-- `DecodeArmedCursor(cursor string) (time.Time, string, string, error)`.
-- `ErrBadArmedCursor` — a **new** sentinel, not `ErrBadCursor`, whose message reads
+- `DecodeArmedTimerCursor(cursor string) (time.Time, string, string, error)`.
+- `ErrBadArmedTimerCursor` — a **new** sentinel, not `ErrBadCursor`, whose message reads
   "malformed instance cursor" (`lister.go:15`) and would misreport a timer cursor to
   an operator. Extend the 400 mapping at `transport/http/httpcore/errors.go:36`.
 - `ArmedTimerFilter{Cursor string; Limit int; IncludeTotal bool}` and
@@ -457,7 +457,7 @@ and `transport/http/{stdlib,gin,fiber}/groups.go`.
 `AdminTimers` currently takes **no query argument** (`admin_endpoints.go:333`), so
 it gains one plus a query DTO mirroring `ListInstancesQuery` (`dto.go:104-105`).
 `limit` is **clamped, not rejected** — and clamped in the store only, not twice. A
-malformed cursor is a **400** via `ErrBadArmedCursor` — never a silent reset to page
+malformed cursor is a **400** via `ErrBadArmedTimerCursor` — never a silent reset to page
 one, which would make an operator paging a large table loop without noticing.
 
 `Stats` is called only when the request asks for the total; `IncludeTotal` defaults

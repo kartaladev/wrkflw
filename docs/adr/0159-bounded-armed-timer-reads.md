@@ -90,8 +90,8 @@ capability route would be correct.
 **Page the admin listing using the seam the repository already has.**
 `runtime/kernel/lister.go` provides opaque base64 cursors with `ErrBadCursor`
 (`:14-41`), `NormalizeLimit` clamping (`:48`), and a page struct carrying
-`NextCursor` + `HasMore` (`:112-116`). This adds `EncodeArmedCursor` /
-`DecodeArmedCursor` / `ArmedTimerFilter` / `ArmedTimerPage` in that idiom and changes
+`NextCursor` + `HasMore` (`:112-116`). This adds `EncodeArmedTimerCursor` /
+`DecodeArmedTimerCursor` / `ArmedTimerFilter` / `ArmedTimerPage` in that idiom and changes
 `service.TimerAdmin.ListArmed` to `ListArmedPage(ctx, kernel.ArmedTimerFilter)` — a
 filter struct, matching `InstanceLister.List(ctx, InstanceFilter)`, so a later
 filter (by `Kind`) does not break the signature again.
@@ -125,6 +125,19 @@ compute a next run cannot be armed at all on MySQL, and the error fails the
 step) **predates this ADR and is out of its scope**; it is recorded as backlog,
 since deciding between rejecting and normalising such an arm is its own
 decision.
+
+**Correction, source-verified 2026-08-07.** Every revision of this ADR up to and
+including the pushed one named the cursor seam `EncodeArmedCursor` /
+`DecodeArmedCursor` / `ErrBadArmedCursor`. **No such symbols exist.** What shipped
+is `EncodeArmedTimerCursor` / `DecodeArmedTimerCursor` / `ErrBadArmedTimerCursor`
+in `runtime/kernel/armed_timer_paging.go` — the `Timer` infix was added during
+implementation to keep the three names parallel with `ArmedTimerFilter` /
+`ArmedTimerPage`, and the file itself was renamed from `armed_timer_lister.go`
+(it holds no lister). The names above are corrected in place throughout this ADR,
+its spec and its plan; only this note records the original spelling. Nothing about
+the decision changes — the defect was purely that a reader grepping for the ADR's
+own symbols found nothing.
+
 The cursor body is the same base64 envelope as `EncodeCursor`; `time.Time`'s JSON
 form is lossless, so no fixed-width requirement applies to the cursor's own bytes.
 The fixed-width nine-digit layout is load-bearing only at the **SQL bind** against

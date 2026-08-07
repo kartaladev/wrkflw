@@ -135,13 +135,13 @@ inventing a parallel vocabulary:
 
 ```go
 // kernel
-func EncodeArmedCursor(nextRun time.Time, instanceID, timerID string) string
-func DecodeArmedCursor(cursor string) (nextRun time.Time, instanceID, timerID string, err error)
+func EncodeArmedTimerCursor(nextRun time.Time, instanceID, timerID string) string
+func DecodeArmedTimerCursor(cursor string) (nextRun time.Time, instanceID, timerID string, err error)
 
-// ErrBadArmedCursor is distinct from ErrBadCursor, whose message reads
+// ErrBadArmedTimerCursor is distinct from ErrBadCursor, whose message reads
 // "malformed instance cursor" (lister.go:15) and would misreport a timer
 // cursor to an operator. errors.go:36's 400 mapping is extended to it.
-var ErrBadArmedCursor = errors.New("workflow-runtime: malformed armed-timer cursor")
+var ErrBadArmedTimerCursor = errors.New("workflow-runtime: malformed armed-timer cursor")
 
 type ArmedTimerFilter struct {
 	Cursor       string // empty = first page
@@ -465,7 +465,7 @@ no other way to know the divergence is deliberate and safe.
 Production:
 
 - `runtime/kernel/timerstore.go` — `ArmedTimer` on the port and on `MemTimerStore`.
-- `runtime/kernel/lister.go` (or a sibling) — `EncodeArmedCursor`, `DecodeArmedCursor`, `ArmedTimerPage`.
+- `runtime/kernel/lister.go` (or a sibling) — `EncodeArmedTimerCursor`, `DecodeArmedTimerCursor`, `ArmedTimerPage`.
 - `internal/persistence/store/timerstore.go` — `ArmedTimer`, `ListArmedPage`.
 - `internal/persistence/dialect/{dialect,postgres,mysql,sqlite}.go` — the three-column keyset capability.
 - `internal/persistence/store/migrations/{postgres,mysql,sqlite}/0001_init.sql` — edited in place.
@@ -540,7 +540,7 @@ Hot-path-first per Golang rule #8.
    `…999999500Z` rounds *up* on MySQL into the next second, moving the row relative
    to its siblings and diverging the tie and `HasMore` expectations per dialect.
    All timestamp fixtures are therefore `Truncate(time.Millisecond)`.
-   A malformed cursor is a 400 via `ErrBadArmedCursor`.
+   A malformed cursor is a 400 via `ErrBadArmedTimerCursor`.
 5. **Per-dialect proof that a page is a seek, not a scan.** Without this the MySQL
    regression ships green — plan Risk 1. The mechanics matter:
    - MySQL: `Handler_read_*` are **session**-scoped, but `dbtest.RunTestMySQL`
@@ -647,7 +647,7 @@ Also folded: `math.MaxInt + 1` overflowing to a negative `LIMIT` (SQLite reads i
 *no limit*, restoring the unbounded read) · clamp-then-increment order and the actual
 `NormalizeLimit` bounds · a filter struct instead of positional parameters ·
 `IncludeTotal`, so paging stops issuing `count(*)` on every request · store error
-promoted to "undeterminable" rather than "not recurring" · `ErrBadArmedCursor` ·
+promoted to "undeterminable" rather than "not recurring" · `ErrBadArmedTimerCursor` ·
 the dialect capability named and returning args rather than a count · µs-vs-ns
 rounding, so cursor fidelity is asserted against the read-back row not the fixture ·
 T5 scoped to `ArmedTimer` (`MemTimerStore` has no paging) · the corrupt-row test

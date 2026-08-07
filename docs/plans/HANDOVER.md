@@ -166,9 +166,14 @@ ADR-0165 discharged the first of three. Two remain, plus a small third it added:
    SQLite store it fine. Needs a reject-vs-normalise ADR.
 3. `Upsert` can persist `State: Claimed, Claim: nil` — the read path upholds the
    invariant, the write path does not.
-4. **ADR-0159 names two symbols that do not exist** (`EncodeArmedCursor` /
-   `DecodeArmedCursor`; shipped names are `EncodeArmedTimerCursor` /
-   `DecodeArmedTimerCursor`). Merged and pushed, so it takes its own `docs:` commit.
+4. ✅ **ADR-0159's misnamed symbols — CLOSED 2026-08-07** (branch
+   `docs/adr-0159-symbol-names`). ⚠ It was **three** symbols, not the two recorded
+   here: `ErrBadArmedCursor` → `ErrBadArmedTimerCursor` was missed by the original
+   entry, and two test functions (`TestArmedCursorRoundTrip`,
+   `TestDecodeArmedCursorRejectsGarbage`) carried the dead name while a third in the
+   same file already used the right one. Corrected in place across the ADR, spec and
+   plan; the ADR carries a provenance note recording the original spelling.
+   **Lesson: the blocker's own enumeration had rotted — re-count, don't inherit.**
 5. **`TestPgxNotifierListenDrainsBeforePollInterval` is load-flaky.**
    `require.Eventually(..., 5s, 25ms)` at
    `internal/persistence/store/notifier_pgx_test.go:98` waits on a NOTIFY-driven
