@@ -12,12 +12,80 @@ top to bottom; it is meant to stay short enough that you can.
 > with the plan. This file carries only: where `main` is, what is in flight, and
 > what to do next.
 
-## State — updated 2026-08-07
+## State — updated 2026-08-08
 
-**▶ Pick up here: ADR-0166 is SHIPPED. The next delivery is delivery 3 —
-ADR-0158, "a broadcast signal fires every matching arm per family" — whose bundle
-is parked, ~6 deliveries stale, and has NEVER had its rule-#9 audit. Do not
-implement it from the parked draft; re-derive its premises first (see below).**
+**▶ Pick up here: ADR-0167 (strict definition decoding) is on
+`feat/strict-definition-decoding`, has SURVIVED its rule-#9 audit, and is
+IMPLEMENTATION-READY. No code is written yet.** The plan has 10 tasks; start at
+Task 1. Everything below about ADR-0158 remains true but is now the delivery
+*after* this one.
+
+⚠ **Two bugs on `main` were found while re-deriving ADR-0158, both executed, both
+untested, both independent of any in-flight delivery — see "Bugs found on `main`"
+below. One reports a rolled-back process as `completed`.**
+
+### ADR-0167 — audited, ready to implement
+
+Branch `feat/strict-definition-decoding` (rebased onto `main`; do not quote its
+SHA, the delivery amend changes it). Bundle: `docs/specs/` +
+`docs/adr/0167-*` + `docs/plans/2026-08-07-strict-definition-decoding.md`.
+
+Rule-#9 audit ran 2026-08-08, two Opus auditors in separate worktrees, both
+briefed to EXECUTE: **24 findings, 2 CRITICAL + 9 MAJOR, verdict "not safe to
+implement as written."** All CRITICAL/MAJOR accepted and folded. The design
+survived; the bundle around it did not.
+
+- **The audit's best catch: `README.md` is a LIVE instance of the bug.** Lines
+  144, 864, 865, 868 use camelCase, so the published quickstart yields
+  `EligibleRoles=[] CompensateAction="" RetryPolicy=<nil>` on `main` today. The
+  spec had called camelCase a hypothetical misspelling; it is the spelling the
+  repo prescribes. `examples/readme_quickstart/main.go` uses the correct tags —
+  they drifted apart silently. README is now in scope.
+- **Two regressions the plan would have shipped:** the JSON `Decoder` swap
+  *loosens* trailing-data rejection (`{…} trailing garbage` goes from rejected to
+  `err=<nil>`), and the prescribed `io.EOF` mutation **does not compile**, giving
+  a `MUTATED_EXIT=1` indistinguishable from a real RED.
+- **Blast radius was wrong:** `internal/` was never swept.
+  `DefinitionStore.GetDefinition`/`Lookup` decode persisted definitions through
+  the strict path, so this is a **data** migration. Both auditors found it
+  independently. `go vet` cannot prove it safe — it compiles without decoding.
+- **Decided (owner, 2026-08-08):** no `x-`/`_` extension-key carve-out, despite
+  anchors and `x-` keys parsing today. Reversible pre-v0.1.0.
+- Verified good: every test the plan calls RED-first genuinely fails today (the
+  auditor ran them verbatim), and `definition/model` measures 93.8 % patched.
+
+⚠ Task 6 Step 1's `go test -race ./...` **needs Docker** — ask first. The
+container-free proxy is in the plan's Global Constraints.
+
+### Bugs found on `main` (not caused by any in-flight delivery)
+
+Both surfaced by the ADR-0158 premise re-derivation, both executed, **neither
+covered by any existing test**.
+
+📄 **Full executed evidence — read before acting on either:**
+`docs/specs/2026-08-08-adr-0158-premise-evidence.md`. It holds the writer table
+(every path that sets a terminal or `Compensating` status, and which arm families
+each drains), the verbatim probe output for both bugs, and Appendices A and B —
+24 re-derived ADR-0158 claims with their real locations on today's `main`. That
+file is **evidence, not a decision**; it is the input a 0158 rewrite starts from,
+and it exists because the reports would otherwise have died in a session
+scratchpad.
+
+1. **An arm firing during compensation destroys the rollback.** A boundary arm
+   fired while `status=compensating` consumes its host and completes the process:
+   `compensating → completed`, `CompleteInstance{Result:map[]}` published,
+   `Compensating.ActiveCmdID` cleared, and the outstanding compensation action's
+   `ActionCompleted` then refused by dispatch's terminal guard (`outcome=dropped`).
+   **The rollback silently never finishes.** `IsTerminal()` reads false here and
+   does not stop it; `s.Status != StatusRunning` does. Verified fix shape:
+   `if s.Status != StatusRunning { return nil, nil }` in `fireBoundaryArm` —
+   engine suite stays green with it. `grep -c 'Status'` on `step_boundaries.go`
+   and `step_gateways.go` returns **0 and 0**. Needs its own ADR.
+2. **Post-terminal resurrection via tier 4.** `handleUnhandledError`'s failFast
+   branch fails the instance *without* dropping tokens, so a token resumes and
+   drives on a dead instance, arming a boundary and emitting a `ScheduleTimer`
+   that ADR-0161's filter exempts. ⚠ Check against ADR-0164's five known
+   resurrection routes — this may be a sixth.
 
 ADR-0166 (`processtest` sees every signal/message waiter source) shipped
 2026-08-07, closing pre-v0.1.0 blocker 6. ADR-0165 shipped 2026-08-06.
