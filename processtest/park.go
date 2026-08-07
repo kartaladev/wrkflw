@@ -69,10 +69,16 @@ type Park struct {
 	Node string
 	// OpenTasks holds every open (unclaimed or claimed) human task.
 	OpenTasks []humantask.HumanTask
-	// AwaitingSignals holds the distinct signal names any token is waiting on.
+	// AwaitingSignals holds the distinct signal names the instance can be woken by,
+	// as enumerated by [engine.InstanceState.SignalWaiters]: token signal-catch
+	// awaits, armed signal boundaries, event-based-gateway signal arms, and
+	// signal-triggered event sub-process arms.
 	AwaitingSignals []string
-	// AwaitingMessages holds the distinct message names any token is waiting on.
-	AwaitingMessages []string
+	// AwaitingMessages holds the distinct message waiters the instance can be woken
+	// by, as enumerated by [engine.InstanceState.MessageWaiters] — the same four
+	// sources as AwaitingSignals. Distinct is on the {Name, CorrelationKey} PAIR:
+	// two constructs awaiting one name under different keys are two waiters.
+	AwaitingMessages []engine.MessageWaiter
 	// HasArmedTimers reports whether the instance has any armed timer.
 	HasArmedTimers bool
 	// Incidents holds the instance's open incident records.
@@ -91,6 +97,12 @@ func IsTerminal(s engine.Status) bool {
 // HasArmedTimers, Incidents) and sets Reason to the highest-priority park:
 // terminal > human-task > incident > signal > message > timer > async-child >
 // unknown.
+//
+// AwaitingSignals and AwaitingMessages come from the engine's own authorities,
+// [engine.InstanceState.SignalWaiters] and [engine.InstanceState.MessageWaiters],
+// so an instance parked purely on a boundary, event-gateway or event-subprocess
+// ARM classifies as a signal/message park like a token await does — such arms set
+// no field on any token.
 func Classify(state engine.InstanceState) Park {
 	p := Park{
 		State:          state,
@@ -104,8 +116,13 @@ func Classify(state engine.InstanceState) Park {
 			p.OpenTasks = append(p.OpenTasks, tsk)
 		}
 	}
-	p.AwaitingSignals = distinctAwaits(state.Tokens, func(t engine.Token) string { return t.AwaitSignal })
-	p.AwaitingMessages = distinctAwaits(state.Tokens, func(t engine.Token) string { return t.AwaitMessage })
+	// Delegate to the engine's waiter authorities rather than re-deriving from
+	// Token.AwaitSignal/AwaitMessage: those cover only the FIRST of four sources,
+	// silently dropping boundary, event-gateway and event-subprocess arms
+	// (ADR-0166). The authorities may return duplicates; Park documents these
+	// fields as distinct, so dedup here.
+	p.AwaitingSignals = distinctStrings(state.SignalWaiters())
+	p.AwaitingMessages = distinctWaiters(state.MessageWaiters())
 
 	// Primary reason, in priority order.
 	switch {
@@ -119,10 +136,10 @@ func Classify(state engine.InstanceState) Park {
 		p.Node = incidentNode(state)
 	case len(p.AwaitingSignals) > 0:
 		p.Reason = ReasonSignal
-		p.Node = firstNodeWhere(state.Tokens, func(t engine.Token) bool { return t.AwaitSignal != "" })
+		p.Node = awaitNode(state, func(t engine.Token) bool { return t.AwaitSignal != "" })
 	case len(p.AwaitingMessages) > 0:
 		p.Reason = ReasonMessage
-		p.Node = firstNodeWhere(state.Tokens, func(t engine.Token) bool { return t.AwaitMessage != "" })
+		p.Node = awaitNode(state, func(t engine.Token) bool { return t.AwaitMessage != "" })
 	case p.HasArmedTimers:
 		p.Reason = ReasonTimer
 		p.Node = firstNodeWhere(state.Tokens, func(t engine.Token) bool { return t.State == engine.TokenWaiting })
@@ -138,11 +155,14 @@ func Classify(state engine.InstanceState) Park {
 	return p
 }
 
-func distinctAwaits(tokens []engine.Token, get func(engine.Token) string) []string {
-	seen := make(map[string]struct{})
+// distinctStrings returns in with empties dropped and duplicates collapsed,
+// preserving first-seen order. [engine.InstanceState.SignalWaiters] documents that
+// it does not dedup (a set-based SignalBus.Sync collapses them downstream), so
+// Park does.
+func distinctStrings(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
 	var out []string
-	for _, t := range tokens {
-		v := get(t)
+	for _, v := range in {
 		if v == "" {
 			continue
 		}
@@ -153,6 +173,75 @@ func distinctAwaits(tokens []engine.Token, get func(engine.Token) string) []stri
 		out = append(out, v)
 	}
 	return out
+}
+
+// distinctWaiters is distinctStrings for message waiters, collapsing on the whole
+// {Name, CorrelationKey} pair: two constructs awaiting one name under different
+// keys are genuinely different waiters and both must survive.
+func distinctWaiters(in []engine.MessageWaiter) []engine.MessageWaiter {
+	seen := make(map[engine.MessageWaiter]struct{}, len(in))
+	var out []engine.MessageWaiter
+	for _, w := range in {
+		if w.Name == "" {
+			continue
+		}
+		if _, ok := seen[w]; ok {
+			continue
+		}
+		seen[w] = struct{}{}
+		out = append(out, w)
+	}
+	return out
+}
+
+// awaitNode returns the node id of the first token matching pred, falling back to
+// the first waiting token's node when no token carries the await at all. That
+// fallback is the arm-derived case (ADR-0166 D5): a boundary, event-gateway or
+// event-subprocess arm sets no Token.AwaitSignal/AwaitMessage, so Node would
+// otherwise collapse to "" and degrade both errors a consumer sees
+// ([ErrUnhandledPark], [ErrDriveLimitExceeded]). The arm's OWN node stays
+// unreachable — the arm slices on [engine.InstanceState] have unexported element
+// types.
+func awaitNode(state engine.InstanceState, pred func(engine.Token) bool) string {
+	if id := firstNodeWhere(state.Tokens, pred); id != "" {
+		return id
+	}
+	return firstNodeWhere(state.Tokens, func(t engine.Token) bool { return t.State == engine.TokenWaiting })
+}
+
+// armDerivedReason reports whether p's primary Reason came from an ARM rather
+// than from a token await: the name reached AwaitingSignals/AwaitingMessages via
+// a boundary, event-gateway or event-subprocess arm, and no token carries the
+// matching await.
+//
+// It exists for the timer promotion in harnessEnv.classify (ADR-0166 D3). Once
+// arms compete in the ladder, an arm-derived ReasonSignal would otherwise displace
+// ReasonAsyncChild/ReasonUnknown and silently disable [AutoTimers] on any
+// definition carrying a live arm. Only an arm-derived reason yields to the timer;
+// a genuine token signal-catch still outranks it.
+func armDerivedReason(p Park) bool {
+	switch p.Reason {
+	case ReasonSignal, ReasonMessage:
+		// NEITHER await may be token-carried. Testing only the await that produced
+		// the reason is not enough: a signal ARM raises ReasonSignal while a token
+		// holds a live AwaitMessage, and treating that as arm-derived promotes the
+		// park to ReasonTimer — firing a timer that a genuine token message await
+		// should have outranked.
+		return !anyToken(p.State.Tokens, func(t engine.Token) bool {
+			return t.AwaitSignal != "" || t.AwaitMessage != ""
+		})
+	default:
+		return false
+	}
+}
+
+func anyToken(tokens []engine.Token, pred func(engine.Token) bool) bool {
+	for _, t := range tokens {
+		if pred(t) {
+			return true
+		}
+	}
+	return false
 }
 
 func hasIncidentToken(tokens []engine.Token) bool {

@@ -12,72 +12,113 @@ top to bottom; it is meant to stay short enough that you can.
 > with the plan. This file carries only: where `main` is, what is in flight, and
 > what to do next.
 
-## State — updated 2026-08-06
+## State — updated 2026-08-07
 
-**▶ ADR-0165 (structural terminal-trigger guard) is SHIPPED — merged `--no-ff`
-and pushed 2026-08-06. Nothing is in flight. Pick the next delivery from
-"What's next" below; delivery 3 (ADR-0158) is the intended one, but its bundle
-is ~5 deliveries stale and needs re-verification before you act on it.**
+**▶ Pick up here: ADR-0166 is SHIPPED. The next delivery is delivery 3 —
+ADR-0158, "a broadcast signal fires every matching arm per family" — whose bundle
+is parked, ~6 deliveries stale, and has NEVER had its rule-#9 audit. Do not
+implement it from the parked draft; re-derive its premises first (see below).**
+
+ADR-0166 (`processtest` sees every signal/message waiter source) shipped
+2026-08-07, closing pre-v0.1.0 blocker 6. ADR-0165 shipped 2026-08-06.
 
 | | |
 |---|---|
-| `main` | ADR-0165 merged at **`ec25ffd`** and PUSHED 2026-08-06; this handover commit sits on top. ⚠ **Do not trust a `main` SHA written here** — this file is committed onto `main`, so any SHA it quotes for `main` is stale the moment it lands. Re-derive: `git rev-parse --short main` |
-| `feat/terminal-trigger-guard` | merged (`d8854e5`); safe to delete |
-| `backup/terminal-trigger-guard-presquash` | `a3aa889` — the ten pre-squash commits, kept as provenance for the phase-by-phase history. Delete once you are confident you will not need it |
-| `parked/scope-and-fanout-design` | ADR-0158 draft (delivery 3) + a superseded ADR-0162 draft. **Do not read its 0162.** ⚠ ~5 deliveries stale |
-| `parked/terminal-transitions`, `feat/scope-lifecycle-correctness`, `feat/stale-command-filter` | all fully merged into `main` (verified with `git merge-base --is-ancestor`); delete or ignore |
+| `main` | ADR-0166 is the newest bundle. ⚠ **Do not trust a `main` SHA written here** — this file is committed onto `main`, so any SHA it quotes for `main` is stale the moment it lands. Re-derive: `git rev-parse --short main` |
+| `feat/processtest-waiter-enumeration` | merged; safe to delete |
+| `feat/terminal-trigger-guard` | merged (ADR-0165); safe to delete |
+| `backup/terminal-trigger-guard-presquash` | `a3aa889` — ADR-0165's ten pre-squash commits, provenance only. Delete when you no longer want the phase-by-phase history |
+| **`parked/scope-and-fanout-design`** | **delivery 3's draft ADR-0158 lives here** (`docs/adr/0158-signal-fires-every-matching-arm.md`, plan `docs/plans/2026-07-31-signal-arm-fanout.md`). ⚠ It also carries a **superseded ADR-0162 draft — do not read it.** ⚠ Its diff vs `main` is now **~18,000 deleted lines** of tests that `main` has since gained: the branch predates 2a, 2b, 0165 and 0166 entirely |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept only for its audit tags |
-| `feat/durable-waiters-delivery-correctness` | `434535d` — older parked bundle, docs only |
-| Latest ADR on `main` | **0165**. 0158 lands with delivery 3; 0155–0157 reserved by the older parked branch. Next free is **0166** |
+| `feat/durable-waiters-delivery-correctness` | `434535d` — older parked bundle, docs only. Owner DECIDED not to push it; do not re-raise |
+| Latest ADR | **0166**. 0158 lands with delivery 3; 0155–0157 are reserved by the older parked branch. Next free is **0167** |
 | v0.1.0 | not tagged |
 
-### How ADR-0165 shipped
+## ▶ The immediate next work: delivery 3 (ADR-0158)
 
-One squashed feature bundle (`d8854e5`) under merge `ec25ffd`. The squashed tree
-was verified byte-identical to the ten-commit branch tree, and the merge tree
-byte-identical to the squashed one (`818d47f4…` both sides), so the green suite
-run certifies exactly the content on `main`.
+**A broadcast signal must fire every matching arm per family, not just the first.**
+The draft is on `parked/scope-and-fanout-design`. Its prerequisites are now both
+shipped: ADR-0165 (terminal-trigger guard) and ADR-0166 (the harness can finally
+drive an arm-only park, so delivery 3's headline scenario is testable at all).
 
-Gate 3/3: full suite on the merged tree **EXIT=0**, 64 packages, zero failures,
-zero data races under `-race`, repo **73.6 %**, `engine` **91.9 %** (baseline
-91.8 % held), lint 0 — re-run green after the review fixes.
-**`/code-review` 5 findings → 5 fixed.** **`/security-review` 0 vulnerabilities**,
-assessed a net tightening.
+**Before you act on that bundle, re-derive it.** It has never survived a rule-#9
+audit, and every engine file it touches has moved under it:
 
-⚠ **Two design claims died on execution in this delivery, not on review.**
-Decision 5's predicate shipped INVERTED and reddened four already-reviewed tests.
-Then `/code-review`'s Medium **reversed twice**: converging the four human-task
-handlers on 404 followed the ADR's own stated rationale and was backwards, because
-`service.deliverTaskTrigger` reads the task store on its FIRST line, so an unknown
-id never reaches the engine — the branch fires only for a **ghost**, which is a
-state conflict. The proof was `TestErrConflict_EngineWrongStateClassified`
-failing, not an argument: it must *seed a synthetic task* to reach the branch at
-all. ADR-0165 carries **six** `> **Correction …`  blocks (`grep -c '^> \*\*Correction'`);
-read them before trusting any sentence in it. There is also a separate inline
-"⚠ Two audit corrections" paragraph, which records design-audit changes rather
-than implementation ones.
+- `engine/step_triggers.go`, `engine/trigger.go`, `engine/trigger_validate.go`
+  were reshaped by **ADR-0165**, which deleted eight hand-copied terminal guards
+  and moved enforcement into `dispatch` via `terminalPolicy()` on the sealed
+  `Trigger` interface.
+- `engine/state.go` and the scope lifecycle moved under **ADR-0162/0163** and
+  **ADR-0164**.
+- The parked branch's own test files are ~18k lines behind `main`.
 
-⚠ The squashed commit message `d8854e5` says **seven**. That is wrong and it is
-pushed, so it stays: a delivered commit is never amended. Trust the grep.
+So: re-read the draft, **execute** every claim it makes about current behaviour
+(Premise Discipline — it predates that section of CLAUDE.md entirely), rewrite the
+spec/ADR/plan against today's code, then run the rule-#9 audit on the rebuilt
+bundle before any implementation.
 
-## What's next
+⚠ **ADR-0154 left "first match per family" OPEN deliberately** — that is exactly
+the gap 0158 closes. See `docs/adr/0154-*` and the signal-waiters topic memory.
 
-Nothing is in flight. Pick one:
+### Then, in priority order
 
-1. **Delivery 3 — ADR-0158, a broadcast signal fires every matching arm per
-   family.** The intended next delivery. Draft on `parked/scope-and-fanout-design`.
-   ⚠ **Still needs its own rule-#9 audit in split form**, and its bundle is now
-   ~5 deliveries stale: it predates 2a, 2b and 0165 entirely, still carries
-   superseded 0161/0162 drafts, and every engine file it touches
-   (`step_triggers.go`, `step_cancel.go`, `state.go`) has moved under it — 0165 in
-   particular deleted eight guards and reshaped `dispatch`.
-   **Re-verify every premise against source, by execution, before acting on it.**
-   ADR-0165 was its prerequisite and is now shipped: delivery 3 multiplies traffic
-   through `handleSignalReceived` and `handleMessageReceived`, both now guarded.
-   ⚠ Its headline scenario is still **untestable by consumers** — see blocker 6.
-2. **The two ADRs still owed by delivery 2b** — incident-history retention and
-   zombie scopes (below).
-3. **A pre-v0.1.0 blocker** from the list below.
+1. The **two ADRs still owed by delivery 2b** — incident-history retention (owner
+   chose REVISIT; likely carry the incident error into the terminal-event payload)
+   and **zombie scopes** (ADR-0162 ships a stale sentence claiming `endInstance`
+   closes them; it never touches `s.Scopes`).
+2. A pre-v0.1.0 blocker from the list below.
+
+## How ADR-0166 shipped, and the one lesson worth carrying
+
+`Classify` now delegates to `engine.InstanceState.SignalWaiters()`/
+`MessageWaiters()` instead of re-deriving source 1 from token fields, so boundary,
+event-gateway and event-subprocess arms are finally visible to `PublishSignal`/
+`DeliverMessage`. `Park.AwaitingMessages` became `[]engine.MessageWaiter`
+(breaking), `Park.Node` falls back for arm-derived parks, and the `ReasonTimer`
+promotion widened so `AutoTimers()` keeps working beside a live arm.
+
+Gate 4/4: `processtest` **90.2 %** (baseline 88.0), full suite **EXIT=0 / 64
+packages / 0 races / repo 73.8 %** run **twice** (the first run certified a tree
+`/code-review`'s fixes then changed), **`/code-review` 4 findings → 4 fixed**,
+**`/security-review` 0 vulnerabilities**. 20 tests; 15 mutations, 15 caught.
+
+### ⚠⚠ The delivery bound was refuted FOUR times, always by execution
+
+This is the transferable lesson. Four successive rounds each produced a bound that
+looked obviously correct, and each was falsified by *running* it, never by review:
+
+1. **rule-#9 audit** killed "deliver each name at most once" — two sequential token
+   catches of one name is ordinary BPMN.
+2. **implementation** killed the token-id fingerprint — a token **keeps its id** as
+   it advances; only its node changes.
+3. **adversarial stand-in review** killed the fingerprint idea outright — a loop
+   re-enters the *same* node; the arm-slice counts are instance-wide, so the arm's
+   own branch arming anything re-authorises delivery forever; and one last-key slot
+   *displaces* across instances (an arm fired 4–28 times under concurrency).
+4. **`/code-review`** killed the waiter COUNT that replaced it — two sequential
+   *arms* of one name each report a single waiter, so the second was silently
+   suppressed. **That is the audit's own finding (1) reproduced one level up, on
+   the arm side.**
+
+What ships: a token catch is **never** bounded (it is consumed when it fires and
+cannot re-match); an **arm** is bounded per instance per **parked node**, because
+an arm's real identity is unreachable — the arm slices have unexported element
+types — and parked nodes are the closest observable proxy.
+
+**If you touch this, execute the shapes in spec §2.6–2.7 before believing any
+argument about it.** And the meta-lesson: *when a review kills a bound for
+construct A, immediately check the same shape for construct B.*
+
+### Two smaller lessons from the same delivery
+
+- **A mutation that fails to COMPILE is not a RED**, and **a mutation that cannot
+  DISCRIMINATE is not verification.** Three of this delivery's mutation attempts
+  were invalid on the first try; each would otherwise have been recorded as proof.
+  One test asserted `ErrUnhandledPark` + `"human-task"`, which the mutated build
+  also produced — only asserting *the clock did not move* separated them.
+- **One of this delivery's own added tests could not fail**, and it was written
+  during a *coverage* round — the situation where a vacuous test is easiest to
+  write. Assert the returned value, not a downstream error both branches reach.
 
 ### Verification facts worth keeping
 
@@ -86,46 +127,15 @@ Nothing is in flight. Pick one:
   as a whole is NOT** — `main_test.go`, `rehydrate_durable_test.go`,
   `jobstore_rehydrate_durable_test.go` and `timer_txflow_test.go` import
   `internal/dbtest`.
-- **Baselines to hold**: `engine` **91.9 %**, repo **73.6 %**, lint 0.
+- ⚠ **`go vet ./...` compiles every test file**, including the Docker-only ones.
+  For a breaking type change it is the cheap way to prove no consumer is hiding
+  behind the container gate — it caught nothing here only because nothing was wrong.
+- **Baselines to hold**: `processtest` **90.2 %**, `engine` **91.9 %**, repo
+  **73.8 %**, lint 0.
 - ⚠ **`service` sits at 52.6 %**, below the 85 % floor — long pre-existing, not a
-  regression from any recent delivery. Backlog item 4; worth a decision rather
-  than silence.
+  regression. Backlog item 4; worth a decision rather than silence.
 - **Cross-package godoc links resolve against the PACKAGE's imports, not the
-  file's** — verified by running `go/doc` over `./engine` (87 links resolved,
-  zero unresolved), after nearly reverting them on the opposite assumption.
-
-## What this delivery changed about how we work
-
-**CLAUDE.md gained a `## Premise Discipline` section.** One finding drove it:
-**ADR-0165's Decision 5 shipped with an inverted predicate.** It said to refuse a
-plain full compensation rollback on a terminal instance when records *survive*.
-Running it showed the opposite — with no records there is no walk at all, but the
-status flips `Failed`→`Terminated`, a surviving token is discarded and `EndedAt`
-is rewritten; with records surviving it is a genuine walk ADR-0164 protects.
-Implementing it as written reddened four already-reviewed tests.
-
-That sentence survived design authorship, a 42-finding adversarial audit, and
-every later read. **Design review structurally cannot establish what code
-currently does.** So: no claim about current behaviour may enter a spec, ADR or
-plan until it has been executed and the output recorded; rule #9 auditors must
-now *run* the bundle's load-bearing claims; rule #11 expects implementation to
-correct the design and requires the ADR to be amended in the same bundle; the
-Delivery Gate gained a "documents describe what shipped" step.
-
-Related, and worth knowing before you write any comment: the same delivery
-produced **six** over-claiming summary sentences, **two of them introduced by the
-edits removing earlier ones**, and the worst inherited from a controller brief
-where it had been correctly hedged. Watch every *all*, *none*, *only*, *every*.
-
-**The rule then proved itself twice more at the gate.** `/code-review`'s two Low
-findings both rested on a comment asserting that `rejectWithError` is never
-logged — `dispatch` logs *both* refusal flavours, and one probe settled it. And
-its Medium was resolved the wrong way first, by following a rationale the ADR
-itself stated; the correction came from a test going RED, not from re-reading.
-**When a fix's two halves guard different cases, mutate BOTH ways** — collapsing
-`handleHumanCompleted`'s ghost/corruption disambiguation reddens *different*
-tests in each direction, and that complementary pair is what proves neither half
-is decorative.
+  file's** — verified by running `go/doc` over `./engine`.
 
 ## Known gaps still owed by delivery 2b (ADR-0164)
 
@@ -164,11 +174,8 @@ ADR-0165 discharged the first of three. Two remain, plus a small third it added:
    `internal/persistence/store/notifier_pgx_test.go:98` waits on a NOTIFY-driven
    relay drain while a dozen containers boot. Interacts with item 7; **do not
    silence it**.
-6. **`processtest` cannot drive a boundary-arm-only park.** `Classify` derives
-   `AwaitingSignals` from `Token.AwaitSignal` only (`processtest/park.go`), not
-   `state.SignalWaiters()`, so `Harness.PublishSignal` passes forever on a
-   definition parked purely on signal boundary arms. Still live in the **public**
-   harness, and it blocks delivery 3's headline scenario.
+6. ✅ **`processtest` cannot drive an arm-only park — CLOSED by ADR-0166.**
+   Kept as a pointer because blocker 9 below is its unclosed twin.
 7. **Suite speed.** `internal/dbtest`'s `sync.Once` container boot fires per
    package → 12 Postgres + 7 MySQL boots (~60s of a ~2min suite). Fix: honour
    `WRKFLW_TEST_POSTGRES_DSN` / `WRKFLW_TEST_MYSQL_DSN` with testcontainers as
@@ -178,27 +185,48 @@ ADR-0165 discharged the first of three. Two remain, plus a small third it added:
    `s.Boundaries = nil` has no semantic cover anywhere. Cheapest real fixture:
    `engine/step_terminal_test.go:669`, which already arms an error boundary on a
    sibling branch that survives the transition.
+9. **`Park.HasArmedTimers` has blocker 6's defect, for TIMER arms — still OPEN.**
+   ⚠ Found by ADR-0166's audit and deliberately left out of its scope.
+   `HasArmedTimers: len(state.Timers) > 0` reads one source, so a boundary or
+   event-gateway timer arm is invisible. Measured: a user task with a boundary
+   timer gives `len(Timers)=0, len(Boundaries)=1, HasArmedTimers=false`.
+   Consequence: after ADR-0166 ships, a definition parked purely on a **timer**
+   arm is still undriveable through the harness, and `AutoTimers()` cannot see
+   it. Closing it needs an engine-side `TimerWaiters()`/`ArmedTimerNodes()`
+   authority mirroring `SignalWaiters` — its own ADR. **Until then, no document
+   may claim the ADR-0154 class is closed in `processtest` outright.**
 
 ## Standing constraints
 
 - ⚠ **Ask before using Docker** (owner, 2026-07-31 — other sessions saturate the
   daemon). Per-run approvals do **not** carry over. See the container-free list above.
 - **Run the suite on the MERGED tree**, and **re-run after any `/code-review` fix**.
-- `/code-review` and `/security-review` are **owner-invoked only**. Adversarial
-  Opus stand-ins cut rework but miss what the real gate finds.
+- `/code-review` and `/security-review` are **owner-invoked only**. **Run
+  adversarial Opus stand-ins first anyway** — on ADR-0166 two stand-ins found five
+  substantive issues (three executed regressions vs `main`) and replaced a whole
+  decision before the gate ever ran. They still miss what the real gate catches:
+  `/code-review` then found four more, including the headline defect. Brief
+  stand-ins to **execute against a `main` baseline**, in a `git worktree`.
 - Push on merge (standing preference).
 - Fan out subagents **by Go package** — concurrent agents inside one package break
   each other's `go test` compile even on disjoint files.
+- **An agent that must measure against a patched tree gets a `git worktree`**, and
+  the brief must say so. "Clean up afterwards" is not isolation: an ADR-0166
+  auditor patched the live tree while another was measuring against it.
 
 ## Where the detail lives
 
 - **Per-delivery state** — the `▶ Progress` block at the top of that delivery's
   plan in `docs/plans/`.
+- **ADR-0166's full record** — every refuted form of the delivery bound, the
+  mutation table, and what each review round found — the `▶ Progress` block of
+  `docs/plans/2026-08-07-processtest-waiter-enumeration.md`, plus spec §2.5–2.7.
 - **ADR-0165's task-by-task record** — every mutation, adjudication and false
   claim — `.superpowers/sdd/2026-08-05-structural-terminal-trigger-guard/progress.md`.
 - **Decisions** — `docs/adr/NNNN-*.md`, Nygard template. ADR-0165 carries **six**
   correction blocks added during implementation and the gate; read them, they
   supersede the original text.
-- **Designs** — `docs/specs/`. ADR-0165's spec §9 carries the full audit record.
+- **Designs** — `docs/specs/`. ADR-0165's spec §9 carries its audit record;
+  ADR-0166's spec §2.3 carries what its audit refuted and §7 the audit summary.
 - **Conventions and gates** — `CLAUDE.md`, including the new **Premise Discipline**.
 - **Pre-2026-07-08 history** — `docs/plans/HANDOVER-archive.md`, frozen.

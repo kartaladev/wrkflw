@@ -117,6 +117,12 @@ func (e freeEnv) advanceTimers(context.Context) (engine.InstanceState, error) {
 	return engine.InstanceState{}, ErrAdvanceTimersUnsupported
 }
 
+// classify is the bare [Classify] with no scheduler enrichment. The free drive
+// owns no scheduler, so it cannot see an armed timer or apply the [ReasonTimer]
+// promotion a [Harness] does — a timer catch classifies as async-child here and as
+// timer under a Harness, and an arm-derived park keeps ReasonSignal/ReasonMessage
+// rather than yielding to a coexisting timer. Use a Harness whenever a handler
+// switches on Reason for timer parks.
 func (e freeEnv) classify(state engine.InstanceState) Park { return Classify(state) }
 
 func (e freeEnv) limit() int { return e.lim }

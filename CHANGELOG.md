@@ -17,6 +17,57 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **`processtest.Classify` sees every signal and message waiter source (ADR-0166).**
+  It derived `AwaitingSignals` / `AwaitingMessages` from `Token.AwaitSignal` and
+  `Token.AwaitMessage` alone — the first of the **four** sources the engine
+  enumerates behind `InstanceState.SignalWaiters()` / `MessageWaiters()`. Boundary
+  arms, event-based-gateway arms and event-subprocess arms were silently dropped,
+  so `PublishSignal` / `DeliverMessage` iterated an empty list and a definition
+  parked purely on an arm could not be driven through the harness at all. `Classify`
+  now calls those authorities instead of re-deriving them.
+
+  - **`Park.AwaitingMessages` changes type** to `[]engine.MessageWaiter`, so the
+    correlation key survives. A consumer has no other way to discover which key an
+    arm expects — the arm slices on `InstanceState` have unexported element types.
+    `DeliverMessage` still matches by **name only**; the key is what gets delivered.
+
+  - **`Park.AwaitingSignals` keeps its type but changes semantics.** A consumer's
+    `if len(p.AwaitingSignals) > 0` branch now fires on definitions where it never
+    did. That is the fix, and it is still a behavioural change.
+
+  - **`Park.Reason` shifts** for definitions carrying a live arm: an event-gateway
+    signal arm moves `async-child` → `signal`, and a ReceiveTask with a signal
+    boundary moves `message` → `signal`. A UserTask with a signal boundary is
+    unchanged. Carved out: a timer catch that merely coexists with an arm still
+    promotes to `timer`, so the `AutoTimers()` recipe keeps working.
+
+  - **`Park.Node` now names the parked token's node** for arm-derived parks, where
+    it previously collapsed to `""`. It still never names the arm's own node.
+
+  - **`PublishSignal` / `DeliverMessage` bound ARM-derived deliveries.** An arm
+    fires once per instance per **parked node** — without a bound, a
+    non-interrupting arm (which stays armed after firing) would re-match an
+    unchanged park until the drive hit its step limit. Two arms of one name on
+    different activities both fire. A **token** signal/message catch is *not*
+    bounded and behaves exactly as before: it is consumed when it fires, so loops
+    back to the same catch and two sequential catches of one name both still fire
+    every time.
+
+  - **`CompleteTasksWith`'s memoization is now mutex-guarded.** Sharing one handler
+    value across concurrent drives raced on its internal map. Found while testing
+    the above; the harness documents concurrent drives as supported. The lock
+    covers the map only — the `decide` callback still runs outside it.
+
+  - **The `ReasonTimer` promotion is documented as `Harness`-only.** The
+    free-function `DriveToCompletion` owns no scheduler, so a timer catch
+    classifies as `ReasonAsyncChild` there and never `ReasonTimer`. Behaviour
+    unchanged; the asymmetry was previously undocumented.
+
+  **Not closed for timers.** `Park.HasArmedTimers` carries the identical one-source
+  defect (`len(state.Timers) > 0`), so a definition parked purely on a **timer** arm
+  remains undriveable through the harness. Closing that needs an engine-side timer
+  authority mirroring `SignalWaiters` and is filed as a follow-up.
+
 - **Triggers declare their own terminal policy, enforced once in `Step` (ADR-0165).**
   A terminal process instance (`StatusCompleted`, `StatusFailed`, `StatusTerminated`)
   can no longer be resurrected by a late trigger. Previously the guard was hand-copied
