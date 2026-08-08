@@ -1,6 +1,8 @@
 package model
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -162,6 +164,35 @@ func coreFromYAML(dy *definitionYAML) (*definitionCore, error) {
 	return c, nil
 }
 
+// maxReportedFieldErrors bounds how many per-field messages a YAML parse error
+// carries. yaml.v3 reports one line per unknown key, so a document made of
+// unknown keys yields an error string larger than the document itself — measured
+// at ~2.4x (a 1.9 MB input produced a 4.7 MB error) — and that string is logged
+// in full. The first few names are what an author needs to fix the file; the
+// rest are a log-flooding vector with no diagnostic value.
+const maxReportedFieldErrors = 20
+
+// boundFieldErrors caps the per-field messages in a *yaml.TypeError, replacing
+// the tail with a count. Any other error is returned unchanged, so ordinary
+// syntax errors keep their exact text and position.
+//
+// It returns a *yaml.TypeError rather than a flat fmt.Errorf so the concrete
+// type does NOT depend on how many fields were wrong: a consumer building a
+// field-level 400 by enumerating te.Errors would otherwise get the full list for
+// a small document and nothing at all for a large one — precisely the case where
+// the list is most useful.
+func boundFieldErrors(err error) error {
+	var te *yaml.TypeError
+	if !errors.As(err, &te) || len(te.Errors) <= maxReportedFieldErrors {
+		return err
+	}
+	bounded := make([]string, 0, maxReportedFieldErrors+1)
+	bounded = append(bounded, te.Errors[:maxReportedFieldErrors]...)
+	bounded = append(bounded, fmt.Sprintf("and %d more field errors",
+		len(te.Errors)-maxReportedFieldErrors))
+	return &yaml.TypeError{Errors: bounded}
+}
+
 // ParseYAML reads a YAML process-definition from r and returns a
 // DefinitionLoader whose structure (nodes, flows) is already declared. Register
 // any definition-scoped actions via RegisterAction/RegisterActionFunc, apply any
@@ -174,8 +205,40 @@ func ParseYAML(r io.Reader, opts ...LoaderOption) (DefinitionLoader, error) {
 		return nil, fmt.Errorf("workflow-definition: read YAML: %w", err)
 	}
 	var dy definitionYAML
-	if err := yaml.Unmarshal(data, &dy); err != nil {
-		return nil, fmt.Errorf("workflow-definition: parse YAML: %w", err)
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	// io.EOF is tolerated deliberately: yaml.Unmarshal returns nil for an empty
+	// or comment-only document while Decode reports io.EOF, so without this the
+	// change would silently also make empty input a parse error (ADR-0167 D3a).
+	// dy keeps its zero value in that case, exactly as before.
+	if err := dec.Decode(&dy); err != nil && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("workflow-definition: parse YAML: %w", boundFieldErrors(err))
+	}
+	// Decode consumes exactly ONE document, so KnownFields(true) never sees what
+	// follows a `---`: every later document was silently discarded, unknown
+	// fields and all. That is the YAML mirror of the JSON trailing-data hole,
+	// and it is a live instance of the bypass this change exists to close — an
+	// overlay document declaring eligible_roles parses clean and still builds a
+	// task with none, so a reviewer reads a rule the engine never applies.
+	//
+	// An EMPTY trailing document (a bare `---`, or one followed only by
+	// whitespace) is legal framing and stays accepted; only a document carrying
+	// content is refused.
+	for {
+		var extra any
+		err := dec.Decode(&extra)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("workflow-definition: parse YAML: %w", boundFieldErrors(err))
+		}
+		// A `null` document (`---` followed by `null` or `~`) decodes to a nil
+		// interface and counts as empty, exactly like a bare separator.
+		if extra != nil {
+			return nil, fmt.Errorf(
+				"workflow-definition: parse YAML: a definition must be a single YAML document, but content was found after a %q separator", "---")
+		}
 	}
 	core, err := coreFromYAML(&dy)
 	if err != nil {

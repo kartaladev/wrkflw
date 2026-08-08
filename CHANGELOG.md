@@ -17,6 +17,60 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **Definition decoding rejects unknown fields (ADR-0167).** `model.ParseYAML` and
+  `ProcessDefinition.UnmarshalJSON` silently discarded field names they did not
+  recognise. A misspelled `eligible_roles` therefore left a `UserTask` with empty
+  `EligibleRoles`, and an empty `AuthzSpec` is documented to mean allow-all — so a
+  typo composed into a **silent authorization bypass** that errored neither at parse
+  time nor at authorization time. Both decoders are now strict, with no opt-out.
+
+  - **This is a DATA migration, not only a source one.**
+    `DefinitionStore.GetDefinition` / `Lookup` decode persisted definition blobs
+    through the now-strict `UnmarshalJSON`, so a row written by an earlier build
+    becomes unloadable at runtime if it carries a key the wire structs no longer
+    declare. New standing constraint: **a `NodeWire` field may not be removed
+    without a migration.** `go vet` cannot prove this safe — it compiles, it does
+    not decode.
+
+    ⚠ **The primary trigger is ADR-0144 (`8179c0b`), which moved the definition
+    wire to snake_case.** Five tags were camelCase before it — `compensateAction`,
+    `compensationAction`, `completionAction`, `correlationKey`, `messageName` —
+    and each was verified to fail now: `json: unknown field "compensateAction"`.
+    Any definition row written before `8179c0b` that carries one of them stops
+    loading, and every instance of that definition becomes unrunnable. That is a
+    wider blast radius than the retired `errorEndEvent` kind noted below. **Audit
+    stored definitions for these five keys before deploying**, or ship a backfill.
+
+  - **YAML idioms that parsed before are now rejected**: a top-level anchor holder
+    block (`_defaults: &d`) and `x-` extension keys. No reserved-prefix carve-out
+    was added (owner decision) — one decoding rule beats a rule plus an exception,
+    and the choice is cheap to reverse pre-v0.1.0.
+
+  - **The canonical nested trigger forms are YAML-invisible.** `nodeYAML` is a
+    strict subset of `NodeWire`; `boundary_action`, `boundary_error_expr`,
+    `deadline_trigger`, `timer_trigger` and `wait_trigger` have no YAML
+    counterpart, so authoring them in YAML now errors where it was previously
+    dropped in silence. That is the same defect one level down, and turning it into
+    an error is the improvement — but it is a recorded consequence.
+
+  - **Error shapes are unchanged.** `ParseYAML` still wraps as
+    `workflow-definition: parse YAML: %w`; `UnmarshalJSON` still returns its decode
+    error unwrapped. No new sentinel. The two decoders report differently — `yaml.v3`
+    names every unknown field with a line number, `encoding/json` stops at the first
+    with no position — and that asymmetry is accepted rather than normalised.
+
+  - **`README.md` was itself a live instance of the bug** and is fixed: **nine
+    distinct camelCase keys over seven lines** across two quickstart blocks
+    (`compensateAction`, `eligibleRoles`, `deadlineDuration`, `deadlineFlow`,
+    `deadlineAction`, `retryPolicy` and its sub-keys `maxAttempts`,
+    `initialInterval`, `backoffCoef`) — none declared by any struct tag. It also
+    listed `errorEndEvent` as a valid `kind`, **which ADR-0127 retired**
+    (`dcfe3f1` folded it into `EndEvent`); an error end is an `endEvent` with
+    `end_behavior: error`. ⚠ That retirement also means a definition blob
+    persisted before `dcfe3f1` carries `"kind":"errorEndEvent"` and does not load
+    — pre-existing, not caused by strict decoding, but it sharpens the
+    data-migration warning above.
+
 - **`processtest.Classify` sees every signal and message waiter source (ADR-0166).**
   It derived `AwaitingSignals` / `AwaitingMessages` from `Token.AwaitSignal` and
   `Token.AwaitMessage` alone — the first of the **four** sources the engine
