@@ -12,79 +12,73 @@ top to bottom; it is meant to stay short enough that you can.
 > with the plan. This file carries only: where `main` is, what is in flight, and
 > what to do next.
 
-## State — updated 2026-08-08 (implementation session)
+## State — updated 2026-08-08 (ADR-0167 shipped)
 
-**▶ Pick up here: ADR-0167 (strict definition decoding) is IMPLEMENTED and has
-PASSED the full Delivery Gate on `feat/strict-definition-decoding`.**
-`/code-review` found 6, all fixed and folded; `/security-review` found 0.
-**All that remains is `git merge --no-ff` to `main` and the push** — held for
-owner confirmation, since merge-to-main is the one step this project's cadence
-says to confirm. ⚠ The branch is pushed, so the push needs `--force-with-lease`.
+**▶ Pick up here: ADR-0167 is MERGED AND PUSHED. `main` is clean and green.
+The next work is the TWO BUGS ON `main` below — start with bug 1, which reports a
+rolled-back process as `completed`.** Each needs its own ADR. After those,
+delivery 3 (ADR-0158), which needs a full re-derivation before anything else.
 
-⚠ **Two bugs on `main` were found while re-deriving ADR-0158, both executed, both
-untested, both independent of any in-flight delivery — see "Bugs found on `main`"
-below. One reports a rolled-back process as `completed`.** They are the work after
-this delivery, each needing its own ADR.
+⚠ **Do not trust any `main` SHA written in this file** — it is committed onto
+`main`, so a quoted SHA is stale the moment it lands. Re-derive:
+`git rev-parse --short main`.
 
-### ADR-0167 — implemented, awaiting the Delivery Gate
+### ADR-0167 — SHIPPED 2026-08-08
 
+Merged `--no-ff` and pushed. Both definition decoders now reject unknown fields,
+closing pre-v0.1.0 blocker 1: the typo route to a silent authorization bypass.
 Bundle: `docs/specs/2026-08-07-*` + `docs/adr/0167-*` + `docs/plans/2026-08-07-*`.
-Per-delivery detail lives in that plan's `▶ Progress` block — read it before
-touching anything; it carries the verification table, the mutation table and the
-four ways implementation corrected the design.
 
-- **Scope:** two call sites. `ParseYAML` decodes via `yaml.NewDecoder` +
-  `KnownFields(true)`, mapping `io.EOF` back to today's empty-document meaning.
-  `ProcessDefinition.UnmarshalJSON` applies `DisallowUnknownFields()` to its
-  **internal** decode — the only place it survives a custom unmarshaler — plus an
-  explicit trailing-token check, because `Decoder.Decode` would otherwise *loosen*
-  what `json.Unmarshal` rejected. `ParseYAML` additionally drains the decoder so a
-  second YAML document cannot smuggle content past strictness, and caps the
-  per-field error count. 91 inserted production lines, comments included.
-- **Delivery Gate 4/4.** `/code-review` **6 findings → 6 fixed** (godoc lost on
-  `ParseYAML`; the ADR-0144 migration trigger; an untagged-field hole in the
-  over-strictness guard; no test on the store's real `json.Unmarshal` path; an
-  input-dependent error type; the bound missing from the multi-document loop).
-  `/security-review` **0 vulnerabilities** — fail-open, silent field-dropping,
-  error-text leakage to HTTP and YAML deserialization each checked by execution.
-- **Gates, run on the implemented tree:** `go test -race ./...` **EXIT=0, 64
-  packages, 0 races**; repo coverage **73.9 %** (baseline 73.8 %, no regression);
-  `definition/model` **94.9 %**; `go vet ./...` EXIT=0; `golangci-lint run ./...`
-  0 issues; **7 mutations applied, 7 caught**, all compiled and restored clean.
-- ⚠ **Docker was approved by the owner for that one suite run.** The
-  ask-before-Docker rule is unchanged for the next session.
-- ⚠ **It is a DATA migration.** `DefinitionStore.GetDefinition`/`Lookup` decode
-  persisted blobs through the now-strict `UnmarshalJSON`. New standing constraint:
-  **a `NodeWire` field may not be removed without a migration.** `go vet` cannot
-  prove this safe — it compiles, it does not decode.
+**Delivery Gate 4/4.** Suite `-race` EXIT=0 / 64 packages / 0 races; repo
+coverage **73.9 %**; `definition/model` **94.9 %**; `go vet` + `golangci-lint`
+clean; **15 mutations, 15 caught**; `/code-review` **6 findings → 6 fixed**;
+`/security-review` **0 vulnerabilities**. Verified again on the merged tree
+before pushing.
 
-**Adversarial Opus stand-ins ran before the owner gate** (two, separate
-worktrees, both briefed to EXECUTE against a `main` baseline) and produced seven
-fixes, all folded. The one that matters: **YAML strictness stopped at the first
-document**, so everything after a `---` was silently discarded — a *live instance
-of the very bypass this ADR closes*, since an overlay document declaring
-`eligible_roles` parsed clean and still built a task with none. `ParseYAML` now
-rejects any later document carrying content, while a bare trailing `---` stays
-legal. Five further findings were adjudicated record-not-fix and are filed below.
+🚨 **BEFORE DEPLOYING (not before merging): audit stored definition rows for five
+keys.** ADR-0144 (`8179c0b`) moved the definition wire to snake_case. The five
+tags that were camelCase before it — `compensateAction`, `compensationAction`,
+`completionAction`, `correlationKey`, `messageName` — now fail strict decoding
+(each verified: `json: unknown field "compensateAction"`). A row written before
+`8179c0b` carrying one stops loading, and **every instance of that definition
+becomes unrunnable**. New standing constraint: **a `NodeWire` field may not be
+removed without a migration**; `go vet` cannot prove this safe — it compiles, it
+does not decode.
 
-**⚠⚠ The one lesson worth carrying out of this delivery.** The rule-#9 audit's
-README finding named four camelCase lines. Re-deriving the list found **seven** —
-`deadlineDuration`, `deadlineFlow`, `deadlineAction` were missed — so following
-the audited plan literally would have shipped a README that still did not parse.
-Execution also found a *second*, unrelated README defect the audit never saw:
-`errorEndEvent` was documented as a valid `kind` and has never been registered.
-**An enumeration inherited from an upstream document — even an audited one — must
-be re-counted, never restated.** That is ADR-0159's lesson arriving for the third
-time.
+**Five follow-ups it opened** are listed under "Follow-ups opened by ADR-0167's
+adversarial review" below. The sharpest is not about decoding at all: an
+undecodable stored definition degrades **silently**, and `runtime/jobstore.go`
+skips every armed timer for it forever behind a "definition not found" log.
 
-⚠⚠ **And it recurred inside the fix for itself.** The `CHANGELOG.md` entry I wrote
-*while correcting* that rotted enumeration contained two fresh false claims,
-caught by the stand-in review: "seven camelCase keys" (seven is the number of
-*lines*; there are 10 occurrences of 9 distinct names), and "`errorEndEvent` has
-never been registered" — an over-reaching *never* that is simply false, since
-ADR-0127 retired it (`dcfe3f1`, with `Name: "errorEndEvent"` still present at
-`dcfe3f1^`). **Verify the recap sentence, not just the analysis it summarises** —
-the summary is where the false claims live.
+### ⚠⚠ The four lessons from ADR-0167, in the order they hurt
+
+Every one was found by **executing**, never by reading — and each arrived after
+the previous fix had been declared complete.
+
+1. **An inherited enumeration must be re-counted, never restated.** The rule-#9
+   audit named four camelCase README lines; there were **seven**. Following the
+   audited plan literally would have shipped a README that still did not parse.
+   Then — worse — the CHANGELOG text written *while correcting that* introduced
+   **two new false claims** ("seven camelCase keys": seven is the line count;
+   "`errorEndEvent` has never been registered": ADR-0127 retired it at
+   `dcfe3f1`). `/code-review` then made the same mistake a third time, claiming
+   ADR-0144 renamed "*every* `NodeWire` json tag" when only five were camelCase.
+   **Verify the recap sentence, not just the analysis it summarises.**
+2. **A guard must be mutated in the dimension it DERIVES from.** The
+   over-strictness guard was defective **three times** — character-class
+   truncation, prefix collision (`action2` vs `action`), then untagged fields
+   entirely — each hole found by a different reviewer. Mutating its *subject*
+   (deleting a tag) proved nothing about its *derivation*.
+3. **Sweep for sibling code before designing.** `runtime/kernel/cursorcodec.go`
+   (ADR-0160) already solved strict JSON decoding with the same shape, and better
+   — it preserved the underlying `*json.SyntaxError`. Neither the ADR nor its
+   audit referenced it.
+4. **Stand-ins are not the gate.** Two adversarial Opus stand-ins found a HIGH
+   (YAML strictness stopped at the first document — a `---` overlay declaring
+   `eligible_roles` parsed clean and built a task with none, *a live instance of
+   the very bypass the ADR closes*). `/code-review` then still found six more,
+   including that `ParseYAML` had silently lost its godoc. **No stand-in ran
+   `go doc`.**
 
 ### Bugs found on `main` (not caused by any in-flight delivery)
 
@@ -121,18 +115,18 @@ ADR-0166 (`processtest` sees every signal/message waiter source) shipped
 
 | | |
 |---|---|
-| `main` | ADR-0166 is the newest bundle. ⚠ **Do not trust a `main` SHA written here** — this file is committed onto `main`, so any SHA it quotes for `main` is stale the moment it lands. Re-derive: `git rev-parse --short main` |
-| **`feat/strict-definition-decoding`** | **ADR-0167, implemented and green; owner gate outstanding.** ⚠ Pushed deliberately, so folding review fixes needs `git push --force-with-lease` |
+| `main` | ADR-0167 is the newest bundle. ⚠ **Do not trust a `main` SHA written here** — this file is committed onto `main`, so any SHA it quotes for `main` is stale the moment it lands. Re-derive: `git rev-parse --short main` |
+| `feat/strict-definition-decoding` | **merged (ADR-0167) and pushed; safe to delete** |
 | `feat/processtest-waiter-enumeration` | merged; safe to delete |
 | `feat/terminal-trigger-guard` | merged (ADR-0165); safe to delete |
 | `backup/terminal-trigger-guard-presquash` | `a3aa889` — ADR-0165's ten pre-squash commits, provenance only. Delete when you no longer want the phase-by-phase history |
 | **`parked/scope-and-fanout-design`** | **delivery 3's draft ADR-0158 lives here** (`docs/adr/0158-signal-fires-every-matching-arm.md`, plan `docs/plans/2026-07-31-signal-arm-fanout.md`). ⚠ It also carries a **superseded ADR-0162 draft — do not read it.** ⚠ Its diff vs `main` is now **~18,000 deleted lines** of tests that `main` has since gained: the branch predates 2a, 2b, 0165 and 0166 entirely |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept only for its audit tags |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — older parked bundle, docs only. Owner DECIDED not to push it; do not re-raise |
-| Latest ADR | **0166** on `main`; **0167 is written, audited and implemented** but unmerged on `feat/strict-definition-decoding`. 0158 lands with delivery 3; 0155–0157 are reserved by the older parked branch. Next free is **0168** |
+| Latest ADR | **0167**, on `main`. 0158 lands with delivery 3; 0155–0157 are reserved by the older parked branch. Next free is **0168** |
 | v0.1.0 | not tagged |
 
-## ▶ The work after ADR-0167's gate: delivery 3 (ADR-0158)
+## ▶ After the two `main` bugs: delivery 3 (ADR-0158)
 
 **A broadcast signal must fire every matching arm per family, not just the first.**
 The draft is on `parked/scope-and-fanout-design`. Its prerequisites are now both
@@ -166,57 +160,25 @@ the gap 0158 closes. See `docs/adr/0154-*` and the signal-waiters topic memory.
    closes them; it never touches `s.Scopes`).
 2. A pre-v0.1.0 blocker from the list below.
 
-## How ADR-0166 shipped, and the one lesson worth carrying
+## ADR-0166, two deliveries back — the one lesson worth carrying
 
-`Classify` now delegates to `engine.InstanceState.SignalWaiters()`/
-`MessageWaiters()` instead of re-deriving source 1 from token fields, so boundary,
-event-gateway and event-subprocess arms are finally visible to `PublishSignal`/
-`DeliverMessage`. `Park.AwaitingMessages` became `[]engine.MessageWaiter`
-(breaking), `Park.Node` falls back for arm-derived parks, and the `ReasonTimer`
-promotion widened so `AutoTimers()` keeps working beside a live arm.
+`processtest.Classify` now delegates to `engine.InstanceState.SignalWaiters()`/
+`MessageWaiters()`, so boundary, event-gateway and event-subprocess arms are
+finally visible to `PublishSignal`/`DeliverMessage`. Full record — every refuted
+form of the delivery bound, the mutation table, what each review round found — is
+in `docs/plans/2026-08-07-processtest-waiter-enumeration.md` §`▶ Progress` and
+spec §2.5–2.7.
 
-Gate 4/4: `processtest` **90.2 %** (baseline 88.0), full suite **EXIT=0 / 64
-packages / 0 races / repo 73.8 %** run **twice** (the first run certified a tree
-`/code-review`'s fixes then changed), **`/code-review` 4 findings → 4 fixed**,
-**`/security-review` 0 vulnerabilities**. 20 tests; 15 mutations, 15 caught.
+⚠⚠ **Its delivery bound was refuted FOUR times — audit, implementation, stand-in
+review, `/code-review` — always by EXECUTION, never by reading.** What ships: a
+token catch is **never** bounded (it is consumed when it fires); an **arm** is
+bounded per instance per **parked node**. The transferable lesson: **when a review
+kills a bound for construct A, immediately check the same shape for construct B**
+— finding 4 was finding 1 one level up, and I shipped the identical defect on the
+arm side after the audit had killed it on the token side.
 
-### ⚠⚠ The delivery bound was refuted FOUR times, always by execution
-
-This is the transferable lesson. Four successive rounds each produced a bound that
-looked obviously correct, and each was falsified by *running* it, never by review:
-
-1. **rule-#9 audit** killed "deliver each name at most once" — two sequential token
-   catches of one name is ordinary BPMN.
-2. **implementation** killed the token-id fingerprint — a token **keeps its id** as
-   it advances; only its node changes.
-3. **adversarial stand-in review** killed the fingerprint idea outright — a loop
-   re-enters the *same* node; the arm-slice counts are instance-wide, so the arm's
-   own branch arming anything re-authorises delivery forever; and one last-key slot
-   *displaces* across instances (an arm fired 4–28 times under concurrency).
-4. **`/code-review`** killed the waiter COUNT that replaced it — two sequential
-   *arms* of one name each report a single waiter, so the second was silently
-   suppressed. **That is the audit's own finding (1) reproduced one level up, on
-   the arm side.**
-
-What ships: a token catch is **never** bounded (it is consumed when it fires and
-cannot re-match); an **arm** is bounded per instance per **parked node**, because
-an arm's real identity is unreachable — the arm slices have unexported element
-types — and parked nodes are the closest observable proxy.
-
-**If you touch this, execute the shapes in spec §2.6–2.7 before believing any
-argument about it.** And the meta-lesson: *when a review kills a bound for
-construct A, immediately check the same shape for construct B.*
-
-### Two smaller lessons from the same delivery
-
-- **A mutation that fails to COMPILE is not a RED**, and **a mutation that cannot
-  DISCRIMINATE is not verification.** Three of this delivery's mutation attempts
-  were invalid on the first try; each would otherwise have been recorded as proof.
-  One test asserted `ErrUnhandledPark` + `"human-task"`, which the mutated build
-  also produced — only asserting *the clock did not move* separated them.
-- **One of this delivery's own added tests could not fail**, and it was written
-  during a *coverage* round — the situation where a vacuous test is easiest to
-  write. Assert the returned value, not a downstream error both branches reach.
+⚠ **Blocker 9 is still OPEN** (`Park.HasArmedTimers`, timer arms) — never claim
+the ADR-0154 class is closed in `processtest` outright.
 
 ### Verification facts worth keeping
 
@@ -255,12 +217,12 @@ ADR-0165 discharged the first of three. Two remain, plus a small third it added:
 
 ## Pre-v0.1.0 blockers
 
-1. ✅ **Strict definition decoding — IMPLEMENTED 2026-08-08, awaiting the owner
-   Delivery Gate** on `feat/strict-definition-decoding` (ADR-0167). Both decoders
-   reject unknown fields, no opt-out. ⚠ Not closed until it merges to `main`.
+1. ✅ **Strict definition decoding — CLOSED 2026-08-08 by ADR-0167** (merged and
+   pushed). Both decoders reject unknown fields, no opt-out.
    ⚠ It does **not** close the fail-open `AuthzSpec` itself — a hand-authored
-   empty spec still admits everyone. That is deliberate design on the type and
-   takes its own ADR.
+   empty spec, and equally `eligible_roles: []`, a bare `eligible_roles:` and
+   `eligible_roles: null`, all parse cleanly and mean allow-all. That is
+   deliberate design on the type and takes its own ADR (follow-up 4 below).
 2. **A zero `next_run` cannot be armed on MySQL.** `runtime/timerops.go` arms a
    zero `nextRun` when `TriggerSpec.Next` reports `ok == false`;
    `DATETIME(6) NOT NULL` rejects `'0000-00-00'` under strict mode. Postgres and
