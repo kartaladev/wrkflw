@@ -103,6 +103,21 @@ func IsTerminal(s engine.Status) bool {
 // so an instance parked purely on a boundary, event-gateway or event-subprocess
 // ARM classifies as a signal/message park like a token await does — such arms set
 // no field on any token.
+//
+// KNOWN GAP — a compensation-walk park has no reason of its own. An instance
+// waiting on an in-flight reverse-order compensation walk sits at
+// [engine.StatusCompensating] with zero tokens: the walk is awaited through the
+// engine's compensation cursor, which no token carries, so ReasonAsyncChild
+// (which requires a token with AwaitCommand) does not match and the park falls
+// through to [ReasonUnknown]. A handler with no case for it Passes, and drive
+// then reports [ErrUnhandledPark]. Measured reason="unknown" on both a
+// hand-built snapshot and a real mid-walk state produced by the engine
+// (ADR-0168, which widens the routes reaching that state; it is reachable
+// through whole-instance rollback regardless). It bites a consumer classifying
+// a STORED mid-walk snapshot: measured, the default synchronous drive loop
+// completes the walk inside one ApplyTrigger and never parks on it. Closing the
+// gap means a ReasonCompensation whose [Park] surfaces the awaited command id so
+// a handler can deliver the walk's ActionCompleted — deliberately not done here.
 func Classify(state engine.InstanceState) Park {
 	p := Park{
 		State:          state,

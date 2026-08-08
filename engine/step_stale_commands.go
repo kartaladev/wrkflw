@@ -30,10 +30,13 @@ func filterableCommand(c Command) bool {
 // the instance is not terminal.
 //
 // Both sources are load-bearing, and the second is not obvious.
-// startCompensationWalk (step_nodes.go:982-993) consumes the throw token at :983
-// BEFORE emitting a non-FireAndForget InvokeAction correlated only by
-// cursor.ActiveCmdID (:989-991), so a token-only set would drop that command and
-// hang every compensation walk. Every beginCompensation call site sets
+// startCompensationWalk (step_nodes.go) calls consumeToken on the throw token
+// BEFORE it stamps cursor.ActiveCmdID and appends the walk's non-FireAndForget
+// InvokeAction (compensationInvoke), which is correlated by that cursor id and
+// by nothing else — so a token-only set would drop that command and hang every
+// compensation walk. Cited by symbol on purpose: the ":982-993" this sentence
+// used to carry was two moves stale (982 → 1035 → 1079) when it was replaced.
+// Every beginCompensation call site sets
 // Status = StatusCompensating immediately before calling it, which is what makes
 // the non-terminal condition safe for the in-flight case.
 //

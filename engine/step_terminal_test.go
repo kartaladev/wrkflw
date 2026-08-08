@@ -428,18 +428,37 @@ func TestTerminalResumeGuard(t *testing.T) {
 }
 
 // TestActionCompletedOnTerminalInstanceIsNoOp pins audit finding O1
-// (pre-existing): a CompensateThrow consumes only its OWN token
-// (startCompensationWalk's consumeToken), so a sibling branch can complete the
-// instance while the walk's InvokeAction is still in flight. When that
-// action's ActionCompleted finally arrives, no token awaits it, and a terminal
-// instance can never consume a resumption trigger — the stray command must be
-// tolerated as a no-op, exactly like handleResolveIncident already tolerates a
-// missing token, rather than surfaced as ErrTokenNotFound.
+// (pre-existing): an ActionCompleted whose command is owned by NOTHING — no
+// token awaits it and no compensation cursor claims it — must be tolerated as a
+// no-op, exactly like handleResolveIncident already tolerates a missing token,
+// rather than surfaced as ErrTokenNotFound. A terminal instance can never
+// consume a resumption trigger, so ADR-0165's dispatch guard drops it and the
+// state comes back untouched.
 //
-// The sibling branch reaches a PLAIN end, not a force-termination end: force
-// termination drops tokens for an unrelated reason (forceTerminate) and would
-// not exercise "no token awaits this command against an otherwise-normal
-// completion" — the scenario this test targets.
+// The route this test was originally built on no longer exists. It used to
+// strand the walk's command by letting a sibling branch complete the instance
+// NORMALLY while the walk's InvokeAction was still in flight — a
+// CompensateThrow consumes only its OWN token (startCompensationWalk's
+// consumeToken), so the sibling's end event saw an empty Tokens and completed.
+// ADR-0168 closes that: the three NORMAL-completion guards in step_nodes.go
+// (exitRootScope, exitRootEventSubprocessScope, exitNestedEventSubprocessScope)
+// additionally require Compensating.ActiveCmdID == "", so a normal completion can
+// no longer land underneath a live walk. Explicit termination is deliberately
+// exempt — which is exactly why this fixture uses one.
+//
+// An EXPLICIT force-termination end is therefore what this fixture uses: it is
+// the only remaining route from a live compensation walk to a terminal instance
+// still carrying a dispatched compensation command. It does NOT leave that walk
+// "outstanding" — force-termination CLEARS the cursor, which is exactly what
+// TestForceTerminationClearsCompensationCursor pins (ADR-0164), and post-0168
+// no reachable state combines a terminal instance with a live cursor. Measured
+// at step 3 under this fixture: status "terminated", Tokens nil, ActiveCmdID
+// "". So what arrives at step 4 is an unowned command, not an in-flight one.
+//
+// OutcomeAbort is named explicitly because OutcomeComplete is the ZERO value:
+// written without an outcome, this fixture would publish a CompleteInstance
+// while a rollback is unfinished — the very shape ADR-0168 exists to prevent —
+// and enshrine it in the permanent suite as sanctioned.
 //
 // The sibling branch is a ServiceTask ("hold"), not a bare flow straight to
 // end2: dropStaleTokenCommands' liveAwaiters treats a terminal instance as
@@ -450,12 +469,15 @@ func TestTerminalResumeGuard(t *testing.T) {
 // action does. Parking the sibling on its own action forces the walk-start and
 // the instance-completion into two SEPARATE Step calls, exactly as the brief
 // requires, so the walk's InvokeAction is observed live (non-terminal state,
-// not filtered) before the instance ever goes terminal.
+// not filtered) before the instance ever goes terminal. Re-measured against
+// this fixture: with the sibling wired fork → end2 directly, step 2 returns
+// status "terminated" and a single command, the refund InvokeAction is absent,
+// and the engine logs "dropping command whose awaiter this step cancelled".
 func TestActionCompletedOnTerminalInstanceIsNoOp(t *testing.T) {
 	t.Parallel()
 
 	// start → charge(compensable) → fork ⇒
-	//   { f1: throw → end1 ; f2: hold(ServiceTask) → end2(plain) }.
+	//   { f1: throw → end1 ; f2: hold(ServiceTask) → end2(force-terminate, abort) }.
 	// Branch declaration order is load-bearing, exactly as in
 	// TestForceTerminationClearsCompensationCursor: the throw branch must be
 	// declared FIRST so the walk starts (and consumes its own token) before
@@ -466,7 +488,7 @@ func TestActionCompletedOnTerminalInstanceIsNoOp(t *testing.T) {
 			event.NewCompensateThrow("throw"),
 			event.NewEnd("end1"),
 			activity.NewServiceTask("hold", activity.WithTaskAction("hold-action")),
-			event.NewEnd("end2"),
+			event.NewEnd("end2", event.WithForceTermination("sibling-terminates", event.OutcomeAbort)),
 		},
 		[]flow.SequenceFlow{
 			{ID: "f-charge-fork", Source: "charge", Target: "fork"},
@@ -516,19 +538,23 @@ func TestActionCompletedOnTerminalInstanceIsNoOp(t *testing.T) {
 		"setup: hold's own command must be distinct from the stranded walk command")
 
 	// Step 3: the sibling branch's own action completes, driving it through
-	// end2. That is the LAST remaining token (the throw's own token was
-	// already consumed in step 2), so the instance completes here — WITHOUT
-	// ever touching the walk's still-outstanding command.
+	// end2, whose force-termination ends the instance (measured: status
+	// "terminated", Tokens nil, compensation cursor cleared). The walk's own
+	// command is never resolved by any of it — after this step it is owned by
+	// nothing at all.
 	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(terminalT0.Add(2*time.Second), holdCmd, nil), engine.StepOptions{})
 	require.NoError(t, err)
 
-	// Positive control: the instance really is terminal now, and really has no
-	// token left to await anything — including the stranded walk command.
+	// Positive control: the instance really is terminal now, and the walk
+	// command really is owned by nothing — no token awaits it, no cursor claims
+	// it.
 	require.True(t, r3.State.Status.IsTerminal(),
-		"control: the sibling branch must have completed the instance")
+		"control: the sibling branch must have terminated the instance")
 	require.Empty(t, r3.State.Tokens,
 		"control: no token must remain to await the stranded walk command")
+	require.Empty(t, r3.State.Compensating.ActiveCmdID,
+		"control: force-termination must have cleared the cursor, so no cursor owns it either")
 
 	// Step 4 (the brief's "third step"): the walk's ActionCompleted finally
 	// arrives against the now-terminal instance, which awaits nothing.
@@ -537,18 +563,19 @@ func TestActionCompletedOnTerminalInstanceIsNoOp(t *testing.T) {
 	require.NoError(t, err)
 
 	// "Unchanged state" is asserted by comparing the FULL pre-step-4 state
-	// (r3.State — a real completed instance with non-empty History and a
+	// (r3.State — a real terminated instance with non-empty History and a
 	// terminal Status, not a zero value) against the FULL post-step-4 state
 	// (r4.State). If the IsTerminal() branch were deleted, step four would
 	// return an error and require.NoError above would already fail; if it
 	// were instead mutated to return the wrong (e.g. zero-value) StepResult on
 	// a nil error, this equality would catch that too.
 	//
-	// Tokens is normalized to nil when empty on both sides first: r3.State's
-	// Tokens is a non-nil zero-length leftover from consuming end2's token
-	// in-place, while Step's internal clone of a zero-length slice produces a
-	// nil one — a representation artifact of how Step copies its input, not a
-	// real difference this test is meant to police.
+	// The nil-normalization below is INERT under this fixture and kept only as a
+	// guard: measured, forceTerminate nils s.Tokens, so both sides already
+	// arrive nil and the raw states compare equal without it. It stays so the
+	// assertion keeps policing real state divergence rather than a nil-vs-empty
+	// representation artifact of how Step clones its input, should a future
+	// terminal path leave a zero-length non-nil slice behind instead.
 	r3State, r4State := r3.State, r4.State
 	if len(r3State.Tokens) == 0 {
 		r3State.Tokens = nil

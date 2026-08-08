@@ -9,6 +9,15 @@
 > ⚠ Two of the findings here are **bugs in shipped code on `main`**, not
 > properties of any in-flight delivery. See the adjudication section.
 
+> 🛑 **CORRECTION (2026-08-08, added by the ADR-0168/0169/0170 bundle).** This
+> file's recommended predicate — **`s.Status != StatusRunning`** — is **REFUTED
+> BY EXECUTION**. It appears in **§Q4(c)** and in **"Two NEW pre-existing bugs"
+> item 1**, both marked in place below. The original text is left untouched
+> deliberately: this file is evidence, and laundering it would hide that the
+> shape was ever recommended. **Do not carry `!= StatusRunning` into the future
+> ADR-0158 rewrite.** The refutation is
+> `docs/specs/2026-08-08-compensation-walk-and-mid-delivery-terminal.md` §6.
+
 ---
 
 # Adjudication — ADR-0158's per-iteration status re-check
@@ -110,6 +119,36 @@ Neither fire function mentions `Status` at all.
 - **(c) PREDICATE: `s.Status != StatusRunning`**, not `IsTerminal()`. Gate **all
   four tiers**, not just 1–3.
 
+> 🛑 **CORRECTION — (c) is REFUTED.** See ADR-0168/0169/0170 and
+> `docs/specs/2026-08-08-compensation-walk-and-mid-delivery-terminal.md` §6.
+>
+> `!= StatusRunning` applied to `fireBoundaryArm` was executed against the
+> bundle's §3.1 fixture. It saves the rollback and then **strands the instance
+> forever** — signal `s2` is silently swallowed, `taskB` stays parked with
+> `bndB` still armed, and signals are one-shot broadcasts, so nothing
+> redelivers:
+>
+> ```
+> AFTER SIGNAL#2 (s2)  status=compensating tokens=1 boundaries=1 activeCmd="i1-c2" cmds=[]
+> AFTER undoA(i1-c2)   status=running      tokens=1 boundaries=1 activeCmd=""      cmds=[]
+> ```
+>
+> **The predicate conflates the two meanings of `StatusCompensating`.** A
+> `beginCompensation` rollback has already drained the boundary and gateway
+> arms, so the guard is a no-op there; a `startCompensationWalk` local throw
+> leaves the process legitimately running, so the guard blocks exactly the arms
+> that *should* fire. It is inverted with respect to its own purpose.
+>
+> **The refuted shape is ALREADY SHIPPED** at `engine/step_eventsubprocess.go:167`
+> (`fireEventTriggeredSubprocessArm`, root scope only), where it was measured
+> silencing a legitimate signal during a local compensation throw. That is
+> backlog work with its own ADR owed — and that ADR must not re-derive the
+> predicate from this file.
+>
+> The correct decomposition is **two** predicates, neither of them
+> `!= StatusRunning`: `Compensating.ActiveCmdID` guards *completion* (ADR-0168);
+> `IsTerminal()` guards *mid-delivery dispatch* (ADR-0169).
+
 ## Verdict on the two premise agents
 
 - **A** right that the fire functions have no guard (stronger than A knew: zero
@@ -133,6 +172,23 @@ widen its scope to all four tiers.**
    `completed` while its compensation action result is dropped. Verified fix
    shape: `if s.Status != StatusRunning { return nil, nil }` in `fireBoundaryArm`;
    engine suite stays green with it. **Untested either way.**
+
+   > 🛑 **CORRECTION — the BUG is real; the "verified fix shape" is REFUTED.**
+   > See §Q4(c)'s correction block above and
+   > `docs/specs/2026-08-08-compensation-walk-and-mid-delivery-terminal.md` §6.
+   > Executed, `!= StatusRunning` in `fireBoundaryArm` saves the rollback and
+   > strands the instance forever. The bug itself is closed by **ADR-0168**
+   > with a different predicate: `len(s.Tokens) == 0 && s.Compensating.ActiveCmdID == ""`
+   > at the three normal-completion sites — guarding *completion* rather than
+   > *arm firing*.
+   >
+   > ⚠ **"engine suite stays green with it" was the evidence offered here, and
+   > it is not evidence of correctness** — it measures test coverage. The suite
+   > is `EXIT=0` under the refuted shape precisely because nothing covers this
+   > path in either direction, which this same paragraph says one sentence
+   > later. The same predicate is **already shipped** at
+   > `engine/step_eventsubprocess.go:167` and misbehaves there exactly as
+   > predicted.
 2. **Post-terminal resurrection via tier 4** after `handleUnhandledError`'s
    failFast branch: zombie token, new boundary arm, and an un-filtered
    `ScheduleTimer` on a `failed` instance. ⚠ Check against ADR-0164's five known

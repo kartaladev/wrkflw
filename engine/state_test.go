@@ -112,6 +112,41 @@ func TestCloneStateCarriesCompensatingOutcomeFields(t *testing.T) {
 		"mutating clone.Compensating.FinalErr must not affect original")
 }
 
+// TestCloneStateDeepCopiesCompensatingRecords asserts that cloneState produces
+// an independent copy of the cursor's PINNED record source (ADR-0171).
+//
+// Records is the cursor's only non-scalar field, so the InstanceState struct
+// copy that carries every other field correctly would leave the clone sharing
+// both the backing array and each record's Input map with the original —
+// breaking Step's "does not mutate its input state" contract for a walk that is
+// in flight. What makes this fail without the fix: cloneState omits the explicit
+// cloneCompensationRecords call for this field.
+func TestCloneStateDeepCopiesCompensatingRecords(t *testing.T) {
+	st := InstanceState{
+		InstanceID: "cs-pinned-1",
+		Compensating: compensationCursor{
+			ScopeID:     "cs-pinned-1-s1",
+			ActiveCmdID: "cmd-1",
+			NextIndex:   0,
+			Records: []CompensationRecord{
+				{NodeID: "svcA", Action: "undoA", Input: map[string]any{"k": 1}},
+			},
+		},
+	}
+
+	clone := cloneState(st)
+	require.Len(t, clone.Compensating.Records, 1,
+		"the clone must carry the pinned records")
+
+	clone.Compensating.Records[0].Action = "mutated"
+	clone.Compensating.Records[0].Input["k"] = 99
+
+	assert.Equal(t, "undoA", st.Compensating.Records[0].Action,
+		"mutating the clone's pinned record must not affect the original")
+	assert.Equal(t, 1, st.Compensating.Records[0].Input["k"],
+		"mutating the clone's pinned record Input must not affect the original")
+}
+
 // ---------------------------------------------------------------------------
 // ArchivedCompensations: field existence + cloneState deep-copy isolation
 // ---------------------------------------------------------------------------
