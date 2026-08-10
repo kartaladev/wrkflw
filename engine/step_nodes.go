@@ -482,13 +482,24 @@ func exitNestedEventSubprocessScope(c *stepCtx, currentScopeID, parentScopeID st
 		if grandparentScopeID == "" {
 			// Root scope: no outgoing flows from the sub-process → instance completes,
 			// unless a compensation walk is still outstanding (ADR-0168 — see
-			// exitRootScope). Like the root-ESP site above, this conjunct DOES
-			// discriminate: TestCompensationWalkBlocksNestedEventSubprocessCompletion
-			// reaches it, and without the conjunct that fixture completed the instance,
-			// published CompleteInstance and dropped the walk's InvokeAction as stale.
-			// Falling past it is not inert — control reaches the arm retirement below,
-			// which retires the enclosing scope's ESP arms while the instance stays
-			// Compensating; that too is asserted by the named test.
+			// exitRootScope).
+			//
+			// ⚠ CORRECTED (ADR-0172). This comment previously claimed the conjunct
+			// "DOES discriminate:
+			// TestCompensationWalkBlocksNestedEventSubprocessCompletion reaches it,
+			// and without the conjunct that fixture completed the instance", and
+			// that the arm retirement below was "asserted by the named test".
+			// BOTH claims are false, measured: deleting
+			// `&& c.s.Compensating.ActiveCmdID == ""` leaves `go test ./engine/...`
+			// at EXIT=0 with that test RUNNING and PASSING, and replacing the arm
+			// retirement below with a no-op likewise leaves the suite green. The
+			// named test's own docstring already says it does not reach here.
+			//
+			// The conjunct is kept as defence in depth — undemonstrated is not
+			// unreachable — but it is UNCOVERED, and so is the arm retirement
+			// below. Both are recorded as coverage gaps rather than deleted on the
+			// strength of a green suite, which is the inference this repo has been
+			// burned by before.
 			if len(c.s.Tokens) == 0 && c.s.Compensating.ActiveCmdID == "" {
 				return append(cmds, c.s.endInstance(StatusCompleted, c.at,
 					CompleteInstance{Result: copyVars(c.s.Variables)})...), true, nil

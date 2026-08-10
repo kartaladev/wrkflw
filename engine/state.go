@@ -419,3 +419,27 @@ func (s *InstanceState) cancelOpenTasks() []Command {
 func (s InstanceState) Clone() InstanceState {
 	return cloneState(s)
 }
+
+// spawnsNewWork reports whether the instance may still START new work — open a
+// scope, place a token, dispatch an action. ADR-0172: a dying instance spawns no
+// new work, whichever scope an arm belongs to.
+//
+// ⚠ It is an ALLOW-LIST, and that is load-bearing. Status.IsTerminal treats an
+// out-of-range Status as NOT terminal (see its doc comment), so a deny-list
+// predicate — "return false if terminal or dying" — starts FIRING arms on an
+// unrecognised status. Measured: an armed root event-sub-process arm is silenced
+// on an out-of-range status today, and a deny-list formulation fires it. Any new
+// Status constant must be added here explicitly; until it is, it fails closed.
+func (s *InstanceState) spawnsNewWork() bool {
+	switch s.Status {
+	case StatusRunning:
+		return true
+	case StatusCompensating:
+		// A rollback that will RESUME (compensation throw, partial rollback) is a
+		// legitimately running instance; one that will END it is not.
+		return !s.Compensating.walkTerminates(s.PendingCancel)
+	default:
+		// Terminal, or out of range.
+		return false
+	}
+}

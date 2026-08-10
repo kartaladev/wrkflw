@@ -14,16 +14,59 @@ top to bottom; it is meant to stay short enough that you can.
 
 ## State — updated 2026-08-10
 
-**▶ ADR-0168/0169/0170/0171 are SHIPPED — merged to `main` and pushed
-(merge `b12bba3`, bundle `adf3977`). Nothing is in flight.**
+**▶ IN FLIGHT: delivery 3 — ADR-0158 + ADR-0172**, on branch
+**`feat/signal-fanout-and-esp-status`**. **DESIGNED, AUDITED, ADJUDICATED and
+FULLY IMPLEMENTED (Phases 1–4). The only thing left is the DELIVERY GATE, and
+every remaining step is OWNER-ONLY.**
 
-**▶ Next work: delivery 3 (ADR-0158)** — see the section below. Re-derive it from
-scratch; it has never survived a rule-#9 audit and predates Premise Discipline.
+| gate step | state |
+|---|---|
+| `go test -race ./engine/...` + coverage | ✅ EXIT=0, **engine 92.5 %** (92.4 % excl. generated; baseline 92.4 % — held) |
+| 11 container-free packages | ✅ EXIT=0 |
+| `golangci-lint run ./engine/...` · `go vet ./...` · `gofmt` | ✅ clean |
+| Mutation duty | ✅ **8 mutations, 7 caught, 1 recorded non-catching and re-run** — table in the plan §4.1a |
+| RED→GREEN cycles | ✅ **6**, all observable in the delivery transcript |
+| Documents describe what shipped | ✅ one implementation-correction amended in-bundle (the `armBySignal` deletion) |
+| **Repo-wide `go test -race ./...`** | ✅ EXIT=0, **64 pkgs, 0 races**, coverage **74.0 %** (floor 73.9 %) |
+| **`/code-review`** | ✅ **3 findings (1 HIGH, 1 Med, 1 Low), ALL fixed and folded.** The HIGH was a false claim in a comment: `dispatchArmCascade` asserted its callers guarded the token fall-throughs; they did not, and a live `InvokeAction` escaped on both the timer and message paths |
+| **`/security-review`** | ✅ **ZERO findings.** Net direction of ADR-0172 is *narrowing*; `spawnsNewWork` fails closed on unknown status |
+| Merge `--no-ff` + push | ⛔ **awaiting owner go-ahead — the only step left** |
 
-⚠ **Do not trust any `main` SHA written in this file** — re-derive:
-`git rev-parse --short main`.
+✅ The two owed placement mutations were built and run at the gate (M9/M10):
+removing both token-path guards → RED on both new tests; removing only the
+message guard → RED on only the message test. Restores `cmp`-verified.
 
-### What the shipped bundle did
+⚠ **The gate has caught real defects in each of the last four deliveries**, after
+adversarial stand-ins passed them. This bundle's own audit found **3 Criticals**
+that a reading-only pass would have missed. Do not treat the gate as a formality.
+
+### ⚠ What the re-derivation changed, before anyone re-reads the parked draft
+
+The parked ADR-0158 draft on `parked/scope-and-fanout-design` is **six deliveries
+stale and must not be used as an input.** Re-deriving its premises by execution
+refuted **five** inherited claims and found **two defects it never mentions**:
+
+- `!= StatusRunning` as the per-iteration predicate — refuted; ADR-0169's
+  `IsTerminal()` is **inherited**, not re-derived.
+- "a boundary flow targeting a missing node errors" — measured: it **parks**, and
+  leaves a permanently unresumable token.
+- "a non-root event-sub-process arm fires into a COMPLETED instance" — the framing
+  the ESP half was opened on. **Unreachable through the public API**; the real
+  defect is `StatusCompensating`.
+- ADR-0168's ESP "accepted cost" — already withdrawn by ADR-0171.
+- "the nested conjunct is asserted by the named test" (`engine/step_nodes.go`) —
+  measured false; the suite is green without it.
+
+New, both executed: **a later tier fires an arm the delivery itself created** (a
+human task minted *and cancelled* in one step; a sub-process entered *and torn
+down* in one step), and **per-family ordering cannot be stated once**, because the
+boundary and event-sub-process interrupt blast radii differ.
+
+⚠ **The fan-out is NOT a pure superset of today's behaviour** — some deliveries
+will fire FEWER arms, because an arm created during the delivery is no longer in
+the snapshot. Any recap sentence saying "0158 only makes more arms fire" is false.
+
+### What the PREVIOUS delivery (ADR-0168/0169/0170/0171, merge `b12bba3`) did
 
 **Four** ADRs — 0168/0169/0170 were the designed bundle; **0171 was added at the
 delivery gate**, because 0168 must not ship without it (below). All defects
@@ -53,7 +96,7 @@ reproduced by execution; none previously covered by any test in either direction
    now pins its record source at start and the scope exit is held while a walk
    names it as its resume target.
 
-### Gate record (all steps passed)
+### Gate record of that PREVIOUS delivery (all steps passed)
 
 | step | state |
 |---|---|
@@ -68,7 +111,7 @@ reproduced by execution; none previously covered by any test in either direction
 | Suite on the **merged** tree | ✅ re-run before pushing: EXIT=0, 64 pkgs, 0 races, repo 74.0 %, `engine` 92.4 %, lint + vet clean |
 | Merged `--no-ff` and pushed | ✅ merge `b12bba3` |
 
-### ⚠⚠ FOUR design claims that execution refuted
+### ⚠⚠ FOUR design claims that execution refuted IN THAT PREVIOUS DELIVERY
 
 All amended in-bundle (rule #11) with the measurement, rather than left in a
 transcript. **All four had survived the rule-#9 audit's three Opus auditors.**
@@ -171,34 +214,47 @@ is not a formality on this codebase.
 | Latest ADR | **0171**. 0155–0157 reserved by the older parked branch. Next free is **0172** |
 | v0.1.0 | not tagged |
 
-## ▶ NEXT WORK: delivery 3 (ADR-0158)
+## ▶ CURRENT WORK: delivery 3 — ADR-0158 + ADR-0172
 
-**A broadcast signal must fire every matching arm per family, not just the first.**
-Draft on `parked/scope-and-fanout-design`. Prerequisites ADR-0165 and ADR-0166 are
-shipped; **ADR-0168/0169/0170/0171 are now also inputs** — 0158 multiplies the dispatch
-points inside one delivery, which multiplies 0169's exposure.
+Branch **`feat/signal-fanout-and-esp-status`**. Per-delivery detail lives in that
+delivery's plan `▶ Progress` block, not here.
 
-**Re-derive it before acting.** It has never survived a rule-#9 audit, it predates
-the Premise Discipline section entirely, and every engine file it touches has moved
-under ADR-0165 and 0162/0163/0164 — and now under this bundle.
+**ADR-0158** — a broadcast signal fires **every** matching arm per family, not the
+first. Tiers 1–3 change from singular first-match lookups to
+snapshot-then-fire-each. Closes the gap ADR-0154 recorded as deliberately open.
 
-⚠ **0158 must NOT re-derive the predicate from `!= StatusRunning`** — refuted by
-execution and marked as such in both
-`docs/specs/2026-08-08-adr-0158-premise-evidence.md` (three correction blocks) and
-this bundle's spec §6.
+**ADR-0172** — an event-sub-process arm does not spawn work into a **dying**
+instance. Replaces the root-scope-only `!= StatusRunning` check with one predicate
+over every arm. Bundled because the fan-out multiplies ESP arm firing.
 
-⚠ **ADR-0169's no-hoist requirement is aimed squarely at 0158.** The three tier
-lookups survive today only because all three fire functions happen to re-validate
-before acting — an accident of three independent implementations, not an invariant,
-and exactly what the fan-out will disturb. Hoisting them leaves the suite `EXIT=0`.
+### Owner decisions already taken (do not re-litigate)
 
-⚠ **ADR-0154 left "first match per family" OPEN deliberately** — that is 0158's gap.
+1. **All three tiers** fan out, with the `resolvedGateways` ABA guard.
+2. **Definition-scan order — NO SORT, in any family.** ⚠ A per-family
+   `NonInterrupting` sort was specified and then **refuted by execution in both
+   directions**. Destroyability depends on the arm's **body**, not its flag, so no
+   flag-based sort is correct in general. *If you find yourself adding a sort, read
+   ADR-0158 Decision 2 first.*
+3. **The dying-instance predicate lives in the shared dispatch guard**, covering
+   every arm family, not only the ESP fire site.
+4. **`walkReverse` is excluded** from the "fires" set, deliberately.
+5. **The ESP hole is bundled in**, as its own ADR-0172.
+
+### Ordered next steps
+
+1. **Build the two owed fixtures** (plan P3 rows 8 and 10) and mutate the
+   dispatch-guard placement: move `spawnsNewWork()` out of `dispatchArmCascade`
+   into the fire function only, and confirm both go RED.
+2. **Delivery Gate** — repo-wide suite + coverage (Docker), `/code-review`,
+   `/security-review`. Fold every finding with `--amend`; never stack.
+3. Re-run the suite on the **merged** tree, merge `--no-ff`, push.
 
 ### Then, in priority order
 
 1. The **two ADRs still owed by delivery 2b** — incident-history retention (owner
    chose REVISIT) and **zombie scopes** (ADR-0162 ships a stale sentence claiming
-   `endInstance` closes them; it never touches `s.Scopes`).
+   `endInstance` closes them; it never touches `s.Scopes`). ⚠ This delivery
+   re-measured a zombie scope surviving on a terminated instance.
 2. A pre-v0.1.0 blocker from the list below.
 
 ## Pre-v0.1.0 blockers

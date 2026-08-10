@@ -154,17 +154,30 @@ func armEventTriggeredSubprocesses(def *model.ProcessDefinition, s *InstanceStat
 //  4. Open a child scope and place a start token — runs alongside.
 //  5. Drive forward.
 func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, ea eventTriggeredSubprocessArm, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
-	// Verify the enclosing scope is still active. For root scope (empty enclosingScopeID),
-	// the scope is always "active" as long as the instance is running.
+	// ADR-0172: a DYING instance spawns no new work, whichever scope the arm
+	// belongs to. This replaced a root-scope-only `s.Status != StatusRunning`
+	// check, which was wrong in both directions:
+	//
+	//   - It never applied to NON-ROOT arms at all, so an arm whose enclosing
+	//     scope was still alive fired into a terminating rollback — dispatching a
+	//     real action to a real worker, then leaving the terminated instance
+	//     carrying an orphan token awaiting a command that can never be applied.
+	//   - For ROOT arms it silenced a LEGITIMATELY RUNNING instance: a local
+	//     compensation throw leaves the process running (it resumes at the throw's
+	//     successor), and the delivery was still consumed, so the signal was lost
+	//     for good — signals are one-shot broadcasts and nothing redelivers.
+	//
+	// spawnsNewWork asks "is this instance dying" rather than "is it exactly
+	// running", and is an ALLOW-list so an unrecognised Status fails closed.
+	if !s.spawnsNewWork() {
+		return nil, nil
+	}
+
+	// Scope liveness is a separate question and still applies to non-root arms
+	// only: the root scope is implicit and is never closed.
 	if ea.EnclosingScopeID != "" {
-		scope := s.scopeByID(ea.EnclosingScopeID)
-		if scope == nil {
+		if scope := s.scopeByID(ea.EnclosingScopeID); scope == nil {
 			// Enclosing scope is gone (completed or cancelled): stale trigger, clean no-op.
-			return nil, nil
-		}
-	} else {
-		// Root scope: active if instance is running.
-		if s.Status != StatusRunning {
 			return nil, nil
 		}
 	}

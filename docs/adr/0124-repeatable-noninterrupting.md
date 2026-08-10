@@ -55,6 +55,16 @@ scope / drive) unchanged.
    (handlers call the fire function once per delivery; by-name lookup returns the first match), so
    a single delivery still spawns exactly one parallel path — `TestNonInterruptingBoundarySignalNoSelfCascade`
    holds. Repeatability is *across* deliveries.
+
+   > ⚠ **AMENDED by [ADR-0158](0158-signal-fires-every-matching-arm.md)
+   > (2026-08-10).** The premise "by-name lookup returns the first match" is
+   > removed: a broadcast **signal** now fires EVERY matching arm per family.
+   > Per-delivery-once survives **per arm** — each snapshotted identity fires at
+   > most once, and re-resolution is an existence check, never a selector — but is
+   > no longer true **per family**. `TestNonInterruptingBoundarySignalNoSelfCascade`
+   > still holds unchanged: one arm yields one snapshot entry and one fire.
+   > Timer and message dispatch keep first-match, for the reasons ADR-0158 records
+   > (a `TimerID` is unique per arm; a message is point-to-point).
 4. **Runtime terminal guard:** `syncMsgWaiters` returns without re-registering, and `syncSignalBus`
    syncs an empty set, when `isTerminal(st.Status)`. A terminal instance holds no correlation
    waiter regardless of what arms linger in its snapshot. `isTerminal` excludes the transient
@@ -62,6 +72,17 @@ scope / drive) unchanged.
    lingering arm in a terminal snapshot is harmless (`fireEventTriggeredSubprocessArm` is
    status-guarded to no-op on a non-`Running` instance); the runtime guard is the correctness
    boundary.
+
+   > ⚠ **AMENDED by [ADR-0172](0172-an-event-subprocess-arm-checks-instance-status.md)
+   > (2026-08-10). The parenthetical above is FALSE and was false when written.**
+   > `fireEventTriggeredSubprocessArm` was status-guarded on the **root scope
+   > only**; a NON-ROOT arm whose enclosing scope was still alive fired on a
+   > `completed`, `failed` or `terminated` instance — opening a scope, placing a
+   > token and emitting a live `InvokeAction`. Measured directly against the fire
+   > function. The neighbouring sentence — that `isTerminal` excludes
+   > `Compensating` — is **true**, and the two together are what made the real,
+   > reachable defect: an arm firing into a *terminating compensation rollback*.
+   > ADR-0172 replaces the root-only check with one predicate over every arm.
 5. **No wire/definition change.** Repeatability is a runtime firing property of the existing
    `NonInterrupting` flag — no new node field, builder option, or wire key. Existing definitions
    gain the correct BPMN behavior for free.

@@ -163,7 +163,7 @@ never build the struct literals directly.
 | `engine.NewHumanCompleted(at, taskID, output, actor)` | A human task was completed. |
 | `engine.NewHumanReassigned(at, taskID, from, to, by)` | A human task was reassigned from one actor to another (e.g. by an admin). |
 | `engine.NewTimerFired(at, timerID)` | A previously scheduled timer fired. |
-| `engine.NewSignalReceived(at, name, payload)` | A named signal was broadcast (resumes all tokens awaiting it). |
+| `engine.NewSignalReceived(at, name, payload)` | A named signal was broadcast. Fires **every** matching arm in each family (event-gateway, boundary, event sub-process) **and** resumes every token awaiting it — see ADR-0158. Only arms armed at the delivery instant catch it. |
 | `engine.NewMessageReceived(at, name, correlationKey, payload)` | A named message arrived (resumes the single matching token). |
 | `engine.NewSubInstanceCompleted(at, commandID, output)` | A child process instance completed successfully. |
 | `engine.NewSubInstanceFailed(at, commandID, errMsg)` | A child process instance failed. |
