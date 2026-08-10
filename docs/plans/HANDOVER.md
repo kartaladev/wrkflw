@@ -110,7 +110,8 @@ is not a formality on this codebase.
    mid-walk destroys the record source the cursor names. Pre-0168 the instance
    silently went `completed`; with 0168's conjuncts it survives to the next
    `ActionCompleted` and **panics inside the pure engine core, in the consumer's
-   process**. Surfaced by an untracked `FABLE_AUDIT.md` that appeared mid-session
+   process**. Surfaced by the adversarial architecture audit that appeared mid-session
+(now `AUDIT.md` on branch `docs/architecture-audit`, see backlog item 5)
    (finding D, marked there as *unverified* — it was executed, and it reproduces).
    ⚠ **This also retired claim 1's own "accepted cost".** The
    `EventTriggeredSubprocesses` **2 → 0** arm loss recorded as a measured accepted
@@ -280,9 +281,12 @@ Each was **executed**; each is deliberately out of the bundle's scope.
    applied twice). Likely fix: on a scope-wide-throw finish whose scope is gone,
    drop the drained records from `ArchivedCompensations[scope.NodeID]` too, or
    archive with a drained-prefix marker. Own ADR.
-5. **`FABLE_AUDIT.md`** — an untracked 747-line adversarial architecture audit that
-   appeared in the tree on 2026-08-10, **not written by this delivery's agents and
-   deliberately NOT committed**. Its finding D was verified and fixed here
+5. **`AUDIT.md`** — a 747-line adversarial architecture audit (2026-08-10), **not
+   written by this delivery's agents**. Committed as `393e516` on the local branch
+   **`docs/architecture-audit`**; ⚠ **deliberately NOT on `main` and NOT pushed**,
+   because the repo is **public** and the file details unfixed Critical/High findings
+   in enough detail to act on. Merge it to `main` only once those are closed, or
+   after redacting the security seam. (Was `FABLE_AUDIT.md`, untracked at the root.) Its finding D was verified and fixed here
    (ADR-0171). Its other Critical/High findings are **untriaged** and mostly
    outside this delivery: post-commit projections have no crash-recovery path
    (waiters/tasks/actions, vs timers which got `RehydrateTimers`); HTTP task
