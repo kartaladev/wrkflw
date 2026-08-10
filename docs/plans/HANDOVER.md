@@ -173,7 +173,7 @@ is not a formality on this codebase.
 | Latest ADR | **0171**. 0155–0157 reserved by the older parked branch. Next free is **0172** |
 | v0.1.0 | not tagged |
 
-## ▶ After this bundle: delivery 3 (ADR-0158)
+## ▶ NEXT WORK: delivery 3 (ADR-0158)
 
 **A broadcast signal must fire every matching arm per family, not just the first.**
 Draft on `parked/scope-and-fanout-design`. Prerequisites ADR-0165 and ADR-0166 are
