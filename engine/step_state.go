@@ -408,6 +408,11 @@ func cloneState(st InstanceState) InstanceState {
 	// mutations to a clone's record do not affect the original. nil-vs-empty is
 	// preserved (see cloneCompensationRecords).
 	s.RootCompensations = cloneCompensationRecords(st.RootCompensations)
+	// Deep-copy the in-flight compensation walk's PINNED records (ADR-0171). The
+	// struct copy above carries the cursor's scalars correctly, but Records is a
+	// slice of records holding Input maps — without this the clone and the
+	// original would share both the backing array and those maps.
+	s.Compensating.Records = cloneCompensationRecords(st.Compensating.Records)
 	// Deep-copy Scopes: each Scope contains a Compensations slice that must be
 	// independently allocated so mutations to a clone's compensation records do
 	// not affect the original. The other Scope fields (ID, NodeID, ParentID) are

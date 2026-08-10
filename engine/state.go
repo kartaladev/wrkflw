@@ -233,10 +233,10 @@ type InstanceState struct {
 	EventTriggeredSubprocesses []eventTriggeredSubprocessArm
 
 	// Compensating tracks the in-flight reverse-order compensation walk, if any.
-	// It is non-zero only while Status == StatusCompensating. The cursor is a
-	// plain value struct (all scalar fields); cloneState copies it by value
-	// automatically as part of the InstanceState struct copy — no extra
-	// deep-copy code is required.
+	// It is non-zero only while Status == StatusCompensating. Its scalar fields
+	// are carried by the InstanceState struct copy in cloneState; its one
+	// non-scalar field — the pinned Records source added by ADR-0171 — is
+	// deep-copied there explicitly.
 	Compensating compensationCursor
 
 	// Incidents holds all open incident records for this instance. An incident is
@@ -245,11 +245,39 @@ type InstanceState struct {
 	// resolves the incident (re-invoking the failed action via ResolveIncident).
 	Incidents []Incident
 
-	// PendingCancel is set when a CancelRequested arrives while a compensation
-	// THROW walk is in flight; the throw walk finishes, then runs a full cancel
-	// over the remaining records and terminates instead of resuming — avoids
-	// double-compensating the throw's in-flight records (ADR-0039 B1 fix).
+	// PendingCancel is set when a CancelRequested — or, since ADR-0170, an
+	// unhandled error — arrives while a resuming compensation walk is in flight;
+	// that walk finishes, then runs a full walk over the remaining records and
+	// terminates instead of resuming, avoiding double-compensation of the records
+	// the in-flight walk already consumed (ADR-0039 B1 fix).
 	PendingCancel bool
+
+	// PendingFinalStatus / PendingFinalErr are the terminal outcome the deferred
+	// termination described by PendingCancel must apply when the in-flight walk
+	// finishes. They are read by applyFinish and cleared as they are consumed.
+	//
+	// BOTH deferral sites stamp them EXPLICITLY: handleCancelRequested writes
+	// StatusTerminated + "cancelled" (the ADR-0039 cancel outcome) and
+	// handleUnhandledError writes StatusFailed + the uncaught error code
+	// (ADR-0170), so whichever trigger arrives last owns the outcome. They did
+	// not always: the cancel path once set PendingCancel alone and leaned on
+	// applyFinish's zero-value default, which a preceding deferred error had
+	// already displaced — measured, a cancel then terminated the instance
+	// `failed` carrying the superseded error's code.
+	//
+	// The ZERO value (StatusRunning == 0, "") consequently no longer accompanies
+	// a SET PendingCancel in any state this engine writes — applyFinish zeroes
+	// the pair, but only as it clears PendingCancel with it. applyFinish still
+	// maps that combination to the cancel outcome, for exactly one input: a
+	// snapshot persisted by an older build, whose PendingCancel came from the
+	// pre-fix cancel path.
+	//
+	// Both are scalars, so cloneState's struct copy carries them and the
+	// persisted JSON snapshot round-trips them with no extra code. Engine
+	// bookkeeping: like Compensating and PendingCancel they are deliberately
+	// absent from the service.ProcessInstance projection.
+	PendingFinalStatus Status
+	PendingFinalErr    string
 
 	// DeferredCompensationThrows holds the token IDs of compensation-throw tokens
 	// that were reached while a compensation walk was already in flight

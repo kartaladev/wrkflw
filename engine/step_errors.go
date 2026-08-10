@@ -200,9 +200,14 @@ const (
 //     keep the instance running (admin-resumable), instead of failing it. Used by
 //     the retry-exhaustion path when an effective policy exists but neither a
 //     catch flow nor a boundary handled the terminal failure.
-//  2. Compensation records exist (RootCompensations or ArchivedCompensations,
+//  2. A compensation walk is ALREADY in flight: it is neither restarted nor
+//     terminated around — the error is recorded as its pending terminal outcome
+//     (see deferFailureToInFlightCompensationWalk, ADR-0170). Checked BEFORE the
+//     record test below, because a walk over a sub-process scope's records leaves
+//     both record lists empty.
+//  3. Compensation records exist (RootCompensations or ArchivedCompensations,
 //     ADR-0039): run the compensation walk before terminating (ADR-0034).
-//  3. Otherwise: immediate s.Status = StatusFailed, cancel open tasks/timers/arms,
+//  4. Otherwise: immediate s.Status = StatusFailed, cancel open tasks/timers/arms,
 //     and emit FailInstance{Err: errorCode}.
 func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode, eval ConditionEvaluator, policy unhandledErrorPolicy) ([]Command, error) {
 	if policy == raiseIncident {
@@ -230,6 +235,18 @@ func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *
 		return nil, nil
 	}
 
+	// A compensation walk already in flight IS the rollback: never start a second
+	// one, and never terminate around it (ADR-0170). Checked BEFORE the
+	// compensation-records test below, mirroring handleCancelRequested's own
+	// in-flight guard, which is likewise unconditional: a walk over a sub-process
+	// scope's records leaves both RootCompensations and ArchivedCompensations
+	// empty, so a nested guard falls through to endInstance and abandons the live
+	// walk mid-flight — measured status=failed with the cursor cleared and the
+	// dispatched compensation action orphaned.
+	if s.Status == StatusCompensating && s.Compensating.ActiveCmdID != "" {
+		return deferFailureToInFlightCompensationWalk(s, at, errorCode), nil
+	}
+
 	// Terminal unhandled error: run compensation walk before terminating (ADR-0034).
 	// Check both RootCompensations and ArchivedCompensations (ADR-0039) — consolidation
 	// happens inside beginCompensation.
@@ -248,6 +265,78 @@ func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *
 	// the scheduled work, in the same order as before (ADR-0164). This branch does
 	// NOT drop tokens, so the incidents whose token survives are deliberately kept.
 	return s.endInstance(StatusFailed, at, FailInstance{Err: errorCode}), nil
+}
+
+// deferFailureToInFlightCompensationWalk records an unhandled error as the
+// pending terminal outcome of a compensation walk that is already in flight,
+// instead of starting a second walk (ADR-0170). The caller has established both
+// preconditions: s.Status == StatusCompensating and
+// s.Compensating.ActiveCmdID != "".
+//
+// It does what beginCompensation's prologue does — cancel every remaining token's
+// waits, then the leftover timers and arms — but leaves the CURSOR entirely
+// untouched, so the outstanding InvokeAction keeps its awaiter and the records
+// already consumed are not re-walked. A second walk would re-dispatch a
+// compensation action that this repo's contract nowhere requires to be
+// idempotent, and would orphan the in-flight command by renaming the cursor out
+// from under it.
+//
+// The outcome is deferred rather than stamped on the cursor, reusing the
+// PendingCancel protocol handleCancelRequested has used for the same collision
+// since ADR-0039. Stamping the cursor was the shape ADR-0170 originally shipped,
+// and it converted the live walk into this error's rollback — inheriting that
+// walk's own record source (its ArchiveKey, or a sub-process ScopeID). Every
+// record OUTSIDE that source was then never compensated: measured, a targeted
+// throw left the root record uncompensated AND erased it (a targeted cursor's
+// ScopeID is empty, so once ResumeNode was cleared the finish took its walkAdmin
+// branch and nil'd RootCompensations — root records 1 → 0), and a nested
+// scope-wide throw stranded it. Deferring instead makes applyFinish re-enter
+// beginCompensation over the REMAINDER once the walk drains, which is the whole
+// point of the protocol being reused.
+//
+// PendingFinalStatus/PendingFinalErr are last-writer-wins: a second unhandled
+// error arriving before the walk ends overwrites the first code. Deliberate,
+// matching beginCompensation's own behaviour; recorded in ADR-0170 Decision 3 as
+// a known imprecision.
+//
+// ⚠ The deferral is consumed only by applyFinish's consumePendingCancel plans —
+// the walkThrowTargeted, walkThrowScopeWide and walkReverse finishes. The other
+// two walks cannot be live here: walkPartial and walkAdmin are both begun by
+// beginCompensation, whose prologue cancels every token (measured: tokens=0 for
+// all of walkAdmin, walkPartial and walkReverse while in flight), and all three
+// propagateError call sites — handleActionFailed's two and endEventStrategy's
+// EndError — reach this function only from a live token. No token, no unhandled
+// error, so those two modes never reach this guard.
+func deferFailureToInFlightCompensationWalk(s *InstanceState, at time.Time, errorCode string) []Command {
+	var cmds []Command
+	// Snapshot before iterating: cancelTokenWaits consumes tokens from s.Tokens.
+	tokensToCancel := make([]Token, len(s.Tokens))
+	copy(tokensToCancel, s.Tokens)
+	for _, tok := range tokensToCancel {
+		cmds = append(cmds, cancelTokenWaits(s, &tok, at, CloseKindErrored)...)
+	}
+	cmds = append(cmds, s.cancelAllTimers()...)
+	// cancelAllArmsAndBoundaries, NOT cancelAllScheduledWork — but not for the
+	// reason that function's godoc gives. Its stated rationale ("the walk may still
+	// resume the instance") is FALSE on this path: the deferral recorded below
+	// makes the walk's finish terminate instead of resuming.
+	//
+	// The real reason is that this path is not terminating YET. The instance stays
+	// StatusCompensating until the walk's own ActionCompleted arrives, and even
+	// then a further walk over the remaining records may run first; only the last
+	// finish applies FinalStatus through endInstance, which calls
+	// cancelAllScheduledWork and sweeps the event-sub-process arms across all scopes
+	// (source-verified: endInstance's last statement). Sweeping them here would
+	// duplicate that and put CancelTimers on both sides of the terminal command,
+	// breaking the [task cancels…, terminal, scheduled-work cancels…] ordering every
+	// terminal path emits (ADR-0164) — the same constraint documented at
+	// exitRootEventSubprocessScope.
+	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
+
+	s.PendingCancel = true
+	s.PendingFinalStatus = StatusFailed
+	s.PendingFinalErr = errorCode
+	return cmds
 }
 
 // propagateError propagates a thrown errorCode to the nearest matching boundary error handler (BPMN-style error propagation).

@@ -23,10 +23,18 @@ func compensationRecordsForScope(s *InstanceState, scopeID string) []Compensatio
 }
 
 // cursorRecords returns the CompensationRecord slice for the current compensation
-// walk described by cur. When cur.ArchiveKey is non-empty, the records are drawn
-// from s.ArchivedCompensations[cur.ArchiveKey] (a scope-targeted throw walk);
-// otherwise compensationRecordsForScope is used (admin / cancel / error walks).
+// walk described by cur.
+//
+// A pinned source (cur.Records, set by startCompensationWalk — ADR-0171) wins:
+// it is a snapshot taken at walk start, so the walk keeps iterating the records
+// it committed to even if a sibling branch destroys the live source underneath
+// it. The live reads below remain for the walks that do not pin — the
+// beginCompensation family — and for a throw cursor deserialized from a row
+// written before ADR-0171, whose Records is nil.
 func cursorRecords(s *InstanceState, cur compensationCursor) []CompensationRecord {
+	if cur.Records != nil {
+		return cur.Records
+	}
 	if cur.ArchiveKey != "" {
 		return s.ArchivedCompensations[cur.ArchiveKey]
 	}
@@ -404,8 +412,9 @@ func compensationInvoke(rec CompensationRecord, cmdID string) InvokeAction {
 // next InvokeAction in reverse order, or finalises compensation if the walk is done.
 func stepCompensationAdvance(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
 	cur := s.Compensating
-	// Use cursorRecords so that throw walks (ArchiveKey != "") read from the
-	// archive and admin/cancel/error walks read from the live scope.
+	// Use cursorRecords so a pinned throw walk reads its snapshot, an unpinned
+	// throw walk reads its archive, and admin/cancel/error walks read the live
+	// scope.
 	records := cursorRecords(s, cur)
 
 	// Advance: the record we just completed is at cur.NextIndex. Move to the
@@ -419,8 +428,22 @@ func stepCompensationAdvance(ctx context.Context, def *model.ProcessDefinition, 
 
 	// Check if next record is within the eligible range.
 	// Eligible: nextIdx >= 0 AND nextIdx > toNodeIdx (i.e. the record is AFTER ToNode).
-	if nextIdx < 0 || nextIdx <= toNodeIdx {
-		// Walk complete: either exhausted all records, or reached ToNode boundary.
+	//
+	// nextIdx >= len(records) is the third disjunct (ADR-0171): a record source
+	// that vanished or shrank under the cursor must route HERE, to the walk's
+	// finish, and never to the index expression below. It is unreachable for a
+	// walk this build started — startCompensationWalk pins the source, and
+	// beginCompensation's own source is RootCompensations, which no scope
+	// teardown can nil — but it IS reachable for a walk that was already in
+	// flight when the process restarted: such a cursor was persisted without
+	// Records, so cursorRecords falls back to a live read that now returns
+	// nothing. That is the state
+	// TestCompensationAdvanceFinishesWhenRecordSourceIsGone builds, and without
+	// this disjunct it panics with an index out of range inside the pure engine
+	// core.
+	if nextIdx < 0 || nextIdx >= len(records) || nextIdx <= toNodeIdx {
+		// Walk complete: exhausted all records, lost the record source, or
+		// reached the ToNode boundary.
 		return stepCompensationFinish(ctx, def, s, cur.ToNode, at, mode, eval)
 	}
 
@@ -757,19 +780,48 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 		delete(s.ArchivedCompensations, plan.deleteArchive)
 	}
 
-	// A cancel that arrived mid-walk preempts the resume: the walk's target is
-	// already compensated (and, for a throw, removed from the archive above), so a
-	// full cancel over the REMAINING records cannot double-run it. Terminate.
+	// A cancel — or an unhandled error (ADR-0170) — that arrived mid-walk preempts
+	// the resume: the walk's target is already compensated (and, for a throw,
+	// removed from the archive above), so a full walk over the REMAINING records
+	// cannot double-run it. Terminate.
 	if plan.resume && plan.consumePendingCancel && s.PendingCancel {
 		s.PendingCancel = false
+		// The deferred terminal outcome. BOTH deferral sites stamp it explicitly:
+		// handleCancelRequested writes StatusTerminated + "cancelled",
+		// deferFailureToInFlightCompensationWalk writes StatusFailed + the uncaught
+		// error code. The ZERO PendingFinalStatus is therefore only a state
+		// PERSISTED before that became true — PendingCancel set by a pre-fix
+		// handleCancelRequested — and decodes as the cancel outcome it had then.
+		// Deriving the cancel from the zero value alone was the defect: a cancel
+		// arriving after a deferred error found the fields already stamped and
+		// silently replayed the error's outcome.
+		//
+		// ⚠ pendingKind is pinned by NO test on EITHER path, and saying so is cheaper
+		// than a reader assuming otherwise. CloseKind reaches nothing here but
+		// beginCompensation's per-token cancelTokenWaits, and this re-entry runs with
+		// no token left to close (measured: tokens=0 at the moment of a deferred
+		// error). Both mutations were run: forcing the error case to
+		// CloseKindInstanceCancelled, and forcing the cancel case to CloseKindErrored,
+		// each left ./engine at EXIT=0. It is set for correctness of the value, not
+		// for an observable.
+		pendingStatus, pendingErr := s.PendingFinalStatus, s.PendingFinalErr
+		if pendingStatus == 0 {
+			pendingStatus, pendingErr = StatusTerminated, "cancelled"
+		}
+		pendingKind := CloseKindInstanceCancelled
+		if pendingStatus == StatusFailed {
+			pendingKind = CloseKindErrored
+		}
+		s.PendingFinalStatus, s.PendingFinalErr = 0, ""
 		// Clear THIS walk's own already-compensated records BEFORE the cancel walk
 		// so it cannot re-run them (double-compensation). A TARGETED throw walk
 		// (archiveKey != "") deleted its archive above (deleteArchive) and RETAINS
 		// RootCompensations — those are genuinely-uncompensated outer records the
 		// cancel walk must still compensate (doClearRecords == false, skipped here).
 		// A SCOPE-WIDE throw walk (archiveKey == "", ADR-0120) instead compensated
-		// the throwing scope's own live records, so — like the full-reverse walk —
-		// it clears them here (doClearRecords == true). It clears ONLY the drained
+		// the snapshot it pinned of the throwing scope's own records, so — like the
+		// full-reverse walk — it clears that scope's live list here
+		// (doClearRecords == true). It clears ONLY the drained
 		// prefix (scopeWideThrow, review A1): the re-issued beginCompensation then
 		// compensates any sibling record appended mid-walk and terminates
 		// (FailInstance{"cancelled"}, StatusTerminated) — the correct compensate-once
@@ -777,7 +829,7 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 		// compensated ALL of RootCompensations and clears the whole list the same way.
 		applyPlanRecordClearing(s, plan)
 		s.Status = StatusCompensating
-		return beginCompensation(ctx, def, s, at, mode, eval, compensationOutcome{CloseKind: CloseKindInstanceCancelled, FinalStatus: StatusTerminated, FinalErr: "cancelled"})
+		return beginCompensation(ctx, def, s, at, mode, eval, compensationOutcome{CloseKind: pendingKind, FinalStatus: pendingStatus, FinalErr: pendingErr})
 	}
 
 	if !plan.resume {
@@ -800,9 +852,48 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 		// record's Input map from later mutation by the resumed instance.
 		s.Variables = copyVars(plan.restoreVars)
 	}
-	s.placeTokenInScope(plan.resumeAt, plan.resumeScope, at)
+	// The resume target's scope can be GONE by the time the walk drains. Only a
+	// compensation throw carries a non-empty resumeScope (walkPartial and
+	// walkReverse always resume at the root scope), and a throw resumes past
+	// itself, so sibling branches keep running and can destroy that scope
+	// underneath the walk. exitSubprocessScope holds its own exit for exactly
+	// this reason (ADR-0171), but it is not the only route: an error boundary on
+	// the enclosing sub-process must fire, so its teardown cannot be deferred,
+	// and exitNestedEventSubprocessScope closes the ENCLOSING scope when a nested
+	// event sub-process is the last thing running inside it — neither consults
+	// the hold. Both were measured to place the resume token in a pruned scope,
+	// after which drive's defForScope failed and every subsequent Step returned
+	// `workflow-engine: defForScope: unknown scope …`.
+	//
+	// Dropping the resume is the recovery: the branch the throw belonged to no
+	// longer exists, and whatever destroyed its scope has already routed the
+	// process onward (a boundary target, or the grandparent resume). Erroring
+	// instead left the walk's own ActionCompleted permanently unappliable.
+	resumeDropped := plan.resumeScope != "" && s.scopeByID(plan.resumeScope) == nil
+	if resumeDropped {
+		slog.WarnContext(ctx, "compensation walk resume scope no longer exists; dropping the resume",
+			"instance_id", s.InstanceID,
+			"resume_node", plan.resumeAt,
+			"resume_scope", plan.resumeScope,
+		)
+	} else {
+		s.placeTokenInScope(plan.resumeAt, plan.resumeScope, at)
+	}
 	if plan.popDeferred {
 		popOneDeferredThrow(s)
+	}
+	// A dropped resume can leave NOTHING running — a deferred throw is the only
+	// other thing that can put a token back, and there may be none. Completing
+	// here is the same decision the scope exit that pruned the scope would have
+	// taken had the cursor been clear: ADR-0168 only DEFERS that completion until
+	// the walk drains, and this is where it drains. Without it the instance sits
+	// Running with no token and no route to any terminal state.
+	//
+	// Guarded on resumeDropped, not on the token count alone: every other resume
+	// has just placed its own token, so the count can only be zero here.
+	if resumeDropped && len(s.Tokens) == 0 {
+		return StepResult{State: *s, Commands: s.endInstance(StatusCompleted, at,
+			CompleteInstance{Result: copyVars(s.Variables)})}, nil
 	}
 	var preDriveCmds []Command
 	if plan.rearmRootESP {

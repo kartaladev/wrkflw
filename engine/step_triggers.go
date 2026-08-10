@@ -178,7 +178,20 @@ func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s 
 			// consumes PendingCancel and runs a full cancel over the REMAINING
 			// records (the throw's archive / the reverse's records are cleared by
 			// then) and terminates instead of resuming.
+			//
+			// The outcome is stamped EXPLICITLY, not left to applyFinish's
+			// zero-value default. Since ADR-0170 the same two fields also carry a
+			// deferred unhandled error's outcome, so a cancel arriving after one
+			// found them already set to StatusFailed + that error's code and
+			// inherited it — measured, the finish produced status=failed with
+			// FailInstance{Err:"boom"} for an instance whose last operator action
+			// was a cancel. Writing both fields here makes this deferral
+			// last-writer-wins in the same way ADR-0170 documents for successive
+			// errors. applyFinish's zero-value default now covers only a state
+			// PERSISTED before this change (PendingCancel true, outcome unset).
 			s.PendingCancel = true
+			s.PendingFinalStatus = StatusTerminated
+			s.PendingFinalErr = "cancelled"
 			cmds := append(append([]Command(nil), cancelActionCmds...), nodeCancelCmds...)
 			return StepResult{State: *s, Commands: cmds}, nil
 		}
@@ -759,59 +772,103 @@ func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *
 	var signalCmds []Command
 	matched := false
 
-	// 1) Check whether the signal matches an event-gateway arm.
-	if ae := s.armedEventBySignal(t.Name); ae != nil {
+	// markMatched merges the delivery payload the FIRST time any dispatch point
+	// matches, and only then (ADR-0169 Decision 4). It runs inside the tier that
+	// matches, before that tier fires, so the tier that legitimately fired is the
+	// one that merged: a delivery aborted after a match returns state carrying the
+	// payload, and one aborted before any match leaves Variables untouched.
+	markMatched := func() {
 		if !matched {
 			mergeVars(s, t.Payload)
 			matched = true
 		}
-		gwCmds, err := resolveGatewayWin(ctx, def, s, *ae, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
-		if err != nil {
-			return StepResult{}, err
-		}
-		signalCmds = append(signalCmds, gwCmds...)
 	}
 
-	// 2) Check whether the signal matches a boundary arm.
-	if ba := s.boundaryArmBySignal(t.Name); ba != nil {
-		if !matched {
-			mergeVars(s, t.Payload)
-			matched = true
-		}
-		baCmds, err := fireBoundaryArm(ctx, def, s, *ba, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
-		if err != nil {
-			return StepResult{}, err
-		}
-		signalCmds = append(signalCmds, baCmds...)
+	// Tiers 1–3 as a slice of lookup-and-fire closures, so the terminal re-check
+	// below is written ONCE for all three arm families and a fourth family added
+	// later inherits it instead of needing another hand-copied guard (ADR-0169
+	// Decision 2; ADR-0165's argument at smaller scale).
+	//
+	// ⚠ Each closure performs its OWN lookup at the moment it runs. The three
+	// lookups must NOT be hoisted out of the closures into variables: each tier's
+	// lookup has to observe the state the PREVIOUS tier's fire left behind, and
+	// NOTHING WILL CATCH IT IF YOU DO. Measured twice — once during ADR-0169's
+	// audit, and again with this bundle's own five regression tests present:
+	// hoisting all three leaves `go test ./engine/` at EXIT=0. It survives today
+	// only because all three fire functions happen to re-validate before acting
+	// (fireBoundaryArm re-reads the host token, resolveGatewayWin re-reads the
+	// gateway token, fireEventTriggeredSubprocessArm re-reads its enclosing scope
+	// and, at root scope, the instance status) — an accident of three independent
+	// implementations rather than a stated invariant, and one ADR-0158's signal
+	// fan-out is expected to disturb.
+	tiers := []func() ([]Command, error){
+		// 1) Event-gateway arm (first-event-wins).
+		func() ([]Command, error) {
+			ae := s.armedEventBySignal(t.Name)
+			if ae == nil {
+				return nil, nil
+			}
+			markMatched()
+			return resolveGatewayWin(ctx, def, s, *ae, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+		},
+		// 2) Boundary event arm (interrupting/non-interrupting).
+		func() ([]Command, error) {
+			ba := s.boundaryArmBySignal(t.Name)
+			if ba == nil {
+				return nil, nil
+			}
+			markMatched()
+			return fireBoundaryArm(ctx, def, s, *ba, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+		},
+		// 3) Event sub-process arm (interrupting: cancel scope; non-interrupting: spawn alongside).
+		func() ([]Command, error) {
+			ea := s.eventTriggeredSubprocessArmBySignal(t.Name)
+			if ea == nil {
+				return nil, nil
+			}
+			markMatched()
+			return fireEventTriggeredSubprocessArm(ctx, def, s, *ea, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+		},
 	}
 
-	// 3) Check whether the signal matches an event sub-process arm.
-	if ea := s.eventTriggeredSubprocessArmBySignal(t.Name); ea != nil {
-		if !matched {
-			mergeVars(s, t.Payload)
-			matched = true
+	// MID-DELIVERY TERMINAL RE-CHECK (ADR-0169). A tier's own drive can reach an
+	// uncaught error and end the instance, and dispatch's entry guard (ADR-0165)
+	// cannot see that: the instance was running when the trigger was admitted. So
+	// every remaining dispatch point re-checks, and an aborted delivery returns
+	// the partial commands the earlier tiers legitimately produced — including the
+	// FailInstance that made the instance terminal. Dropping them would lose the
+	// earlier tiers' task-store reconciliation (ADR-0089) and degrade the terminal
+	// event's error payload. No Warn is emitted; that cost is recorded in
+	// ADR-0169 Decision 5.
+	for _, fire := range tiers {
+		if s.Status.IsTerminal() {
+			return StepResult{State: *s, Commands: signalCmds}, nil
 		}
-		eaCmds, err := fireEventTriggeredSubprocessArm(ctx, def, s, *ea, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+		tierCmds, err := fire()
 		if err != nil {
 			return StepResult{}, err
 		}
-		signalCmds = append(signalCmds, eaCmds...)
+		signalCmds = append(signalCmds, tierCmds...)
 	}
 
 	// 4) Resume all standalone parked-signal tokens that were in the snapshot
 	// (i.e. awaiting this signal at the delivery instant). Tokens spawned by
 	// steps 1–3 above are not in the snapshot and will not be consumed here.
+	//
+	// The terminal re-check belongs INSIDE this loop, not only ahead of it: the
+	// loop is multi-iteration, so one token's drive can end the instance while a
+	// later token still awaits resumption (ADR-0169 Decision 3).
 	for _, tokenID := range snapshotIDs {
+		if s.Status.IsTerminal() {
+			return StepResult{State: *s, Commands: signalCmds}, nil
+		}
 		tok := s.tokenByID(tokenID)
 		// Skip if the token was consumed by an interrupting boundary/event-subprocess (steps 2–3)
 		// or is no longer awaiting this signal.
 		if tok == nil || tok.AwaitSignal != t.Name {
 			continue
 		}
-		if !matched {
-			mergeVars(s, t.Payload)
-			matched = true
-		}
+		markMatched()
 		tok.AwaitSignal = ""
 		// Cancel any in-wait reminder armed on this parked token (signal catch):
 		// the wait has resolved, so the recurring reminder job must be removed.

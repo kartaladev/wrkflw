@@ -60,16 +60,47 @@ type Scope struct {
 // compensationCursor tracks progress through an in-flight reverse-order
 // compensation walk (ADR-0039, ADR-0071, ADR-0109, ADR-0116, ADR-0120). It is
 // set when a CompensateRequested trigger arrives and cleared when the walk
-// completes; cloneState copies it by value (all fields are plain scalars).
+// completes.
+//
+// Every field except Records is a plain scalar. Records is a slice whose
+// elements carry an Input map, so cloneState deep-copies it explicitly
+// (ADR-0171) — a plain struct copy would share the backing array and the
+// records' maps with the original.
 type compensationCursor struct {
 	// ScopeID identifies the scope being compensated ("" = root).
 	// Ignored when ArchiveKey is non-empty (archive walk).
 	ScopeID string
 	// ArchiveKey is the ArchivedCompensations map key for a throw-walk
-	// (non-empty). When set, cursorRecords reads from ArchivedCompensations[ArchiveKey]
-	// instead of the live scope or RootCompensations. Empty for all
-	// beginCompensation (admin / cancel / error) walks.
+	// (non-empty). Empty for all beginCompensation (admin / cancel / error)
+	// walks, which is how walkMode tells a targeted throw from a scope-wide one.
+	//
+	// It selects cursorRecords' source — ArchivedCompensations[ArchiveKey]
+	// rather than the live scope or RootCompensations — only when Records is
+	// nil, i.e. for a cursor persisted before ADR-0171. On every cursor this
+	// build writes, the pinned Records wins.
 	ArchiveKey string
+	// Records pins the walk's record source at walk start (ADR-0171). When
+	// non-nil it is what cursorRecords iterates, in place of the live scope /
+	// archive read; the walk's indices are then immune to anything that mutates
+	// or destroys that source mid-flight.
+	//
+	// It is set by startCompensationWalk — i.e. for COMPENSATION THROW walks
+	// only, which are the only walks that leave sibling tokens running
+	// (throw-then-continue). A sibling reaching its scope's end event calls
+	// archiveCompensations + closeScope, which nils the very slice a scope-wide
+	// throw cursor's ScopeID names; stepCompensationAdvance then indexed an empty
+	// slice and PANICKED inside the pure engine core — i.e. in the consumer's
+	// process, since this ships as a library.
+	//
+	// beginCompensation deliberately does NOT pin: its prologue cancels every
+	// token, so no concurrent branch survives to mutate its source, and that
+	// source is always RootCompensations (its scopeID is the const "") which no
+	// scope teardown can nil.
+	//
+	// nil on a cursor deserialized from a row written before ADR-0171 — that is
+	// the case cursorRecords' live-read fallback and stepCompensationAdvance's
+	// bounds check exist for.
+	Records []CompensationRecord
 	// ResumeNode is the node to place a token at when the compensation throw
 	// walk finishes (the throw event's single successor). When non-empty,
 	// stepCompensationFinish sets Status = StatusRunning and places a token
@@ -378,6 +409,34 @@ func (s *InstanceState) hasChildScopeWithTokens(parentID, exceptID string) bool 
 		}
 	}
 	return false
+}
+
+// compensationWalkHoldsScope reports whether an in-flight compensation walk
+// still needs the scope identified by scopeID to exist (ADR-0171).
+//
+// A compensation THROW resumes past itself, so sibling branches keep running
+// while its walk is outstanding. A sibling reaching the scope's end event would
+// otherwise archive and close that scope mid-walk, after which the walk's own
+// resume placed a token in a scope defForScope can no longer resolve — measured
+// as a PERMANENT wedge, every subsequent Step returning
+// `workflow-engine: defForScope: unknown scope`.
+//
+// The predicate is ResumeScope alone, deliberately. It is the scope the resume
+// token lands in, and BOTH throw forms set it to the throwing token's own scope
+// — so a scope-wide throw's ScopeID is either equal to it or empty, and adding
+// `ScopeID == scopeID` as a second disjunct changes no outcome (measured: the
+// engine suite is green with that disjunct removed, and red with ResumeScope
+// removed). The walk's RECORD SOURCE needs no protection from this function:
+// startCompensationWalk pins it onto the cursor.
+//
+// scopeID is always a real (non-empty) scope at the call site: the root scope is
+// implicit and is never closed. The empty-scopeID guard keeps a root walk
+// (ResumeScope "") from matching it regardless.
+func (s *InstanceState) compensationWalkHoldsScope(scopeID string) bool {
+	if s.Compensating.ActiveCmdID == "" || scopeID == "" {
+		return false
+	}
+	return s.Compensating.ResumeScope == scopeID
 }
 
 // scopeByID returns a pointer to the Scope with the given id, or nil if no
