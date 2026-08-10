@@ -534,6 +534,23 @@ func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *Inst
 		// instance may have advanced via a different branch), so we never error here.
 		return StepResult{State: *s, Commands: nil}, nil
 	}
+	// ADR-0172: a DYING instance spawns no new work — and that is NOT a
+	// signal-specific rule. Resuming this token would drive it forward and
+	// dispatch a real InvokeAction to a worker, whose ActionCompleted then lands
+	// on an instance the in-flight rollback has already terminated.
+	//
+	// The check sits AHEAD of the resume (and, on the message path, ahead of
+	// mergeVars) so the delivery is neither consumed nor half-applied: a message
+	// swallowed here would never be redelivered.
+	//
+	// ⚠ dispatchArmCascade guards the ARM families; this guards the token
+	// fall-through. Both are needed — an earlier revision of this bundle guarded
+	// only the arms and asserted in a comment that the callers covered the
+	// token path themselves. They did not; `/code-review` measured a live
+	// InvokeAction escaping on both the timer and message paths.
+	if !s.spawnsNewWork() {
+		return StepResult{State: *s, Commands: nil}, nil
+	}
 	// Intermediate timer: remove its record (if any) so a later dup is a no-op.
 	s.removeTimer(t.TimerID)
 	tok.AwaitCommand = ""
@@ -738,6 +755,12 @@ func handleHumanCompleted(ctx context.Context, def *model.ProcessDefinition, s *
 // handleSignalReceived processes a SignalReceived trigger: dispatches in priority
 // order through event-gateway arms, boundary arms, event sub-process arms, and
 // standalone parked-signal tokens (broadcast semantics).
+//
+// Broadcast applies BOTH across families and WITHIN each one (ADR-0158): every
+// arm matching the signal name fires, not just the first. Only arms armed at the
+// DELIVERY INSTANT are eligible — each family's matching identities are
+// snapshotted before any dispatch, so an arm created by this delivery's own drive
+// is not fired by it.
 func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t SignalReceived, opt StepOptions) (StepResult, error) {
 	// Broadcast semantics within the instance: resume every token that is
 	// awaiting this signal name. Tokens are processed in slice order for
@@ -748,10 +771,13 @@ func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *
 	// NOTE: mergeVars is deferred until after match-checking so that a no-match
 	// delivery does not mutate instance variables (Task-2 review fix).
 	//
-	// Dispatch order for signal:
-	// 1) event-based gateway arm (first-event-wins).
-	// 2) boundary event arm (interrupting/non-interrupting).
-	// 3) event sub-process arm (interrupting: cancel scope; non-interrupting: spawn alongside).
+	// Dispatch order for signal (ADR-0158 — EVERY matching arm in each family,
+	// in the order the definition declares its nodes; the engine does not
+	// re-order them):
+	// 1) event-based gateway arms (first-event-wins WITHIN one gateway token,
+	//    plural ACROSS distinct gateway tokens).
+	// 2) boundary event arms (interrupting/non-interrupting).
+	// 3) event sub-process arms (interrupting: cancel scope; non-interrupting: spawn alongside).
 	// 4) standalone parked-signal tokens (broadcast).
 	//
 	// INTENTIONAL BROADCAST: A single signal name may simultaneously resolve a
@@ -784,64 +810,120 @@ func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *
 		}
 	}
 
-	// Tiers 1–3 as a slice of lookup-and-fire closures, so the terminal re-check
-	// below is written ONCE for all three arm families and a fourth family added
-	// later inherits it instead of needing another hand-copied guard (ADR-0169
-	// Decision 2; ADR-0165's argument at smaller scale).
+	// ADR-0158: SNAPSHOT each family's matching arm IDENTITIES before dispatching
+	// anything, then build one lookup-and-fire closure per identity. Tiers 1–3 used
+	// to be three closures doing three FIRST-MATCH lookups; a broadcast signal now
+	// fires every matching arm per family.
 	//
-	// ⚠ Each closure performs its OWN lookup at the moment it runs. The three
-	// lookups must NOT be hoisted out of the closures into variables: each tier's
-	// lookup has to observe the state the PREVIOUS tier's fire left behind, and
-	// NOTHING WILL CATCH IT IF YOU DO. Measured twice — once during ADR-0169's
-	// audit, and again with this bundle's own five regression tests present:
-	// hoisting all three leaves `go test ./engine/` at EXIT=0. It survives today
-	// only because all three fire functions happen to re-validate before acting
-	// (fireBoundaryArm re-reads the host token, resolveGatewayWin re-reads the
-	// gateway token, fireEventTriggeredSubprocessArm re-reads its enclosing scope
-	// and, at root scope, the instance status) — an accident of three independent
-	// implementations rather than a stated invariant, and one ADR-0158's signal
-	// fan-out is expected to disturb.
-	tiers := []func() ([]Command, error){
-		// 1) Event-gateway arm (first-event-wins).
-		func() ([]Command, error) {
-			ae := s.armedEventBySignal(t.Name)
+	// The snapshot is load-bearing TWICE OVER, and the second reason is not about
+	// termination:
+	//
+	//  1. TERMINATION. A non-interrupting arm deliberately stays armed after firing
+	//     (ADR-0124), in both the boundary and event-sub-process families, so a loop
+	//     that re-scanned for "the next match" would find the same arm forever.
+	//  2. SINGLE-INSTANT SEMANTICS. It confines the delivery to arms that existed at
+	//     the DELIVERY INSTANT. Without it a later tier fires an arm an earlier
+	//     tier's own drive created — measured on main, a gateway fire parked at a
+	//     user task and armed its boundary, which tier 2 then fired, minting and
+	//     cancelling a human task inside one step. Tier 4 has always applied this
+	//     rule to tokens (see snapshotIDs above); tiers 1–3 did not.
+	//
+	// ⚠ Identities are VALUES, not pointers. removeArmsWhere reallocates the backing
+	// array, so a pointer captured before an earlier fire addresses the DETACHED old
+	// array where the removed arm is still intact — firing through it would dispatch
+	// an already-retired arm. See armIDsBySignal.
+	//
+	// ⚠ Each closure RE-RESOLVES its identity at the moment it runs, and skips the
+	// arm when it no longer resolves. This is the successor to ADR-0169's "the three
+	// lookups must NOT be hoisted" requirement, which this change would otherwise
+	// have broken: what may not be hoisted is the RESOLUTION (an earlier fire can
+	// retire a later arm — an interrupting boundary cancels its host's siblings, an
+	// interrupting event sub-process cancels its scope subtree). What IS hoisted is
+	// the ENUMERATION, deliberately, per reason 2 above. Re-resolution is an
+	// EXISTENCE CHECK ONLY: using it to pick the NEXT arm reinstates reason 1's
+	// non-terminating re-scan.
+	//
+	// ⚠ NO SORT. Arms fire in declaration order. A per-family NonInterrupting sort
+	// was specified by an earlier draft of ADR-0158 and refuted by execution in BOTH
+	// directions — whether an earlier arm's effects are destroyable depends on the
+	// arm's BODY, not its flag. Ordering is outcome-affecting and author-controlled.
+	gatewayIDs := s.armedEventIDsBySignal(t.Name)
+	boundaryIDs := s.boundaryArmIDsBySignal(t.Name)
+	eventSubIDs := s.eventTriggeredSubprocessArmIDsBySignal(t.Name)
+
+	// resolvedGateways keeps first-event-wins unforgeable across the delivery.
+	// resolveGatewayWin does NOT consume the gateway token, so a branch looping back
+	// through a merge gateway can re-arm (GatewayToken, CatchNode) byte-identically
+	// WITHIN this delivery — an ABA that would let one signal resolve the same
+	// gateway twice. (The naive direct loop is rejected by model.Validate; the
+	// reachable shape routes through an exclusive-gateway merge.)
+	resolvedGateways := make(map[string]struct{}, len(gatewayIDs))
+
+	tiers := make([]func() ([]Command, error), 0, len(gatewayIDs)+len(boundaryIDs)+len(eventSubIDs))
+
+	// 1) Event-gateway arms (first-event-wins WITHIN a gateway; plural ACROSS
+	// distinct gateway tokens).
+	for _, id := range gatewayIDs {
+		tiers = append(tiers, func() ([]Command, error) {
+			if _, done := resolvedGateways[id.GatewayToken]; done {
+				return nil, nil
+			}
+			ae := s.armedEventByID(id)
 			if ae == nil {
 				return nil, nil
 			}
 			markMatched()
-			return resolveGatewayWin(ctx, def, s, *ae, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
-		},
-		// 2) Boundary event arm (interrupting/non-interrupting).
-		func() ([]Command, error) {
-			ba := s.boundaryArmBySignal(t.Name)
+			cmds, err := resolveGatewayWin(ctx, def, s, *ae, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+			if err != nil {
+				return nil, err
+			}
+			resolvedGateways[id.GatewayToken] = struct{}{}
+			return cmds, nil
+		})
+	}
+
+	// 2) Boundary event arms (interrupting/non-interrupting).
+	for _, id := range boundaryIDs {
+		tiers = append(tiers, func() ([]Command, error) {
+			ba := s.boundaryArmByID(id)
 			if ba == nil {
 				return nil, nil
 			}
 			markMatched()
 			return fireBoundaryArm(ctx, def, s, *ba, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
-		},
-		// 3) Event sub-process arm (interrupting: cancel scope; non-interrupting: spawn alongside).
-		func() ([]Command, error) {
-			ea := s.eventTriggeredSubprocessArmBySignal(t.Name)
+		})
+	}
+
+	// 3) Event sub-process arms (interrupting: cancel scope; non-interrupting:
+	// spawn alongside).
+	for _, id := range eventSubIDs {
+		tiers = append(tiers, func() ([]Command, error) {
+			ea := s.eventTriggeredSubprocessArmByID(id)
 			if ea == nil {
 				return nil, nil
 			}
 			markMatched()
 			return fireEventTriggeredSubprocessArm(ctx, def, s, *ea, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
-		},
+		})
 	}
 
-	// MID-DELIVERY TERMINAL RE-CHECK (ADR-0169). A tier's own drive can reach an
-	// uncaught error and end the instance, and dispatch's entry guard (ADR-0165)
-	// cannot see that: the instance was running when the trigger was admitted. So
-	// every remaining dispatch point re-checks, and an aborted delivery returns
+	// MID-DELIVERY RE-CHECK (ADR-0169, predicate widened by ADR-0172). A tier's
+	// own drive can reach an uncaught error and end the instance — or begin a
+	// TERMINATING compensation rollback — and dispatch's entry guard (ADR-0165)
+	// cannot see either: the instance was running when the trigger was admitted.
+	// So every remaining dispatch point re-checks, and an aborted delivery returns
 	// the partial commands the earlier tiers legitimately produced — including the
 	// FailInstance that made the instance terminal. Dropping them would lose the
 	// earlier tiers' task-store reconciliation (ADR-0089) and degrade the terminal
 	// event's error payload. No Warn is emitted; that cost is recorded in
 	// ADR-0169 Decision 5.
+	//
+	// ⚠ The predicate is spawnsNewWork(), NOT IsTerminal(). IsTerminal() is false
+	// for StatusCompensating, so it let a later arm fire into a rollback that was
+	// already going to end the instance. ADR-0158's fan-out multiplies the number
+	// of dispatch points per delivery and therefore that window.
 	for _, fire := range tiers {
-		if s.Status.IsTerminal() {
+		if !s.spawnsNewWork() {
 			return StepResult{State: *s, Commands: signalCmds}, nil
 		}
 		tierCmds, err := fire()
@@ -859,7 +941,7 @@ func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *
 	// loop is multi-iteration, so one token's drive can end the instance while a
 	// later token still awaits resumption (ADR-0169 Decision 3).
 	for _, tokenID := range snapshotIDs {
-		if s.Status.IsTerminal() {
+		if !s.spawnsNewWork() {
 			return StepResult{State: *s, Commands: signalCmds}, nil
 		}
 		tok := s.tokenByID(tokenID)
@@ -1025,6 +1107,23 @@ func handleMessageReceived(ctx context.Context, def *model.ProcessDefinition, s 
 	if tok == nil {
 		// No matching token: clean no-op (message may be for a different instance
 		// or arrived after the instance advanced).
+		return StepResult{State: *s, Commands: nil}, nil
+	}
+	// ADR-0172: a DYING instance spawns no new work — and that is NOT a
+	// signal-specific rule. Resuming this token would drive it forward and
+	// dispatch a real InvokeAction to a worker, whose ActionCompleted then lands
+	// on an instance the in-flight rollback has already terminated.
+	//
+	// The check sits AHEAD of the resume (and, on the message path, ahead of
+	// mergeVars) so the delivery is neither consumed nor half-applied: a message
+	// swallowed here would never be redelivered.
+	//
+	// ⚠ dispatchArmCascade guards the ARM families; this guards the token
+	// fall-through. Both are needed — an earlier revision of this bundle guarded
+	// only the arms and asserted in a comment that the callers covered the
+	// token path themselves. They did not; `/code-review` measured a live
+	// InvokeAction escaping on both the timer and message paths.
+	if !s.spawnsNewWork() {
 		return StepResult{State: *s, Commands: nil}, nil
 	}
 	mergeVars(s, t.Payload)

@@ -216,6 +216,42 @@ func (c compensationCursor) walkMode() walkMode {
 	}
 }
 
+// walkTerminates reports whether the walk this cursor describes will END the
+// instance rather than resume it. pendingCancel is InstanceState.PendingCancel,
+// which can flip a resuming walk to terminating mid-flight.
+//
+// ⚠ It MIRRORS stepCompensationFinish's finishPlan construction and must be kept
+// in step with it. Read that switch, not this one, if they ever disagree:
+//
+//   - walkAdmin           → finishPlan.resume = false                → terminates
+//   - walkThrowTargeted   → resume + consumePendingCancel            → pendingCancel
+//   - walkThrowScopeWide  → resume + consumePendingCancel            → pendingCancel
+//   - walkReverse         → resume + consumePendingCancel            → see below
+//   - walkPartial         → resume, consumePendingCancel NOT SET     → resumes
+//
+// ⚠ walkPartial is the case that refuted the obvious predicate
+// (`walkMode() == walkAdmin || pendingCancel`): a partial rollback does NOT
+// consume a deferred cancel, so it resumes with PendingCancel still true, and
+// treating it as dying silences arms on a LIVE instance.
+//
+// ⚠ walkReverse RESUMES, yet is reported as terminating — deliberately, per
+// ADR-0172 Decision 1a. A reverse resume sets ResetVars and re-arms every root
+// event sub-process (finishPlan.rearmRootESP); letting an arm fire into it was
+// measured producing two concurrent tokens, the event sub-process body's
+// variables wiped underneath it, and an INTERRUPTING one-shot arm resurrected
+// while its body still runs. Widening this is rearmRootESP's problem, not the
+// arm-fire path's.
+func (c compensationCursor) walkTerminates(pendingCancel bool) bool {
+	switch c.walkMode() {
+	case walkAdmin, walkReverse:
+		return true
+	case walkPartial:
+		return false
+	default: // walkThrowTargeted, walkThrowScopeWide
+		return pendingCancel
+	}
+}
+
 // recordCompensation appends a CompensationRecord to the scope identified by
 // scopeID. If scopeID is "" (root-level token), the record is appended to
 // s.RootCompensations — the root-scope compensation list that is stored directly

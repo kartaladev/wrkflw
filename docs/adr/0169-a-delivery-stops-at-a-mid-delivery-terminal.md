@@ -116,6 +116,24 @@ successive review passes found 1 → 2 → 5 instances of the same hand-copied d
 increase arriving after an ADR had claimed the class closed. A fourth arm family added later
 inherits this guard instead of needing another copy.
 
+> **AMENDED by [ADR-0158](0158-signal-fires-every-matching-arm.md) (2026-08-10).**
+> The signal fan-out this paragraph anticipated has landed, and it changes the
+> requirement rather than violating it. Tiers 1–3 are now **one closure per
+> snapshotted arm identity**, and each closure **re-resolves its identity** before
+> firing. What may not be hoisted is the RESOLUTION — the reason below still
+> holds exactly. What IS now hoisted, deliberately, is the ENUMERATION: confining
+> a delivery to the arms armed at the delivery instant is a second, independent
+> correctness requirement (measured: without it, a later tier fires an arm an
+> earlier tier's own drive created). Decision 2's structural argument is
+> unaffected; the guard is still written once for all families, and now runs once
+> per ARM rather than once per family.
+>
+> ⚠ ADR-0158 also replaces this ADR's `IsTerminal()` predicate at the same site
+> with `spawnsNewWork()` (see
+> [ADR-0172](0172-an-event-subprocess-arm-checks-instance-status.md)), because
+> `IsTerminal()` is false for `StatusCompensating` and a tier's drive can begin a
+> TERMINATING rollback mid-delivery.
+
 ⚠ **Each closure performs its own lookup at the moment it runs. The three lookups must NOT be
 hoisted.** Today each tier's lookup runs *after* the previous tier's fire has mutated state.
 Pre-resolving all three into variables is the refactor a slice literal invites, and **the suite

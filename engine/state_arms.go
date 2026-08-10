@@ -1,5 +1,7 @@
 package engine
 
+import "slices"
+
 // triggerMatch is the trigger-correlation quartet shared by the three arm
 // families (armedEvent, boundaryArm, eventTriggeredSubprocessArm): what an
 // incoming TimerFired/SignalReceived/MessageReceived trigger is matched
@@ -219,15 +221,100 @@ func armByTimer[T any, PT armMatchable[T]](arms []T, timerID string) *T {
 	return nil
 }
 
-// armBySignal returns a pointer to the first arm whose embedded signal name
-// equals name, or nil. An empty name matches no arm (ADR-0152) — see armByTimer.
-// See armByTimer for the pointer-aliasing contract.
-func armBySignal[T any, PT armMatchable[T]](arms []T, name string) *T {
+// gatewayArmID identifies an armedEvent within an instance: the parked gateway
+// token plus the catch node it arms. See armIDsBySignal for why identities are
+// values rather than pointers.
+type gatewayArmID struct {
+	GatewayToken string
+	CatchNode    string
+}
+
+// boundaryArmID identifies a boundaryArm within an instance: the parked host
+// token plus the boundary node attached to it.
+type boundaryArmID struct {
+	HostToken    string
+	BoundaryNode string
+}
+
+// eventSubArmID identifies an eventTriggeredSubprocessArm within an instance:
+// the enclosing scope plus the event sub-process node.
+//
+// EnclosingScopeID == "" is the VALID root-scope identity, not a missing key —
+// unlike the gateway and boundary owner fields, it must never be guarded as
+// empty (see removeEventTriggeredSubprocessArmsForScope, which deliberately
+// omits the empty-key early return its two sibling wrappers have). Guarding it
+// would silently disable every top-level event sub-process.
+type eventSubArmID struct {
+	EnclosingScopeID    string
+	EventSubprocessNode string
+}
+
+// armIDsBySignal returns the IDENTITY of every arm whose embedded signal name
+// equals name, in slice (definition-scan) order, with duplicate identities
+// collapsed to their FIRST occurrence. An empty name matches no arm (ADR-0152) —
+// defence in depth, since validateTriggerKey already rejects one at Step entry.
+//
+// ADR-0158. Three properties are load-bearing and each has a test:
+//
+//   - IDENTITIES, NOT POINTERS. removeArmsWhere reallocates the backing array and
+//     the per-family wrappers assign it over the field, so a pointer captured
+//     before an earlier arm fires addresses the DETACHED old array, where the
+//     removed arm is still intact. Firing through such a pointer would dispatch
+//     an arm that was already retired — a wrong-outcome bug, not a crash. The
+//     detachment is bidirectional: a write through a pointer to a SURVIVING arm
+//     is silently dropped too.
+//
+//   - NO SORT. Arms are emitted in declaration order. A per-family sort on
+//     NonInterrupting was specified by an earlier draft of ADR-0158 and refuted by
+//     execution in BOTH directions: whether an earlier arm's effects are
+//     destroyable depends on the arm's BODY (parks / completes / terminates), not
+//     on its interrupting flag, so no flag-based sort is correct in general.
+//     Ordering is outcome-affecting and author-controlled.
+//
+//   - DE-DUPLICATION, FIRST WINS. model.Validate accepts duplicate node ids, two
+//     flows between one pair, and duplicate flow ids, so two arms can collide on
+//     one identity. They are NOT interchangeable — colliding boundary arms have
+//     been measured differing in NonInterrupting and Action, which decides whether
+//     the delivery interrupts the host — so the tie-break is part of the contract:
+//     the first in slice order wins, matching what the …ByID re-resolvers return.
+//
+// The linear de-dup scan is deliberate: the number of arms matching one signal
+// name is small, and it avoids allocating a map on a hot dispatch path.
+func armIDsBySignal[T any, PT armMatchable[T], ID comparable](arms []T, name string, identity func(*T) ID) []ID {
 	if name == "" {
 		return nil
 	}
+	var out []ID
 	for i := range arms {
-		if PT(&arms[i]).matchPtr().Signal == name {
+		if PT(&arms[i]).matchPtr().Signal != name {
+			continue
+		}
+		id := identity(&arms[i])
+		if slices.Contains(out, id) {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
+}
+
+// armByID returns a pointer to the FIRST arm whose identity equals id, or nil
+// when no arm carries it. It is the re-resolution half of ADR-0158's
+// snapshot-then-fire-each: a snapshotted identity is re-resolved immediately
+// before its arm fires, and skipped when this returns nil.
+//
+// ⚠ EXISTENCE CHECK ONLY. Re-resolution must never be used to select the NEXT
+// arm to fire. A non-interrupting arm deliberately stays armed after firing
+// (ADR-0124), so a loop that re-scanned for "the next match" would find the same
+// arm forever — the non-terminating shape ADR-0158 rejected.
+//
+// "First wins" is the same tie-break armIDsBySignal applies when de-duplicating,
+// and the two must agree: colliding arms are NOT interchangeable (measured
+// differing in NonInterrupting and Action, which decides whether the delivery
+// interrupts the host).
+func armByID[T any, ID comparable](arms []T, id ID, identity func(*T) ID) *T {
+	for i := range arms {
+		if identity(&arms[i]) == id {
 			return &arms[i]
 		}
 	}
@@ -303,10 +390,23 @@ func (s *InstanceState) armedEventByTimer(timerID string) *armedEvent {
 	return armByTimer(s.ArmedEvents, timerID)
 }
 
-// armedEventBySignal returns a pointer to the first armedEvent with the given
-// signal name, or nil if none exists.
-func (s *InstanceState) armedEventBySignal(name string) *armedEvent {
-	return armBySignal(s.ArmedEvents, name)
+// armedEventByID re-resolves a snapshotted gateway-arm identity. An empty
+// GatewayToken names no arm (ADR-0152), matching removeArmedEventsForGateway.
+func (s *InstanceState) armedEventByID(id gatewayArmID) *armedEvent {
+	if id.GatewayToken == "" {
+		return nil
+	}
+	return armByID(s.ArmedEvents, id, func(ae *armedEvent) gatewayArmID {
+		return gatewayArmID{GatewayToken: ae.GatewayToken, CatchNode: ae.CatchNode}
+	})
+}
+
+// armedEventIDsBySignal returns the identity of every armedEvent armed on the
+// given signal name, in declaration order. See armIDsBySignal.
+func (s *InstanceState) armedEventIDsBySignal(name string) []gatewayArmID {
+	return armIDsBySignal(s.ArmedEvents, name, func(ae *armedEvent) gatewayArmID {
+		return gatewayArmID{GatewayToken: ae.GatewayToken, CatchNode: ae.CatchNode}
+	})
 }
 
 // armedEventByMessage returns a pointer to the first armedEvent whose Message
@@ -336,10 +436,23 @@ func (s *InstanceState) boundaryArmByTimer(timerID string) *boundaryArm {
 	return armByTimer(s.Boundaries, timerID)
 }
 
-// boundaryArmBySignal returns a pointer to the first boundaryArm with the given
-// signal name, or nil if none exists.
-func (s *InstanceState) boundaryArmBySignal(name string) *boundaryArm {
-	return armBySignal(s.Boundaries, name)
+// boundaryArmByID re-resolves a snapshotted boundary-arm identity. An empty
+// HostToken names no arm (ADR-0152), matching removeBoundaryArmsForHost.
+func (s *InstanceState) boundaryArmByID(id boundaryArmID) *boundaryArm {
+	if id.HostToken == "" {
+		return nil
+	}
+	return armByID(s.Boundaries, id, func(ba *boundaryArm) boundaryArmID {
+		return boundaryArmID{HostToken: ba.HostToken, BoundaryNode: ba.BoundaryNode}
+	})
+}
+
+// boundaryArmIDsBySignal returns the identity of every boundaryArm armed on the
+// given signal name, in declaration order. See armIDsBySignal.
+func (s *InstanceState) boundaryArmIDsBySignal(name string) []boundaryArmID {
+	return armIDsBySignal(s.Boundaries, name, func(ba *boundaryArm) boundaryArmID {
+		return boundaryArmID{HostToken: ba.HostToken, BoundaryNode: ba.BoundaryNode}
+	})
 }
 
 // boundaryArmByMessage returns a pointer to the first boundaryArm whose Message
@@ -363,10 +476,28 @@ func (s *InstanceState) removeBoundaryArmsForHost(hostToken string) []string {
 	return cancelTimerIDs
 }
 
-// eventTriggeredSubprocessArmBySignal returns a pointer to the first
-// eventTriggeredSubprocessArm with the given signal name, or nil if none exists.
-func (s *InstanceState) eventTriggeredSubprocessArmBySignal(name string) *eventTriggeredSubprocessArm {
-	return armBySignal(s.EventTriggeredSubprocesses, name)
+// eventTriggeredSubprocessArmByID re-resolves a snapshotted event-sub-process
+// identity.
+//
+// ⚠ It deliberately does NOT guard an empty EnclosingScopeID, unlike its two
+// sibling re-resolvers. "" is the VALID root-scope identity; guarding it would
+// silently disable every top-level event sub-process. This mirrors the existing
+// asymmetry between removeEventTriggeredSubprocessArmsForScope (no guard) and
+// removeArmedEventsForGateway / removeBoundaryArmsForHost (guarded).
+func (s *InstanceState) eventTriggeredSubprocessArmByID(id eventSubArmID) *eventTriggeredSubprocessArm {
+	return armByID(s.EventTriggeredSubprocesses, id, func(ea *eventTriggeredSubprocessArm) eventSubArmID {
+		return eventSubArmID{EnclosingScopeID: ea.EnclosingScopeID, EventSubprocessNode: ea.EventSubprocessNode}
+	})
+}
+
+// eventTriggeredSubprocessArmIDsBySignal returns the identity of every armed
+// event sub-process on the given signal name, in declaration order. A ROOT-scope
+// arm carries EnclosingScopeID == "" and is returned like any other — see
+// eventSubArmID. See armIDsBySignal.
+func (s *InstanceState) eventTriggeredSubprocessArmIDsBySignal(name string) []eventSubArmID {
+	return armIDsBySignal(s.EventTriggeredSubprocesses, name, func(ea *eventTriggeredSubprocessArm) eventSubArmID {
+		return eventSubArmID{EnclosingScopeID: ea.EnclosingScopeID, EventSubprocessNode: ea.EventSubprocessNode}
+	})
 }
 
 // eventTriggeredSubprocessArmByTimer returns a pointer to the first

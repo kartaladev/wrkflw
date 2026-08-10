@@ -23,52 +23,6 @@ func armsFixture() []armedEvent {
 	}
 }
 
-func TestArmBySignal(t *testing.T) {
-	t.Parallel()
-
-	type testCase struct {
-		name   string
-		signal string
-		assert func(t *testing.T, arm *armedEvent)
-	}
-
-	cases := []testCase{
-		{
-			name:   "returns the signal arm",
-			signal: "sig",
-			assert: func(t *testing.T, arm *armedEvent) {
-				require.NotNil(t, arm)
-				assert.Equal(t, "catchSignal", arm.CatchNode)
-			},
-		},
-		{
-			name:   "returns nil for an unknown signal",
-			signal: "other",
-			assert: func(t *testing.T, arm *armedEvent) {
-				assert.Nil(t, arm)
-			},
-		},
-		{
-			// Before ADR-0152 this returned the TIMER arm, and in production an
-			// ERROR-boundary arm — which fireBoundaryArm then uses to interrupt a
-			// live host activity.
-			name:   "empty signal name matches no arm",
-			signal: "",
-			assert: func(t *testing.T, arm *armedEvent) {
-				assert.Nil(t, arm, "an empty signal name must not match a timer, message, or error arm")
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			tc.assert(t, armBySignal(armsFixture(), tc.signal))
-		})
-	}
-}
-
 func TestArmByTimer(t *testing.T) {
 	t.Parallel()
 
