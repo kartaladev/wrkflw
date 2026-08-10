@@ -14,248 +14,100 @@ top to bottom; it is meant to stay short enough that you can.
 
 ## State — updated 2026-08-10
 
-**▶ IN FLIGHT: delivery 3 — ADR-0158 + ADR-0172**, on branch
-**`feat/signal-fanout-and-esp-status`**. **DESIGNED, AUDITED, ADJUDICATED and
-FULLY IMPLEMENTED (Phases 1–4). The only thing left is the DELIVERY GATE, and
-every remaining step is OWNER-ONLY.**
+**▶ NOTHING IS IN FLIGHT.** The working tree is clean and `main` carries the
+newest delivery.
 
-| gate step | state |
-|---|---|
-| `go test -race ./engine/...` + coverage | ✅ EXIT=0, **engine 92.5 %** (92.4 % excl. generated; baseline 92.4 % — held) |
-| 11 container-free packages | ✅ EXIT=0 |
-| `golangci-lint run ./engine/...` · `go vet ./...` · `gofmt` | ✅ clean |
-| Mutation duty | ✅ **8 mutations, 7 caught, 1 recorded non-catching and re-run** — table in the plan §4.1a |
-| RED→GREEN cycles | ✅ **6**, all observable in the delivery transcript |
-| Documents describe what shipped | ✅ one implementation-correction amended in-bundle (the `armBySignal` deletion) |
-| **Repo-wide `go test -race ./...`** | ✅ EXIT=0, **64 pkgs, 0 races**, coverage **74.0 %** (floor 73.9 %) |
-| **`/code-review`** | ✅ **3 findings (1 HIGH, 1 Med, 1 Low), ALL fixed and folded.** The HIGH was a false claim in a comment: `dispatchArmCascade` asserted its callers guarded the token fall-throughs; they did not, and a live `InvokeAction` escaped on both the timer and message paths |
-| **`/security-review`** | ✅ **ZERO findings.** Net direction of ADR-0172 is *narrowing*; `spawnsNewWork` fails closed on unknown status |
-| Merge `--no-ff` + push | ⛔ **awaiting owner go-ahead — the only step left** |
+**▶ Latest shipped: ADR-0158 + ADR-0172** (signal arm fan-out + the
+dying-instance guard) — merge **`fb60df0`**. Before it: ADR-0168/0169/0170/0171
+`b12bba3`, 0167 `44b3163`, 0166 `9e96112`, 0165 `ec25ffd`, 0164 `583537f`.
 
-✅ The two owed placement mutations were built and run at the gate (M9/M10):
-removing both token-path guards → RED on both new tests; removing only the
-message guard → RED on only the message test. Restores `cmp`-verified.
+⚠ **Do not trust any SHA written in this file** — re-derive:
+`git rev-parse --short main`.
 
-⚠ **The gate has caught real defects in each of the last four deliveries**, after
-adversarial stand-ins passed them. This bundle's own audit found **3 Criticals**
-that a reading-only pass would have missed. Do not treat the gate as a formality.
+**▶ Next work: pick from `## ▶ NEXT WORK` below.** Latest ADR is **0172**; next
+free is **0173**. ADR numbers 0155–0157 remain reserved by the still-parked
+`feat/durable-waiters-delivery-correctness`.
 
-### ⚠ What the re-derivation changed, before anyone re-reads the parked draft
+### What the newest delivery shipped, and what it BREAKS
 
-The parked ADR-0158 draft on `parked/scope-and-fanout-design` is **six deliveries
-stale and must not be used as an input.** Re-deriving its premises by execution
-refuted **five** inherited claims and found **two defects it never mentions**:
+**ADR-0158** — `handleSignalReceived` snapshots each arm family's matching
+identities before dispatching, then fires one closure per identity in
+**declaration order**, each re-resolving its identity first. A broadcast signal
+now fires **every** matching arm per family, not the first — closing the gap
+ADR-0154 recorded as deliberately open.
 
-- `!= StatusRunning` as the per-iteration predicate — refuted; ADR-0169's
-  `IsTerminal()` is **inherited**, not re-derived.
-- "a boundary flow targeting a missing node errors" — measured: it **parks**, and
-  leaves a permanently unresumable token.
-- "a non-root event-sub-process arm fires into a COMPLETED instance" — the framing
-  the ESP half was opened on. **Unreachable through the public API**; the real
-  defect is `StatusCompensating`.
-- ADR-0168's ESP "accepted cost" — already withdrawn by ADR-0171.
-- "the nested conjunct is asserted by the named test" (`engine/step_nodes.go`) —
-  measured false; the suite is green without it.
+**ADR-0172** — `InstanceState.spawnsNewWork()` (an **allow-list**, built on
+`compensationCursor.walkTerminates(pendingCancel)`) replaces the root-scope-only
+`s.Status != StatusRunning` check. Applied at **three kinds of site**: the
+event-sub-process fire site, the shared arm dispatch guard
+(`dispatchArmCascade` + the signal tier loop, replacing ADR-0169's
+`IsTerminal()`), and the **standalone-token fall-throughs** in all three
+handlers.
 
-New, both executed: **a later tier fires an arm the delivery itself created** (a
-human task minted *and cancelled* in one step; a sub-process entered *and torn
-down* in one step), and **per-family ordering cannot be stated once**, because the
-boundary and event-sub-process interrupt blast radii differ.
+⚠⚠ **BREAKING IN TWO DIRECTIONS, and the second is the one a recap gets wrong.**
+Several same-named arms now fire where one did before — **AND some deliveries now
+fire FEWER arms**, because an arm created *during* the delivery is no longer in
+the snapshot. **"0158 only makes more arms fire" is FALSE.** In-flight instances
+persisted under the old behaviour change behaviour on their next signal; that is
+the fix working, and it is release-note material.
 
-⚠ **The fan-out is NOT a pure superset of today's behaviour** — some deliveries
-will fire FEWER arms, because an arm created during the delivery is no longer in
-the snapshot. Any recap sentence saying "0158 only makes more arms fire" is false.
+### ⚠ Three things about this delivery worth carrying forward
 
-### What the PREVIOUS delivery (ADR-0168/0169/0170/0171, merge `b12bba3`) did
+1. **The parked `parked/scope-and-fanout-design` draft is SUPERSEDED** and must
+   never be used as an input again. Re-deriving its premises by execution refuted
+   **five** inherited claims — including `!= StatusRunning` as the predicate, and
+   "a non-root ESP arm fires into a COMPLETED instance" (unreachable through the
+   public API; the real defect was `StatusCompensating`).
+2. **The rule-#9 audit returned 3 Criticals, and all three killed DECISIONS** —
+   a reading-only audit would have passed every one. Each needed a fixture built
+   and run. Two of them refuted measurements the controller had made itself.
+3. **`/code-review` then found a HIGH the audit missed**, because the audit's
+   lenses pointed at the *changed functions* while the false claim was about
+   *callers of* a changed function. Fifth consecutive delivery where the real gate
+   found what the design audit did not.
 
-**Four** ADRs — 0168/0169/0170 were the designed bundle; **0171 was added at the
-delivery gate**, because 0168 must not ship without it (below). All defects
-reproduced by execution; none previously covered by any test in either direction.
+Full detail — including the mutation table (10 mutations, 9 caught, 1 recorded
+non-catching and re-run) and both review adjudications — lives in
+`docs/plans/2026-08-10-signal-fanout-and-esp-status.md` §4.1a/§4.1b/§4.1c.
 
-1. **ADR-0168** — a rolled-back process was reported `completed`.
-   `startCompensationWalk` consumes its own throw token, so `len(Tokens)==0` read
-   true while a walk was in flight; a sibling branch then completed the instance
-   and the compensation action's `ActionCompleted` was refused `outcome=dropped`.
-   The three normal-completion guards now also require
-   `Compensating.ActiveCmdID == ""`.
-2. **ADR-0169** — a signal delivery kept dispatching after its own drive turned
-   the instance terminal: zombie token, task record minted after `FailInstance`,
-   and a live `ScheduleTimer` escaping to the runtime. Tiers 1–3 became a slice of
-   lookup-and-fire closures with an `IsTerminal()` re-check per iteration **and
-   inside the tier-4 loop**.
-3. **ADR-0170** — `handleUnhandledError` restarted a live compensation walk: the
-   compensation action was dispatched **twice** and the uncaught error was
-   **silently swallowed so the process reported success**. It now converts the
-   in-flight walk instead of starting a second one — **deferring** the error onto
-   the walk via `PendingCancel` + a pending outcome, so `applyFinish` walks any
-   records the in-flight walk did not cover.
-4. **ADR-0171** — a compensation walk read its records **live** from the scope. A
-   sibling draining that scope mid-walk left the cursor naming a dead scope, and
-   the walk's next `ActionCompleted` **panicked in the pure engine core**
-   (`index out of range [0]`) — or, with one record, wedged permanently. The walk
-   now pins its record source at start and the scope exit is held while a walk
-   names it as its resume target.
+## ▶ NEXT WORK — pick one
 
-### Gate record of that PREVIOUS delivery (all steps passed)
+Nothing is half-finished, so this is a genuine choice. In rough priority order:
 
-| step | state |
-|---|---|
-| `go test -race -coverprofile ./...` + `scripts/coverage.sh` | ✅ EXIT=0, 64 pkgs, **0 races**, repo **74.0 %** (floor 73.9 %) |
-| `engine` coverage | ✅ **92.4 %** (baseline was 91.9 %) · `processtest` **90.2 %** |
-| `golangci-lint run ./...` · `go vet ./...` · `gofmt` | ✅ clean |
-| Documents describe what shipped | ✅ **four** refuted claims amended in-bundle (below) |
-| Mutation duty | ✅ **18 + 9 + 13 mutations** across the three waves, each RED observed, each restore `diff`-verified. Non-catching mutations recorded as such, not hidden |
-| Adversarial Opus stand-ins | ✅ 2 run (code-correctness, docs-vs-code). **Both found real defects; the code lens found a Critical one** |
-| **`/code-review`** | ✅ **RUN — 5 findings (3 Med, 2 Low), ALL resolved.** ⚠ Its FIRST invocation died on a session limit after one tool call and returned zero findings — an absent review, not a clean one. Re-run |
-| **`/security-review`** | ✅ **RUN — ZERO reportable vulnerabilities.** It did surface a real double-compensation integrity defect, proved **pre-existing on `main`** by execution → backlog item 4 |
-| Suite on the **merged** tree | ✅ re-run before pushing: EXIT=0, 64 pkgs, 0 races, repo 74.0 %, `engine` 92.4 %, lint + vet clean |
-| Merged `--no-ff` and pushed | ✅ merge `b12bba3` |
-
-### ⚠⚠ FOUR design claims that execution refuted IN THAT PREVIOUS DELIVERY
-
-All amended in-bundle (rule #11) with the measurement, rather than left in a
-transcript. **All four had survived the rule-#9 audit's three Opus auditors.**
-Two died during implementation; **two more died at the delivery gate** — the gate
-is not a formality on this codebase.
-
-0. **ADR-0170's decided shape was wrong, and ADR-0168 alone turns a silent wrong
-   answer into a PANIC.** See the two blocks at the end of this section — these are
-   the two the gate caught, and they are the important ones.
-
-1. **ADR-0168's two event-sub-process conjuncts were documented as "provably
-   non-discriminating today", their sites as reachability "not demonstrated".
-   Both are reachable; all three conjuncts discriminate.** The supporting
-   measurement — *"patch `exitRootScope` alone → suite `EXIT=0`"* — was correct,
-   and the inference from it was not: `EXIT=0` is evidence about the **suite**,
-   never about the engine. Reproductions built, then re-verified independently by
-   reverting only those two conjuncts → both tests RED.
-   ⚠ These two sites are **strictly worse** than the original defect: the
-   compensation `InvokeAction` is dropped *inside the same step*, so the rollback
-   never reaches the runtime at all.
-2. **ADR-0169's tiers-1–3 guard closes no observable defect today.** Deleting it
-   leaves the whole `engine` package `EXIT=0`; deleting the **tier-4 in-loop**
-   guard gives `EXIT=1`. `endInstance` → `cancelAllScheduledWork` drains every arm
-   family on the way to terminal, so tiers 2–3 find nothing. It ships as
-   deliberate **defence in depth**; Decision 2's structural argument is unaffected.
-   Consequently **T9 cannot fail** and ships as a labelled pin.
-
-3. **ADR-0170 (as designed) inherited the in-flight walk's NARROW record source.**
-   With a targeted throw the root records were never compensated **and were
-   erased**; with a nested throw the guard was bypassed entirely and the walk was
-   abandoned mid-flight. Reworked to **defer** the error onto the live walk
-   (`PendingCancel` + pending outcome), reusing the protocol the engine already
-   ships for cancel-mid-walk. ⚠ **Why the design missed it: ADR-0170 was derived
-   from a single fixture** — the root scope-wide throw, whose record source happens
-   to be all of `RootCompensations`. All four of the audit's mutations reused it.
-   *A fix derived from one fixture inherits that fixture's shape as an unstated
-   precondition.*
-4. **ADR-0168 without ADR-0171 panics.** A sibling draining the throwing scope
-   mid-walk destroys the record source the cursor names. Pre-0168 the instance
-   silently went `completed`; with 0168's conjuncts it survives to the next
-   `ActionCompleted` and **panics inside the pure engine core, in the consumer's
-   process**. Surfaced by the adversarial architecture audit that appeared mid-session
-(now `AUDIT.md` on branch `docs/architecture-audit`, see backlog item 5)
-   (finding D, marked there as *unverified* — it was executed, and it reproduces).
-   ⚠ **This also retired claim 1's own "accepted cost".** The
-   `EventTriggeredSubprocesses` **2 → 0** arm loss recorded as a measured accepted
-   cost was **not a cost** — the two fixtures stopped exactly **one `Step` short**
-   of a permanent wedge. With 0171 the arms stay 2 and the instance completes.
-
-### ⚠ The transferable lessons
-
-- **An audit that executes the headline claims can still ship a false supporting
-  claim.** A sentence of the form *"X is provably non-discriminating / unreachable"*
-  is a behavioural claim and needs its own execution.
-- **A test prescribed by an audit inherits no credibility from the audit's other
-  findings.** T9 came from audit-evidence §7.2 — the one recommendation in that
-  section never built and run. It is the same defect class the audit itself caught
-  in T4 (a prescribed test that could not pass), one level down.
-- **Three tests in this delivery could not fail as first written** (T4 and T9 from
-  the design; one T2 draft during implementation, which *passed unpatched* because
-  it counted an event across two steps where the total was invariant). Counting
-  assertions are the recurring shape — **pin which step emits it**.
-- **A mutation can "verify" something it never tested.** T4′ is protected by
-  *either* ADR-0169 guard independently, so it does **not** discriminate guard
-  *placement*; only T6 does. A table running just the T4′ mutation would have
-  claimed a placement it never exercised.
-- **An "accepted cost" is a claim about behaviour and earns no exemption from
-  execution — and the fixture must be driven to TERMINATION.** A fixture that stops
-  at the first surprising observation will certify that surprise as the design's
-  price. This one hid a permanent wedge one `Step` away.
-- **A fix derived from one fixture inherits that fixture's shape as an unstated
-  precondition.** ADR-0170 was correct for the throw shape it was built from and
-  wrong for every other.
-- **`undemonstrated` is not `unreachable`.** This delivery amended that error once
-  (claim 1) and then had to record the same shape again as an open bound
-  (ADR-0168's conjunct 3, now uncovered after 0171's hold).
-- **The adversarial gate reviews earn their cost.** Two stand-ins found four real
-  defects between them, including a Critical one, in a bundle that had already
-  passed a three-auditor design audit and full implementation. **Then the real
-  `/code-review` found five more that both stand-ins had missed** — the fourth
-  delivery running where that held. Stand-ins cut rework; they are not the gate.
-- **A review that errored out is an ABSENT review, not a clean one.** `/code-review`'s
-  first invocation died on a session limit after one tool call and returned zero
-  findings. Re-run it; never read an empty result from a crashed run as a pass.
-- **A finding from the real gate is a lead, not a verdict.** Two of this gate's five
-  were corrected by execution — one severity overstated, one proposed fix measured
-  *unsafe* (it would have resurrected an already-fired interrupting arm). Apply the
-  same discipline to the reviewer that the reviewer applies to the code.
+1. **The two ADRs still owed by delivery 2b** — incident-history retention (owner
+   chose REVISIT) and **zombie scopes** (ADR-0162 ships a stale sentence claiming
+   `endInstance` closes them; it never touches `s.Scopes`). ⚠ Two deliveries have
+   now re-measured a zombie scope surviving on a terminated instance.
+2. **Double-compensation when a scope is torn down mid-walk** — PRE-EXISTING on
+   `main`, found by `/security-review` during the 0168–0171 delivery. A scope-wide
+   throw walk drains a sub-process scope's records but clears the drained prefix
+   only at *finish*; if an error boundary fires mid-walk, a later walk
+   re-dispatches the same compensation actions. Measured: `undoB1` dispatched
+   twice. **Compensation actions are nowhere required to be idempotent — a refund
+   applied twice is a real integrity impact.** Own ADR.
+3. **An operator escape from a stalled compensation walk** — a walk whose
+   `ActionCompleted` never arrives leaves the instance permanently stuck, and
+   `CancelRequested` emits ZERO commands. Own ADR.
+4. **The event-sub-process hole's remaining direction** — ⚠ **partly closed by
+   ADR-0172**, which now guards every arm family on a dying instance. What
+   remains is `applyFinish`'s second counterexample: it terminates a *resume* plan
+   when the resume is dropped and no tokens remain, and an arm firing there places
+   a token and **suppresses that recovery completion**. `walkTerminates` cannot
+   see it — the outcome depends on token count at finish, not on the cursor.
+5. A pre-v0.1.0 blocker from the list below.
 
 ### Where things live
 
 | | |
 |---|---|
-| `main` | **ADR-0171 is the newest shipped bundle** (merge `b12bba3`). ⚠ Re-derive: `git rev-parse --short main` |
-| *(merged branches)* | **All merged delivery branches were DELETED 2026-08-10** — 0159/0161/0162/0163/0164/0165/0166/0167/0168–0171. Their history is in `main`; nothing is lost. **`origin` now carries only `main`** plus dependabot branches |
+| `main` | **ADR-0158 + ADR-0172 is the newest shipped bundle** (merge `fb60df0`). ⚠ Re-derive: `git rev-parse --short main` |
+| *(merged branches)* | Merged delivery branches are deleted once pushed; their history is in `main`. **`origin` carries only `main`** plus dependabot branches |
 | `backup/terminal-trigger-guard-presquash` | `a3aa889` — ADR-0165 pre-squash history, provenance only |
-| **`parked/scope-and-fanout-design`** | delivery 3's draft ADR-0158. ⚠ Also carries a **superseded ADR-0162 draft — do not read it.** ⚠ Its diff vs `main` is ~18,000 deleted lines of tests `main` has since gained |
+| **`parked/scope-and-fanout-design`** | ⚠ **SUPERSEDED — do NOT use as an input.** Its ADR-0158 draft was refuted on five inherited claims; it also carries a superseded ADR-0162 draft |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept for its audit tags |
-| `feat/durable-waiters-delivery-correctness` | `434535d` — older parked bundle, docs only. Owner DECIDED not to push it; do not re-raise |
-| Latest ADR | **0171**. 0155–0157 reserved by the older parked branch. Next free is **0172** |
+| `feat/durable-waiters-delivery-correctness` | `434535d` — older parked bundle, docs only. Owner DECIDED not to push it; do not re-raise. Holds ADR numbers **0155–0157** |
+| Latest ADR | **0172**. Next free is **0173** |
 | v0.1.0 | not tagged |
-
-## ▶ CURRENT WORK: delivery 3 — ADR-0158 + ADR-0172
-
-Branch **`feat/signal-fanout-and-esp-status`**. Per-delivery detail lives in that
-delivery's plan `▶ Progress` block, not here.
-
-**ADR-0158** — a broadcast signal fires **every** matching arm per family, not the
-first. Tiers 1–3 change from singular first-match lookups to
-snapshot-then-fire-each. Closes the gap ADR-0154 recorded as deliberately open.
-
-**ADR-0172** — an event-sub-process arm does not spawn work into a **dying**
-instance. Replaces the root-scope-only `!= StatusRunning` check with one predicate
-over every arm. Bundled because the fan-out multiplies ESP arm firing.
-
-### Owner decisions already taken (do not re-litigate)
-
-1. **All three tiers** fan out, with the `resolvedGateways` ABA guard.
-2. **Definition-scan order — NO SORT, in any family.** ⚠ A per-family
-   `NonInterrupting` sort was specified and then **refuted by execution in both
-   directions**. Destroyability depends on the arm's **body**, not its flag, so no
-   flag-based sort is correct in general. *If you find yourself adding a sort, read
-   ADR-0158 Decision 2 first.*
-3. **The dying-instance predicate lives in the shared dispatch guard**, covering
-   every arm family, not only the ESP fire site.
-4. **`walkReverse` is excluded** from the "fires" set, deliberately.
-5. **The ESP hole is bundled in**, as its own ADR-0172.
-
-### Ordered next steps
-
-1. **Build the two owed fixtures** (plan P3 rows 8 and 10) and mutate the
-   dispatch-guard placement: move `spawnsNewWork()` out of `dispatchArmCascade`
-   into the fire function only, and confirm both go RED.
-2. **Delivery Gate** — repo-wide suite + coverage (Docker), `/code-review`,
-   `/security-review`. Fold every finding with `--amend`; never stack.
-3. Re-run the suite on the **merged** tree, merge `--no-ff`, push.
-
-### Then, in priority order
-
-1. The **two ADRs still owed by delivery 2b** — incident-history retention (owner
-   chose REVISIT) and **zombie scopes** (ADR-0162 ships a stale sentence claiming
-   `endInstance` closes them; it never touches `s.Scopes`). ⚠ This delivery
-   re-measured a zombie scope surviving on a terminated instance.
-2. A pre-v0.1.0 blocker from the list below.
 
 ## Pre-v0.1.0 blockers
 
@@ -289,9 +141,32 @@ over every arm. Bundled because the fan-out multiplies ESP arm firing.
    arm is invisible. Needs an engine-side `TimerWaiters()`. **Until then, no document
    may claim the ADR-0154 class is closed in `processtest` outright.**
 
-## Backlog opened by this bundle
+## Backlog (newest delivery's items first)
 
-Each was **executed**; each is deliberately out of the bundle's scope.
+⚠ Items 1–8 were opened by the ADR-0168–0171 delivery; items 9–13 by the newest
+(ADR-0158/0172). Each was **executed**, not speculated.
+
+**From ADR-0158/0172 (newest):**
+
+9. **A flow targeting a NON-EXISTENT node parks a permanent wedge.** Measured:
+   `WARN token routed to a missing node`, then a `TokenWaiting` token with
+   `AwaitCommand == ""` that nothing can ever resume, instance `running` forever.
+   ⚠ The parked plan had asserted this *errors*; it does not.
+10. **Micro mode loses a signal delivery.** `snapshotIDs` is taken over tokens
+    Micro has not driven to their park yet, so an intermediate signal catch sitting
+    `TokenActive` with `AwaitSignal == ""` is silently missed while the signal is
+    still consumed and the catch is **not** re-armed. Pre-existing.
+11. **`PendingCancel=true` survives onto a `Running` instance forever** — after a
+    `walkPartial` walk resumes, the operator's cancel is silently lost **and will
+    terminate the NEXT throw or reverse walk** instead.
+12. **`runtime/processdriver_action.go:485`'s comment is FALSE** — it asserts
+    `performThrowSignal` excludes the throwing instance; measured, it does not.
+    ADR-0158 relies on the true behaviour. Doc-only fix.
+13. **`engine/step_nodes.go:501`'s nested arm retirement is entirely uncovered**
+    (mutation → repo suite green). Left in place deliberately; **not** removed on
+    the strength of a green suite.
+
+**From ADR-0168–0171:**
 
 1. **An operator escape from a stalled compensation walk.** ADR-0168's deferral means
    a walk whose `ActionCompleted` never arrives leaves the instance permanently stuck,
