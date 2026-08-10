@@ -286,8 +286,8 @@ Each was **executed**; each is deliberately out of the bundle's scope.
    **`docs/architecture-audit`**; ⚠ **deliberately NOT on `main` and NOT pushed**,
    because the repo is **public** and the file details unfixed Critical/High findings
    in enough detail to act on. Merge it to `main` only once those are closed, or
-   after redacting the security seam. (Was `FABLE_AUDIT.md`, untracked at the root.) Its finding D was verified and fixed here
-   (ADR-0171). Its other Critical/High findings are **untriaged** and mostly
+   after redacting the security seam. (Was `FABLE_AUDIT.md`, untracked at the root.)
+   Its finding D was verified and fixed here (ADR-0171). Its other Critical/High findings are **untriaged** and mostly
    outside this delivery: post-commit projections have no crash-recovery path
    (waiters/tasks/actions, vs timers which got `RehydrateTimers`); HTTP task
    endpoints trust a self-asserted actor identity; memory-only message/signal
