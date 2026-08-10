@@ -14,16 +14,16 @@ top to bottom; it is meant to stay short enough that you can.
 
 ## State — updated 2026-08-10
 
-**▶ Pick up here: ADR-0168 / 0169 / 0170 / 0171 are IMPLEMENTED and gated on branch
-`fix/compensation-walk-and-mid-delivery-terminal`, one commit, NOT yet merged.**
-`/code-review` has run and all 5 findings are fixed and folded. `/security-review`
-has run with **zero reportable vulnerabilities**. **The Delivery Gate is COMPLETE.
-What remains is: merge `--no-ff` to `main` and push.**
+**▶ ADR-0168/0169/0170/0171 are SHIPPED — merged to `main` and pushed
+(merge `b12bba3`, bundle `adf3977`). Nothing is in flight.**
+
+**▶ Next work: delivery 3 (ADR-0158)** — see the section below. Re-derive it from
+scratch; it has never survived a rule-#9 audit and predates Premise Discipline.
 
 ⚠ **Do not trust any `main` SHA written in this file** — re-derive:
-`git rev-parse --short main`. `main` is untouched by this delivery.
+`git rev-parse --short main`.
 
-### What the bundle does
+### What the shipped bundle did
 
 **Four** ADRs — 0168/0169/0170 were the designed bundle; **0171 was added at the
 delivery gate**, because 0168 must not ship without it (below). All defects
@@ -53,7 +53,7 @@ reproduced by execution; none previously covered by any test in either direction
    now pins its record source at start and the scope exit is held while a walk
    names it as its resume target.
 
-### Gate status
+### Gate record (all steps passed)
 
 | step | state |
 |---|---|
@@ -65,6 +65,8 @@ reproduced by execution; none previously covered by any test in either direction
 | Adversarial Opus stand-ins | ✅ 2 run (code-correctness, docs-vs-code). **Both found real defects; the code lens found a Critical one** |
 | **`/code-review`** | ✅ **RUN — 5 findings (3 Med, 2 Low), ALL resolved.** ⚠ Its FIRST invocation died on a session limit after one tool call and returned zero findings — an absent review, not a clean one. Re-run |
 | **`/security-review`** | ✅ **RUN — ZERO reportable vulnerabilities.** It did surface a real double-compensation integrity defect, proved **pre-existing on `main`** by execution → backlog item 4 |
+| Suite on the **merged** tree | ✅ re-run before pushing: EXIT=0, 64 pkgs, 0 races, repo 74.0 %, `engine` 92.4 %, lint + vet clean |
+| Merged `--no-ff` and pushed | ✅ merge `b12bba3` |
 
 ### ⚠⚠ FOUR design claims that execution refuted
 
@@ -159,8 +161,8 @@ is not a formality on this codebase.
 
 | | |
 |---|---|
-| `main` | ADR-0167 is the newest **shipped** bundle. ⚠ Re-derive: `git rev-parse --short main` |
-| **`fix/compensation-walk-and-mid-delivery-terminal`** | **the implemented, gated ADR-0168/0169/0170/0171 bundle — ONE commit, unpushed. Owner gate then merge** |
+| `main` | **ADR-0171 is the newest shipped bundle** (merge `b12bba3`). ⚠ Re-derive: `git rev-parse --short main` |
+| `fix/compensation-walk-and-mid-delivery-terminal` | merged (ADR-0168/0169/0170/0171) and pushed; safe to delete |
 | `feat/strict-definition-decoding` | merged (ADR-0167); safe to delete |
 | `feat/processtest-waiter-enumeration` | merged (ADR-0166); safe to delete |
 | `feat/terminal-trigger-guard` | merged (ADR-0165); safe to delete |
