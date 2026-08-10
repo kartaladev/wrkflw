@@ -456,6 +456,11 @@ func stepCompensationAdvance(ctx context.Context, def *model.ProcessDefinition, 
 	cur.NextIndex = nextIdx
 	cur.ActiveCmdID = cmdID
 	s.Compensating = cur
+	// Hand ownership of this record over as it is dispatched (ADR-0173), so a walk
+	// ABANDONED before its finish — a force-termination end event is the measured
+	// route — leaves behind exactly the records it never ran. Written AFTER the
+	// cursor assignment above because it updates the cursor's own window count.
+	s.consumeDispatchedRecord(nextIdx)
 	return StepResult{State: *s, Commands: []Command{compensationInvoke(rec, cmdID)}}, nil
 }
 
@@ -490,6 +495,15 @@ type finishPlan struct {
 	// drainedCount is the number of leading records a scope-wide throw walk drained
 	// (its StartRecordCount). Used only when scopeWideThrow is set.
 	drainedCount int
+	// archiveWindowKey / Offset / Count carry the TEARDOWN WINDOW off the cursor
+	// (ADR-0173): the records a mid-walk scope teardown parked in the archive on
+	// this walk's behalf. consumeDispatchedRecord normally empties it as the walk
+	// dispatches, so by the finish Count is 0; these exist for the residue a walk
+	// that stopped short of its own records leaves — a ToNode boundary, or a
+	// source that shrank. Set only on the scopeWideThrow branch.
+	archiveWindowKey    string
+	archiveWindowOffset int
+	archiveWindowCount  int
 	// resetVars resets Variables to StartVariables (full-reverse with reset only).
 	resetVars bool
 	// restoreVars, when non-nil, replaces Variables with a copy of this snapshot on
@@ -501,6 +515,13 @@ type finishPlan struct {
 	// deleteArchive is the throw-walk ArchivedCompensations key to delete on finish
 	// ("" = none) — single-ownership consume semantics.
 	deleteArchive string
+	// archiveConsumed marks a throw walk that handed each record's ownership over
+	// AS IT DISPATCHED it (ADR-0173), i.e. one with a pinned record source. Its
+	// deleteArchive slot therefore holds only records it never ran, and the finish
+	// must delete the key only when the slot is empty. False for a cursor
+	// persisted before ADR-0171, which pinned nothing, consumed nothing, and keeps
+	// the original whole-key delete.
+	archiveConsumed bool
 	// popDeferred re-activates exactly one deferred compensation throw (throw walk
 	// only — ADR-0071 serialization).
 	popDeferred bool
@@ -530,7 +551,16 @@ type finishPlan struct {
 // is a programming bug in this package — finishPlan is a transient, non-
 // serialized value built entirely from in-package logic, never from
 // persisted or external input — so it is deliberately NOT an error routed
-// through the incident path. stepCompensationFinish calls this once the
+// through the incident path.
+//
+// ⚠ That "never from persisted or external input" clause is load-bearing, and
+// ADR-0173 nearly broke it: the teardown window it added is read off the
+// PERSISTED cursor, so a corrupt row carrying a count with no key would have
+// tripped the assertion below and panicked in the consumer's process.
+// normalizeTeardownWindow sanitizes the window at the cursor read for exactly
+// that reason — keep new plan fields sourced from persisted state going through
+// it, or this function stops being a programming-bug detector and becomes an
+// input validator that crashes. stepCompensationFinish calls this once the
 // plan for the walk's outcome is fully built, before handing it to
 // applyFinish.
 func (p finishPlan) validate() {
@@ -542,6 +572,20 @@ func (p finishPlan) validate() {
 	}
 	if !p.resume && p.scopeWideThrow {
 		panic("workflow-engine: finishPlan invariant violated: a terminate plan (resume=false) must never set scopeWideThrow")
+	}
+	// ADR-0173: a teardown window count without the key it indexes into would
+	// silently address nothing.
+	//
+	// ⚠ The converse is NOT an invariant, and asserting it panicked the suite: the
+	// USUAL finish carries a non-empty key with a ZERO count, because
+	// consumeDispatchedRecord empties the window as the walk dispatches and only
+	// the key survives to the finish. Key-set-implies-count-set was a plausible
+	// symmetry that the built code refuted immediately.
+	if p.archiveWindowCount > 0 && p.archiveWindowKey == "" {
+		panic("workflow-engine: finishPlan invariant violated: archiveWindowCount without archiveWindowKey")
+	}
+	if p.archiveWindowKey != "" && !p.scopeWideThrow {
+		panic("workflow-engine: finishPlan invariant violated: an archive window belongs only to a scope-wide throw")
 	}
 }
 
@@ -653,6 +697,11 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 	resumeNode := cur.ResumeNode
 	resumeScope := cur.ResumeScope
 	startRecordCount := cur.StartRecordCount
+	// A pinned record source is what makes this walk's incremental consuming
+	// (ADR-0173) trustworthy; see finishPlan.archiveConsumed.
+	archiveConsumed := len(cur.Records) > 0
+	windowKey, windowOffset, windowCount := normalizeTeardownWindow(
+		cur.TeardownArchiveKey, cur.TeardownArchiveOffset, cur.TeardownArchiveCount)
 	reverseNode := cur.ReverseNode
 	reverseResetVars := cur.ReverseResetVars
 	restoreTargetVars := cur.RestoreTargetVars
@@ -666,16 +715,26 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 	var plan finishPlan
 	switch cur.walkMode() {
 	case walkThrowTargeted, walkThrowScopeWide:
-		// Compensation throw resume: consume the archive entry (single ownership:
-		// a second throw to the same ref finds len == 0 and no-ops; a later cancel
-		// walk also won't re-run them), resume at the throw's successor in its own
-		// scope, and re-activate one deferred throw. A cancel arriving mid-walk
-		// preempts the resume and terminates (consumePendingCancel).
+		// Compensation throw resume: consume the archive entry (single ownership,
+		// so a later cancel walk won't re-run what this walk ran), resume at the
+		// throw's successor in its own scope, and re-activate one deferred throw. A
+		// cancel arriving mid-walk preempts the resume and terminates
+		// (consumePendingCancel).
+		//
+		// ⚠ This said "a second throw to the same ref finds len == 0 and no-ops",
+		// which ADR-0173 NARROWS: the walk now consumes only the records it
+		// dispatched, so a sibling that re-entered the same sub-process node
+		// mid-walk leaves its own record in the slot and the second throw
+		// COMPENSATES it. That is the point — the whole-key delete was destroying a
+		// genuinely uncompensated record (ADR-0120 review A1's rule, which the
+		// scope-wide branch already honoured). The no-op still holds for the case
+		// the sentence was written about: a second throw with nothing new archived.
 		plan = finishPlan{
 			resume:               true,
 			resumeAt:             resumeNode,
 			resumeScope:          resumeScope,
 			deleteArchive:        archiveKey,
+			archiveConsumed:      archiveConsumed,
 			popDeferred:          true,
 			consumePendingCancel: true,
 		}
@@ -698,6 +757,9 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 			plan.clearScope = scopeID
 			plan.scopeWideThrow = true
 			plan.drainedCount = startRecordCount
+			plan.archiveWindowKey = windowKey
+			plan.archiveWindowOffset = windowOffset
+			plan.archiveWindowCount = windowCount
 		}
 	case walkPartial:
 		// Partial rollback: resume at toNode. Records are RETAINED (not cleared):
@@ -763,6 +825,15 @@ func applyPlanRecordClearing(s *InstanceState, plan finishPlan) {
 	}
 	if plan.scopeWideThrow {
 		clearRecordsPrefix(s, plan.clearScope, plan.drainedCount)
+		// Remove whatever survives of the teardown window (ADR-0173). Normally
+		// nothing does: consumeDispatchedRecord empties it as the walk dispatches.
+		// A walk that stops short of its own records — a ToNode boundary, or a
+		// record source that shrank under it — leaves a residue, and it belongs to
+		// this walk, not to the next one. Highest index first, so each removal
+		// takes the window's last element and shifts nothing still inside it.
+		for i := plan.archiveWindowCount - 1; plan.archiveWindowKey != "" && i >= 0; i-- {
+			s.dropArchiveRecordAt(plan.archiveWindowKey, plan.archiveWindowOffset+i)
+		}
 		return
 	}
 	clearRecords(s, plan.clearScope)
@@ -777,7 +848,19 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 	// Throw-walk archive consume (single ownership). No-op for other plans
 	// (deleteArchive == "").
 	if plan.deleteArchive != "" && s.ArchivedCompensations != nil {
-		delete(s.ArchivedCompensations, plan.deleteArchive)
+		// A walk that consumed its slot as it dispatched (ADR-0173) has already
+		// removed everything it drained, so whatever is left is a record it never
+		// ran — a sibling's mid-walk re-entry of the same sub-process node, which
+		// accumulates into this one slot. Deleting the key regardless was the
+		// defect: measured, the second visit's record was destroyed uncompensated
+		// and the deferred throw popped at finish found an empty slot.
+		//
+		// A cursor persisted before ADR-0171 pinned no snapshot, so it read the
+		// slot LIVE and consumed nothing; the whole-key delete stays its correct
+		// single-ownership consume.
+		if !plan.archiveConsumed || len(s.ArchivedCompensations[plan.deleteArchive]) == 0 {
+			s.deleteArchiveSlot(plan.deleteArchive)
+		}
 	}
 
 	// A cancel — or an unhandled error (ADR-0170) — that arrived mid-walk preempts
