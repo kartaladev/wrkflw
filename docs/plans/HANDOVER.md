@@ -162,7 +162,7 @@ is not a formality on this codebase.
 | | |
 |---|---|
 | `main` | **ADR-0171 is the newest shipped bundle** (merge `b12bba3`). ⚠ Re-derive: `git rev-parse --short main` |
-| *(merged branches)* | **All merged delivery branches were DELETED 2026-08-10** — 0159/0161/0162/0163/0164/0165/0166/0167/0168–0171. Their history is in `main`; nothing is lost. ⚠ `origin/feat/strict-definition-decoding` still exists on the REMOTE (merged, safe to delete there too) |
+| *(merged branches)* | **All merged delivery branches were DELETED 2026-08-10** — 0159/0161/0162/0163/0164/0165/0166/0167/0168–0171. Their history is in `main`; nothing is lost. **`origin` now carries only `main`** plus dependabot branches |
 | `backup/terminal-trigger-guard-presquash` | `a3aa889` — ADR-0165 pre-squash history, provenance only |
 | **`parked/scope-and-fanout-design`** | delivery 3's draft ADR-0158. ⚠ Also carries a **superseded ADR-0162 draft — do not read it.** ⚠ Its diff vs `main` is ~18,000 deleted lines of tests `main` has since gained |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept for its audit tags |
