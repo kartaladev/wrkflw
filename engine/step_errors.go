@@ -247,9 +247,22 @@ func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *
 		return deferFailureToInFlightCompensationWalk(s, at, errorCode), nil
 	}
 
+	// The instance is dying, so harvest what its open scopes still hold BEFORE asking
+	// whether there is anything to compensate. Without this the predicate below cannot
+	// see a record for an activity that completed inside a still-open sub-process — it
+	// lives in Scope.Compensations, which reaches the archive only on a NORMAL scope
+	// exit — so the walk was skipped and the record was then unreachable forever
+	// (ADR-0174). Measured on `main`: a sub-process holding `undo-inner` failed with
+	// FailInstance and no InvokeAction at all.
+	//
+	// Placed AFTER the in-flight-walk guard above, which must keep winning: a walk
+	// already in flight IS the rollback (ADR-0170).
+	s.harvestOpenScopeCompensations()
+
 	// Terminal unhandled error: run compensation walk before terminating (ADR-0034).
 	// Check both RootCompensations and ArchivedCompensations (ADR-0039) — consolidation
-	// happens inside beginCompensation.
+	// happens inside beginCompensation. The harvest above is what makes this predicate
+	// correct for an open scope's records without changing its text.
 	if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
 		s.Status = StatusCompensating
 		res, err := beginCompensation(ctx, top, s, at, mode, eval, compensationOutcome{CloseKind: CloseKindErrored, FinalStatus: StatusFailed, FinalErr: errorCode})

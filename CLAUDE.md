@@ -340,8 +340,18 @@ On completion of any change, verify:
    go test -race -coverprofile=cover.out ./... && scripts/coverage.sh cover.out
    ```
    `scripts/coverage.sh` reports the total **excluding generated files** (the `// Code generated … DO NOT EDIT.` mockgen `*_mock.go` doubles), so the 85% floor is measured over hand-written code only (ADR-0143, mirrors `.golangci.yml` `generated: lax`). The 85% is a floor, not the goal — hot paths and their failure branches must ALL be covered first (Golang rule #8); a package can fail review at 95% if a hot path is untested.
+
+   **Docker for this run: do NOT ask — just check the daemon and go.** The coverage run and the repo-wide no-regressions run (item 2) sweep packages whose tests need testcontainers, so they need a running Docker daemon. **Standing permission is granted for these two runs specifically**: probe the daemon first (e.g. `docker info` / `docker ps`), and if it answers, run them without asking.
+
+   If the daemon is **not** available — not running, socket missing, `docker` absent, or the probe errors — do **not** attempt the run and do **not** silently substitute a narrower one. Say so plainly and give the owner the choice: start the Docker daemon, or explicitly skip the coverage step. Then **report what was actually verified**: a container-free subset (`engine`, `runtime/{calllink,signal,task}`, `service`, `processtest`, `transport/http`) is a partial result and must be labelled as one — never presented as the Verification item passing. ⚠ `scripts/coverage.sh` only **reports**; its exit code proves nothing.
+
+   This carve-out is scoped to Verification items 1–2. It is **not** a general licence to spin containers: ad-hoc containers in individual tests remain forbidden (Golang rule #3), and a subagent that needs Docker still needs it stated explicitly in its brief.
 2. `go test ./...` from the repo root passes — no regressions elsewhere.
 3. `golangci-lint run ./...` is clean. Use the `cc-skills-golang:golang-lint` skill if configuration is needed.
+
+   **Binary for this run: do NOT ask — probe and go.** Check `golangci-lint` is on `PATH` (e.g. `command -v golangci-lint`) and, if it is, run it without asking. If it is **absent**, do not skip the step silently and do not substitute `go vet` as if it were equivalent (`go vet` is a compile-and-vet check, not the lint gate). Say it is missing and offer the choice: install it — either the agent installs it, or the owner does — or explicitly skip linting for this delivery. Whichever is chosen, **report which one happened**; "lint clean" must never be claimed for a run that did not execute.
+
+   ⚠ **`golangci-lint run ./engine/...` is not `golangci-lint run ./...`.** A package-scoped run is a partial result; label it as such until the repo-wide run has passed.
 4. **Before delivery** (merging to `main` or pushing a PR branch): run `/code-review` **and** `/security-review` on the pending change and fix **all** findings — see the **Delivery Gate** under Git Discipline. Review-driven fixes are folded into the feature commit via `--amend`, never stacked as new commits.
 
 ## Common Pitfalls

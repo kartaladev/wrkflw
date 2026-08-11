@@ -216,6 +216,21 @@ func stepCompensateRequested(ctx context.Context, def *model.ProcessDefinition, 
 	if t.ReverseNode != "" || t.ToNode != "" || t.RestoreTargetVars {
 		closeKind = CloseKindReversed
 	}
+	// A rollback that TERMINATES is a dying-instance transition, so it harvests what
+	// the open scopes still hold — otherwise work completed inside a live sub-process
+	// is invisible to the walk, and the operator's rollback dispatches nothing while
+	// endInstance archives the record a moment later, so only a SECOND rollback
+	// actually compensates it (ADR-0174, found by /code-review at the gate).
+	//
+	// ⚠ Gated on the walk terminating, and that gate is load-bearing. A full reverse
+	// and a partial rollback both RESUME, leaving the sub-process scope alive; hoisting
+	// their records both changes what the rollback compensates and re-exposes them to
+	// the retained-records double-run. Measured on a resuming walk: partial rollback
+	// [] → [undoInner], and a later cancel [undoRoot undoRoot] →
+	// [undoInner undoRoot undoInner undoRoot].
+	if t.ToNode == "" && t.ReverseNode == "" {
+		s.harvestOpenScopeCompensations()
+	}
 	return beginCompensation(ctx, def, s, t.OccurredAt(), mode, eval, compensationOutcome{
 		CloseKind:         closeKind,
 		ToNode:            t.ToNode,
@@ -912,6 +927,18 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 		// compensated ALL of RootCompensations and clears the whole list the same way.
 		applyPlanRecordClearing(s, plan)
 		s.Status = StatusCompensating
+		// This re-entry is a TERMINAL walk (a deferred cancel, or a deferred unhandled
+		// error — ADR-0170), so it is a dying-instance transition and harvests what the
+		// open scopes still hold. Without this the deferred cancel terminated AROUND a
+		// sibling scope's completed compensable work: measured invoked=[], status
+		// terminated, with undoB merely archived afterwards by endInstance and therefore
+		// unreachable until a second rollback (ADR-0174, found by /code-review).
+		//
+		// Placed AFTER applyPlanRecordClearing so the finishing walk's own drained prefix
+		// is already gone: harvesting first would re-archive records this walk dispatched.
+		// No terminality gate is needed here — unlike stepCompensateRequested's site, this
+		// branch is reached only for a pending CANCEL or ERROR outcome, both terminal.
+		s.harvestOpenScopeCompensations()
 		return beginCompensation(ctx, def, s, at, mode, eval, compensationOutcome{CloseKind: pendingKind, FinalStatus: pendingStatus, FinalErr: pendingErr})
 	}
 

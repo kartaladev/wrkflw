@@ -296,9 +296,29 @@ and `exitNestedEventSubprocessScope` archives the enclosing scope before its
   tail (`engine/step_triggers.go`). A force-termination end event fired
   inside a sub-process is explicitly scope-agnostic and ends the whole instance
   (`engine/step_nodes.go`), so it still commits a terminal snapshot
-  carrying open `Scopes`. Closing that is `endInstance`'s job in
-  [ADR-0164](0164-terminal-transitions-are-one-path.md) (delivery 2b). Until 2b
-  lands, this ADR claims the narrower thing that is true.
+  carrying open `Scopes`. This ADR therefore claims the narrower thing that is
+  true.
+
+  > ⚠ **CORRECTION (2026-08-11, ADR-0174).** This bullet originally deferred the
+  > wider claim with *"Closing that is `endInstance`'s job in ADR-0164 (delivery
+  > 2b). Until 2b lands, this ADR claims the narrower thing that is true."*
+  > **Delivery 2b landed as ADR-0164 and `endInstance` never closed a scope** —
+  > the sentence was false for 11 ADRs, and pointed every later reader at a
+  > guarantee nobody had built. The deferral is now discharged by
+  > [ADR-0174](0174-a-dying-instance-harvests-its-open-scopes.md), which harvests
+  > each open scope's compensation records and then sets `s.Scopes = nil` in
+  > `endInstance`.
+  >
+  > The delay was not cosmetic. Because those four terminal transitions left the
+  > scope open, the compensation records inside it never reached
+  > `ArchivedCompensations`, and every records-exist predicate reads only the
+  > archive and `RootCompensations` — so an unhandled error or an operator cancel
+  > inside a record-holding sub-process **skipped the compensation walk entirely**
+  > and the records became permanently unreachable. Measured on `main`: a
+  > sub-process holding `undo-inner` emitted `FailInstance` and no `InvokeAction`
+  > at all, and a later admin rollback was refused as *"nothing left to
+  > compensate"*. The lesson recorded in ADR-0174: a deferral is only honest while
+  > someone still owns it, and this one outlived its owner.
 - Work that completed inside a torn-down sub-process stays compensable, so an
   error boundary that routes to a "notify and roll back" handler can actually
   roll back.
