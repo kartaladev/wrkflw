@@ -98,6 +98,7 @@ func allTriggerVariants(at time.Time) []Trigger {
 		NewCompensateRequested(at, ""),
 		NewCancelRequested(at),
 		NewResolveIncident(at, "i", 0),
+		NewSkipStalledCompensation(at, "c", ""),
 	}
 }
 

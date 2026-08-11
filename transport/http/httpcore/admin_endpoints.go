@@ -483,3 +483,33 @@ func AdminInstanceLineage(ctx context.Context, a service.LineageAdmin, instanceI
 	}
 	return http.StatusOK, newLineageView(lineage), nil
 }
+
+// ResolveCompensationStall applies an operator's escape from a compensation walk
+// whose dispatched action stopped reporting back (ADR-0175). Returns (200,
+// InstanceView, nil) on success.
+//
+// ⚠ AUTHORIZATION. retry re-executes a named remote action and abandon is
+// destructive and irreversible, so this endpoint warrants a privilege distinct
+// from resolve-incident, and abandon one distinct from retry/skip. This function
+// enforces neither: like every other endpoint here it runs behind the mount's
+// middleware, and the caller is responsible for gating it.
+func ResolveCompensationStall(ctx context.Context, svc service.Service, instanceID string, in ResolveCompensationStallInput) (int, any, error) {
+	if in.CommandID == "" {
+		return 0, nil, fmt.Errorf("%w: command_id is required — read it from the instance's compensating.active_command_id",
+			ErrBadInput)
+	}
+	disposition, err := ParseCompensationDisposition(in.Disposition)
+	if err != nil {
+		return 0, nil, err
+	}
+	pi, err := svc.ResolveCompensationStall(ctx, service.ResolveCompensationStallRequest{
+		InstanceID:  instanceID,
+		CommandID:   in.CommandID,
+		IncidentID:  in.IncidentID,
+		Disposition: disposition,
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+	return http.StatusOK, NewInstanceView(pi.State()), nil
+}

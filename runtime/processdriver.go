@@ -75,6 +75,17 @@ type ProcessDriver struct {
 	// Set via [WithDefaultRetryPolicy].
 	defaultRetryPolicy *model.RetryPolicy
 
+	// compensationStallAfter bounds how long a dispatched COMPENSATION action may
+	// go without reporting back before the engine raises a stall incident against
+	// the walk (ADR-0175). Zero disables detection and is the default.
+	//
+	// It is deliberately separate from actionTimeout, which bounds an in-process
+	// invocation and converts a hang into an ActionFailed that self-heals the
+	// walk. This window exists for the shapes that timeout cannot see: a lost
+	// callback from an out-of-process worker, and a driver that died between
+	// dispatch and reply.
+	compensationStallAfter time.Duration
+
 	// conditionEval, when non-nil, is the expression evaluator the runner passes
 	// into engine.Step via StepOptions.Evaluator for every step. When nil (the
 	// default) the engine uses its pure, wall-clock-free package-global evaluator,
@@ -605,6 +616,9 @@ func (driver *ProcessDriver) deliverLoop(
 			DefaultRetryPolicy:  driver.defaultRetryPolicy,
 			OverrideRetryPolicy: driver.overrideRetryPolicy(def, st, t),
 			Evaluator:           driver.conditionEval,
+			// ADR-0175: zero disables stall detection, and zero is the default, so an
+			// unconfigured driver's command stream is unchanged.
+			CompensationStallAfter: driver.compensationStallAfter,
 			// One id strategy for the whole product surface: the same generator
 			// that mints instance ids also names the tokens, tasks, commands,
 			// timers, incidents, and scopes the engine creates (ADR-0149).

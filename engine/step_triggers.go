@@ -47,7 +47,7 @@ func handleStartInstance(ctx context.Context, def *model.ProcessDefinition, s *I
 		return StepResult{}, espErr
 	}
 	// Drive forward from the start node; prepend any esp ScheduleTimer commands.
-	driveCmdsStart, driveErrStart := drive(ctx, def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+	driveCmdsStart, driveErrStart := drive(ctx, def, s, t.OccurredAt(), resolvePolicy(opt))
 	if driveErrStart != nil {
 		return StepResult{}, driveErrStart
 	}
@@ -82,7 +82,7 @@ func handleActionCompleted(ctx context.Context, def *model.ProcessDefinition, s 
 	// compensation cursor rather than doing normal token routing. This keeps
 	// compensation sequencing deterministic and observable (one action at a time).
 	if s.Status == StatusCompensating && s.Compensating.ActiveCmdID == t.CommandID {
-		return stepCompensationAdvance(ctx, def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+		return stepCompensationAdvance(ctx, def, s, t.OccurredAt(), resolvePolicy(opt))
 	}
 
 	tok := s.tokenAwaiting(t.CommandID)
@@ -229,7 +229,7 @@ func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s 
 		// and FinalErr="cancelled". stepCompensationFinish will emit
 		// FailInstance{"cancelled"} at walk end.
 		s.Status = StatusCompensating
-		res, err := beginCompensation(ctx, def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), compensationOutcome{CloseKind: CloseKindInstanceCancelled, FinalStatus: StatusTerminated, FinalErr: "cancelled"})
+		res, err := beginCompensation(ctx, def, s, t.OccurredAt(), resolvePolicy(opt), compensationOutcome{CloseKind: CloseKindInstanceCancelled, FinalStatus: StatusTerminated, FinalErr: "cancelled"})
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -280,7 +280,7 @@ func handleCompensateRequested(ctx context.Context, def *model.ProcessDefinition
 	// 2. Build the compensation cursor pointing at the first (most-recent) record
 	//    to emit (the last index in the relevant slice that is AFTER ToNode).
 	// 3. Emit the first InvokeAction and record the cursor.
-	return stepCompensateRequested(ctx, def, s, t, opt.Mode, resolveEvaluator(opt))
+	return stepCompensateRequested(ctx, def, s, t, resolvePolicy(opt))
 }
 
 // handleActionFailed processes an ActionFailed trigger: handles retry scheduling,
@@ -290,7 +290,7 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 	// command is the active compensation action, skip that record and advance
 	// the walk rather than re-entering propagateError/retry (ADR-0034 §2.5).
 	if s.Status == StatusCompensating && s.Compensating.ActiveCmdID == t.CommandID {
-		return stepCompensationAdvance(ctx, def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+		return stepCompensationAdvance(ctx, def, s, t.OccurredAt(), resolvePolicy(opt))
 	}
 
 	tok := s.tokenAwaiting(t.CommandID)
@@ -376,7 +376,7 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 			tok.AwaitCommand = ""
 			tok.State = TokenActive
 			s.moveTokenToTarget(tok, target, t.OccurredAt())
-			driveCmds, err := drive(ctx, def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+			driveCmds, err := drive(ctx, def, s, t.OccurredAt(), resolvePolicy(opt))
 			if err != nil {
 				return StepResult{}, err
 			}
@@ -385,7 +385,7 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 		// (2)+(3): no catch-flow → let propagateError catch the error via a
 		// boundary handler; if none is found, raise an incident (the
 		// raiseIncident policy) instead of failing the instance.
-		errCmds, err := propagateError(ctx, def, s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.Cause, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), raiseIncident)
+		errCmds, err := propagateError(ctx, def, s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.Cause, t.OccurredAt(), resolvePolicy(opt), raiseIncident)
 		if err != nil {
 			return StepResult{}, err
 		}
@@ -400,7 +400,7 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 	// Pass tok.ID so the direct-attachment branch consumes THIS specific
 	// token, not the first token found at the same NodeID+ScopeID.
 	// Pass t.Cause so ErrorCheck closures receive the original typed error.
-	errCmds, err := propagateError(ctx, def, s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.Cause, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), failFast)
+	errCmds, err := propagateError(ctx, def, s, tok.ScopeID, tok.NodeID, tok.ID, t.Err, t.Cause, t.OccurredAt(), resolvePolicy(opt), failFast)
 	if err != nil {
 		return StepResult{}, err
 	}
@@ -509,7 +509,7 @@ func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *Inst
 	//
 	// 1)-3) Gateway arm / boundary arm / event sub-process arm cascade,
 	// first-match-wins (dispatchArmCascade — no payload to merge for timer).
-	if cmds, matched, err := dispatchArmCascade(ctx, def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt), nil,
+	if cmds, matched, err := dispatchArmCascade(ctx, def, s, t.OccurredAt(), resolvePolicy(opt), nil,
 		func() *armedEvent { return s.armedEventByTimer(t.TimerID) },
 		func() *boundaryArm { return s.boundaryArmByTimer(t.TimerID) },
 		func() *eventTriggeredSubprocessArm { return s.eventTriggeredSubprocessArmByTimer(t.TimerID) },
@@ -529,11 +529,13 @@ func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *Inst
 	if rec != nil {
 		switch rec.Kind {
 		case TimerDeadline:
-			return handleDeadlineFired(ctx, def, s, *rec, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+			return handleDeadlineFired(ctx, def, s, *rec, t.OccurredAt(), resolvePolicy(opt))
 		case TimerInWait:
 			return handleReminderFired(def, s, *rec)
 		case TimerRetry:
-			return handleRetryFired(ctx, def, s, *rec, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+			return handleRetryFired(ctx, def, s, *rec, t.OccurredAt(), resolvePolicy(opt))
+		case TimerCompensationStall:
+			return handleCompensationStallFired(s, *rec, t.OccurredAt())
 		}
 	}
 
@@ -755,7 +757,7 @@ func handleHumanCompleted(ctx context.Context, def *model.ProcessDefinition, s *
 	}
 	// No completion action: advance + drive as before.
 	s.moveAlongSingleFlow(humanTdef, tok, t.OccurredAt())
-	driveCmds, err := drive(ctx, def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+	driveCmds, err := drive(ctx, def, s, t.OccurredAt(), resolvePolicy(opt))
 	if err != nil {
 		return StepResult{}, err
 	}
@@ -884,7 +886,7 @@ func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *
 				return nil, nil
 			}
 			markMatched()
-			cmds, err := resolveGatewayWin(ctx, def, s, *ae, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+			cmds, err := resolveGatewayWin(ctx, def, s, *ae, t.OccurredAt(), resolvePolicy(opt))
 			if err != nil {
 				return nil, err
 			}
@@ -901,7 +903,7 @@ func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *
 				return nil, nil
 			}
 			markMatched()
-			return fireBoundaryArm(ctx, def, s, *ba, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+			return fireBoundaryArm(ctx, def, s, *ba, t.OccurredAt(), resolvePolicy(opt))
 		})
 	}
 
@@ -914,7 +916,7 @@ func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *
 				return nil, nil
 			}
 			markMatched()
-			return fireEventTriggeredSubprocessArm(ctx, def, s, *ea, t.OccurredAt(), opt.Mode, resolveEvaluator(opt))
+			return fireEventTriggeredSubprocessArm(ctx, def, s, *ea, t.OccurredAt(), resolvePolicy(opt))
 		})
 	}
 
@@ -1051,7 +1053,7 @@ func handleSubInstanceFailed(ctx context.Context, def *model.ProcessDefinition, 
 			return cmds
 		}
 		cmds, routeErr := routeToBoundary(ctx, def, s, hostDef, boundary, "call-activity boundary", tok.ScopeID,
-			t.OccurredAt(), opt.Mode, resolveEvaluator(opt), consume)
+			t.OccurredAt(), resolvePolicy(opt), consume)
 		if routeErr != nil {
 			return StepResult{}, routeErr
 		}
@@ -1099,7 +1101,7 @@ func handleMessageReceived(ctx context.Context, def *model.ProcessDefinition, s 
 	// first-match-wins (dispatchArmCascade). onMatch merges the trigger
 	// payload into instance variables exactly once, before firing, only when
 	// a match is found — mirroring the pre-extraction per-branch mergeVars.
-	if cmds, matched, err := dispatchArmCascade(ctx, def, s, t.OccurredAt(), opt.Mode, resolveEvaluator(opt),
+	if cmds, matched, err := dispatchArmCascade(ctx, def, s, t.OccurredAt(), resolvePolicy(opt),
 		func() { mergeVars(s, t.Payload) },
 		func() *armedEvent { return s.armedEventByMessage(t.Name, t.CorrelationKey) },
 		func() *boundaryArm { return s.boundaryArmByMessage(t.Name, t.CorrelationKey) },
@@ -1194,6 +1196,32 @@ func handleResolveIncident(ctx context.Context, def *model.ProcessDefinition, s 
 		return StepResult{State: *s, Commands: nil}, nil
 	}
 	inc := s.Incidents[idx]
+	// Refuse a kind this operation cannot act on (ADR-0175). A compensation-stall
+	// incident carries TokenID "", so an unguarded call falls straight through to
+	// the tok == nil branch: measured err=<nil>, cmds=[], incidents=0, i.e. it
+	// silently EATS the only record that the walk had stalled, leaving the stall
+	// invisible as well as unresolved. The error names the verbs that do work.
+	//
+	// ⚠ Placed above the removal for readability, NOT because the position is what
+	// protects the incident — ADR-0175 said it was, and measurement refuted that.
+	// Moving this block below the removal line leaves every assertion green,
+	// because Step returns the ZERO StepResult on error and the caller therefore
+	// discards the clone the removal mutated. What prevents the data loss is
+	// returning an ERROR at all; deleting the guard outright is the mutation that
+	// reddens (see TestResolveIncidentRefusesACompensationStall).
+	//
+	// This guards the StatusCompensating window only. On a terminal instance
+	// dispatch's structural guard returns ErrInstanceTerminal first (ADR-0165);
+	// the two refusals are told apart by
+	// TestResolveIncidentOnATerminalInstanceIsRefusedAsTerminal.
+	if inc.Kind != IncidentAction {
+		slog.WarnContext(ctx, "resolve-incident refused: incident kind is not resolvable here",
+			"instance_id", s.InstanceID,
+			"incident_id", inc.ID,
+			"incident_kind", inc.Kind.String(),
+		)
+		return StepResult{}, ErrIncidentNotResolvable
+	}
 	// Remove the incident from the slice (order-preserving, avoids aliasing).
 	s.Incidents = append(s.Incidents[:idx], s.Incidents[idx+1:]...)
 	tok := s.tokenByID(inc.TokenID)
@@ -1206,7 +1234,7 @@ func handleResolveIncident(ctx context.Context, def *model.ProcessDefinition, s 
 	// policy declares it terminal again.
 	tok.RetryAttempts = max(0, tok.RetryAttempts-t.AddAttempts)
 	tok.State = TokenActive
-	cmds, err := reinvokeServiceAction(ctx, def, s, tok, t.OccurredAt(), resolveEvaluator(opt))
+	cmds, err := reinvokeServiceAction(ctx, def, s, tok, t.OccurredAt(), resolvePolicy(opt))
 	if err != nil {
 		return StepResult{}, err
 	}

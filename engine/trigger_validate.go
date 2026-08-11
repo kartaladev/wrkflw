@@ -67,6 +67,13 @@ var (
 		"engine.SignalReceived":          {"Name", "signal_name", func(t Trigger) string { return t.(SignalReceived).Name }},
 		"engine.MessageReceived":         {"Name", "message_name", func(t Trigger) string { return t.(MessageReceived).Name }},
 		"engine.ResolveIncident":         {"IncidentID", "incident_id", func(t Trigger) string { return t.(ResolveIncident).IncidentID }},
+		// ADR-0175: CommandID is REQUIRED and cursor-matched. It is validated here
+		// rather than in the handler so an empty one is rejected before any state
+		// is touched — an escape verb naming no dispatch is a shape defect, and
+		// acting on "whatever is in flight" was measured double-running a
+		// compensation action. IncidentID is deliberately NOT the identity field:
+		// it is optional, because detection defaults to off.
+		"engine.ResolveCompensationStall": {"CommandID", "command_id", func(t Trigger) string { return t.(ResolveCompensationStall).CommandID }},
 	}
 
 	exemptTriggerKinds = map[string]exemptTriggerKind{

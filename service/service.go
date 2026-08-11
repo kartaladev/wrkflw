@@ -82,6 +82,20 @@ type InstanceOps interface {
 	// Propagates kernel.ErrInstanceNotFound when no instance exists for the ID.
 	ResolveIncident(ctx context.Context, req ResolveIncidentRequest) (ProcessInstance, error)
 
+	// ResolveCompensationStall applies an operator's escape from a compensation
+	// walk whose dispatched action stopped reporting back (ADR-0175): retry
+	// re-dispatches the stalled record, skip gives it up and advances the walk,
+	// and abandon ends the walk and terminates the instance.
+	//
+	// Req.CommandID is required and must match the walk's in-flight command id,
+	// which ProcessInstance projects as `compensating.active_command_id`; a
+	// mismatch is refused, which is what makes the verbs idempotent under replay.
+	//
+	// ⚠ retry is a remote RE-EXECUTION primitive and abandon is destructive and
+	// irreversible. Both warrant a privilege distinct from resolve-incident, and
+	// abandon warrants one distinct from retry/skip.
+	ResolveCompensationStall(ctx context.Context, req ResolveCompensationStallRequest) (ProcessInstance, error)
+
 	// CancelInstance terminates a running process instance, running any
 	// definition-level cancel actions best-effort. Returns ErrConflict when the
 	// instance has already reached a terminal state.
@@ -490,6 +504,22 @@ func (e *ProcessEngine) ResolveIncident(ctx context.Context, req ResolveIncident
 	st, err := e.driver.ResolveIncident(ctx, def, req.InstanceID, req.IncidentID, addAttempts)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: resolve incident: %w", err)
+	}
+	return e.instance(def, st), nil
+}
+
+// ResolveCompensationStall resolves the instance's definition and delegates to
+// ProcessDriver.ResolveCompensationStall. Unlike ResolveIncident it coerces
+// nothing: CommandID is a required identity the engine matches against the
+// walk's cursor, so a caller who omits or mistypes it must be told.
+func (e *ProcessEngine) ResolveCompensationStall(ctx context.Context, req ResolveCompensationStallRequest) (ProcessInstance, error) {
+	def, _, err := e.resolveDefinition(ctx, req.InstanceID)
+	if err != nil {
+		return nil, fmt.Errorf("workflow-service: resolve compensation stall: %w", err)
+	}
+	st, err := e.driver.ResolveCompensationStall(ctx, def, req.InstanceID, req.CommandID, req.IncidentID, req.Disposition)
+	if err != nil {
+		return nil, fmt.Errorf("workflow-service: resolve compensation stall: %w", err)
 	}
 	return e.instance(def, st), nil
 }

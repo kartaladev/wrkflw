@@ -153,7 +153,7 @@ func armEventTriggeredSubprocesses(def *model.ProcessDefinition, s *InstanceStat
 //  3. Remove ONLY this arm (one-shot).
 //  4. Open a child scope and place a start token — runs alongside.
 //  5. Drive forward.
-func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, ea eventTriggeredSubprocessArm, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
+func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, ea eventTriggeredSubprocessArm, at time.Time, pol stepPolicy) ([]Command, error) {
 	// ADR-0172: a DYING instance spawns no new work, whichever scope the arm
 	// belongs to. This replaced a root-scope-only `s.Status != StatusRunning`
 	// check, which was wrong in both directions:
@@ -251,7 +251,7 @@ func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefi
 	}
 
 	// Drive forward.
-	driveCmds, err := drive(ctx, def, s, at, mode, eval)
+	driveCmds, err := drive(ctx, def, s, at, pol)
 	if err != nil {
 		return nil, err
 	}

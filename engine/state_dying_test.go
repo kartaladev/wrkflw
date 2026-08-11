@@ -319,7 +319,7 @@ func TestEventSubprocessArmRespectsSpawnsNewWork(t *testing.T) {
 				s.Scopes = nil
 			}
 
-			cmds, err := fireEventTriggeredSubprocessArm(t.Context(), def, s, arm, dyingT0, Macro, nil)
+			cmds, err := fireEventTriggeredSubprocessArm(t.Context(), def, s, arm, dyingT0, stepPolicy{mode: Macro})
 			require.NoError(t, err)
 			tc.assert(t, cmds, s)
 		})

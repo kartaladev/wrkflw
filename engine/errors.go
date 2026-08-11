@@ -66,6 +66,64 @@ var (
 	// both hold. See ADR-0165.
 	ErrTaskNotOpen = fmt.Errorf("workflow-engine: human task is not open: %w", ErrInvalidTransition)
 
+	// ErrNoCompensationWalk is returned when a [ResolveCompensationStall] escape
+	// verb arrives with no compensation walk in flight — the instance is not
+	// compensating, or its cursor holds no dispatched command.
+	//
+	// An error rather than a no-op: every verb answers a synchronous operator, and
+	// an operator told nothing would reasonably believe the escape worked. It
+	// wraps [ErrInvalidTransition] for the same classification reason as
+	// [ErrInstanceTerminal], so it reaches an HTTP admin as a conflict. See
+	// ADR-0175.
+	ErrNoCompensationWalk = fmt.Errorf("workflow-engine: no compensation walk in flight: %w", ErrInvalidTransition)
+
+	// ErrCompensationCommandMismatch is returned when a [ResolveCompensationStall]
+	// names a CommandID that is not the walk's current ActiveCmdID.
+	//
+	// This is what makes the verbs idempotent: a replayed escape finds the cursor
+	// already moved on and is refused rather than acting on whatever is in flight
+	// NOW. Without the match a compensation action was measured running TWICE,
+	// with the original completion then rejected as "no token awaiting command" —
+	// which an at-least-once action transport turns into a redelivery loop. See
+	// ADR-0175.
+	ErrCompensationCommandMismatch = fmt.Errorf("workflow-engine: compensation command id does not match the walk in flight: %w", ErrInvalidTransition)
+
+	// ErrStallIncidentNotFound is returned when a [ResolveCompensationStall]
+	// carries a non-empty IncidentID naming no open [IncidentCompensationStall].
+	//
+	// Deliberately NOT the idempotent no-op [ResolveIncident] uses for an unknown
+	// id: an operator who mistypes an incident id must not silently receive a
+	// walk-wide action they did not ask for. See ADR-0175.
+	ErrStallIncidentNotFound = fmt.Errorf("workflow-engine: no open compensation-stall incident with that id: %w", ErrInvalidTransition)
+
+	// ErrCompensationWalkResumes is returned when abandon is attempted on a
+	// compensation walk that finishes by RESUMING — a compensation throw, a
+	// partial rollback, or a full reverse.
+	//
+	// stepCompensationFinish selects its plan from the cursor's walk mode, so such
+	// a walk takes a resume plan and a "terminate instead" override never applies.
+	// Measured, abandoning a targeted throw DESTROYED its un-run stalled record
+	// and left the instance running; on a scope-wide throw it cleared the whole
+	// drained prefix. Skip is the verb that works on these walks — it drains them
+	// to their natural resume — so no escape is lost. See ADR-0175.
+	ErrCompensationWalkResumes = fmt.Errorf("workflow-engine: cannot abandon a compensation walk that resumes; use skip: %w", ErrInvalidTransition)
+
+	// ErrIncidentNotResolvable is returned when [ResolveIncident] names an
+	// incident whose kind it cannot act on — today, an
+	// [IncidentCompensationStall].
+	//
+	// The refusal exists to prevent data loss, not merely to be tidy.
+	// handleResolveIncident removes the incident BEFORE looking up its token and
+	// returns no commands when the token is nil; a stall incident carries
+	// TokenID "", so unguarded it is silently EATEN (measured: err=<nil>, cmds=[],
+	// incidents=0). An operator hitting the already-shipped resolve-incident
+	// endpoint would delete the only record that the walk had stalled, making it
+	// invisible as well as unresolved. The message names the verbs that do work.
+	// See ADR-0175.
+	ErrIncidentNotResolvable = fmt.Errorf(
+		"workflow-engine: this incident is not resolvable with resolve-incident; "+
+			"use the compensation-stall verbs (retry, skip, abandon): %w", ErrInvalidTransition)
+
 	// ErrNoMatchingFlow is returned when a gateway has no matching/default outgoing
 	// flow. It is a definition/data error, not a wrong-state transition.
 	ErrNoMatchingFlow = errors.New("workflow-engine: no matching outgoing flow")

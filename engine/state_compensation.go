@@ -169,6 +169,13 @@ type compensationCursor struct {
 	// (most recently emitted). Counts DOWN from len(records)-1 to 0 as
 	// compensation actions complete; the next record to emit is NextIndex-1.
 	NextIndex int
+	// StartedAt is when this walk began. It is stamped ONCE, where the cursor is
+	// created, and deliberately survives every advance: an operator hunting wedged
+	// instances needs to tell a walk that started seconds ago from one stuck for a
+	// day, and a timestamp restamped on each dispatch would make a slow-but-healthy
+	// walk look permanently fresh (ADR-0175 decision 5, projected as
+	// `compensating_since`).
+	StartedAt time.Time
 	// ActiveCmdID is the CommandID of the compensation InvokeAction currently
 	// in flight. Cleared when the step completes.
 	ActiveCmdID string

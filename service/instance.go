@@ -127,8 +127,15 @@ type instanceJSON struct {
 	History    []nodeVisitJSON `json:"history,omitempty"`
 	Tasks      []taskJSON      `json:"tasks,omitempty"`
 	Incidents  []incidentJSON  `json:"incidents,omitempty"`
-	StartedAt  time.Time       `json:"started_at"`
-	EndedAt    *time.Time      `json:"ended_at,omitempty"`
+	// Compensating projects the in-flight compensation walk's cursor, and is
+	// omitted entirely when no walk is in flight (ADR-0175 decision 5). It is what
+	// makes a WEDGED instance findable: a stalled walk never dispatches again, so
+	// an instance already stalled before ADR-0175 shipped raises no incident and
+	// would otherwise be invisible. It also carries the command id the three
+	// escape verbs require.
+	Compensating *compensatingJSON `json:"compensating,omitempty"`
+	StartedAt    time.Time         `json:"started_at"`
+	EndedAt      *time.Time        `json:"ended_at,omitempty"`
 	// Definition is the process template, marshalled by
 	// model.ProcessDefinition.MarshalJSON. Omitted when the instance was built
 	// without one (an unresolved definition), or when the engine was built with
@@ -157,8 +164,43 @@ type nodeVisitJSON struct {
 	CloseKind string `json:"close_kind,omitempty"`
 }
 
+// compensatingJSON is the in-flight compensation walk's operator-facing
+// projection (ADR-0175).
+//
+// ⚠ ActiveCommandID exposes an internal command id. That is a deliberate trade:
+// without it an operator cannot name the stalled dispatch, and every escape verb
+// requires naming it.
+//
+// The exposure is narrower than an earlier revision of this comment claimed. It
+// said this leaks an "<instance>-cN sequence oracle"; that form is only the
+// DETERMINISTIC FALLBACK nextID uses when no IDGenerator is injected (pure-engine
+// tests and replay). The runtime always injects the xid generator (ADR-0149), and
+// the same generator mints the token and task ids this document already exposes
+// as tokens[].id and tasks[].task_id — so in a product deployment this field adds
+// no ordering signal a reader did not already have.
+type compensatingJSON struct {
+	// ActiveCommandID is the compensation command currently in flight — the value
+	// a retry/skip/abandon request must carry.
+	ActiveCommandID string `json:"active_command_id"`
+	// Since is when the walk began, stamped once at walk start. It is what lets an
+	// operator tell a walk that started seconds ago from one stuck for a day.
+	//
+	// A POINTER, omitted when unknown. A walk already in flight when this build
+	// was deployed carries no stamp — and that is exactly the population this
+	// projection exists to make findable, since a stalled walk never dispatches
+	// again and so never raises an incident. Rendering year 1 for them would read
+	// as data rather than as "unknown".
+	Since *time.Time `json:"since,omitempty"`
+	// ScopeID is the scope whose records the walk is compensating ("" = root).
+	ScopeID string `json:"scope_id,omitempty"`
+}
+
 type incidentJSON struct {
-	ID        string    `json:"id"`
+	ID string `json:"id"`
+	// Kind distinguishes a failed action from a stalled compensation walk
+	// (ADR-0175). They are resolved by DIFFERENT operations: resolve-incident
+	// refuses a compensation stall and names the three escape verbs instead.
+	Kind      string    `json:"kind"`
 	TokenID   string    `json:"token_id"`
 	NodeID    string    `json:"node_id"`
 	ScopeID   string    `json:"scope_id,omitempty"`
@@ -254,6 +296,7 @@ func newInstanceJSON(def *model.ProcessDefinition, st engine.InstanceState, omit
 	for _, i := range st.Incidents {
 		incidents = append(incidents, incidentJSON{
 			ID:        i.ID,
+			Kind:      i.Kind.String(),
 			TokenID:   i.TokenID,
 			NodeID:    i.NodeID,
 			ScopeID:   i.ScopeID,
@@ -263,23 +306,38 @@ func newInstanceJSON(def *model.ProcessDefinition, st engine.InstanceState, omit
 		})
 	}
 
+	// Project the cursor only while a walk is actually in flight. ActiveCmdID is
+	// the discriminator rather than Status: endInstance clears the cursor on every
+	// terminal transition, so a non-empty id means a live dispatch.
+	var compensating *compensatingJSON
+	if st.Compensating.ActiveCmdID != "" {
+		compensating = &compensatingJSON{
+			ActiveCommandID: st.Compensating.ActiveCmdID,
+			ScopeID:         st.Compensating.ScopeID,
+		}
+		if since := st.Compensating.StartedAt; !since.IsZero() {
+			compensating.Since = &since
+		}
+	}
+
 	embedded := def
 	if omitDefinition {
 		embedded = nil
 	}
 
 	return instanceJSON{
-		InstanceID: st.InstanceID,
-		DefID:      st.DefID,
-		DefVersion: st.DefVersion,
-		Status:     st.Status.String(),
-		Variables:  st.Variables,
-		Tokens:     tokens,
-		History:    history,
-		Tasks:      tasks,
-		Incidents:  incidents,
-		StartedAt:  st.StartedAt,
-		EndedAt:    st.EndedAt,
-		Definition: embedded,
+		InstanceID:   st.InstanceID,
+		DefID:        st.DefID,
+		DefVersion:   st.DefVersion,
+		Status:       st.Status.String(),
+		Variables:    st.Variables,
+		Tokens:       tokens,
+		History:      history,
+		Tasks:        tasks,
+		Incidents:    incidents,
+		Compensating: compensating,
+		StartedAt:    st.StartedAt,
+		EndedAt:      st.EndedAt,
+		Definition:   embedded,
 	}
 }

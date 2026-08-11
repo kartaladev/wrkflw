@@ -26,6 +26,7 @@ const (
 	kindCompensateRequested  = "compensate_requested"
 	kindCancelRequested      = "cancel_requested"
 	kindResolveIncident      = "resolve_incident"
+	kindResolveCompStall     = "resolve_compensation_stall"
 )
 
 // AllTriggerKinds lists every trigger kind discriminator the codec handles.
@@ -46,6 +47,7 @@ var AllTriggerKinds = []string{
 	kindCompensateRequested,
 	kindCancelRequested,
 	kindResolveIncident,
+	kindResolveCompStall,
 }
 
 // triggerEnvelope is the flat JSON shape written to wrkflw_journal.payload.
@@ -77,6 +79,14 @@ type triggerEnvelope struct {
 	Jitter            float64        `json:"jitter,omitempty"`
 	IncidentID        string         `json:"incident_id,omitempty"`
 	AddAttempts       int            `json:"add_attempts,omitempty"`
+	// Disposition is ADR-0175's retry/skip/abandon selector.
+	//
+	// A POINTER, so the two requirements hold together: omitempty keeps the field
+	// out of the other 16 kinds' payloads (this envelope is shared by all of
+	// them), while a pointer to 0 is still emitted — so a stored `retry`, whose
+	// engine value is the zero one, stays distinguishable from a payload that
+	// never carried the field.
+	Disposition *int `json:"disposition,omitempty"`
 }
 
 // MarshalTrigger serialises a sealed Trigger to JSON and returns the JSON bytes,
@@ -121,6 +131,10 @@ func MarshalTrigger(t engine.Trigger) ([]byte, string, error) {
 		kind = kindCancelRequested
 	case engine.ResolveIncident:
 		kind, env.IncidentID, env.AddAttempts = kindResolveIncident, v.IncidentID, v.AddAttempts
+	case engine.ResolveCompensationStall:
+		kind, env.CommandID, env.IncidentID = kindResolveCompStall, v.CommandID, v.IncidentID
+		d := int(v.Disposition)
+		env.Disposition = &d
 	default:
 		return nil, "", fmt.Errorf("workflow-store: marshal trigger: unhandled variant %T", t)
 	}
@@ -180,6 +194,20 @@ func UnmarshalTrigger(kind string, data []byte) (engine.Trigger, error) {
 		return engine.NewCancelRequested(env.At), nil
 	case kindResolveIncident:
 		return engine.NewResolveIncident(env.At, env.IncidentID, env.AddAttempts), nil
+	case kindResolveCompStall:
+		// Built through one constructor and then overwritten, mirroring the
+		// CompensateRequested case above: baseTrigger.at is unexported, so a
+		// literal cannot carry the timestamp. Assigning Disposition from the
+		// envelope rather than picking a constructor per value means a payload
+		// written by a NEWER build — one that knows a disposition this build does
+		// not — round-trips unchanged instead of silently becoming a retry.
+		// A missing disposition decodes to the zero value, CompensationRetry —
+		// the same result the pre-pointer envelope produced for an absent field.
+		rcs := engine.NewRetryStalledCompensation(env.At, env.CommandID, env.IncidentID)
+		if env.Disposition != nil {
+			rcs.Disposition = engine.CompensationDisposition(*env.Disposition)
+		}
+		return rcs, nil
 	default:
 		return nil, fmt.Errorf("workflow-store: unmarshal trigger: unknown kind %q", kind)
 	}

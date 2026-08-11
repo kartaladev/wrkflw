@@ -1,6 +1,11 @@
 package httpcore
 
-import "github.com/kartaladev/wrkflw/definition/model"
+import (
+	"fmt"
+
+	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
+)
 
 // Actor carries identity and role membership for task-related requests.
 // It mirrors the original inline actorBody request structs.
@@ -128,4 +133,44 @@ type ListArmedTimersQuery struct {
 // kernel.NormalizeLimit (default 50, max 200).
 type DeadLetterQuery struct {
 	Limit int `json:"limit"`
+}
+
+// ResolveCompensationStallInput is the request body for
+// POST /admin/instances/{id}/compensation/resolve-stall (ADR-0175).
+//
+// Unlike ResolveIncidentInput nothing here is optional-with-a-default:
+// CommandID is a required identity the engine matches against the walk's cursor,
+// and Disposition names a destructive or re-executing action. Both are validated
+// before the service is touched.
+type ResolveCompensationStallInput struct {
+	// CommandID is the stalled compensation dispatch, read from an instance's
+	// `compensating.active_command_id`. REQUIRED.
+	CommandID string `json:"command_id"`
+	// IncidentID optionally names the stall incident being cleared. Empty targets
+	// the walk in flight.
+	IncidentID string `json:"incident_id"`
+	// Disposition is "retry", "skip" or "abandon". REQUIRED — see
+	// ParseCompensationDisposition for why it is not allowed to default.
+	Disposition string `json:"disposition"`
+}
+
+// ParseCompensationDisposition maps the wire string to its engine value.
+//
+// It fails closed on an empty or unrecognised value rather than defaulting.
+// That is not pedantry: the zero value of engine.CompensationDisposition is
+// CompensationRetry, a remote RE-EXECUTION primitive, so a defaulted unknown
+// verb would re-invoke a named action with the record's captured input — work
+// the operator never asked for.
+func ParseCompensationDisposition(s string) (engine.CompensationDisposition, error) {
+	switch s {
+	case "retry":
+		return engine.CompensationRetry, nil
+	case "skip":
+		return engine.CompensationSkip, nil
+	case "abandon":
+		return engine.CompensationAbandon, nil
+	default:
+		return 0, fmt.Errorf("%w: disposition must be one of retry, skip, abandon (got %q)",
+			ErrBadInput, s)
+	}
 }

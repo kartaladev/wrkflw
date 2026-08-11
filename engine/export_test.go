@@ -9,10 +9,40 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/model"
 )
+
+// TimerRecordView is a read-only projection of one internal timerRecord, so
+// engine_test can assert on the engine's timer bookkeeping without the
+// unexported type escaping the package.
+type TimerRecordView struct {
+	TimerID   string
+	Kind      TimerKind
+	Token     string
+	TaskID    string
+	NodeID    string
+	ScopeID   string
+	CommandID string
+}
+
+// TimerRecords projects s.Timers for engine_test, preserving slice order.
+func TimerRecords(s *InstanceState) []TimerRecordView {
+	out := make([]TimerRecordView, 0, len(s.Timers))
+	for _, tr := range s.Timers {
+		out = append(out, TimerRecordView(tr))
+	}
+	return out
+}
+
+// CompensationCursorView returns a comparable snapshot of s.Compensating, so a
+// test can assert the cursor is byte-identical across a step without the
+// unexported cursor type escaping the package.
+func CompensationCursorView(s *InstanceState) string {
+	return fmt.Sprintf("%+v", s.Compensating)
+}
 
 // RemoveIncidentsForToken exposes (*InstanceState).removeIncidentsForToken for engine_test.
 func RemoveIncidentsForToken(s *InstanceState, tokenID string) {
@@ -76,7 +106,7 @@ func ScopeByID(s *InstanceState, id string) *Scope {
 // the non-zero FinalStatus/FinalErr outcome branch of stepCompensationFinish
 // without going through a full trigger-dispatch path.
 func BeginCompensation(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, toNode string, finalStatus Status, finalErr string, at time.Time, mode StepMode) (StepResult, error) {
-	return beginCompensation(ctx, def, s, at, mode, conditions, compensationOutcome{ToNode: toNode, FinalStatus: finalStatus, FinalErr: finalErr})
+	return beginCompensation(ctx, def, s, at, stepPolicy{mode: mode, eval: conditions}, compensationOutcome{ToNode: toNode, FinalStatus: finalStatus, FinalErr: finalErr})
 }
 
 // ArmBoundaryTimerForHost appends a boundaryArm for a timer boundary event
@@ -101,3 +131,68 @@ func ArmBoundaryTimerForHost(s *InstanceState, hostToken, hostNode, boundaryNode
 		triggerMatch: triggerMatch{TimerID: timerID},
 	})
 }
+
+// TimersAreNil reports whether s.Timers is nil (as opposed to an empty slice),
+// for engine_test assertions about persisted snapshot shape.
+func TimersAreNil(s *InstanceState) bool { return s.Timers == nil }
+
+// SpawnsNewWork exposes (*InstanceState).spawnsNewWork for engine_test, so a
+// test can ASSERT that its fixture is a dying instance rather than assume it.
+func SpawnsNewWork(s *InstanceState) bool { return s.spawnsNewWork() }
+
+// AppendStallTimerRecord appends a TimerCompensationStall record directly, for
+// engine_test.
+//
+// It exists for the state no production path inside one build can construct: a
+// stall record whose CommandID no longer matches the cursor. All four arm sites
+// — beginCompensation, startCompensationWalk, stepCompensationAdvance and the
+// retry verb — go through the same cancel-then-arm helper, so a live walk with
+// detection enabled holds exactly one record and it always MATCHES. The
+// late-fire guard it lets us test is defence against the gap between the
+// engine's record and the scheduler's job — a timer the scheduler still holds
+// after the engine moved on.
+func AppendStallTimerRecord(s *InstanceState, timerID, nodeID, scopeID, commandID string) {
+	s.Timers = append(s.Timers, timerRecord{
+		TimerID:   timerID,
+		Kind:      TimerCompensationStall,
+		NodeID:    nodeID,
+		ScopeID:   scopeID,
+		CommandID: commandID,
+	})
+}
+
+// RecordNodeIDs projects the NodeIDs of s.RootCompensations for engine_test.
+func RecordNodeIDs(s *InstanceState) []string {
+	out := make([]string, 0, len(s.RootCompensations))
+	for _, r := range s.RootCompensations {
+		out = append(out, r.NodeID)
+	}
+	return out
+}
+
+// PendingCancelOf exposes s.PendingCancel for engine_test.
+func PendingCancelOf(s *InstanceState) bool { return s.PendingCancel }
+
+// ArchiveKeyOf exposes the compensation cursor's ArchiveKey for engine_test.
+func ArchiveKeyOf(s *InstanceState) string { return s.Compensating.ArchiveKey }
+
+// WalkModeName names the compensation cursor's walk mode, for engine_test.
+func WalkModeName(s *InstanceState) string {
+	switch s.Compensating.walkMode() {
+	case walkAdmin:
+		return "walkAdmin"
+	case walkThrowTargeted:
+		return "walkThrowTargeted"
+	case walkThrowScopeWide:
+		return "walkThrowScopeWide"
+	case walkPartial:
+		return "walkPartial"
+	case walkReverse:
+		return "walkReverse"
+	default:
+		return "unknown"
+	}
+}
+
+// CompensatingSince exposes the compensation cursor's StartedAt for engine_test.
+func CompensatingSince(s *InstanceState) time.Time { return s.Compensating.StartedAt }

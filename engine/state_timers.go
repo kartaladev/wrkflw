@@ -23,6 +23,12 @@ type timerRecord struct {
 	// string means the root scope. Used to resolve the correct nested definition
 	// when a deadline or reminder timer fires inside a sub-process.
 	ScopeID string
+	// CommandID is the compensation command this timer guards, set only on a
+	// TimerCompensationStall record (ADR-0175). It is what makes a LATE fire
+	// safe: the walk may have advanced under the timer, so the fire handler
+	// raises an incident only when this still equals Compensating.ActiveCmdID.
+	// Empty on every other kind.
+	CommandID string
 }
 
 // timerByID returns a pointer to the timerRecord with the given timerID, or nil
@@ -121,4 +127,27 @@ func (s *InstanceState) cancelAllTimers() []Command {
 	}
 	s.Timers = nil
 	return cmds
+}
+
+// HasArmedTimers reports whether the instance holds any timer a consumer's test
+// harness may legitimately fire.
+//
+// It EXCLUDES [TimerCompensationStall] records (ADR-0175). Such a record is a
+// detection deadline, not work the instance is waiting to do: firing it
+// manufactures the very incident the window exists to detect. That distinction
+// is invisible outside this package — timerRecord.Kind is unexported — so the
+// engine has to answer the question rather than a consumer reading len(Timers).
+//
+// ⚠ KNOWN GAP, pre-existing and deliberately not closed here: it reads
+// s.Timers only, so a timer armed as a BOUNDARY, event-gateway or event
+// sub-process arm is invisible to it. Closing that needs an engine-side
+// TimerWaiters() enumerating all four sources, mirroring SignalWaiters and
+// MessageWaiters.
+func (s *InstanceState) HasArmedTimers() bool {
+	for _, tr := range s.Timers {
+		if tr.Kind != TimerCompensationStall {
+			return true
+		}
+	}
+	return false
 }

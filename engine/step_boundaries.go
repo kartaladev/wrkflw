@@ -92,7 +92,7 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 //  3. Remove ONLY this boundary arm (fired once; do not re-arm — repeating out of scope).
 //  4. Place an additional Active token at the boundary's outgoing flow target.
 //  5. Drive forward (the new token).
-func fireBoundaryArm(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, ba boundaryArm, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
+func fireBoundaryArm(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, ba boundaryArm, at time.Time, pol stepPolicy) ([]Command, error) {
 	// Find the host token by ID (not by AwaitCommand — the host token parks on
 	// taskID/cmdID, not on the boundary timer). If the token is gone (already
 	// consumed by another path), this is a late fire — clean no-op.
@@ -163,7 +163,7 @@ func fireBoundaryArm(ctx context.Context, def *model.ProcessDefinition, s *Insta
 	}
 
 	// Drive forward (the newly placed token(s)).
-	driveCmds, err := drive(ctx, def, s, at, mode, eval)
+	driveCmds, err := drive(ctx, def, s, at, pol)
 	if err != nil {
 		return nil, err
 	}

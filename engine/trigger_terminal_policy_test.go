@@ -58,6 +58,10 @@ func TestTriggerTerminalPolicies(t *testing.T) {
 		{name: "HumanReassigned", trigger: NewHumanReassigned(at, "h", "a", "b", authz.Actor{}), assert: rejectsWithError},
 		{name: "HumanCompleted", trigger: NewHumanCompleted(at, "h", CompletionInput{}, authz.Actor{}), assert: rejectsWithError},
 		{name: "ResolveIncident", trigger: NewResolveIncident(at, "i", 0), assert: rejectsWithError},
+		// ADR-0175: all three escape verbs are operator actions. An operator who
+		// abandons a walk on an already-dead instance and is told nothing would
+		// reasonably believe it worked.
+		{name: "ResolveCompensationStall", trigger: NewSkipStalledCompensation(at, "c", ""), assert: rejectsWithError},
 
 		// rejectSilently — the trigger is delivered asynchronously by the engine's
 		// own machinery, whose caller cannot tell a no-op from success and must not

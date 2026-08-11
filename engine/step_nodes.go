@@ -27,14 +27,11 @@ type stepCtx struct {
 	tdef *model.ProcessDefinition
 	s    *InstanceState
 	at   time.Time
-	mode StepMode
-	// eval is the resolved expression evaluator for this Step: the one injected
-	// via StepOptions.Evaluator, or the pure package-global default. drive()
-	// resolves it once and threads it here so every strategy evaluates through
-	// the same evaluator (ADR-0056).
-	eval ConditionEvaluator
-	// opt is otherwise not needed by any drive() arm strategy; it remains in
-	// Step() scope for the ActionFailed handler (effectiveRetryPolicy) only.
+	// pol is the per-Step policy resolved once by dispatch and threaded here, so
+	// every strategy evaluates through the same evaluator (ADR-0056) and reads
+	// the same granularity. The remaining StepOptions fields stay in Step() scope
+	// for the ActionFailed handler (effectiveRetryPolicy) only.
+	pol stepPolicy
 }
 
 // emitActionInvoke is the shared node-entry body for the action-delegating
@@ -57,7 +54,7 @@ func emitActionInvoke(c *stepCtx, tok *Token, node model.Node) ([]Command, error
 	tok.State = TokenWaiting
 	tok.AwaitCommand = cmdID
 	// Arm any boundary events attached to this host activity.
-	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID(), c.at, c.eval)
+	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID(), c.at, c.pol.eval)
 	if err != nil {
 		return cmds, err
 	}
@@ -90,7 +87,7 @@ type receiveTaskStrategy struct{}
 
 func (receiveTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
 	rt := node.(activity.ReceiveTask)
-	resolvedKey, err := c.eval.EvalString(rt.CorrelationKey, c.s.Variables)
+	resolvedKey, err := c.pol.eval.EvalString(rt.CorrelationKey, c.s.Variables)
 	if err != nil {
 		return nil, false, fmt.Errorf("workflow-engine: receive task %q correlation key: %w", node.ID(), err)
 	}
@@ -104,7 +101,7 @@ func (receiveTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 	if err != nil {
 		return cmds, false, err
 	}
-	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID(), c.at, c.eval)
+	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID(), c.at, c.pol.eval)
 	if err != nil {
 		return cmds, false, err
 	}
@@ -121,7 +118,7 @@ type sendTaskStrategy struct{}
 
 func (sendTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
 	st := node.(activity.SendTask)
-	resolvedKey, err := c.eval.EvalString(st.CorrelationKey, c.s.Variables)
+	resolvedKey, err := c.pol.eval.EvalString(st.CorrelationKey, c.s.Variables)
 	if err != nil {
 		return nil, false, fmt.Errorf("workflow-engine: send task %q correlation key: %w", node.ID(), err)
 	}
@@ -166,7 +163,7 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 			// handler (may catch + recover) or fails the instance.
 			currentScopeID := tok.ScopeID
 			c.s.consumeTokenAs(tok, c.at, CloseKindErrored)
-			errCmds, propErr := propagateError(c.ctx, c.def, c.s, currentScopeID, "", "", ev.ErrorCode, nil, c.at, c.mode, c.eval, failFast)
+			errCmds, propErr := propagateError(c.ctx, c.def, c.s, currentScopeID, "", "", ev.ErrorCode, nil, c.at, c.pol, failFast)
 			if propErr != nil {
 				return nil, false, propErr
 			}
@@ -672,7 +669,7 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 	// Arm any event sub-process nodes (SubProcess with an event-triggered inner
 	// start) defined inside this sub-process's nested definition. They are scoped
 	// to the newly opened scope.
-	espCmdsScope, espErrScope := armEventTriggeredSubprocesses(sp.Subprocess, c.s, scopeID, c.at, c.eval)
+	espCmdsScope, espErrScope := armEventTriggeredSubprocesses(sp.Subprocess, c.s, scopeID, c.at, c.pol.eval)
 	if espErrScope != nil {
 		return cmds, false, espErrScope
 	}
@@ -691,7 +688,7 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 // ReceiveTask or IntermediateCatchEvent.
 func armWaitReminder(c *stepCtx, tok *Token, node model.Node, cancelKey string, cmds []Command) ([]Command, error) {
 	rawSpec, _ := model.WaitActionOf(node)
-	reminderSpec, err := ResolveTrigger(c.eval, rawSpec, c.s.Variables)
+	reminderSpec, err := ResolveTrigger(c.pol.eval, rawSpec, c.s.Variables)
 	if err != nil {
 		return cmds, fmt.Errorf("workflow-engine: reminder node %q: %w", node.ID(), err)
 	}
@@ -766,7 +763,7 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	}
 	// If the node carries a deadline, schedule the deadline timer and record the
 	// deadline on the HumanTask so callers can surface the due date.
-	deadlineSpec, err := ResolveTrigger(c.eval, ut.DeadlineTimer, c.s.Variables)
+	deadlineSpec, err := ResolveTrigger(c.pol.eval, ut.DeadlineTimer, c.s.Variables)
 	if err != nil {
 		return cmds, false, fmt.Errorf("workflow-engine: deadline node %q: %w", node.ID(), err)
 	}
@@ -810,7 +807,7 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	tok.State = TokenWaiting
 	tok.AwaitCommand = taskID
 	// Arm any boundary events attached to this host activity.
-	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID(), c.at, c.eval)
+	bndCmds, err := armBoundaries(c.tdef, c.s, tok.ID, node.ID(), c.at, c.pol.eval)
 	if err != nil {
 		return cmds, false, err
 	}
@@ -825,7 +822,7 @@ type intermediateCatchEventStrategy struct{}
 func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
 	ice := node.(event.IntermediateCatchEvent)
 	var cmds []Command
-	timerSpec, err := ResolveTrigger(c.eval, ice.Timer, c.s.Variables)
+	timerSpec, err := ResolveTrigger(c.pol.eval, ice.Timer, c.s.Variables)
 	if err != nil {
 		return cmds, false, fmt.Errorf("workflow-engine: timer node %q: %w", node.ID(), err)
 	}
@@ -848,7 +845,7 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 		// Message intermediate catch event: park the token awaiting the message.
 		// Evaluate the correlation key (if set) now against instance variables
 		// for determinism; store the resolved key on the token.
-		resolvedKey, err := c.eval.EvalString(ice.CorrelationKey, c.s.Variables)
+		resolvedKey, err := c.pol.eval.EvalString(ice.CorrelationKey, c.s.Variables)
 		if err != nil {
 			return cmds, false, fmt.Errorf("workflow-engine: message node %q correlation key: %w", node.ID(), err)
 		}
@@ -876,7 +873,7 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 type exclusiveGatewayStrategy struct{}
 
 func (exclusiveGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	target, err := selectExclusiveTarget(c.tdef, c.s, node, c.eval)
+	target, err := selectExclusiveTarget(c.tdef, c.s, node, c.pol.eval)
 	if err != nil {
 		// cmds is carried here for a future error-handling plan (Plan 8);
 		// Step currently discards StepResult on error, so partial commands
@@ -938,7 +935,7 @@ func (inclusiveGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) (
 			tok.State = TokenActive
 		}
 	} else {
-		if err := c.s.forkInclusive(c.tdef, tok, node, tok.ScopeID, c.at, c.eval); err != nil {
+		if err := c.s.forkInclusive(c.tdef, tok, node, tok.ScopeID, c.at, c.pol.eval); err != nil {
 			return nil, false, err
 		}
 		// Fork: original token consumed, new active tokens placed. Auto-advance.
@@ -982,7 +979,7 @@ func (eventBasedGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) 
 			CatchNode:    catchNodeRaw.ID(),
 			Flow:         f.ID,
 		}
-		gwTimerSpec, err := ResolveTrigger(c.eval, ce.Timer, c.s.Variables)
+		gwTimerSpec, err := ResolveTrigger(c.pol.eval, ce.Timer, c.s.Variables)
 		if err != nil {
 			return cmds, false, fmt.Errorf("workflow-engine: event-gateway %q timer arm %q: %w", node.ID(), catchNodeRaw.ID(), err)
 		}
@@ -998,7 +995,7 @@ func (eventBasedGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) 
 		} else if ce.SignalName != "" {
 			ae.Signal = ce.SignalName
 		} else if ce.MessageName != "" {
-			resolvedKey, err := c.eval.EvalString(ce.CorrelationKey, c.s.Variables)
+			resolvedKey, err := c.pol.eval.EvalString(ce.CorrelationKey, c.s.Variables)
 			if err != nil {
 				return cmds, false, fmt.Errorf("workflow-engine: event-gateway %q message arm %q correlation key: %w", node.ID(), catchNodeRaw.ID(), err)
 			}
@@ -1121,6 +1118,7 @@ func startCompensationWalk(c *stepCtx, cmds []Command, tok *Token, records []Com
 	c.s.consumeToken(tok, c.at)
 	c.s.Status = StatusCompensating
 	cmdID := c.s.nextCommandID()
+	cursor.StartedAt = c.at
 	cursor.ResumeNode = resumeNode
 	cursor.ResumeScope = resumeScope
 	cursor.Records = cloneCompensationRecords(records)
@@ -1132,7 +1130,13 @@ func startCompensationWalk(c *stepCtx, cmds []Command, tok *Token, records []Com
 	// (ADR-0173). Without it a single-record targeted walk would leave its one
 	// record in the archive for a later walk to re-run.
 	c.s.consumeDispatchedRecord(len(records) - 1)
-	cmds = append(cmds, compensationInvoke(records[len(records)-1], cmdID))
+	rec := records[len(records)-1]
+	cmds = append(cmds, compensationInvoke(rec, cmdID))
+	// This is the throw walk's FIRST dispatch and therefore the third of the
+	// three compensation dispatch sites (ADR-0175). Arming only the other two
+	// leaves a single-record throw walk with no stall detection at all — and this
+	// is the site the measured deferred-cancel deadlock arises at.
+	cmds = append(cmds, armCompensationStallTimer(c.s, c.pol, rec.NodeID)...)
 	tok.State = TokenWaiting
 	return cmds
 }

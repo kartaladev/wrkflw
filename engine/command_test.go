@@ -226,6 +226,34 @@ func TestTimerRetryDistinctAndStringable(t *testing.T) {
 	}
 }
 
+// TestTimerCompensationStallDistinctAndStringable asserts that
+// TimerCompensationStall (ADR-0175) is distinct from every other TimerKind and
+// has its own String() case.
+//
+// It needs its OWN test, mirroring TestTimerRetryDistinctAndStringable above,
+// because TestTimerKindConstsAreDistinct and TestTimerKindStringable each
+// hand-enumerate a subset of the kinds — so a missing String() case would ship
+// silently.
+//
+// The APPENDED-ness assertion is load-bearing and not cosmetic: TimerKind is
+// persisted as a plain integer, so inserting the new kind anywhere but the end
+// of the iota block reinterprets every stored timer row.
+func TestTimerCompensationStallDistinctAndStringable(t *testing.T) {
+	for _, other := range []engine.TimerKind{
+		engine.TimerIntermediate,
+		engine.TimerDeadline,
+		engine.TimerInWait,
+		engine.TimerRetry,
+	} {
+		assert.NotEqual(t, other, engine.TimerCompensationStall,
+			"TimerCompensationStall collides with %v", other)
+	}
+	assert.Equal(t, "TimerCompensationStall", engine.TimerCompensationStall.String())
+	assert.Equal(t, engine.TimerRetry+1, engine.TimerCompensationStall,
+		"TimerCompensationStall must be APPENDED after TimerRetry: an existing "+
+			"constant's value must not shift or every persisted timer row is reinterpreted")
+}
+
 // TestInstanceStateTasksDeepCopied asserts that cloneState (via Step) deep-copies
 // Tasks so that mutating the returned state's Tasks does not affect the input.
 func TestInstanceStateTasksDeepCopied(t *testing.T) {

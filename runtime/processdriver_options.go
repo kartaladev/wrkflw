@@ -274,3 +274,25 @@ func WithShutdownTimeout(d time.Duration) Option {
 		}
 	}
 }
+
+// WithCompensationStallTimeout bounds how long a dispatched compensation action
+// may go without reporting back before the engine raises a walk-scoped stall
+// incident (ADR-0175). Zero — the default — disables detection entirely, adding
+// no timer and leaving every command stream byte-identical.
+//
+// A stalled compensation walk is both stuck and INVISIBLE: it advances only on a
+// trigger carrying its cursor's command id, and holds no tokens and no other
+// timers, so nothing else can wake it. Enabling this is what turns that into an
+// incident an operator can see and act on with ProcessDriver.ResolveCompensationStall.
+//
+// ⚠ This does NOT cover the default in-process path, which WithActionTimeout
+// already bounds — a hang there becomes an ActionFailed that advances the walk
+// by itself. It covers the shapes that survive: a lost callback from an
+// out-of-process worker, and a driver that died between dispatch and reply.
+//
+// ⚠ One engine-wide window is a deliberate v1 simplification. A ledger reversal
+// returns in milliseconds and a manual-approval-gated refund takes hours, so a
+// single value forces sizing for the slowest; a per-node tier is backlog.
+func WithCompensationStallTimeout(d time.Duration) Option {
+	return func(driver *ProcessDriver) { driver.compensationStallAfter = d }
+}
