@@ -5,15 +5,15 @@ ADR: [`docs/adr/0173-…`](../adr/0173-a-compensation-walk-finish-consumes-exact
 
 ## ▶ Progress
 
-- **Branch**: `feat/compensation-double-run-on-scope-teardown` (off `main` @ `1618b29`).
-- **State**: audited **and IMPLEMENTED**. Phases 1–5 complete; Phase 6 gate steps 1–4
-  PASS. Only `/code-review` and `/security-review` remain (owner-invoked).
-- **Verification**: full repo `go test -race -coverprofile=cover.out ./...` **EXIT=0,
-  64 packages, 0 races**, `scripts/coverage.sh` **74.1 %** (identical to the last
-  shipped delivery — no regression) · `go test -race ./engine/...` **92.6 %** (up from
-  92.5 %) · `go vet ./...` EXIT=0 (it compiles the Docker-only test packages, so the
-  three new cursor fields broke no hidden consumer) · `golangci-lint run ./...`
-  **0 issues**.
+- ✅ **SHIPPED** — merge **`cae9971`**, pushed 2026-08-11. Branch
+  `feat/compensation-double-run-on-scope-teardown` (off `main` @ `1618b29`) is
+  merged and **deleted**; its history is in `main`. ⚠ Re-derive any SHA.
+- **State**: all six phases complete, Delivery Gate **4/4**.
+- **Verification on the MERGED tree**: `go test -race ./...` **EXIT=0, 64 packages,
+  0 races**, `scripts/coverage.sh` **74.2 %** · engine **92.6 %** (up from 92.5 %) ·
+  `go vet ./...` EXIT=0 (it compiles the Docker-only test packages, so the three new
+  cursor fields broke no hidden consumer) · `golangci-lint run ./...` **0 issues** ·
+  **12/12 mutations RED**.
 - **New code coverage**: `archiveCompensations`, `partitionForLiveWalk`,
   `scopeWideWalkDraining`, `dropArchiveRecordAt`, `deleteArchiveSlot`,
   `consumeDispatchedRecord`, `applyPlanRecordClearing` — **100 % each**.
@@ -119,8 +119,9 @@ delivery.
 Full repo `go test -race ./...` **EXIT=0, 64 packages, 0 races**, coverage
 **74.2 %** · engine race-clean · `go vet ./...` EXIT=0 · `golangci-lint` **0
 issues** · **12/12 mutations RED**.
-- ⚠ Fixtures and probes live only in the session scratchpad; nothing `zz_` is in the
-  tree (`git status` is the check).
+- ⚠ The design probes and auditor fixtures were session-scoped and are **gone**. That
+  is fine — they became the tests in `engine/`, and the audit record is committed at
+  `docs/specs/2026-08-11-adr-0173-audit-evidence.md`. Nothing `zz_` is in the tree.
 
 ## Constraints
 

@@ -286,8 +286,8 @@ as first written would have shipped every one of them:
    vacuous, one probe could not fail, two of eight mutations were inert.
 5. **Medium** — two predicate conjuncts were provably non-discriminating. → removed.
 
-Full write-ups: `scratchpad/audit{1,2,3}/AUDIT-LENS*.md`; adjudication in the
-spec's §8.
+Full record: [`docs/specs/2026-08-11-adr-0173-audit-evidence.md`](../specs/2026-08-11-adr-0173-audit-evidence.md);
+adjudication in the spec's §8.
 
 ## Corrections made during implementation
 

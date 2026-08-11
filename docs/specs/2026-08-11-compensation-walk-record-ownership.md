@@ -12,9 +12,9 @@ delivery and recorded there as PRE-EXISTING on `main`.
 
 Every claim in §1 and §3 below was produced by **running** a probe against an
 unmodified `main` tree and pasting the output. The probes live in
-`scratchpad/zz_probe*.go` and the audit's counter-fixtures in
-`scratchpad/audit{1,2,3}/`; neither is in the commit. They are the raw material
-for §6's tests — ⚠ a probe is not a test until it asserts, see §6.
+session-scoped scratch space and are **gone**. Everything they established is in
+this document; the tests they became are in `engine/`. ⚠ A probe is not a test
+until it asserts — see §6.
 
 ⚠ **§4 onward was REWRITTEN after the rule-#9 audit.** §8 records what changed and
 why. Where §2 and §3 describe the design as first drafted, they are kept as the
@@ -362,7 +362,9 @@ Amends.
 
 ## 5. Measured outcome of the corrected design
 
-From `scratchpad/validated-design.patch` — a design probe, not the implementation.
+Measured against the design probe that preceded implementation. ⚠ The probe was
+session-scoped and is gone; the shipped code is in `engine/` and the numbers below
+were re-confirmed by the tests in §6.
 
 | # | route | `main` | corrected design |
 |---|---|---|---|
@@ -482,7 +484,7 @@ it is the same population as the ADR-0167 deployment audit. T11 pins it so nobod
 
 Three Opus auditors, isolated `git worktree`s, briefed to attack and to **execute**.
 Lenses: (1) the teardown/archive seam, (2) cursor indices and persistence, (3)
-callers and test falsifiability. Full write-ups: `scratchpad/audit{1,2,3}/AUDIT-LENS*.md`.
+callers and test falsifiability. Full record, with the verbatim measurements: [`2026-08-11-adr-0173-audit-evidence.md`](2026-08-11-adr-0173-audit-evidence.md).
 
 **Accepted, design-changing:**
 
