@@ -210,8 +210,19 @@ func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s 
 		return StepResult{State: *s, Commands: nil}, nil
 	}
 
+	// The instance is dying, so harvest what its open scopes still hold BEFORE asking
+	// whether there is anything to compensate — otherwise a record for an activity that
+	// completed inside a still-open sub-process is invisible here, the cancel terminates
+	// immediately, and the record can never be compensated (ADR-0174). Measured on
+	// `main`: a cancel delivered to an instance parked inside a sub-process holding
+	// `undo-inner` dispatched no compensation action at all.
+	//
+	// Placed AFTER the in-flight-walk guard above, which must keep winning (ADR-0170).
+	s.harvestOpenScopeCompensations()
+
 	if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
-		// Compensation walk before termination (ADR-0034).
+		// Compensation walk before termination (ADR-0034). The harvest above is what
+		// makes this predicate correct for an open scope's records.
 		// beginCompensation consolidates ArchivedCompensations into RootCompensations
 		// first (ADR-0039), then clears tokens/timers/arms and emits the first
 		// compensation InvokeAction, setting the cursor with FinalStatus=Terminated

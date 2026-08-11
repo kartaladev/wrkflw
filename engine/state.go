@@ -381,13 +381,33 @@ func (s *InstanceState) endInstance(status Status, at time.Time, terminal Comman
 	s.Status = status
 	ended := at
 	s.EndedAt = &ended
+	// Harvest BEFORE the cursor clear, and before the scopes are dropped. Both halves
+	// of that ordering are load-bearing (ADR-0174):
+	//
+	//   - Before the CLEAR, because partitionForLiveWalk drops a live scope-wide
+	//     walk's already-dispatched records, and forceTerminate reaches here with such
+	//     a cursor still live — it clears no cursor and closes no scope. Harvesting
+	//     after the clear re-archives them and a later rollback re-runs them: measured
+	//     archived=[undoA undoB undoC] and a rollback re-dispatching [undoC undoB undoA]
+	//     where only [undoA] was owed.
+	//   - Before s.Scopes = nil, or there is nothing left to harvest from.
+	s.harvestOpenScopeCompensations()
 	s.Compensating = compensationCursor{}
 	s.removeOrphanedIncidents()
 	cmds := s.cancelOpenTasks()
 	if terminal != nil {
 		cmds = append(cmds, terminal)
 	}
-	return append(cmds, s.cancelAllScheduledWork()...)
+	cmds = append(cmds, s.cancelAllScheduledWork()...)
+	// Close every scope the instance still had open. Before ADR-0174 a terminal
+	// snapshot could carry one — ADR-0162 deferred closing them to ADR-0164, and 0164
+	// shipped without it. nil rather than an empty slice: it matches the
+	// normalization ADR-0173 chose for ArchivedCompensations, and no reader
+	// distinguishes them (every one uses len/range, and no reader exists outside this
+	// package). Note this changes the persisted shape from "Scopes":[] to
+	// "Scopes":null on EVERY terminal transition, ordinary completions included.
+	s.Scopes = nil
+	return cmds
 }
 
 // cancelOpenTasks marks every OPEN human task (Unclaimed or Claimed) Cancelled

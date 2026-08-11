@@ -361,6 +361,53 @@ func (s *InstanceState) archiveCompensations(scopeID string) {
 	s.ArchivedCompensations[scope.NodeID] = append(s.ArchivedCompensations[scope.NodeID], toArchive...)
 }
 
+// harvestOpenScopeCompensations moves every OPEN scope's compensation records into
+// ArchivedCompensations, keyed by that scope's NodeID, exactly as a normal scope exit
+// would. It is the abnormal-exit counterpart of that archival, and it exists because a
+// terminal transition closes no scope: without it a record for an activity that
+// completed inside a still-open sub-process is unreachable forever — no
+// records-exist predicate consults an open scope, and consolidateArchiveIntoRoot
+// drains only the archive (ADR-0174).
+//
+// It deliberately does NOT remove the Scope entries. Closing them belongs to
+// endInstance, which is what makes this safe to call at the two sites where the
+// instance may yet keep running: both may still hand the instance to a compensation
+// walk rather than terminate it.
+//
+// A live scope-wide walk's already-dispatched records are DROPPED by
+// partitionForLiveWalk, so harvesting cannot re-run them — ⚠ but ONLY when that walk
+// PINNED its records. scopeWideWalkDraining requires len(cur.Records) > 0, so a cursor
+// persisted before ADR-0171 (Records == nil, reachable only by deserializing such a row)
+// bypasses the partition entirely and its already-dispatched prefix IS re-archived.
+// That row then inherits the double-run ADR-0173 deliberately left it — see
+// scopeWideWalkDraining's own doc — rather than the exactly-once guarantee every pinned
+// cursor gets. Deliberate and documented, not an oversight: ADR-0174 §5.3's bound.
+//
+// ⚠ Only the drop protects; the teardown WINDOW that archiveCompensations stamps onto
+// s.Compensating is discarded by endInstance's cursor clear on the very next line. That
+// is sound only because the one site reached with a live cursor (forceTerminate, via
+// endInstance) is a terminal transition where the walk never advances again. A harvest
+// added at a site where the walk CONTINUES would silently reintroduce the residue
+// ADR-0173's archiveWindow* fields exist to remove.
+//
+// Scopes are visited in slice order, which is parent-before-child (openScope appends a
+// child after its parent). Order across scopes does not affect the resulting walk:
+// consolidateArchiveIntoRoot stable-sorts the combined records by (CompletedAt,
+// NodeID). The ids are snapshotted first so the loop cannot be disturbed by a callee
+// mutating s.Scopes.
+func (s *InstanceState) harvestOpenScopeCompensations() {
+	if len(s.Scopes) == 0 {
+		return
+	}
+	ids := make([]string, len(s.Scopes))
+	for i := range s.Scopes {
+		ids[i] = s.Scopes[i].ID
+	}
+	for _, id := range ids {
+		s.archiveCompensations(id)
+	}
+}
+
 // partitionForLiveWalk splits a scope's records at the indices of a scope-wide
 // compensation throw walk that is draining that very scope, so a teardown which
 // CANNOT be deferred hands each record to exactly one owner (ADR-0173).
