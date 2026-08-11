@@ -140,6 +140,31 @@ type compensationCursor struct {
 	// their whole record source instead. Carried on the cursor (scalar) so
 	// cloneState stays a plain value copy.
 	StartRecordCount int
+	// TeardownArchiveKey, TeardownArchiveOffset and TeardownArchiveCount locate
+	// the TEARDOWN WINDOW: the records a mid-walk scope teardown parked in
+	// ArchivedCompensations on this walk's behalf (ADR-0173).
+	//
+	// When a teardown that cannot be deferred destroys the scope a scope-wide
+	// throw walk is draining, archiveCompensations keeps the records the walk has
+	// NOT yet dispatched — it must, or an abandoned walk loses them — and records
+	// where they landed here: the slot key (the closed scope's NodeID), the slot
+	// length BEFORE the append, and how many records were parked.
+	//
+	// consumeDispatchedRecord then removes one as each is dispatched, so the
+	// window always holds exactly the un-dispatched remainder, and
+	// applyPlanRecordClearing removes whatever survives to the finish (normally
+	// nothing). Removing them only at the finish was the shape ADR-0173 first
+	// designed, and it halved the abandoned-walk double-run instead of closing it.
+	//
+	// TeardownArchiveKey == "" means NO TEARDOWN HAPPENED. That is the value on
+	// every untorn-down walk and on every cursor persisted before ADR-0173, which
+	// is why this needs no data migration in that direction.
+	//
+	// All three are plain scalars, keeping this struct value-copyable by
+	// cloneState (see the Records comment above).
+	TeardownArchiveKey    string
+	TeardownArchiveOffset int
+	TeardownArchiveCount  int
 	// NextIndex is the index of the CompensationRecord currently in-flight
 	// (most recently emitted). Counts DOWN from len(records)-1 to 0 as
 	// compensation actions complete; the next record to emit is NextIndex-1.
@@ -318,11 +343,97 @@ func (s *InstanceState) archiveCompensations(scopeID string) {
 	if scope == nil || len(scope.Compensations) == 0 {
 		return
 	}
+	toArchive, windowCount, windowed := s.partitionForLiveWalk(scopeID, scope.Compensations)
+	scope.Compensations = nil
+	if windowed {
+		cur := s.Compensating
+		cur.TeardownArchiveKey = scope.NodeID
+		cur.TeardownArchiveOffset = len(s.ArchivedCompensations[scope.NodeID])
+		cur.TeardownArchiveCount = windowCount
+		s.Compensating = cur
+	}
+	if len(toArchive) == 0 {
+		return
+	}
 	if s.ArchivedCompensations == nil {
 		s.ArchivedCompensations = make(map[string][]CompensationRecord)
 	}
-	s.ArchivedCompensations[scope.NodeID] = append(s.ArchivedCompensations[scope.NodeID], scope.Compensations...)
-	scope.Compensations = nil
+	s.ArchivedCompensations[scope.NodeID] = append(s.ArchivedCompensations[scope.NodeID], toArchive...)
+}
+
+// partitionForLiveWalk splits a scope's records at the indices of a scope-wide
+// compensation throw walk that is draining that very scope, so a teardown which
+// CANNOT be deferred hands each record to exactly one owner (ADR-0173).
+//
+// Three ranges, where drained = min(StartRecordCount, len(records)) and NextIndex
+// is the record currently in flight (the walk counts DOWN):
+//
+//   - [NextIndex .. drained-1] — already dispatched by this walk. DROPPED: they
+//     are compensated, and archiving them is what let a later walk re-run them.
+//   - [0 .. NextIndex-1] — committed to but not yet dispatched. ARCHIVED and
+//     WINDOWED, so an abandoned walk leaves them recoverable; consumeDispatchedRecord
+//     removes each as the walk reaches it.
+//   - [drained ..] — appended by a live sibling mid-walk. ARCHIVED unwindowed:
+//     genuinely uncompensated, and ADR-0120 review A1's rule that they survive now
+//     holds across a teardown too.
+//
+// Returns (records to archive, window length, whether a window was established).
+// windowed is returned separately from windowCount > 0 because a walk that has
+// dispatched everything still needs its cursor stamped — the key records that this
+// scope's records were partitioned, not merely that some were parked.
+//
+// When no such walk exists the whole list is archived, unchanged from before.
+func (s *InstanceState) partitionForLiveWalk(scopeID string, records []CompensationRecord) ([]CompensationRecord, int, bool) {
+	if !s.scopeWideWalkDraining(scopeID) {
+		return records, 0, false
+	}
+	// Both counts are clamped into [0, len(records)] because both arrive from a
+	// PERSISTED cursor: InstanceState round-trips as whole-struct JSON and
+	// `Compensating` is an exported field, so a corrupt or hostile row can carry a
+	// negative StartRecordCount. Unclamped, `records[:undispatched]` panicked with
+	// `slice bounds out of range [:-1]` inside the pure engine core — i.e. in the
+	// CONSUMER's process, since this ships as a library. `main` absorbed the same
+	// input, so the missing clamp was a regression, not an inherited gap.
+	//
+	// clearRecordsPrefix clamps the SAME field for the same reason (its "(defensive)"
+	// note), and ADR-0171's bounds check in stepCompensationAdvance exists for this
+	// exact threat. This is that convention, not a new one.
+	drained := min(max(s.Compensating.StartRecordCount, 0), len(records))
+	undispatched := min(max(s.Compensating.NextIndex, 0), drained)
+	head, tail := records[:undispatched], records[drained:]
+	merged := make([]CompensationRecord, 0, len(head)+len(tail))
+	merged = append(merged, head...)
+	merged = append(merged, tail...)
+	return merged, undispatched, true
+}
+
+// scopeWideWalkDraining reports whether a live scope-wide compensation throw walk
+// owns the records of the scope identified by scopeID (ADR-0173).
+//
+// Three conjuncts, and no more. Two obvious-looking others were measured
+// NON-DISCRIMINATING by two independent auditors and deliberately left out:
+//
+//   - walkMode() == walkThrowScopeWide is implied. compensationCursor.ScopeID is
+//     non-empty ONLY for a scope-wide throw — beginCompensation walks the root
+//     scope through the const "", and the targeted throw producer passes
+//     {ArchiveKey: ref} — so ScopeID == scopeID with a real scopeID already
+//     selects that mode.
+//   - scopeID != "" is unreachable. The implicit root scope has no Scope entry, so
+//     archiveCompensations' scope == nil early return fires first and this is never
+//     asked about it.
+//
+// len(Records) > 0 is the one that is NOT obvious and IS load-bearing: it selects
+// a walk with a PINNED record source (ADR-0171). Without a snapshot a walk cannot
+// dispatch anything once the teardown nils the live source — cursorRecords falls
+// back to a live read that returns nothing and the walk finishes on
+// stepCompensationAdvance's bounds check — so partitioning on its behalf would
+// delete records nobody ever runs. Such a cursor (persisted before ADR-0171,
+// reachable after a process restart) is therefore left entirely alone, keeping its
+// prior behaviour including the double-run this delivery closes for every other
+// case. Deliberate: losing the record outright is worse.
+func (s *InstanceState) scopeWideWalkDraining(scopeID string) bool {
+	cur := s.Compensating
+	return cur.ActiveCmdID != "" && len(cur.Records) > 0 && cur.ScopeID == scopeID
 }
 
 // consolidateArchiveIntoRoot moves all ArchivedCompensations into RootCompensations,
@@ -345,6 +456,81 @@ func (s *InstanceState) consolidateArchiveIntoRoot() {
 	slices.SortStableFunc(s.RootCompensations, func(a, b CompensationRecord) int {
 		return cmp.Or(a.CompletedAt.Compare(b.CompletedAt), cmp.Compare(a.NodeID, b.NodeID))
 	})
+}
+
+// dropArchiveRecordAt removes the record at index i from the ArchivedCompensations
+// slot named key, retaining the rest in order. Out-of-range indices and unknown
+// keys are no-ops.
+//
+// It is the SINGLE path by which a compensation record leaves the archive, which
+// is what makes the map-nilling below uniform: an emptied slot is deleted, and an
+// emptied map becomes nil rather than a non-nil empty map. That normalization is
+// not cosmetic — InstanceState is persisted as JSON, so `{}` and `null` are a
+// gratuitous difference in a stored shape — and it fixes a wart that PRE-DATES
+// ADR-0173: applyFinish's whole-key delete already produced it (ADR-0173 spec §5.7).
+func (s *InstanceState) dropArchiveRecordAt(key string, i int) {
+	recs := s.ArchivedCompensations[key]
+	if i < 0 || i >= len(recs) {
+		return
+	}
+	retained := make([]CompensationRecord, 0, len(recs)-1)
+	retained = append(retained, recs[:i]...)
+	retained = append(retained, recs[i+1:]...)
+	if len(retained) > 0 {
+		s.ArchivedCompensations[key] = retained
+		return
+	}
+	s.deleteArchiveSlot(key)
+}
+
+// deleteArchiveSlot removes an ArchivedCompensations key entirely, nilling the
+// map once its last key is gone. Shared with applyFinish's targeted whole-key
+// delete so both deletion paths normalize the same way.
+func (s *InstanceState) deleteArchiveSlot(key string) {
+	delete(s.ArchivedCompensations, key)
+	if len(s.ArchivedCompensations) == 0 {
+		s.ArchivedCompensations = nil
+	}
+}
+
+// consumeDispatchedRecord drops the record a compensation walk is dispatching at
+// index idx from whichever archive slot still holds it, so that a walk ABANDONED
+// mid-flight leaves behind exactly the records it never dispatched (ADR-0173).
+//
+// Two sources can hold it:
+//
+//   - a TARGETED walk's own slot, ArchivedCompensations[ArchiveKey], which is its
+//     record source; and
+//   - a scope-wide walk's TEARDOWN WINDOW, when a teardown destroyed its scope
+//     mid-walk and parked the un-dispatched head in the archive.
+//
+// In both cases the walk counts DOWN, so the record being dispatched is the LAST
+// element still inside the pinned prefix / window. Removing it therefore shifts
+// nothing that remains to be dispatched, which is what keeps these absolute
+// indices valid without any re-basing.
+//
+// len(Records) == 0 — a cursor persisted before ADR-0171, which pinned no
+// snapshot — returns early and is the load-bearing guard, not a defensive one.
+// Such a walk cannot dispatch from a source a teardown has nilled: cursorRecords
+// falls back to a live read that returns nothing, and stepCompensationAdvance's
+// bounds check routes it straight to its finish. Consuming on its behalf would
+// delete records nobody ever runs — the exact loss ADR-0173 rejects its simpler
+// alternative for.
+func (s *InstanceState) consumeDispatchedRecord(idx int) {
+	cur := s.Compensating
+	if len(cur.Records) == 0 {
+		return
+	}
+	if cur.ArchiveKey != "" {
+		s.dropArchiveRecordAt(cur.ArchiveKey, idx)
+		return
+	}
+	if cur.TeardownArchiveKey == "" || idx >= cur.TeardownArchiveCount {
+		return
+	}
+	s.dropArchiveRecordAt(cur.TeardownArchiveKey, cur.TeardownArchiveOffset+idx)
+	cur.TeardownArchiveCount = idx
+	s.Compensating = cur
 }
 
 // descendantScopeIDs returns scopeID plus every scope transitively nested inside
@@ -485,4 +671,24 @@ func (s *InstanceState) scopeByID(id string) *Scope {
 		}
 	}
 	return nil
+}
+
+// normalizeTeardownWindow sanitizes a teardown window read off a PERSISTED cursor
+// before it becomes a finishPlan field.
+//
+// finishPlan.validate() panics on a violated invariant, and its licence to do so
+// is that a finishPlan is "built entirely from in-package logic, never from
+// persisted or external input". Copying the window straight off the cursor would
+// have falsified that: a row carrying a count with no key is unreachable
+// in-package (archiveCompensations always stamps both together) but trivially
+// representable in JSON, and it turned a corrupt row into a deliberate panic in
+// the consumer's process.
+//
+// Normalizing here keeps validate() guarding only what in-package code builds,
+// which is what makes panicking there the right call.
+func normalizeTeardownWindow(key string, offset, count int) (string, int, int) {
+	if key == "" || count <= 0 {
+		return "", 0, 0
+	}
+	return key, max(offset, 0), count
 }

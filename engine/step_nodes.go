@@ -1127,6 +1127,11 @@ func startCompensationWalk(c *stepCtx, cmds []Command, tok *Token, records []Com
 	cursor.NextIndex = len(records) - 1
 	cursor.ActiveCmdID = cmdID
 	c.s.Compensating = cursor
+	// The first record is dispatched HERE rather than through
+	// stepCompensationAdvance, so its ownership hand-off happens here too
+	// (ADR-0173). Without it a single-record targeted walk would leave its one
+	// record in the archive for a later walk to re-run.
+	c.s.consumeDispatchedRecord(len(records) - 1)
 	cmds = append(cmds, compensationInvoke(records[len(records)-1], cmdID))
 	tok.State = TokenWaiting
 	return cmds
