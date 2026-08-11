@@ -123,6 +123,7 @@ Nothing is half-finished, so this is a genuine choice. In rough priority order:
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept for its audit tags |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — older parked bundle, docs only. Owner DECIDED not to push it; do not re-raise. Holds ADR numbers **0155–0157** |
 | `docs/architecture-audit` | `393e516` — `AUDIT.md`, ⚠ deliberately NOT on `main` and NOT pushed (public repo, open Critical/High findings) |
+| ⚠ stale worktrees | THREE `git worktree`s from an earlier session are still registered: `…/87601c38-…/scratchpad/wt-{design,premise,tests}`, all at `33e4692` (superseded ADR-0168/0169 work, shipped as `b12bba3`). **Zero uncommitted files in all three**, and `33e4692` is NOT an ancestor of `main`. `git worktree prune` will not clear them while their directories exist — `git worktree remove --force <path>` each, or delete the dirs then prune. Safe to remove; left in place because they belong to another session |
 | Latest ADR | **0173**. Next free is **0174** |
 | v0.1.0 | not tagged |
 ## Pre-v0.1.0 blockers
