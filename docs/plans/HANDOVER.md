@@ -16,10 +16,13 @@ top to bottom; it is meant to stay short enough that you can.
 
 **▶ NOTHING IS IN FLIGHT.** `main` is clean and pushed; there is no half-finished work.
 
-**`main` == `99444ad7`** (pushed, clean). ⚠ Re-derive: `git rev-parse --short main` — this
-line has gone stale before. ADR-0175 merged at `6e4addc8`, then two docs follow-ups
-(`13cdf9c0` this handover, `99444ad7` a record correction). The previous head was `5270838`
-(ADR-0174).
+**`main` is clean and pushed. Its head SHA is deliberately NOT quoted here** — every edit to
+this file changes it, and quoting it is how this line went stale three times in one hour.
+Re-derive it: `git rev-parse --short main`.
+
+The stable anchors instead: **ADR-0175 merged at `6e4addc8`** (a merge commit, so it never
+moves), on top of **`5270838`** (ADR-0174). Anything after `6e4addc8` on `main` is
+documentation follow-ups only — no code.
 
 **Latest ADR = 0175; next free = 0176.** ADR numbers 0155–0157 remain reserved by the parked
 `feat/durable-waiters-delivery-correctness`.
@@ -44,7 +47,7 @@ never reports back, which was measured to be **permanently stuck AND permanently
 
 **Gates:** `/code-review` 9 findings — 6 fixed, 3 adjudicated in the spec (§8, 4d–4k);
 ⚠ the record originally listed only FIVE of the six fixes — the `processtest.ReasonIncident`
-doc fix shipped unlisted and was added in `99444ad7`. *Recount your own summary numbers
+doc fix shipped unlisted and was added in a follow-up. *Recount your own summary numbers
 against the list they summarise.*
 `/security-review` **0 findings**. `go test -race ./...` EXIT=0 over 64 packages, no races;
 repo coverage 74.2 % (baseline unchanged); `golangci-lint run ./...` clean. Verified on the
@@ -198,7 +201,7 @@ No delivery is queued. The strongest candidates, in rough order:
 
 | | |
 |---|---|
-| `main` | **ADR-0175 is the newest SHIPPED bundle**, merged `--no-ff` at `6e4addc8` and pushed; head is `99444ad7` after two docs follow-ups. ⚠ Re-derive: `git rev-parse --short main` |
+| `main` | **ADR-0175 is the newest SHIPPED bundle**, merged `--no-ff` at `6e4addc8` and pushed. Commits after it are docs-only. ⚠ Never quote main's head here — re-derive: `git rev-parse --short main` |
 | *(merged branches)* | Deleted once pushed; history is in `main`. **`origin` carries only `main`** plus dependabot branches |
 | `backup/terminal-trigger-guard-presquash` | `a3aa889` — ADR-0165 pre-squash history, provenance only |
 | **`parked/scope-and-fanout-design`** | ⚠ **SUPERSEDED — do NOT use as an input** |
