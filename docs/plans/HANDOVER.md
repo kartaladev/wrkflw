@@ -208,7 +208,7 @@ No delivery is queued. The strongest candidates, in rough order:
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept for its audit tags |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — parked, docs only. Owner DECIDED not to push it. Holds ADR numbers **0155–0157** |
 | `docs/architecture-audit` | `393e516` — `AUDIT.md`, ⚠ deliberately NOT on `main` and NOT pushed |
-| ⚠ stale worktrees | THREE from an earlier session remain under `…/87601c38-…/scratchpad/wt-{design,premise,tests}`. **RE-VERIFIED 2026-08-12**: all at `33e4692`, `git status --porcelain` EMPTY in each, so no work-in-progress would be lost. `33e4692` (*"fix(engine): stop normal execution on a non-executable instance (ADR-0168/0169)"*) is **NOT an ancestor of `main`** — it is superseded pre-merge history whose content shipped via `b12bba3`. Removing the worktrees loses no file and no reachable commit. `git worktree remove --force <path>` each. Left in place only because they belong to another session; the owner has not been asked. (This session's own audit/probe worktrees were removed.) |
+| worktrees | ✅ **CLEAN** — `git worktree list` shows only the primary checkout. The three stale ones under `…/87601c38-…/scratchpad/wt-{design,premise,tests}` were removed 2026-08-12 with the owner's approval, after re-verifying `git status --porcelain` was empty in each immediately beforehand. Their commit `33e4692` (superseded ADR-0168/0169 pre-merge history) remains in the object store; its content shipped via `b12bba3`. |
 | Latest ADR | **0175** (SHIPPED). Next free is **0176** |
 | v0.1.0 | not tagged |
 
