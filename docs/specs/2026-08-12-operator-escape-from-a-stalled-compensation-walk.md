@@ -558,6 +558,14 @@ FIXTURE, not the assertion text.
     stays distinguishable from a missing field.
 4g. **`compensating.since` rendered year 1** for a walk already in flight at upgrade — exactly
     the population the projection exists to triage. Now `*time.Time`, omitted when unknown.
+4h2. **`processtest.ReasonIncident`'s doc had become false.** `Classify` reaches it on
+    `len(p.Incidents) > 0`, which now includes the walk-scoped `IncidentCompensationStall`,
+    but the constant still said "a token is parked as an incident". A consumer handler that
+    fed `Park.Incidents[0].ID` to `ResolveIncident` — the obvious reading — would now get
+    `ErrIncidentNotResolvable` instead of progress. Doc corrected to name both shapes and
+    their different resolution paths. (⚠ This fix shipped in `processtest/park.go` but was
+    omitted from this list in the original record — six fixes were applied, five were
+    written down.)
 4h. **`abandon` does not run `consumePendingCancel`** — `walkAdmin`'s plan sets `resume:false`
     and `applyFinish` gates that branch on `plan.resume`, so `PendingCancel` is left set on the
     terminated instance. Comment corrected.
