@@ -159,6 +159,34 @@ func TestTriggerCodecRoundTrip(t *testing.T) {
 				require.IsType(t, engine.CancelRequested{}, got)
 			},
 		},
+		// ADR-0175 — one row per disposition. The Disposition is the whole
+		// meaning of the trigger, so a codec that dropped it would replay an
+		// operator's `abandon` as a `retry`, re-dispatching a compensation the
+		// operator had decided to give up on.
+		"ResolveCompensationStall/retry": {
+			in: engine.NewRetryStalledCompensation(at, "c-stall", "inc-9"),
+			assert: func(t *testing.T, got engine.Trigger) {
+				v := got.(engine.ResolveCompensationStall)
+				require.Equal(t, engine.CompensationRetry, v.Disposition)
+				require.Equal(t, "c-stall", v.CommandID)
+				require.Equal(t, "inc-9", v.IncidentID)
+			},
+		},
+		"ResolveCompensationStall/skip": {
+			in: engine.NewSkipStalledCompensation(at, "c-stall", ""),
+			assert: func(t *testing.T, got engine.Trigger) {
+				v := got.(engine.ResolveCompensationStall)
+				require.Equal(t, engine.CompensationSkip, v.Disposition)
+				require.Empty(t, v.IncidentID, "an empty IncidentID must not become a non-empty one")
+			},
+		},
+		"ResolveCompensationStall/abandon": {
+			in: engine.NewAbandonCompensationWalk(at, "c-stall", "inc-9"),
+			assert: func(t *testing.T, got engine.Trigger) {
+				v := got.(engine.ResolveCompensationStall)
+				require.Equal(t, engine.CompensationAbandon, v.Disposition)
+			},
+		},
 	}
 
 	// A kind may legitimately appear in more than one table case (e.g. a
@@ -313,4 +341,37 @@ func TestCompensateRequestedReverseRoundTrip(t *testing.T) {
 			tc.assert(t, cr)
 		})
 	}
+}
+
+// TestDispositionIsScopedToItsOwnTriggerKind pins that ADR-0175's disposition
+// field does not leak into every other trigger's journal payload.
+//
+// triggerEnvelope is ONE flat struct shared by all 17 kinds, so a non-omitempty
+// field is written for every trigger ever journalled. Measured before the fix,
+// a plain TimerFired payload carried `"disposition":0`.
+//
+// The pointer is what lets both properties hold at once: omitempty drops a nil,
+// but a pointer to 0 is still emitted — so a stored `retry` (the zero value)
+// stays distinguishable from a payload that never had the field.
+func TestDispositionIsScopedToItsOwnTriggerKind(t *testing.T) {
+	at := time.Unix(1700000000, 0).UTC()
+
+	for _, trg := range []engine.Trigger{
+		engine.NewStartInstance(at, nil),
+		engine.NewTimerFired(at, "tm1"),
+		engine.NewCancelRequested(at),
+		engine.NewActionCompleted(at, "c1", nil),
+	} {
+		data, kind, err := st.MarshalTrigger(trg)
+		require.NoError(t, err)
+		assert.NotContains(t, string(data), "disposition",
+			"%s must not carry ADR-0175's disposition field", kind)
+	}
+
+	// The verb that owns the field still writes it, including for retry, whose
+	// engine value is the zero one.
+	data, _, err := st.MarshalTrigger(engine.NewRetryStalledCompensation(at, "c1", ""))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"disposition":0`,
+		"a stored retry must be distinguishable from a payload missing the field")
 }

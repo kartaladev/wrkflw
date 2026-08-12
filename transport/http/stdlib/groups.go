@@ -244,6 +244,24 @@ func (c AdminRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpt
 			writeJSON(w, status, body)
 		})
 
+	handle(r, inst, cfg, http.MethodPost, "/admin/instances/{id}/compensation/resolve-stall",
+		func(w http.ResponseWriter, req *http.Request) {
+			instanceID := req.PathValue("id")
+			var in httpcore.ResolveCompensationStallInput
+			// Body is REQUIRED here, unlike resolve-incident: command_id and
+			// disposition are both mandatory and neither may default (ADR-0175).
+			if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
+				writeErr(cfg, w, req, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
+				return
+			}
+			status, body, err := httpcore.ResolveCompensationStall(req.Context(), c.Svc, instanceID, in)
+			if err != nil {
+				writeErr(cfg, w, req, err)
+				return
+			}
+			writeJSON(w, status, body)
+		})
+
 	handle(r, inst, cfg, http.MethodPost, "/admin/instances/{id}/cancel",
 		func(w http.ResponseWriter, req *http.Request) {
 			instanceID := req.PathValue("id")

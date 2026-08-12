@@ -211,7 +211,7 @@ func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node 
 //     cancelling the winner's timer since it already fired). We SKIP cancelling the
 //     winner's timer since it has already fired and no longer exists in the scheduler.
 //   - drive() is called to advance execution beyond the routed target.
-func resolveGatewayWin(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, ae armedEvent, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
+func resolveGatewayWin(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, ae armedEvent, at time.Time, pol stepPolicy) ([]Command, error) {
 	// Find the gateway token.
 	tok := s.tokenAwaiting("evtgw:" + ae.GatewayToken)
 	if tok == nil {
@@ -274,7 +274,7 @@ func resolveGatewayWin(ctx context.Context, def *model.ProcessDefinition, s *Ins
 	}
 
 	// Drive forward from the branch target.
-	driveCmds, err := drive(ctx, def, s, at, mode, eval)
+	driveCmds, err := drive(ctx, def, s, at, pol)
 	if err != nil {
 		return nil, err
 	}

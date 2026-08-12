@@ -186,6 +186,38 @@ func hitFiber(t *testing.T, svc service.Service, mkReq reqFactory, withHealth bo
 	return parseAdapterResult(resp.StatusCode, b)
 }
 
+// hitServer drives mkReq against an already-running httptest.Server, for the
+// admin-route tests that mount a group by hand rather than through Mount.
+func hitServer(t *testing.T, srv *httptest.Server, mkReq reqFactory) adapterResult {
+	t.Helper()
+	local := mkReq(t)
+	out, err := http.NewRequestWithContext(local.Context(), local.Method,
+		srv.URL+local.URL.RequestURI(), local.Body)
+	if err != nil {
+		t.Fatalf("hitServer: new request: %v", err)
+	}
+	out.Header = local.Header
+	resp, err := srv.Client().Do(out)
+	if err != nil {
+		t.Fatalf("hitServer: do: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	b, _ := io.ReadAll(resp.Body)
+	return parseAdapterResult(resp.StatusCode, b)
+}
+
+// hitFiberApp drives mkReq against an already-configured fiber app.
+func hitFiberApp(t *testing.T, app *fiberlib.App, mkReq reqFactory) adapterResult {
+	t.Helper()
+	resp, err := app.Test(mkReq(t))
+	if err != nil {
+		t.Fatalf("hitFiberApp: app.Test: %v", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	b, _ := io.ReadAll(resp.Body)
+	return parseAdapterResult(resp.StatusCode, b)
+}
+
 // assertParity compares three adapter results. It always checks HTTP status
 // parity. When bodyParity is true it also checks that the JSON-normalised bodies
 // are identical.
@@ -593,5 +625,73 @@ func TestParity_ErrorEnvelopes(t *testing.T) {
 				t.Errorf("%s: want 'error' field in body, got %s", tc.name, s.rawBody)
 			}
 		})
+	}
+}
+
+// TestParity_PostResolveCompensationStall_400 verifies that ADR-0175's escape
+// endpoint is MOUNTED on all three adapters and rejects an unknown disposition
+// identically.
+//
+// Mounting is the property under test. Each adapter's route table is written by
+// hand and nothing enumerates them, so "mounted in the stdlib, gin and fiber
+// groups" is otherwise an assumption — a missing route would surface as a 404
+// here rather than as a silently absent feature.
+//
+// The unknown-verb case is chosen deliberately over a happy path: the zero value
+// of engine.CompensationDisposition is CompensationRetry, a remote re-execution
+// primitive, so an adapter that decoded a bogus verb to the zero value would
+// re-invoke a compensation action nobody asked for. A 400 from all three proves
+// none of them defaults.
+func TestParity_PostResolveCompensationStall_400(t *testing.T) {
+	t.Parallel()
+
+	def := transporttest.ApprovalProcess()
+
+	mk := func() (service.Service, reqFactory) {
+		h, svcLocal := transporttest.NewHarness(t, def)
+		transporttest.StartedApprovalInstance(t, h, "parity-stall")
+		return svcLocal, jsonReqFactory(http.MethodPost,
+			"/admin/instances/parity-stall/compensation/resolve-stall",
+			map[string]any{"command_id": "c1", "disposition": "obliterate"})
+	}
+
+	// Admin routes are deliberately NOT part of Mount — a consumer opts into them
+	// separately, so they can sit behind different authorization. Each adapter is
+	// therefore mounted by hand here rather than through hit{Stdlib,Gin,Fiber}.
+	svcS, mkS := mk()
+	mux := http.NewServeMux()
+	stdlib.AdminRoutes{Svc: svcS}.Customize(mux)
+	rrS := httptest.NewRecorder()
+	mux.ServeHTTP(rrS, mkS(t))
+	s := parseAdapterResult(rrS.Code, rrS.Body.Bytes())
+
+	svcG, mkG := mk()
+	ginRouter := ginlib.New()
+	ginadapter.AdminRoutes{Svc: svcG}.Customize(ginRouter)
+	srvG := httptest.NewServer(ginRouter)
+	t.Cleanup(srvG.Close)
+	g := hitServer(t, srvG, mkG)
+
+	svcF, mkF := mk()
+	fiberApp := fiberlib.New()
+	fiberadapter.AdminRoutes{Svc: svcF}.Customize(fiberApp)
+	f := hitFiberApp(t, fiberApp, mkF)
+
+	for name, got := range map[string]adapterResult{"stdlib": s, "gin": g, "fiber": f} {
+		if got.status == http.StatusNotFound {
+			t.Fatalf("%s: route not mounted (404) — the endpoint must exist on every adapter", name)
+		}
+		if got.status != http.StatusBadRequest {
+			t.Fatalf("%s: want 400 for an unknown disposition, got %d (body=%s)",
+				name, got.status, got.rawBody)
+		}
+	}
+
+	sFields := fieldNames(t, s.decoded)
+	if gFields := fieldNames(t, g.decoded); sFields != gFields {
+		t.Errorf("400 envelope diverges stdlib vs gin: %q vs %q", sFields, gFields)
+	}
+	if fFields := fieldNames(t, f.decoded); sFields != fFields {
+		t.Errorf("400 envelope diverges stdlib vs fiber: %q vs %q", sFields, fFields)
 	}
 }

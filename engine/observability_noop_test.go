@@ -371,7 +371,7 @@ func TestDrive_MissingNodePark_LogsWarn(t *testing.T) {
 		},
 	}
 
-	cmds, err := drive(t.Context(), def, &s, time.Unix(1, 0), Macro, resolveEvaluator(StepOptions{}))
+	cmds, err := drive(t.Context(), def, &s, time.Unix(1, 0), resolvePolicy(StepOptions{}))
 	require.NoError(t, err)
 	assert.Empty(t, cmds)
 	require.Len(t, s.Tokens, 1)

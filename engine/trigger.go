@@ -905,3 +905,129 @@ var _ Trigger = CancelRequested{}
 
 // Compile-time assertion: ResolveIncident must satisfy Trigger.
 var _ Trigger = ResolveIncident{}
+
+// CompensationDisposition selects which of the three operator escapes a
+// [ResolveCompensationStall] carries.
+type CompensationDisposition int
+
+const (
+	// CompensationRetry re-dispatches the stalled record under a fresh command
+	// id. It is the verb for a compensation that never actually ran — and it
+	// assumes the action is idempotent, since the original dispatch may yet
+	// arrive at a worker.
+	CompensationRetry CompensationDisposition = iota
+	// CompensationSkip gives up on the stalled record and advances the walk,
+	// exactly as a returned ActionFailed does (ADR-0034 Decision 4's best-effort
+	// skip). It is the only verb accepted on a resuming walk.
+	CompensationSkip
+	// CompensationAbandon ends the walk and terminates the instance, retaining
+	// the records the walk never dispatched. Accepted ONLY on a walkAdmin walk —
+	// see handleResolveCompensationStall.
+	CompensationAbandon
+)
+
+// String returns the name of the CompensationDisposition for logging.
+func (d CompensationDisposition) String() string {
+	switch d {
+	case CompensationRetry:
+		return "retry"
+	case CompensationSkip:
+		return "skip"
+	case CompensationAbandon:
+		return "abandon"
+	default:
+		return "unknown"
+	}
+}
+
+// ResolveCompensationStall is the operator's escape from a compensation walk
+// whose dispatched action stopped reporting back (ADR-0175).
+//
+// Such a walk is stuck AND invisible: it advances only on a trigger carrying the
+// cursor's command id, and — for a walk started by beginCompensation — the
+// prologue has already cancelled every token and every timer, so measured on
+// main the state had tokens=0, timers=0, incidents=0 and both waiter sets empty.
+// No clock and no scheduler can move it.
+//
+// CommandID is REQUIRED and must equal the cursor's ActiveCmdID. That match is
+// what makes all three verbs naturally idempotent — a replay finds the cursor
+// already moved on and is a clean no-op — and it is the evidence of intent a
+// bare "act on whatever is in flight" verb lacks: a 500 ms-old healthy dispatch
+// also satisfies "a walk is in flight", so without it skip could silently drop a
+// compensation that was about to succeed.
+type ResolveCompensationStall struct {
+	baseTrigger
+	// CommandID is the compensation command being disposed of. REQUIRED: it must
+	// equal InstanceState.Compensating.ActiveCmdID or the trigger is refused.
+	CommandID string
+	// IncidentID optionally names the stall incident being cleared. Empty targets
+	// the in-flight walk, which is the normal case: detection defaults to OFF, so
+	// with CompensationStallAfter unset there is no incident to name.
+	//
+	// A NON-empty value naming no open IncidentCompensationStall is an ERROR, not
+	// the idempotent no-op ResolveIncident uses — an operator who mistypes an id
+	// must not silently get a walk-wide action instead.
+	IncidentID string
+	// Disposition selects retry, skip or abandon.
+	Disposition CompensationDisposition
+}
+
+// terminalPolicy: every disposition is a synchronous operator action, so a
+// refusal must be visible. An operator who abandons a walk on an already-dead
+// instance and is told nothing would reasonably believe it worked. Mirrors
+// ResolveIncident, and reaches an HTTP admin as a conflict because
+// ErrInstanceTerminal wraps ErrInvalidTransition (ADR-0165).
+func (ResolveCompensationStall) terminalPolicy() terminalPolicy { return rejectWithError }
+
+// NewResolveCompensationStall builds the escape trigger for an explicitly
+// supplied disposition. It is the constructor the LAYERED surface uses: the
+// runtime, service and HTTP layers each receive the verb as data from their
+// caller, so none of them can name one of the three constructors below without
+// re-deriving a switch.
+//
+// Prefer the named constructors in engine-embedding code, where the verb is
+// known at the call site and reads better.
+func NewResolveCompensationStall(at time.Time, commandID, incidentID string, disposition CompensationDisposition) ResolveCompensationStall {
+	return ResolveCompensationStall{
+		baseTrigger: baseTrigger{at: at},
+		CommandID:   commandID, IncidentID: incidentID, Disposition: disposition,
+	}
+}
+
+// NewRetryStalledCompensation re-dispatches the stalled compensation record
+// under a fresh command id and re-arms the stall guard.
+//
+// commandID must be the stalled dispatch's id (see [ResolveCompensationStall]);
+// incidentID is optional and may be empty.
+func NewRetryStalledCompensation(at time.Time, commandID, incidentID string) ResolveCompensationStall {
+	return ResolveCompensationStall{
+		baseTrigger: baseTrigger{at: at},
+		CommandID:   commandID, IncidentID: incidentID, Disposition: CompensationRetry,
+	}
+}
+
+// NewSkipStalledCompensation gives up on the stalled record and advances the
+// walk — the same path a returned ActionFailed takes.
+func NewSkipStalledCompensation(at time.Time, commandID, incidentID string) ResolveCompensationStall {
+	return ResolveCompensationStall{
+		baseTrigger: baseTrigger{at: at},
+		CommandID:   commandID, IncidentID: incidentID, Disposition: CompensationSkip,
+	}
+}
+
+// NewAbandonCompensationWalk ends the walk and terminates the instance,
+// retaining the records it never dispatched so a later full rollback
+// (NewCompensateRequested with an empty ToNode) can still run them.
+//
+// Accepted only on an admin/cancel/error walk. On a compensation-THROW, partial
+// or reverse walk it returns an error naming skip instead — those walks finish
+// by RESUMING, and abandon was measured destroying un-run records there.
+func NewAbandonCompensationWalk(at time.Time, commandID, incidentID string) ResolveCompensationStall {
+	return ResolveCompensationStall{
+		baseTrigger: baseTrigger{at: at},
+		CommandID:   commandID, IncidentID: incidentID, Disposition: CompensationAbandon,
+	}
+}
+
+// Compile-time assertion: ResolveCompensationStall must satisfy Trigger.
+var _ Trigger = ResolveCompensationStall{}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 // compensationRecordsForScope returns a read-only slice of CompensationRecords for
@@ -108,7 +109,7 @@ func hasCompensationRecordsToWalk(s *InstanceState) bool {
 // The admin path always calls beginCompensation with zero finalStatus and empty
 // finalErr, producing StatusTerminated with no FailInstance on a full rollback —
 // identical to the prior behaviour.
-func stepCompensateRequested(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t CompensateRequested, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+func stepCompensateRequested(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t CompensateRequested, pol stepPolicy) (StepResult, error) {
 	// Reject a malformed trigger that expresses reverse intent (ResetVars)
 	// without naming a resume target (ReverseNode). CompensateRequested is a
 	// public, directly-constructible struct — a caller who builds one by hand
@@ -231,7 +232,7 @@ func stepCompensateRequested(ctx context.Context, def *model.ProcessDefinition, 
 	if t.ToNode == "" && t.ReverseNode == "" {
 		s.harvestOpenScopeCompensations()
 	}
-	return beginCompensation(ctx, def, s, t.OccurredAt(), mode, eval, compensationOutcome{
+	return beginCompensation(ctx, def, s, t.OccurredAt(), pol, compensationOutcome{
 		CloseKind:         closeKind,
 		ToNode:            t.ToNode,
 		FinalStatus:       0,
@@ -302,7 +303,7 @@ type compensationOutcome struct {
 //     InvokeAction for the most-recently completed record (reverse walk).
 //
 // See compensationOutcome for the meaning of each field.
-func beginCompensation(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator, outcome compensationOutcome) (StepResult, error) {
+func beginCompensation(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, at time.Time, pol stepPolicy, outcome compensationOutcome) (StepResult, error) {
 	// Cancel all in-flight tokens (interrupting normal execution).
 	// Also emit CancelTimer for any outstanding timers, armed events, and boundaries.
 	var preCmds []Command
@@ -359,7 +360,7 @@ func beginCompensation(ctx context.Context, def *model.ProcessDefinition, s *Ins
 				// (resume at toNode) regardless of FinalStatus/FinalErr — which is correct
 				// for the admin path (outcome fields are zero).
 				s.Compensating = compensationCursor{FinalStatus: finalStatus, FinalErr: finalErr, ReverseNode: reverseNode, ReverseResetVars: reverseResetVars, RestoreTargetVars: restoreTargetVars}
-				finishRes, finishErr := stepCompensationFinish(ctx, def, s, toNode, at, mode, eval)
+				finishRes, finishErr := stepCompensationFinish(ctx, def, s, toNode, at, pol)
 				if finishErr != nil {
 					return StepResult{}, finishErr
 				}
@@ -382,7 +383,7 @@ func beginCompensation(ctx context.Context, def *model.ProcessDefinition, s *Ins
 		// stepCompensationFinish reads the outcome AND reverse fields — a
 		// reverse-to-start with ZERO eligible records must still resume at start.
 		s.Compensating = compensationCursor{FinalStatus: finalStatus, FinalErr: finalErr, ReverseNode: reverseNode, ReverseResetVars: reverseResetVars, RestoreTargetVars: restoreTargetVars}
-		finishRes, finishErr := stepCompensationFinish(ctx, def, s, toNode, at, mode, eval)
+		finishRes, finishErr := stepCompensationFinish(ctx, def, s, toNode, at, pol)
 		if finishErr != nil {
 			return StepResult{}, finishErr
 		}
@@ -398,6 +399,7 @@ func beginCompensation(ctx context.Context, def *model.ProcessDefinition, s *Ins
 	cmdID := s.nextCommandID()
 	cur := s.Compensating
 	cur.ScopeID = scopeID
+	cur.StartedAt = at
 	cur.ToNode = toNode
 	cur.NextIndex = startIndex
 	cur.ActiveCmdID = cmdID
@@ -408,7 +410,91 @@ func beginCompensation(ctx context.Context, def *model.ProcessDefinition, s *Ins
 	cur.RestoreTargetVars = restoreTargetVars
 	s.Compensating = cur
 	cmds := append(preCmds, compensationInvoke(rec, cmdID))
+	// Arm the stall guard AFTER the s.cancelAllTimers() in the prologue above,
+	// which nils s.Timers — an arm hoisted above it is silently discarded.
+	cmds = append(cmds, armCompensationStallTimer(s, pol, rec.NodeID)...)
 	return StepResult{State: *s, Commands: cmds}, nil
+}
+
+// cancelCompensationStallTimers removes every outstanding TimerCompensationStall
+// record and returns a CancelTimer for each, so the scheduler is never left
+// holding a timer for a walk that has moved on (ADR-0175).
+//
+// It sweeps by KIND rather than by key. The records carry Token: "" and an empty
+// key names no record (ADR-0152), so neither cancelTimersForToken nor
+// cancelTimersByTaskID can ever reach one — this is the only sweep that does.
+// It returns WITHOUT touching s.Timers when there is nothing to cancel — the
+// common case, and the one that keeps detection genuinely free when disabled.
+// Rebuilding unconditionally would turn a nil Timers into an empty slice, and
+// s.Timers is marshalled into the persisted snapshot: every stored row's
+// `timers` would flip from null to [] on a walk that armed nothing (the
+// stored-shape drift ADR-0174 hit with Scopes).
+func cancelCompensationStallTimers(s *InstanceState) []Command {
+	var cmds []Command
+	for _, tr := range s.Timers {
+		if tr.Kind == TimerCompensationStall {
+			cmds = append(cmds, CancelTimer{TimerID: tr.TimerID})
+		}
+	}
+	if cmds == nil {
+		return nil
+	}
+	out := make([]timerRecord, 0, len(s.Timers))
+	for _, tr := range s.Timers {
+		if tr.Kind != TimerCompensationStall {
+			out = append(out, tr)
+		}
+	}
+	// nil, not an empty slice, when the stall record was the only one — matching
+	// cancelAllTimers and the early return above. Otherwise every RESUME finish of
+	// a walk that armed a stall guard would persist `timers: []` where it used to
+	// persist null.
+	if len(out) == 0 {
+		s.Timers = nil
+		return cmds
+	}
+	s.Timers = out
+	return cmds
+}
+
+// armCompensationStallTimer arms the stall timer guarding the compensation
+// action just dispatched under cur.ActiveCmdID, and returns the commands to
+// append. It is CANCEL-THEN-ARM: a walk re-arms on every advance and on retry,
+// and leaving two live records would let a stale one raise an incident against a
+// command that already completed.
+//
+// It is a no-op when detection is disabled (pol.stallAfter == 0, the default),
+// which is what keeps every existing command stream byte-identical.
+//
+// ⚠ At beginCompensation this MUST be called after s.cancelAllTimers(), which
+// sets s.Timers to nil — an earlier arm is silently discarded.
+func armCompensationStallTimer(s *InstanceState, pol stepPolicy, nodeID string) []Command {
+	cmds := cancelCompensationStallTimers(s)
+	if pol.stallAfter <= 0 {
+		return cmds
+	}
+	cur := s.Compensating
+	timerID := s.nextTimerID()
+	s.Timers = append(s.Timers, timerRecord{
+		TimerID: timerID,
+		Kind:    TimerCompensationStall,
+		// Token is deliberately empty: the record guards the WALK, and
+		// beginCompensation's prologue has already cancelled every token.
+		NodeID: nodeID,
+		// ScopeID mirrors the CURSOR's scope, which is what the walk is iterating.
+		// ⚠ It is empty for a TARGETED compensation throw: that cursor is built as
+		// {ArchiveKey: ref} and its emptiness is load-bearing for walkMode(), so the
+		// records live in ArchivedCompensations[ref] rather than in a scope. Read
+		// NodeID — always the compensated activity — rather than inferring location
+		// from an empty ScopeID, which is ambiguous with the root scope.
+		ScopeID:   cur.ScopeID,
+		CommandID: cur.ActiveCmdID,
+	})
+	return append(cmds, ScheduleTimer{
+		TimerID: timerID,
+		Trigger: schedule.AfterDuration(pol.stallAfter),
+		Kind:    TimerCompensationStall,
+	})
 }
 
 // compensationInvoke returns the InvokeAction that runs rec's compensation
@@ -425,8 +511,17 @@ func compensationInvoke(rec CompensationRecord, cmdID string) InvokeAction {
 // stepCompensationAdvance advances the compensation cursor after a compensation
 // InvokeAction completes (ActionCompleted with cursor.ActiveCmdID). It emits the
 // next InvokeAction in reverse order, or finalises compensation if the walk is done.
-func stepCompensationAdvance(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+func stepCompensationAdvance(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, at time.Time, pol stepPolicy) (StepResult, error) {
 	cur := s.Compensating
+	// Retire the stall incident for the command we are advancing PAST, before the
+	// cursor is recomputed below — after it, cur.ActiveCmdID names the NEXT
+	// command and nothing would match (ADR-0175).
+	//
+	// Every route by which a walk moves on funnels through here: a late
+	// ActionCompleted, a late ActionFailed (best-effort skip, ADR-0034 Decision 4)
+	// and the `skip` verb. Putting the sweep in handleActionCompleted instead
+	// would silently miss the other two.
+	s.retireCompensationStallIncidents(cur.ActiveCmdID)
 	// Use cursorRecords so a pinned throw walk reads its snapshot, an unpinned
 	// throw walk reads its archive, and admin/cancel/error walks read the live
 	// scope.
@@ -459,7 +554,7 @@ func stepCompensationAdvance(ctx context.Context, def *model.ProcessDefinition, 
 	if nextIdx < 0 || nextIdx >= len(records) || nextIdx <= toNodeIdx {
 		// Walk complete: exhausted all records, lost the record source, or
 		// reached the ToNode boundary.
-		return stepCompensationFinish(ctx, def, s, cur.ToNode, at, mode, eval)
+		return stepCompensationFinish(ctx, def, s, cur.ToNode, at, pol)
 	}
 
 	// Emit the next compensation action. cur already carries every field
@@ -476,7 +571,11 @@ func stepCompensationAdvance(ctx context.Context, def *model.ProcessDefinition, 
 	// route — leaves behind exactly the records it never ran. Written AFTER the
 	// cursor assignment above because it updates the cursor's own window count.
 	s.consumeDispatchedRecord(nextIdx)
-	return StepResult{State: *s, Commands: []Command{compensationInvoke(rec, cmdID)}}, nil
+	cmds := []Command{compensationInvoke(rec, cmdID)}
+	// Re-arm the stall guard against the NEW ActiveCmdID. Written after the
+	// cursor assignment above, which is what the helper reads.
+	cmds = append(cmds, armCompensationStallTimer(s, pol, rec.NodeID)...)
+	return StepResult{State: *s, Commands: cmds}, nil
 }
 
 // finishPlan is the parameterized description of ONE compensation-walk finish
@@ -646,6 +745,36 @@ func clearRecordsPrefix(s *InstanceState, scopeID string, n int) {
 	}
 }
 
+// retainedRecordPrefix returns a COPY of scopeID's records [0 .. n-1] — the ones
+// a reverse-order walk never reached. It is abandon's record disposition
+// (ADR-0175): the walk dispatches from the END of the slice downward, so index n
+// is the record it stalled on and everything below n is untouched work.
+//
+// n <= 0 retains nothing; n >= len retains everything. It returns nil rather
+// than an empty slice when nothing is retained, matching clearRecords.
+func retainedRecordPrefix(s *InstanceState, scopeID string, n int) []CompensationRecord {
+	records := compensationRecordsForScope(s, scopeID)
+	if n <= 0 || len(records) == 0 {
+		return nil
+	}
+	n = min(n, len(records))
+	retained := make([]CompensationRecord, n)
+	copy(retained, records[:n])
+	return retained
+}
+
+// setScopeRecords replaces scopeID's compensation records outright ("" = root).
+// A no-op for a scope that no longer exists.
+func setScopeRecords(s *InstanceState, scopeID string, records []CompensationRecord) {
+	if scopeID == "" {
+		s.RootCompensations = records
+		return
+	}
+	if sc := s.scopeByID(scopeID); sc != nil {
+		sc.Compensations = records
+	}
+}
+
 // lastCompensationRecordByNode returns a pointer to the LAST record in records
 // whose NodeID equals nodeID (the most-recent visit of that node — matching
 // beginCompensation's most-recent-match rule for a rollback target), or nil when
@@ -691,7 +820,7 @@ func popOneDeferredThrow(s *InstanceState) {
 //     drive.
 //   - otherwise (full rollback): apply the cursor's terminal FinalStatus
 //     (StatusTerminated / StatusFailed), stamp EndedAt, clear records.
-func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, toNode string, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, toNode string, at time.Time, pol stepPolicy) (StepResult, error) {
 	// Snapshot the cursor BEFORE clearing it, with ToNode filled in from the
 	// toNode parameter: the immediate-finish call sites in beginCompensation
 	// (nothing to compensate / no records at all) stamp s.Compensating without
@@ -722,6 +851,20 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 	restoreTargetVars := cur.RestoreTargetVars
 	// Clear the cursor — compensation walk is done.
 	s.Compensating = compensationCursor{}
+
+	// Retire the stall guard here, so all five walk modes are covered by one line
+	// (ADR-0175). Only the TERMINATE mode reaches cancelAllTimers, via
+	// endInstance; the four RESUME finishes — throw-targeted, throw-scope-wide,
+	// partial rollback and full reverse — never touch s.Timers, so without this
+	// the record leaks onto a Running instance and the scheduler keeps a timer
+	// with nothing left to guard.
+	//
+	// ⚠ The position relative to applyFinish is NOT load-bearing, and an earlier
+	// revision of this comment claimed it was. Measured by moving the call below
+	// applyFinish: the terminate mode still emits exactly ONE CancelTimer, because
+	// whichever of the two sweeps runs first removes the record and the other then
+	// finds nothing. Pinned by TestTerminalFinishCancelsStallTimerExactlyOnce.
+	stallCancels := cancelCompensationStallTimers(s)
 
 	// Build the finishPlan matching this walk's outcome. Branch order mirrors the
 	// pre-refactor precedence: throw resume, then partial, then full-reverse, then
@@ -827,7 +970,12 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 		}
 	}
 	plan.validate()
-	return applyFinish(ctx, def, s, plan, at, mode, eval)
+	res, err := applyFinish(ctx, def, s, plan, at, pol)
+	if err != nil {
+		return StepResult{}, err
+	}
+	res.Commands = append(stallCancels, res.Commands...)
+	return res, nil
 }
 
 // applyPlanRecordClearing performs a finishPlan's record clearing: a scope-wide
@@ -859,7 +1007,7 @@ func applyPlanRecordClearing(s *InstanceState, plan finishPlan) {
 // terminates (FinalStatus applied, EndedAt stamped, records cleared). Collapsing
 // the four former branches here means the resume/terminate invariants can no
 // longer drift apart.
-func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, plan finishPlan, at time.Time, mode StepMode, eval ConditionEvaluator) (StepResult, error) {
+func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, plan finishPlan, at time.Time, pol stepPolicy) (StepResult, error) {
 	// Throw-walk archive consume (single ownership). No-op for other plans
 	// (deleteArchive == "").
 	if plan.deleteArchive != "" && s.ArchivedCompensations != nil {
@@ -939,7 +1087,7 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 		// No terminality gate is needed here — unlike stepCompensateRequested's site, this
 		// branch is reached only for a pending CANCEL or ERROR outcome, both terminal.
 		s.harvestOpenScopeCompensations()
-		return beginCompensation(ctx, def, s, at, mode, eval, compensationOutcome{CloseKind: pendingKind, FinalStatus: pendingStatus, FinalErr: pendingErr})
+		return beginCompensation(ctx, def, s, at, pol, compensationOutcome{CloseKind: pendingKind, FinalStatus: pendingStatus, FinalErr: pendingErr})
 	}
 
 	if !plan.resume {
@@ -1015,13 +1163,13 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 		// of appending a duplicate entry, then re-arm exactly as
 		// handleStartInstance does for a fresh StartInstance.
 		preDriveCmds = appendCancelTimers(preDriveCmds, s.removeEventTriggeredSubprocessArmsForScope(""))
-		espCmds, espErr := armEventTriggeredSubprocesses(def, s, "", at, eval)
+		espCmds, espErr := armEventTriggeredSubprocesses(def, s, "", at, pol.eval)
 		if espErr != nil {
 			return StepResult{}, espErr
 		}
 		preDriveCmds = append(preDriveCmds, espCmds...)
 	}
-	driveCmds, err := drive(ctx, def, s, at, mode, eval)
+	driveCmds, err := drive(ctx, def, s, at, pol)
 	if err != nil {
 		return StepResult{}, err
 	}
@@ -1058,4 +1206,163 @@ func applyTerminate(s *InstanceState, plan finishPlan, at time.Time) StepResult 
 	}
 	cmds := s.endInstance(finalStatus, at, terminal)
 	return StepResult{State: *s, Commands: cmds}
+}
+
+// handleResolveCompensationStall applies one of the three operator escapes from
+// a stalled compensation walk (ADR-0175).
+//
+// Guards first, all three shared by every verb:
+//
+//   - no walk in flight                     -> ErrNoCompensationWalk
+//   - CommandID != cursor's ActiveCmdID     -> ErrCompensationCommandMismatch
+//   - non-empty IncidentID naming nothing   -> ErrStallIncidentNotFound
+//
+// Each refusal also logs a Warn: an operator escape that is refused is exactly
+// the event an incident review needs to see, and mirroring dispatch's own
+// refusal logging keeps the record in one style.
+//
+// A terminal instance never reaches here — dispatch's structural guard returns
+// ErrInstanceTerminal first (ADR-0165), which is why the walk-in-flight check
+// below can be about the CURSOR rather than about liveness.
+func handleResolveCompensationStall(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t ResolveCompensationStall, pol stepPolicy) (StepResult, error) {
+	cur := s.Compensating
+	if s.Status != StatusCompensating || cur.ActiveCmdID == "" {
+		slog.WarnContext(ctx, "compensation stall escape refused: no walk in flight",
+			"instance_id", s.InstanceID,
+			"command_id", t.CommandID,
+			"disposition", t.Disposition.String(),
+			"status", s.Status.String(),
+		)
+		return StepResult{}, ErrNoCompensationWalk
+	}
+	if t.CommandID != cur.ActiveCmdID {
+		slog.WarnContext(ctx, "compensation stall escape refused: command id does not match the walk",
+			"instance_id", s.InstanceID,
+			"command_id", t.CommandID,
+			"active_command_id", cur.ActiveCmdID,
+			"disposition", t.Disposition.String(),
+		)
+		return StepResult{}, ErrCompensationCommandMismatch
+	}
+	if t.IncidentID != "" && !s.hasOpenStallIncident(t.IncidentID) {
+		slog.WarnContext(ctx, "compensation stall escape refused: no such stall incident",
+			"instance_id", s.InstanceID,
+			"incident_id", t.IncidentID,
+			"disposition", t.Disposition.String(),
+		)
+		return StepResult{}, ErrStallIncidentNotFound
+	}
+
+	switch t.Disposition {
+	case CompensationRetry:
+		return retryStalledCompensation(ctx, def, s, cur, t.OccurredAt(), pol)
+	case CompensationSkip:
+		// stepCompensationAdvance retires the stall incident itself, and takes the
+		// byte-identical path a returned ActionFailed already takes.
+		return stepCompensationAdvance(ctx, def, s, t.OccurredAt(), pol)
+	case CompensationAbandon:
+		return abandonCompensationWalk(ctx, def, s, cur, t.OccurredAt(), pol)
+	default:
+		return StepResult{}, fmt.Errorf("workflow-engine: unknown compensation disposition %d", t.Disposition)
+	}
+}
+
+// retryStalledCompensation re-dispatches the record the walk stalled on, under a
+// fresh command id, and re-arms the stall guard. The cursor's NextIndex does NOT
+// move: this is the same record, tried again.
+func retryStalledCompensation(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, cur compensationCursor, at time.Time, pol stepPolicy) (StepResult, error) {
+	records := cursorRecords(s, cur)
+	// Retry needs its OWN bounds check. ADR-0171's third disjunct in
+	// stepCompensationAdvance guards NextIndex-1, not NextIndex, so it says
+	// nothing about the index retry is about to read — and a naive
+	// records[cur.NextIndex] PANICS inside the pure core (measured: len(records)=0
+	// at NextIndex=1, on a pre-ADR-0171 cursor whose record source vanished under
+	// it after a restart).
+	if cur.NextIndex < 0 || cur.NextIndex >= len(records) {
+		// The source shrank or vanished: there is nothing left to retry, so route
+		// to the walk's finish exactly as a completed advance would. The finish
+		// DRIVES (a resuming walk places a token and advances it), so it needs the
+		// real ctx, def and timestamp — passing nil/zero here panicked in drive on
+		// def.Node.
+		s.retireCompensationStallIncidents(cur.ActiveCmdID)
+		return stepCompensationFinish(ctx, def, s, cur.ToNode, at, pol)
+	}
+	rec := records[cur.NextIndex]
+	// Retire the incident against the OLD command id, BEFORE the cursor is
+	// overwritten below — afterwards ActiveCmdID names the retry and matches
+	// nothing.
+	s.retireCompensationStallIncidents(cur.ActiveCmdID)
+	cmdID := s.nextCommandID()
+	cur.ActiveCmdID = cmdID
+	s.Compensating = cur
+	// Deliberately NOT consumeDispatchedRecord: ownership of this record
+	// transferred at the ORIGINAL dispatch (ADR-0173). Consuming it again would
+	// shrink the walk's teardown window a second time for one record.
+	cmds := []Command{compensationInvoke(rec, cmdID)}
+	cmds = append(cmds, armCompensationStallTimer(s, pol, rec.NodeID)...)
+	return StepResult{State: *s, Commands: cmds}, nil
+}
+
+// abandonCompensationWalk ends the walk and terminates the instance, retaining
+// records [0 .. NextIndex-1] and DROPPING the record at NextIndex.
+func abandonCompensationWalk(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, cur compensationCursor, at time.Time, pol stepPolicy) (StepResult, error) {
+	// Accepted ONLY on a walk that finishes by terminating. stepCompensationFinish
+	// picks its plan from walkMode(), so a resuming walk would take a RESUME plan
+	// and the terminate intent would be silently discarded — measured destroying
+	// un-run records on a throw walk.
+	if cur.walkMode() != walkAdmin {
+		slog.WarnContext(ctx, "compensation stall escape refused: this walk resumes rather than terminates",
+			"instance_id", s.InstanceID,
+			"command_id", cur.ActiveCmdID,
+			"disposition", CompensationAbandon.String(),
+		)
+		return StepResult{}, ErrCompensationWalkResumes
+	}
+	// Retain exactly what the walk never dispatched. On a beginCompensation walk
+	// the cursor is UNPINNED, so consumeDispatchedRecord early-returns and
+	// RootCompensations still holds every record — run or not. Retaining the whole
+	// list therefore re-dispatches an already-run compensation on the later admin
+	// rollback (measured [undoB undoA] with undoB already run); retaining the
+	// prefix keeps strictly the un-dispatched ones.
+	//
+	// The record AT NextIndex is dropped because its action may still be in flight
+	// at a worker. Accepted cost: if it genuinely never ran, that undo work is
+	// lost — retry is the verb for that case, and skip makes the same trade.
+	retained := retainedRecordPrefix(s, cur.ScopeID, cur.NextIndex)
+	// Retire the incident HERE, before delegating. This is LOAD-BEARING and must
+	// not be mistaken for defence-in-depth: stepCompensationFinish clears
+	// s.Compensating BEFORE it calls applyFinish, so endInstance's own remainder
+	// sweep runs with ActiveCmdID == "" and early-returns. Nothing downstream will
+	// retire this incident.
+	//
+	// ⚠ Deleting this line leaves the ENGINE SUITE GREEN unless
+	// TestAbandonRetiresTheStallIncident exists — an earlier revision read that
+	// green run as "redundant" and said so in this comment. It was untested, not
+	// redundant. Without the call an abandoned walk terminates carrying a stale
+	// "compensation action stalled" as Incidents[0], which
+	// runtime/outbox.go's terminalEventErr and processdriver_action.go's
+	// terminalErr publish as the instance's cause of death.
+	s.retireCompensationStallIncidents(cur.ActiveCmdID)
+	// Delegate with the walk's own recorded outcome.
+	//
+	// ⚠ Abandon does NOT run applyFinish's consumePendingCancel path: walkAdmin's
+	// finishPlan sets resume:false and leaves consumePendingCancel unset, and
+	// applyFinish gates that branch on plan.resume. A PendingCancel is therefore
+	// left set on the terminated instance. ADR-0175 claimed abandon discharges the
+	// deferred-cancel deadlock; it cannot — PendingCancel is only ever stamped on
+	// walks that RESUME, which abandon refuses. Skip is that verb.
+	res, err := stepCompensationFinish(ctx, def, s, cur.ToNode, at, pol)
+	if err != nil {
+		return StepResult{}, err
+	}
+	// Re-install the retained prefix AFTER the finish, not before: walkAdmin's
+	// finishPlan sets doClearRecords, so applyPlanRecordClearing nils the whole
+	// scope list on its way out and any earlier trim is simply erased (measured —
+	// root=[] where [step1 step2] was owed, and the later admin rollback then
+	// refused with "nothing left to compensate").
+	//
+	// Written onto res.State rather than s: StepResult carries a shallow COPY of
+	// the state, so mutating s here would not be visible to the caller.
+	setScopeRecords(&res.State, cur.ScopeID, retained)
+	return res, nil
 }

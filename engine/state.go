@@ -114,13 +114,56 @@ type Token struct {
 	RetryStartedAt time.Time
 }
 
-// Incident records a token that has exhausted its retry budget (or encountered a
-// non-retryable error) and is now parked awaiting operator intervention. An
-// incident is created when the engine transitions a token to [TokenIncident].
+// IncidentKind discriminates what an [Incident] is about, so a reader can tell
+// a failed action apart from a compensation walk that stopped reporting back.
+//
+// Its zero value is IncidentAction, which is what every incident raised before
+// ADR-0175 means — so an existing record keeps its meaning without migration.
+type IncidentKind int
+
+const (
+	// IncidentAction is a service action that failed and exhausted its retries.
+	// It names a token, and resolving it re-invokes that token's action.
+	IncidentAction IncidentKind = iota
+	// IncidentCompensationStall is a dispatched compensation action that has not
+	// reported back within StepOptions.CompensationStallAfter (ADR-0175). It is
+	// walk-scoped: TokenID is empty, because a stalled walk holds no tokens.
+	//
+	// It must NOT be resolved through ResolveIncident — see handleResolveIncident,
+	// which refuses it and names the three escape verbs instead.
+	IncidentCompensationStall
+)
+
+// String returns the name of the IncidentKind for debugging/logging.
+func (k IncidentKind) String() string {
+	switch k {
+	case IncidentAction:
+		return "IncidentAction"
+	case IncidentCompensationStall:
+		return "IncidentCompensationStall"
+	default:
+		return "IncidentKind(unknown)"
+	}
+}
+
+// Incident records work that has stopped and needs operator attention: a token
+// that exhausted its retry budget or hit a non-retryable error (IncidentAction,
+// created as the engine moves that token to [TokenIncident]), or a compensation
+// walk whose dispatched action stopped reporting back (IncidentCompensationStall,
+// ADR-0175). See [IncidentKind] — the two are resolved by different operations.
 type Incident struct {
 	// ID is the unique identifier for this incident, generated deterministically
 	// from InstanceState.IncidentSeq.
 	ID string
+	// Kind discriminates what this incident is about. The zero value,
+	// IncidentAction, is what every pre-ADR-0175 record means.
+	//
+	// ⚠ Kind enters the persisted snapshot. An OLD build round-trips a NEW
+	// snapshot with Kind dropped, degrading an IncidentCompensationStall into a
+	// resolvable IncidentAction that the shipped resolve-incident endpoint will
+	// then delete — the exact data loss the refusal exists to prevent. Do not run
+	// pre-0175 and post-0175 builds against the same instance store.
+	Kind IncidentKind
 	// TokenID is the ID of the token that encountered the error.
 	TokenID string
 	// NodeID is the node where the failure occurred.
@@ -350,13 +393,37 @@ func (s *InstanceState) removeIncidentsForToken(tokenID string) {
 // an empty key names nothing (ADR-0152), so such a record names no token to be
 // orphaned FROM. Leaving it to tokenByID would invert that rule — tokenByID("")
 // reports nil, which this predicate would read as "the token is gone" and
-// delete an incident the keep-token sites are supposed to keep. No production
-// path builds one today (the sole construction site, handleUnhandledError under
-// the raiseIncident policy, is called with tok.ID), so this is a guard against
-// the next terminal site rather than a live defect.
+// delete an incident the keep-token sites are supposed to keep.
+//
+// ⚠ This was written as "a guard against the next terminal site rather than a
+// live defect", because no production path built an empty-TokenID incident.
+// ADR-0175 IS that next site: handleCompensationStallFired raises a walk-scoped
+// incident with TokenID "". The keep is now load-bearing rather than
+// speculative — which is also why retiring a stall incident needs its own sweep
+// (retireCompensationStallIncidents) instead of falling out of this one.
 func (s *InstanceState) removeOrphanedIncidents() {
 	s.Incidents = slices.DeleteFunc(s.Incidents, func(inc Incident) bool {
 		return inc.TokenID != "" && s.tokenByID(inc.TokenID) == nil
+	})
+}
+
+// retireCompensationStallIncidents removes every open IncidentCompensationStall
+// raised against commandID (ADR-0175). An empty commandID names no incident and
+// retires nothing, mirroring ADR-0152.
+//
+// It is called wherever a walk moves on — stepCompensationAdvance, and the
+// escape verbs before they delegate to a finish — plus a final sweep in
+// endInstance. Without it, a walk that recovered on its own carries a stale
+// "compensation action stalled" incident into its terminal state, where
+// runtime/outbox.go's terminalEventErr and runtime/processdriver_action.go's
+// terminalErr both read Incidents[0] unconditionally and would publish it as the
+// instance's cause of death — to the outbox, and to a call-activity parent.
+func (s *InstanceState) retireCompensationStallIncidents(commandID string) {
+	if commandID == "" {
+		return
+	}
+	s.Incidents = slices.DeleteFunc(s.Incidents, func(inc Incident) bool {
+		return inc.Kind == IncidentCompensationStall && inc.CommandID == commandID
 	})
 }
 
@@ -392,6 +459,20 @@ func (s *InstanceState) endInstance(status Status, at time.Time, terminal Comman
 	//     where only [undoA] was owed.
 	//   - Before s.Scopes = nil, or there is nothing left to harvest from.
 	s.harvestOpenScopeCompensations()
+	// Retire any stall incident still open, BEFORE the cursor clear takes away the
+	// ActiveCmdID that names it (ADR-0175). The walk ends here, so an incident
+	// saying it is stalled is stale by construction — and leaving one behind makes
+	// it Incidents[0] on a terminal instance, which runtime/outbox.go's
+	// terminalEventErr and runtime/processdriver_action.go's terminalErr publish
+	// unconditionally as the cause of death.
+	//
+	// This is the REMAINDER sweep. The routes that move a walk on retire their own
+	// incident first — a late ActionCompleted, a late ActionFailed and the skip
+	// verb all through stepCompensationAdvance, and retry and abandon explicitly —
+	// so what reaches here is a walk killed mid-flight. The route this is measured
+	// on is a force-termination end event; see
+	// TestForceTerminationSweepsOpenStallIncident.
+	s.retireCompensationStallIncidents(s.Compensating.ActiveCmdID)
 	s.Compensating = compensationCursor{}
 	s.removeOrphanedIncidents()
 	cmds := s.cancelOpenTasks()
@@ -462,4 +543,18 @@ func (s *InstanceState) spawnsNewWork() bool {
 		// Terminal, or out of range.
 		return false
 	}
+}
+
+// hasOpenStallIncident reports whether an open IncidentCompensationStall with
+// the given id exists. An empty id names no incident (ADR-0152).
+func (s *InstanceState) hasOpenStallIncident(incidentID string) bool {
+	if incidentID == "" {
+		return false
+	}
+	for _, inc := range s.Incidents {
+		if inc.ID == incidentID && inc.Kind == IncidentCompensationStall {
+			return true
+		}
+	}
+	return false
 }

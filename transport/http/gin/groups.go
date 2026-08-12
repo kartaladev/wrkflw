@@ -271,6 +271,25 @@ func (ar AdminRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOpti
 			gc.JSON(status, body)
 		}))
 
+	// POST /admin/instances/:id/compensation/resolve-stall
+	rt.POST(bp+"/admin/instances/:id/compensation/resolve-stall",
+		observe(inst, http.MethodPost, bp+"/admin/instances/:id/compensation/resolve-stall", func(gc *ginlib.Context) {
+			instanceID := gc.Param("id")
+			var in httpcore.ResolveCompensationStallInput
+			// Body is REQUIRED: command_id and disposition are both mandatory and
+			// neither may default (ADR-0175).
+			if err := gc.ShouldBindJSON(&in); err != nil {
+				writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
+				return
+			}
+			status, body, err := httpcore.ResolveCompensationStall(gc.Request.Context(), ar.Svc, instanceID, in)
+			if err != nil {
+				writeErr(cfg, gc, err)
+				return
+			}
+			gc.JSON(status, body)
+		}))
+
 	// POST /admin/instances/:id/cancel
 	rt.POST(bp+"/admin/instances/:id/cancel",
 		observe(inst, http.MethodPost, bp+"/admin/instances/:id/cancel", func(gc *ginlib.Context) {

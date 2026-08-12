@@ -101,23 +101,29 @@ func rootSagaWithScopeWideThrow() *model.ProcessDefinition {
 // first reverse compensation InvokeAction).
 func driveToScopeWideThrow(t *testing.T, def *model.ProcessDefinition, instID string, at time.Time) engine.StepResult {
 	t.Helper()
+	return driveToScopeWideThrowWithOptions(t, def, instID, at, engine.StepOptions{})
+}
+
+// driveToScopeWideThrowWithOptions is driveToScopeWideThrow with the caller's
+// StepOptions applied to every Step, so a test can exercise the throw walk's
+// first dispatch under a non-default policy (e.g. ADR-0175's stall window).
+func driveToScopeWideThrowWithOptions(t *testing.T, def *model.ProcessDefinition, instID string, at time.Time, opt engine.StepOptions) engine.StepResult {
+	t.Helper()
 
 	r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: instID},
-		engine.NewStartInstance(at, nil), engine.StepOptions{})
+		engine.NewStartInstance(at, nil), opt)
 	require.NoError(t, err)
 	doA := invokeActionNamed(r1.Commands, "doA")
 	require.NotNil(t, doA, "expected InvokeAction for doA")
 
 	r2, err := engine.Step(t.Context(), def, r1.State,
-		engine.NewActionCompleted(at.Add(1*time.Second), doA.CommandID, nil),
-		engine.StepOptions{})
+		engine.NewActionCompleted(at.Add(1*time.Second), doA.CommandID, nil), opt)
 	require.NoError(t, err)
 	doB := invokeActionNamed(r2.Commands, "doB")
 	require.NotNil(t, doB, "expected InvokeAction for doB")
 
 	r3, err := engine.Step(t.Context(), def, r2.State,
-		engine.NewActionCompleted(at.Add(2*time.Second), doB.CommandID, nil),
-		engine.StepOptions{})
+		engine.NewActionCompleted(at.Add(2*time.Second), doB.CommandID, nil), opt)
 	require.NoError(t, err)
 	return r3
 }

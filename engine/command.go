@@ -28,6 +28,16 @@ const (
 	// TimerRetry is a one-shot timer that the runtime schedules to re-invoke
 	// a failed action after its backoff (plus optional jitter) has elapsed.
 	TimerRetry
+	// TimerCompensationStall is a one-shot timer guarding a dispatched
+	// compensation action (ADR-0175). It fires when that action has not reported
+	// back within StepOptions.CompensationStallAfter, and raising the resulting
+	// incident is the only way a stalled compensation walk becomes visible: such
+	// a walk holds no tokens and no other timers, so nothing else can wake it.
+	//
+	// ⚠ APPENDED deliberately. TimerKind is persisted as a plain integer, so
+	// giving a new kind anything but the next free value reinterprets every
+	// stored timer row.
+	TimerCompensationStall
 )
 
 // String returns the name of the TimerKind for debugging/logging.
@@ -41,6 +51,8 @@ func (k TimerKind) String() string {
 		return "TimerInWait"
 	case TimerRetry:
 		return "TimerRetry"
+	case TimerCompensationStall:
+		return "TimerCompensationStall"
 	default:
 		return "TimerKind(unknown)"
 	}

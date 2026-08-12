@@ -27,7 +27,7 @@ import (
 // fundamentally different shape from the first-match-wins cascade here.
 func dispatchArmCascade(
 	ctx context.Context,
-	def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator,
+	def *model.ProcessDefinition, s *InstanceState, at time.Time, pol stepPolicy,
 	onMatch func(),
 	gw func() *armedEvent, boundary func() *boundaryArm, eventSub func() *eventTriggeredSubprocessArm,
 ) (cmds []Command, matched bool, err error) {
@@ -58,21 +58,21 @@ func dispatchArmCascade(
 		if onMatch != nil {
 			onMatch()
 		}
-		cmds, err = resolveGatewayWin(ctx, def, s, *ae, at, mode, eval)
+		cmds, err = resolveGatewayWin(ctx, def, s, *ae, at, pol)
 		return cmds, true, err
 	}
 	if ba := boundary(); ba != nil {
 		if onMatch != nil {
 			onMatch()
 		}
-		cmds, err = fireBoundaryArm(ctx, def, s, *ba, at, mode, eval)
+		cmds, err = fireBoundaryArm(ctx, def, s, *ba, at, pol)
 		return cmds, true, err
 	}
 	if ea := eventSub(); ea != nil {
 		if onMatch != nil {
 			onMatch()
 		}
-		cmds, err = fireEventTriggeredSubprocessArm(ctx, def, s, *ea, at, mode, eval)
+		cmds, err = fireEventTriggeredSubprocessArm(ctx, def, s, *ea, at, pol)
 		return cmds, true, err
 	}
 	return nil, false, nil

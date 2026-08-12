@@ -335,6 +335,10 @@ func TestTerminalDispatchOutcomes(t *testing.T) {
 		"engine.HumanReassigned": refusedOn(rejectsWithError),
 		"engine.HumanCompleted":  refusedOn(rejectsWithError),
 		"engine.ResolveIncident": refusedOn(rejectsWithError),
+		// ADR-0175: the escape verbs act on a COMPENSATING instance. Once it is
+		// terminal the walk is already over, so there is nothing left to escape and
+		// the operator must be told so rather than left believing it worked.
+		"engine.ResolveCompensationStall": refusedOn(rejectsWithError),
 
 		// Engine-internal asynchronous delivery.
 		"engine.ActionCompleted": refusedOn(staysSilent),

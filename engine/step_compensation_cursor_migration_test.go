@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/kartaladev/wrkflw/definition/activity"
@@ -84,6 +85,64 @@ func TestCompensationAdvanceFinishesWhenRecordSourceIsGone(t *testing.T) {
 		"the vanished source must finish the walk, not advance it")
 	require.Equal(t, StatusCompleted, res.State.Status,
 		"the finish resumes at the throw's successor, which ends the instance")
+}
+
+// TestRetryOnAVanishedRecordSourceFinishesWithoutPanicking is T13.
+//
+// Retry indexes records[cur.NextIndex], and it needs its OWN bounds check:
+// ADR-0171's third disjunct in stepCompensationAdvance guards NextIndex-1, which
+// says nothing about NextIndex itself. On the migrated cursor below the live
+// source resolves to nil while NextIndex is 1, so a naive index PANICS inside the
+// pure engine core — in the library consumer's own process.
+//
+// What makes it fail without the bounds check: len(records)==0 and NextIndex==1,
+// so records[1] is out of range.
+func TestRetryOnAVanishedRecordSourceFinishesWithoutPanicking(t *testing.T) {
+	t.Parallel()
+
+	def := &model.ProcessDefinition{
+		ID: "p-migrated-retry", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("svc", activity.WithTaskAction("do")),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "svc"},
+			{ID: "f2", Source: "svc", Target: "end"},
+		},
+	}
+	at := time.Date(2026, 8, 10, 9, 0, 0, 0, time.UTC)
+
+	state := InstanceState{
+		InstanceID: "migrated-retry",
+		DefID:      def.ID,
+		DefVersion: def.Version,
+		Status:     StatusCompensating,
+		StartedAt:  at,
+		Compensating: compensationCursor{
+			ScopeID:          "migrated-s1",
+			ResumeNode:       "end",
+			StartRecordCount: 2,
+			NextIndex:        1,
+			ActiveCmdID:      "migrated-c9",
+		},
+	}
+	require.Nil(t, state.scopeByID("migrated-s1"),
+		"control: the walk's record source no longer exists")
+	require.Empty(t, cursorRecords(&state, state.Compensating),
+		"control: len(records)==0 while NextIndex==1 — the shape that panics")
+
+	require.NotPanics(t, func() {
+		res, err := Step(t.Context(), def, state,
+			NewRetryStalledCompensation(at.Add(time.Second), "migrated-c9", ""), StepOptions{})
+
+		require.NoError(t, err)
+		assert.Empty(t, res.State.Compensating.ActiveCmdID,
+			"a vanished source must route retry to the walk FINISH, not to an index")
+		assert.Equal(t, StatusCompleted, res.State.Status,
+			"the finish resumes at the throw successor, which ends the instance")
+	})
 }
 
 // TestDeferredCancelFromLegacySnapshotTerminatesAsCancelled covers the one input

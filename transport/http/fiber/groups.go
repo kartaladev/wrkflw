@@ -260,6 +260,24 @@ func (g AdminRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOpti
 				return c.Status(status).JSON(body)
 			}))
 
+	// Resolve a stalled compensation walk (ADR-0175).
+	rt.Post(cfg.BasePath+"/admin/instances/:id/compensation/resolve-stall",
+		observed(inst, "POST", cfg.BasePath+"/admin/instances/:id/compensation/resolve-stall",
+			func(c fiberlib.Ctx) error {
+				id := c.Params("id")
+				var in httpcore.ResolveCompensationStallInput
+				// Body is REQUIRED: command_id and disposition are both mandatory
+				// and neither may default (ADR-0175).
+				if err := c.Bind().JSON(&in); err != nil {
+					return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
+				}
+				status, body, err := httpcore.ResolveCompensationStall(c.Context(), g.Svc, id, in)
+				if err != nil {
+					return writeErr(cfg, c, err)
+				}
+				return c.Status(status).JSON(body)
+			}))
+
 	// Cancel instance.
 	rt.Post(cfg.BasePath+"/admin/instances/:id/cancel",
 		observed(inst, "POST", cfg.BasePath+"/admin/instances/:id/cancel",

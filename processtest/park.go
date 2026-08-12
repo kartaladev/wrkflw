@@ -17,8 +17,18 @@ const (
 	ReasonTerminal Reason = iota
 	// ReasonHumanTask means at least one human task is open (unclaimed or claimed).
 	ReasonHumanTask
-	// ReasonIncident means a token is parked as an incident (retry budget exhausted
-	// or a non-retryable failure).
+	// ReasonIncident means the instance has at least one open incident.
+	//
+	// ⚠ It covers TWO shapes since ADR-0175, and they are resolved by DIFFERENT
+	// operations. An IncidentAction parks a TOKEN (retry budget exhausted or a
+	// non-retryable failure) and is cleared with ResolveIncident. An
+	// IncidentCompensationStall parks NO token — it reports a compensation walk
+	// whose dispatched action stopped reporting back — and ResolveIncident REFUSES
+	// it with engine.ErrIncidentNotResolvable; the escape verbs are retry, skip
+	// and abandon on ProcessDriver.ResolveCompensationStall.
+	//
+	// A handler that blindly feeds Park.Incidents[0].ID to ResolveIncident will
+	// therefore fail on a stall. Switch on the incident's Kind.
 	ReasonIncident
 	// ReasonSignal means a token is waiting on a named signal.
 	ReasonSignal
@@ -79,7 +89,14 @@ type Park struct {
 	// sources as AwaitingSignals. Distinct is on the {Name, CorrelationKey} PAIR:
 	// two constructs awaiting one name under different keys are two waiters.
 	AwaitingMessages []engine.MessageWaiter
-	// HasArmedTimers reports whether the instance has any armed timer.
+	// HasArmedTimers reports whether the instance has any armed timer a harness
+	// may legitimately fire.
+	//
+	// ⚠ It EXCLUDES a compensation-stall timer (ADR-0175). Such a record is a
+	// DETECTION deadline, not work the instance waits on: counting it would make
+	// [AutoTimers] fire it by itself and manufacture the very stall incident the
+	// window exists to detect. The predicate is engine.InstanceState.HasArmedTimers,
+	// because the timer kind is not visible outside the engine package.
 	HasArmedTimers bool
 	// Incidents holds the instance's open incident records.
 	Incidents []engine.Incident
@@ -121,7 +138,7 @@ func IsTerminal(s engine.Status) bool {
 func Classify(state engine.InstanceState) Park {
 	p := Park{
 		State:          state,
-		HasArmedTimers: len(state.Timers) > 0,
+		HasArmedTimers: state.HasArmedTimers(),
 		Incidents:      state.Incidents,
 	}
 

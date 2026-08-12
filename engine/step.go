@@ -49,6 +49,51 @@ type StepOptions struct {
 	// replay stay byte-for-byte reproducible; the runtime injects a real
 	// generator (xid) so product instances carry opaque ids. See [IDGenerator].
 	IDGenerator IDGenerator
+	// CompensationStallAfter bounds how long a dispatched compensation action may
+	// go without reporting back before the engine raises a stall incident against
+	// the walk (ADR-0175). ZERO DISABLES detection, and zero is the default: with
+	// it unset no stall timer is scheduled and no command stream changes shape.
+	//
+	// A compensation walk advances only on a trigger carrying the cursor's
+	// command id, and holds no tokens and no other timers — so without this
+	// window a walk whose action never replies is permanently stuck AND
+	// permanently invisible.
+	//
+	// ⚠ One engine-wide window is a deliberate v1 simplification, not a
+	// precedent-backed choice: a ledger reversal returns in milliseconds and a
+	// manual-approval-gated refund takes hours, so a single value forces the
+	// operator to size for the slowest. Compare DefaultRetryPolicy, which is a
+	// three-tier chain precisely because one timeout for every action is wrong.
+	// A per-node tier is deliberate backlog, not scope.
+	CompensationStallAfter time.Duration
+}
+
+// stepPolicy bundles the per-Step policy values that the drive,
+// error-propagation and compensation call chains all thread together. It is
+// resolved ONCE per Step (resolvePolicy) and passed by value, so every strategy
+// and handler in one Step reads the same evaluator (ADR-0056) and the same
+// granularity — the property the previously hand-threaded (mode, eval) pair
+// carried by convention across fourteen signatures.
+type stepPolicy struct {
+	// mode is the step granularity: [Macro] (default) or [Micro].
+	mode StepMode
+	// eval is the resolved expression evaluator: the one injected via
+	// StepOptions.Evaluator, or the pure package-global default.
+	eval ConditionEvaluator
+	// stallAfter is StepOptions.CompensationStallAfter. Zero disables stall
+	// detection; it reaches the three compensation dispatch sites through this
+	// field (ADR-0175).
+	stallAfter time.Duration
+}
+
+// resolvePolicy reduces a caller's StepOptions to the resolved stepPolicy the
+// internal call chains thread. Called once per dispatch.
+func resolvePolicy(opt StepOptions) stepPolicy {
+	return stepPolicy{
+		mode:       opt.Mode,
+		eval:       resolveEvaluator(opt),
+		stallAfter: opt.CompensationStallAfter,
+	}
 }
 
 // StepResult is the output of a single [Step] call. Commands is the ordered
@@ -200,6 +245,8 @@ func dispatch(ctx context.Context, def *model.ProcessDefinition, sp *InstanceSta
 		return handleMessageReceived(ctx, def, sp, t, opt)
 	case ResolveIncident:
 		return handleResolveIncident(ctx, def, sp, t, opt)
+	case ResolveCompensationStall:
+		return handleResolveCompensationStall(ctx, def, sp, t, resolvePolicy(opt))
 	default:
 		return StepResult{}, fmt.Errorf("%w: %T", ErrUnknownTrigger, trg)
 	}
@@ -218,7 +265,7 @@ func dispatch(ctx context.Context, def *model.ProcessDefinition, sp *InstanceSta
 // definition (tdef) is resolved via defForScope against the token's ScopeID so
 // that tokens inside a sub-process scope resolve nodes/flows against the nested
 // definition rather than the top-level one.
-func drive(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, at time.Time, mode StepMode, eval ConditionEvaluator) ([]Command, error) {
+func drive(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, at time.Time, pol stepPolicy) ([]Command, error) {
 	var cmds []Command
 	for {
 		tok := s.firstActive()
@@ -254,7 +301,7 @@ func drive(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, 
 		// Dispatch node entry through the nodeStrategy registry. Kinds absent from
 		// the registry fall through to the else branch below, which parks the token.
 		if strat, ok := nodeStrategies[node.Kind()]; ok {
-			c := &stepCtx{ctx: ctx, def: def, tdef: tdef, s: s, at: at, mode: mode, eval: eval}
+			c := &stepCtx{ctx: ctx, def: def, tdef: tdef, s: s, at: at, pol: pol}
 			produced, halt, stratErr := strat.enter(c, tok, node)
 			if stratErr != nil {
 				return nil, stratErr
@@ -281,7 +328,7 @@ func drive(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, 
 		// Micro-mode: stop after the first park or terminal event. Auto-advancing
 		// cases (StartEvent, gateway routing that produces new active tokens) leave
 		// stopped=false so the loop continues to the next token within this Step call.
-		if mode == Micro && stopped {
+		if pol.mode == Micro && stopped {
 			break
 		}
 	}

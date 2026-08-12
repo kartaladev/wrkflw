@@ -154,7 +154,7 @@ func findEnclosingBoundary(ctx context.Context, top *model.ProcessDefinition, s 
 // hard-wired to "the failing token's" scope): a call-activity host routes into its
 // OWN parent scope via the same shape, which is what lets routeToBoundary be
 // reused outside a token-failure context.
-func routeToBoundary(ctx context.Context, top *model.ProcessDefinition, s *InstanceState, lookupDef *model.ProcessDefinition, boundary event.BoundaryEvent, kind, targetScopeID string, at time.Time, mode StepMode, eval ConditionEvaluator, consume func([]Command) []Command) ([]Command, error) {
+func routeToBoundary(ctx context.Context, top *model.ProcessDefinition, s *InstanceState, lookupDef *model.ProcessDefinition, boundary event.BoundaryEvent, kind, targetScopeID string, at time.Time, pol stepPolicy, consume func([]Command) []Command) ([]Command, error) {
 	cmds := emitFireOnceAction(s, boundary.Action)
 	cmds = consume(cmds)
 
@@ -166,7 +166,7 @@ func routeToBoundary(ctx context.Context, top *model.ProcessDefinition, s *Insta
 
 	s.placeTokenInScope(flowTarget, targetScopeID, at)
 
-	driveCmds, err := drive(ctx, top, s, at, mode, eval)
+	driveCmds, err := drive(ctx, top, s, at, pol)
 	if err != nil {
 		return cmds, err
 	}
@@ -209,7 +209,7 @@ const (
 //     ADR-0039): run the compensation walk before terminating (ADR-0034).
 //  4. Otherwise: immediate s.Status = StatusFailed, cancel open tasks/timers/arms,
 //     and emit FailInstance{Err: errorCode}.
-func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, mode StepMode, eval ConditionEvaluator, policy unhandledErrorPolicy) ([]Command, error) {
+func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, pol stepPolicy, policy unhandledErrorPolicy) ([]Command, error) {
 	if policy == raiseIncident {
 		// Do NOT fail the instance. Raise an incident on the failing token and
 		// keep the instance running (admin-resumable).
@@ -265,7 +265,7 @@ func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *
 	// correct for an open scope's records without changing its text.
 	if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
 		s.Status = StatusCompensating
-		res, err := beginCompensation(ctx, top, s, at, mode, eval, compensationOutcome{CloseKind: CloseKindErrored, FinalStatus: StatusFailed, FinalErr: errorCode})
+		res, err := beginCompensation(ctx, top, s, at, pol, compensationOutcome{CloseKind: CloseKindErrored, FinalStatus: StatusFailed, FinalErr: errorCode})
 		if err != nil {
 			return nil, err
 		}
@@ -412,7 +412,7 @@ func deferFailureToInFlightCompensationWalk(s *InstanceState, at time.Time, erro
 // bare-code sources (an error-behavior end event, sub-instance failures). When
 // nil, a synthesized errors.New(errorCode) is created so ErrorCheck closures
 // always receive a non-nil error.
-func propagateError(ctx context.Context, top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, cause error, at time.Time, mode StepMode, eval ConditionEvaluator, policy unhandledErrorPolicy) ([]Command, error) {
+func propagateError(ctx context.Context, top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, cause error, at time.Time, pol stepPolicy, policy unhandledErrorPolicy) ([]Command, error) {
 	// Guarantee that ErrorCheck closures always receive a non-nil error.
 	// For bare-code sources (an error-behavior end event, sub-instance) the
 	// caller passes nil; synthesize errors.New(errorCode) so the closure can
@@ -429,7 +429,7 @@ func propagateError(ctx context.Context, top *model.ProcessDefinition, s *Instan
 			return nil, fmt.Errorf("workflow-engine: propagateError: resolving own scope def for direct-attachment check: %w", err)
 		}
 
-		if handler, ok := findDirectBoundary(ctx, ownDef, originatingNodeID, errorCode, s.Variables, cause, eval); ok {
+		if handler, ok := findDirectBoundary(ctx, ownDef, originatingNodeID, errorCode, s.Variables, cause, pol.eval); ok {
 			// Direct boundary found. The failing activity's token was already cleaned
 			// up by the ActionFailed handler (preCmds cancelled its arms; the token
 			// itself is still present but parked — we need to consume it now).
@@ -461,12 +461,12 @@ func propagateError(ctx context.Context, top *model.ProcessDefinition, s *Instan
 			}
 			// Route in the SAME scope: only the failing activity's token is
 			// consumed; the scope itself stays open.
-			return routeToBoundary(ctx, top, s, ownDef, handler, "direct boundary", scopeID, at, mode, eval, consume)
+			return routeToBoundary(ctx, top, s, ownDef, handler, "direct boundary", scopeID, at, pol, consume)
 		}
 	}
 
 	// ── Step 2: Enclosing-scope walk ─────────────────────────────────────────
-	handler, errScopeID, targetScopeID, lookupDef, found, err := findEnclosingBoundary(ctx, top, s, scopeID, errorCode, cause, eval)
+	handler, errScopeID, targetScopeID, lookupDef, found, err := findEnclosingBoundary(ctx, top, s, scopeID, errorCode, cause, pol.eval)
 	if err != nil {
 		return nil, err
 	}
@@ -483,9 +483,9 @@ func propagateError(ctx context.Context, top *model.ProcessDefinition, s *Instan
 			return cmds
 		}
 		// Route in the PARENT scope: the erroring scope is fully torn down.
-		return routeToBoundary(ctx, top, s, lookupDef, handler, "boundary error", targetScopeID, at, mode, eval, consume)
+		return routeToBoundary(ctx, top, s, lookupDef, handler, "boundary error", targetScopeID, at, pol, consume)
 	}
 
 	// No handler found anywhere in the scope chain → unhandled error.
-	return handleUnhandledError(ctx, top, s, scopeID, originatingNodeID, failingTokenID, errorCode, at, mode, eval, policy)
+	return handleUnhandledError(ctx, top, s, scopeID, originatingNodeID, failingTokenID, errorCode, at, pol, policy)
 }

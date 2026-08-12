@@ -7,6 +7,7 @@ package service
 import (
 	"github.com/kartaladev/wrkflw/authz"
 	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/engine"
 )
 
 // StartInstanceRequest carries the parameters for starting a new process instance.
@@ -112,4 +113,30 @@ type ResolveIncidentRequest struct {
 	// failing node before the operator considers the incident resolved.
 	// Values ≤ 0 are treated as 1 by the ProcessEngine implementation.
 	AddAttempts int
+}
+
+// ResolveCompensationStallRequest carries an operator's escape from a
+// compensation walk whose dispatched action stopped reporting back (ADR-0175).
+type ResolveCompensationStallRequest struct {
+	// InstanceID identifies the process instance whose walk is stalled.
+	InstanceID string
+	// CommandID is the stalled compensation dispatch. REQUIRED, and it must match
+	// the walk's in-flight command id — read it from ProcessInstance's
+	// `compensating.active_command_id`.
+	//
+	// The match is what makes every verb idempotent: a replayed request finds the
+	// cursor already moved on and is refused rather than acting on whatever is in
+	// flight now.
+	CommandID string
+	// IncidentID optionally names the stall incident being cleared. Empty targets
+	// the walk in flight — the normal case, since stall detection is off by
+	// default and there may be no incident to name. A non-empty id naming no open
+	// stall incident is an error, not a silent walk-wide action.
+	IncidentID string
+	// Disposition selects retry, skip or abandon.
+	//
+	// ⚠ abandon is destructive and irreversible, and is accepted only on a walk
+	// that terminates; retry re-executes a named remote action. Gate them
+	// accordingly.
+	Disposition engine.CompensationDisposition
 }
