@@ -14,79 +14,65 @@ top to bottom; it is meant to stay short enough that you can.
 
 ## State — updated 2026-08-12
 
-**▶ ONE BUNDLE IS IN FLIGHT: ADR-0175 — IMPLEMENTED, NOT pushed, awaiting the two
-owner-invoked review gates.**
+**▶ NOTHING IS IN FLIGHT.** `main` is clean and pushed; there is no half-finished work.
 
-**`main` is unchanged at `5270838`** (ADR-0174, pushed). ⚠ Re-derive every SHA:
-`git rev-parse --short main`.
+**`main` == `6e4addc8`** (merge of ADR-0175, pushed). ⚠ Re-derive: `git rev-parse --short main`.
+The previous head was `5270838` (ADR-0174).
 
-**Branch `feat/stalled-compensation-walk-escape`** — one commit,
-`feat(engine): an operator escape from a stalled compensation walk (ADR-0175)`.
-⚠ Re-derive its head yourself; it is amended on every change. 57 files, ~4.7k insertions:
-the spec, ADR-0175, the plan, the audit record, and the full implementation across
-`engine`, `internal/persistence/store`, `runtime`, `service`, `processtest` and all three
-HTTP adapters.
+**Latest ADR = 0175; next free = 0176.** ADR numbers 0155–0157 remain reserved by the parked
+`feat/durable-waiters-delivery-correctness`.
 
-**Latest ADR = 0175; next free = 0176.** ADR numbers 0155–0157 remain reserved by the
-parked `feat/durable-waiters-delivery-correctness`.
+### What ADR-0175 shipped
 
-### ▶ NEXT WORK — the delivery gate, items 4 and 5 only
+Opt-in detection of a stalled compensation walk — one whose dispatched compensation action
+never reports back, which was measured to be **permanently stuck AND permanently invisible**
+(`tokens=0 timers=0 incidents=0`, both waiter sets empty, every operator lever a silent no-op).
 
-Verification items 1–3 already PASS on the branch:
+- `StepOptions.CompensationStallAfter` — **zero disables, and zero is the default**, so nothing
+  changes for a consumer who does not opt in. Fed by `runtime.WithCompensationStallTimeout(d)`.
+- A `TimerCompensationStall` armed at **all three** compensation dispatch sites; on breach it
+  raises a walk-scoped `IncidentCompensationStall` (`TokenID` empty) and emits **no commands**.
+- Three operator verbs on one cursor-matched trigger — **retry / skip / abandon** — through
+  `ProcessDriver.ResolveCompensationStall` → `service` → `POST
+  /admin/instances/{id}/compensation/resolve-stall` (mounted in all three adapters'
+  `AdminRoutes`, which are deliberately NOT part of `Mount`).
+- `resolve-incident` now REFUSES a stall incident instead of silently eating it.
+- `service.ProcessInstance` projects `compensating.{active_command_id,since,scope_id}` and
+  `incidents[].kind`.
 
-- `go test -race -count=1 ./...` → **EXIT=0 over 64 packages, no races**
-- repo coverage **74.2 %** (the long-standing baseline, unchanged), engine **92.6 %**,
-  runtime **93.3 %**, `transport/http/httpcore` **94.2 %**, `processtest` **90.2 %**,
-  `service` **53.5 %** (up from ~52.6 %)
-- `golangci-lint run ./...` → **0 issues**; `go vet ./...` clean
+**Gates:** `/code-review` 9 findings — 6 fixed, 3 adjudicated in the spec (§8, 4d–4k);
+`/security-review` **0 findings**. `go test -race ./...` EXIT=0 over 64 packages, no races;
+repo coverage 74.2 % (baseline unchanged); `golangci-lint run ./...` clean. Verified on the
+MERGED tree before pushing.
 
-✅ **`/code-review` has RUN. Nine findings; six accepted and FIXED, three adjudicated
-out-of-scope and documented in the spec (§8, items 4d–4k).** The suite was re-run green after
-the fixes and they are folded into the feature commit.
+### ⚠ Process lessons this delivery earned (they cost real rework)
 
-⚠ **The most important finding was a correction to this session's own work**: I had claimed
-abandon's incident sweep was redundant "because `endInstance` covers it". It does not —
-`stepCompensationFinish` clears the cursor BEFORE `applyFinish`, so `endInstance`'s sweep
-early-returns. I inferred "redundant" from a green suite after deleting the line, when the
-truth was that NOTHING ASSERTED IT. `TestAbandonRetiresTheStallIncident` now exists and is RED
-without it, and the ADR/spec text has been restored to its original (correct) form.
+1. **An audit's own fix can invalidate another claim in the same bundle.** C3 restricted
+   `abandon` to `walkAdmin`, which silently falsified the ADR's separate claim that abandon
+   discharges the deferred-cancel deadlock — `PendingCancel` is only ever stamped on walks that
+   RESUME, exactly the set C3 refuses. **`skip` is that verb.** When a finding changes a
+   decision, re-verify every other sentence that mentions it.
+2. **"Deleting a line left the suite green" means UNTESTED before it means REDUNDANT.** I drew
+   the wrong conclusion and wrote it into the ADR, spec, plan and a code comment;
+   `/code-review` caught it. `TestAbandonRetiresTheStallIncident` now exists and is RED without
+   the line.
+3. **Two PRESCRIBED mutations were the wrong mutation.** Both named an ORDERING as
+   load-bearing; reordering stayed green because `Step` returns the zero `StepResult` on error,
+   so the caller discards the mutated clone. A mutation that cannot discriminate is evidence
+   the CLAIM is wrong, not that the test is weak.
 
-✅ **`/security-review` has RUN: ZERO findings.** The new admin endpoint's authorization
-posture is identical to its siblings (no admin operation in this repo passes through
-`authz.Authorizer` — the known pre-existing IDOR/BOLA, inherited not widened); `abandon` adds
-no privilege class beyond the existing `/admin/instances/{id}/cancel`, and `retry` none beyond
-`/admin/instances/{id}/incidents/{id}/resolve`; neither verb lets a caller choose WHAT runs
-(the action name and input come from the stored record). `ParseCompensationDisposition` fails
-closed and the zero value is `retry`, not `abandon`. `UnmarshalTrigger` is reached only by the
-read-only history reader, so the codec change is not a replay surface.
+### ▶ NEXT WORK — pick from the blockers and backlog below
 
-⚠ It also corrected one of MY comments: `compensating.active_command_id` is **not** an
-`<instance>-cN` sequence oracle in a product deployment — that form is only the fallback used
-with no `IDGenerator`; the runtime always injects xid (ADR-0149), and the same generator mints
-the token/task ids the document already exposes. Fixed in `service/instance.go`, the ADR and
-the spec.
+No delivery is queued. The strongest candidates, in rough order:
 
-What remains is **owner-invoked**: ⚠ This delivery adds an admin endpoint whose `retry` verb is a
-   remote **re-execution** primitive and whose `abandon` verb is **destructive and
-   irreversible**, on a surface with two known-open authz defects (self-asserted actor
-   identity, fail-open `AuthzSpec`). It also projects an internal `<instance>-cN` sequence
-   oracle as `compensating.active_command_id` — a deliberate trade, flagged for the reviewer.
-3. Then merge `--no-ff` to `main` and push.
-
-### ⚠ What this delivery corrected about its own audited design
-
-Six claims died on execution. All are amended in the ADR and spec (marked **CORRECTED BY
-IMPLEMENTATION**) and listed with measurements in the plan's `▶ Progress`. The two that
-matter most to a reader of ADR-0175:
-
-1. **`abandon` does NOT discharge the deferred-cancel deadlock — `skip` does.** `PendingCancel`
-   is only ever stamped on a walk that RESUMES, and the audit's C3 finding made abandon refuse
-   exactly those walks. The ADR's two halves were incompatible as written and nobody
-   re-checked the sentence when C3 landed.
-2. **A prescribed mutation was the wrong one, twice** (Phase 1's finish-cancel ordering and
-   Phase 4's `handleResolveIncident` guard position). In both cases the claimed-load-bearing
-   ORDERING turned out not to be, and the real protection lay elsewhere. Both are now stated
-   accurately, with the mutation that actually reddens named.
+1. **Blocker 2** — a zero `next_run` cannot be armed on MySQL (`Error 1292`). Small, self-
+   contained, needs a reject-vs-normalise ADR.
+2. **Blocker 9 / backlog 3c** — an engine-side `TimerWaiters()`. ADR-0175 added
+   `engine.InstanceState.HasArmedTimers()` and inherited this gap; closing it should extend
+   that method.
+3. **Backlog 16 + 4k** — the retry/incident story for a compensation action returning
+   `ActionFailed`, now adjacent to ADR-0175's incident kind, plus the late-reply
+   `ErrTokenNotFound` shape `/code-review` surfaced.
 
 ## Pre-v0.1.0 blockers
 
@@ -207,8 +193,7 @@ matter most to a reader of ADR-0175:
 
 | | |
 |---|---|
-| `main` | **ADR-0174 is the newest SHIPPED bundle**, merged `--no-ff` and pushed. ⚠ Re-derive: `git rev-parse --short main` |
-| **`feat/stalled-compensation-walk-escape`** | **The ADR-0175 bundle: IMPLEMENTED and verified, NOT pushed. Awaiting `/code-review` + `/security-review`.** ⚠ Re-derive the head SHA; it is amended on every change |
+| `main` | **ADR-0175 is the newest SHIPPED bundle**, merged `--no-ff` and pushed (`6e4addc8`). ⚠ Re-derive: `git rev-parse --short main` |
 | *(merged branches)* | Deleted once pushed; history is in `main`. **`origin` carries only `main`** plus dependabot branches |
 | `backup/terminal-trigger-guard-presquash` | `a3aa889` — ADR-0165 pre-squash history, provenance only |
 | **`parked/scope-and-fanout-design`** | ⚠ **SUPERSEDED — do NOT use as an input** |
@@ -216,7 +201,7 @@ matter most to a reader of ADR-0175:
 | `feat/durable-waiters-delivery-correctness` | `434535d` — parked, docs only. Owner DECIDED not to push it. Holds ADR numbers **0155–0157** |
 | `docs/architecture-audit` | `393e516` — `AUDIT.md`, ⚠ deliberately NOT on `main` and NOT pushed |
 | ⚠ stale worktrees | THREE from an earlier session remain under `…/87601c38-…/scratchpad/wt-{design,premise,tests}`, all at `33e4692`, zero uncommitted files, NOT an ancestor of `main`. Safe to `git worktree remove --force` each; left because they belong to another session. (This session's three audit worktrees were removed.) |
-| Latest ADR | **0175** (in flight, implemented, unpushed). Next free is **0176** |
+| Latest ADR | **0175** (SHIPPED). Next free is **0176** |
 | v0.1.0 | not tagged |
 
 ## Standing constraints
