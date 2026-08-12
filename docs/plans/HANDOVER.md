@@ -16,8 +16,10 @@ top to bottom; it is meant to stay short enough that you can.
 
 **▶ NOTHING IS IN FLIGHT.** `main` is clean and pushed; there is no half-finished work.
 
-**`main` == `6e4addc8`** (merge of ADR-0175, pushed). ⚠ Re-derive: `git rev-parse --short main`.
-The previous head was `5270838` (ADR-0174).
+**`main` == `99444ad7`** (pushed, clean). ⚠ Re-derive: `git rev-parse --short main` — this
+line has gone stale before. ADR-0175 merged at `6e4addc8`, then two docs follow-ups
+(`13cdf9c0` this handover, `99444ad7` a record correction). The previous head was `5270838`
+(ADR-0174).
 
 **Latest ADR = 0175; next free = 0176.** ADR numbers 0155–0157 remain reserved by the parked
 `feat/durable-waiters-delivery-correctness`.
@@ -41,6 +43,9 @@ never reports back, which was measured to be **permanently stuck AND permanently
   `incidents[].kind`.
 
 **Gates:** `/code-review` 9 findings — 6 fixed, 3 adjudicated in the spec (§8, 4d–4k);
+⚠ the record originally listed only FIVE of the six fixes — the `processtest.ReasonIncident`
+doc fix shipped unlisted and was added in `99444ad7`. *Recount your own summary numbers
+against the list they summarise.*
 `/security-review` **0 findings**. `go test -race ./...` EXIT=0 over 64 packages, no races;
 repo coverage 74.2 % (baseline unchanged); `golangci-lint run ./...` clean. Verified on the
 MERGED tree before pushing.
@@ -193,14 +198,14 @@ No delivery is queued. The strongest candidates, in rough order:
 
 | | |
 |---|---|
-| `main` | **ADR-0175 is the newest SHIPPED bundle**, merged `--no-ff` and pushed (`6e4addc8`). ⚠ Re-derive: `git rev-parse --short main` |
+| `main` | **ADR-0175 is the newest SHIPPED bundle**, merged `--no-ff` at `6e4addc8` and pushed; head is `99444ad7` after two docs follow-ups. ⚠ Re-derive: `git rev-parse --short main` |
 | *(merged branches)* | Deleted once pushed; history is in `main`. **`origin` carries only `main`** plus dependabot branches |
 | `backup/terminal-trigger-guard-presquash` | `a3aa889` — ADR-0165 pre-squash history, provenance only |
 | **`parked/scope-and-fanout-design`** | ⚠ **SUPERSEDED — do NOT use as an input** |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept for its audit tags |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — parked, docs only. Owner DECIDED not to push it. Holds ADR numbers **0155–0157** |
 | `docs/architecture-audit` | `393e516` — `AUDIT.md`, ⚠ deliberately NOT on `main` and NOT pushed |
-| ⚠ stale worktrees | THREE from an earlier session remain under `…/87601c38-…/scratchpad/wt-{design,premise,tests}`, all at `33e4692`, zero uncommitted files, NOT an ancestor of `main`. Safe to `git worktree remove --force` each; left because they belong to another session. (This session's three audit worktrees were removed.) |
+| ⚠ stale worktrees | THREE from an earlier session remain under `…/87601c38-…/scratchpad/wt-{design,premise,tests}`. **RE-VERIFIED 2026-08-12**: all at `33e4692`, `git status --porcelain` EMPTY in each, so no work-in-progress would be lost. `33e4692` (*"fix(engine): stop normal execution on a non-executable instance (ADR-0168/0169)"*) is **NOT an ancestor of `main`** — it is superseded pre-merge history whose content shipped via `b12bba3`. Removing the worktrees loses no file and no reachable commit. `git worktree remove --force <path>` each. Left in place only because they belong to another session; the owner has not been asked. (This session's own audit/probe worktrees were removed.) |
 | Latest ADR | **0175** (SHIPPED). Next free is **0176** |
 | v0.1.0 | not tagged |
 
