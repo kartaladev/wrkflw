@@ -14,36 +14,19 @@ top to bottom; it is meant to stay short enough that you can.
 
 ## State — updated 2026-08-13
 
-**▶ IN FLIGHT: ADR-0176 — IMPLEMENTED, VERIFIED, and BOTH review gates PASSED. Ready to merge.**
+**▶ NOTHING IN FLIGHT. `main` is clean, pushed, and has no uncommitted or unmerged work.**
 
-Branch **`feat/never-due-timer-triggers`**, ONE commit (docs + code, amended). `main` is
-untouched, clean and pushed. **Read the plan's `▶ Progress` first** —
-`docs/plans/2026-08-13-never-due-timer-triggers.md`.
+**ADR-0176 SHIPPED** — merged `--no-ff` at **`52bf0f80`** and pushed 2026-08-13. Its branch
+`feat/never-due-timer-triggers` was deleted on merge, per the standing convention.
 
-**What is done**: all three phases (P1 `scheduler` → P2 → P3 `runtime`), the full Verification
-section, all five prescribed mutations plus a sixth, and every document corrected against what
-actually shipped.
+Both gates passed: **`/code-review` 5 findings** — 4 fixed, 1 fixed-in-part with the remainder
+explicitly declined; **`/security-review` 0 findings**. Detail lives in that delivery's plan
+`▶ Progress` (`docs/plans/2026-08-13-never-due-timer-triggers.md`) and in measurements §16–§17.
 
-**`/code-review` returned 5 findings — 4 fixed, 1 fixed-in-part with the remainder explicitly
-declined.** Two were Major and both were real: eight MORE trigger shapes reported a fire instant
-the live scheduler refuses at setup (same failure mode as blocker 2 without the zero literal),
-and a **TOCTOU** — the arm guard and the arm read the clock at different instants, so
-`Monthly(12,{31})` armable at `2026-01-31T23:59:59Z` is never-due one second later and could
-still reach the livelock. Full detail in the plan's `▶ Progress` and measurements §16.
-
-**`/security-review`: 0 findings.** It source-verified the gocron validation rules the two new
-predicates mirror, independently differential-tested the month-skip (356,400 combinations, 0
-mismatches, incl. a midnight-DST zone), and confirmed no refusal path can fail a security control
-open — the safety-relevant timer kinds (`TimerCompensationStall`, `TimerRetry`) build
-`AfterDuration`, whose `Next` is unconditionally ok, so the refusal predicate cannot fire on them.
-
-**What is left**: merge. Re-run the suite on the MERGED tree, then merge `--no-ff` to `main` and
-push.
-
-**Verified, re-run after every review fix** (Docker up, nothing skipped, all judged by exit
-code): `go test -race ./...` EXIT=0 over **64 packages, no races**; coverage **74.4 %**
-repo-wide (baseline 74.2 %), with `runtime` **93.4 %** and `scheduler` **93.1 %**; `go build`,
-`go vet ./...` EXIT=0; `golangci-lint run ./...` **repo-wide 0 issues**.
+**Verified ON THE MERGED TREE before pushing** (Docker up, nothing skipped, judged by exit code):
+`go test -race ./...` EXIT=0 over **64 packages, no races**; coverage **74.4 %** repo-wide
+(baseline 74.2 %), `runtime` **93.4 %**, `scheduler` **93.1 %**; `go build` and `go vet ./...`
+EXIT=0; `golangci-lint run ./...` **repo-wide 0 issues**.
 
 ### What ADR-0176 shipped
 
@@ -99,19 +82,14 @@ framing — **MySQL was accidentally the SAFE dialect**, because its commit fail
 this file changes it, and quoting it is how this line went stale three times in one hour.
 Re-derive it: `git rev-parse --short main`.
 
-The stable anchors instead: **ADR-0175 merged at `6e4addc8`** (a merge commit, so it never
-moves), on top of **`5270838`** (ADR-0174). Anything after `6e4addc8` on `main` is
-documentation follow-ups only — no code.
+The stable anchors instead, all merge commits so they never move: **ADR-0176 at `52bf0f80`**
+(the newest code on `main`), on top of **ADR-0175 at `6e4addc8`**, on top of **`5270838`**
+(ADR-0174). Anything after `52bf0f80` is documentation follow-ups only.
 
-**Latest ADR = 0176 (this one, not yet merged); next free = 0177.** ADR numbers 0155–0157
-remain reserved by the parked `feat/durable-waiters-delivery-correctness`.
+**Latest ADR = 0176 (SHIPPED); next free = 0177.** ADR numbers 0155–0157 remain reserved by the
+parked `feat/durable-waiters-delivery-correctness`.
 
-### ▶ NEXT WORK
-
-**Finish ADR-0176**: owner runs `/code-review` then `/security-review`; fold findings via
-`--amend`; re-run the suite on the merged tree; merge `--no-ff` and push.
-
-After it, the strongest candidates:
+### ▶ NEXT WORK — pick one and start; nothing is half-done
 
 1. **Blocker 9 / backlog 3c** — an engine-side `TimerWaiters()`. ADR-0175 added
    `engine.InstanceState.HasArmedTimers()` and inherited this gap; closing it should extend
@@ -123,6 +101,11 @@ After it, the strongest candidates:
    `ActionFailed`, plus the late-reply `ErrTokenNotFound` shape `/code-review` surfaced.
 4. **Backlog 0/1/2 from the ADR-0175 audit** — three pre-existing measured defects,
    including the `TimerInWait` reminder that fires a real `InvokeAction` on a dying instance.
+5. 🆕 **Bound a calendar trigger's `interval`** — closes backlog 26 (scan cost still linear in
+   `interval`) and 30 (`int(interval)*7` overflow returning a PAST instant with `ok=true`)
+   together. Both are consequences of the same unvalidated `uint`, and both are cheap to close
+   at the constructor or in `Next`. Small, self-contained, well-measured — a good first task for
+   a fresh session.
 
 ## Pre-v0.1.0 blockers
 
@@ -132,13 +115,12 @@ After it, the strongest candidates:
    🚨 **Before DEPLOYING ADR-0167**: audit stored definition rows for 5 pre-ADR-0144
    camelCase keys (`compensateAction`, `compensationAction`, `completionAction`,
    `correlationKey`, `messageName`) — rows carrying one stop loading.
-2. ✅ **A never-due timer arm — CLOSED by ADR-0176** (on the branch; not yet merged to `main`).
-   The zero `next_run` MySQL rejects (Error 1292 — ⚠ the *literal*, not a range floor: year-1
-   and year-999 were measured as accepted) is no longer produced, on any dialect.
-2b. ✅ **The `scheduler.Activate` livelock on `Monthly(12,[31])` — CLOSED by ADR-0176**, on both
-   the fresh-arm and boot-rehydration paths, each proven by a test that hung its full timeout
-   before the fix. ⚠ Still **open on `main`** until this branch merges: it is the
-   highest-severity item there.
+2. ✅ **A never-due timer arm — CLOSED by ADR-0176, ON `main`.** The zero `next_run` MySQL
+   rejects (Error 1292 — ⚠ the *literal*, not a range floor: year-1 and year-999 were measured
+   as accepted) is no longer produced, on any dialect.
+2b. ✅ **The `scheduler.Activate` livelock on `Monthly(12,[31])` — CLOSED by ADR-0176, ON
+   `main`**, on both the fresh-arm and boot-rehydration paths, each proven by a test that hung
+   its full timeout before the fix and returns in under a second after.
 3. `Upsert` can persist `State: Claimed, Claim: nil` — the read path upholds the
    invariant, the write path does not.
 4. ✅ **ADR-0159's misnamed symbols — CLOSED.** It was **three**, not two.
@@ -295,16 +277,16 @@ After it, the strongest candidates:
 
 | | |
 |---|---|
-| `main` | **ADR-0175 is the newest SHIPPED bundle**, merged `--no-ff` at `6e4addc8` and pushed. Commits after it are docs-only. ⚠ Never quote main's head here — re-derive: `git rev-parse --short main` |
+| `main` | **ADR-0176 is the newest SHIPPED bundle**, merged `--no-ff` at `52bf0f80` and pushed; ADR-0175 is `6e4addc8` beneath it. ⚠ Never quote main's HEAD here — re-derive: `git rev-parse --short refs/heads/main` (the bare name `main` has been seen to fail rev-parse; use the full ref) |
 | *(merged branches)* | Deleted once pushed; history is in `main`. **`origin` carries only `main`** plus dependabot branches |
 | `backup/terminal-trigger-guard-presquash` | `a3aa889` — ADR-0165 pre-squash history, provenance only |
 | **`parked/scope-and-fanout-design`** | ⚠ **SUPERSEDED — do NOT use as an input** |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept for its audit tags |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — parked, docs only. Owner DECIDED not to push it. Holds ADR numbers **0155–0157** |
-| **`feat/never-due-timer-triggers`** | ⭐ **the live delivery** — ADR-0176, ONE amended commit (docs + code), implemented and verified, awaiting the owner-only review gates. NOT pushed |
 | `docs/architecture-audit` | `393e516` — `AUDIT.md`, ⚠ deliberately NOT on `main` and NOT pushed |
 | worktrees | ✅ **CLEAN** — `git worktree list` shows only the primary checkout. The three ADR-0176 audit worktrees under `.claude/worktrees/agent-*` were removed 2026-08-13 after verifying `git status --porcelain` was empty in each and that their audit records are committed in-repo. The three older ones under `…/87601c38-…/scratchpad/wt-*` went the same way on 2026-08-12. |
-| Latest ADR | **0176** (implemented, on its branch, NOT merged). Newest SHIPPED on `main` is **0175**. Next free is **0177** |
+| `worktree-agent-{a2454…,a4a2d…,ac702…}` | 🧹 three LOCAL leftover branches from the ADR-0176 audit worktrees (worktrees already removed). Their content — the three audit-lens documents — **is on `main`**, verified with `git ls-files`. Safe to `git branch -D`; left in place because deleting them was not asked for |
+| Latest ADR | **0176** (SHIPPED at `52bf0f80`). Next free is **0177** |
 | v0.1.0 | not tagged |
 
 ## Standing constraints
