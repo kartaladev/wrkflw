@@ -777,6 +777,27 @@ func (driver *ProcessDriver) deliverLoop(
 		// unsupported trigger kind — and never fails the committed step: the
 		// durable arm survives in the timer store and rehydrates on next boot.
 		for _, sj := range armed {
+			if sj.NextRun().IsZero() {
+				// ADR-0176 re-check. timerJobsFor evaluated the arm guard at
+				// the step's clock reading, BEFORE the transaction; this
+				// instant was re-derived from the same trigger inside it. A
+				// calendar trigger's answer is anchor-dependent, so one can be
+				// armable at the first reading and never-due at the second —
+				// Monthly(12, {31}) flips exactly that way across a month
+				// boundary. Handing gocron the second anchor would restart its
+				// unbounded monthly search and wedge every job in the process.
+				//
+				// ⚠ This narrows the window, it does not close it: activateJob
+				// discards this instant and lets gocron re-derive from the
+				// trigger at its own, later reading. The residual is a few
+				// instructions wide instead of a whole commit.
+				driver.obs.timerArmsRefused.Add(ctx, 1)
+				driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: timer arm: trigger went never-due during the commit, not activating (durable row is re-checked at next boot)",
+					append(driver.obs.tel.LogAttrs(ctx),
+						slog.String("timer_id", sj.ID()),
+						slog.String("instance_id", st.InstanceID))...)
+				continue
+			}
 			if aerr := driver.sched.Activate(ctx, sj); aerr != nil {
 				driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: timer arm: post-commit activate failed, skipping (durable arm rehydrates on next boot)",
 					append(driver.obs.tel.LogAttrs(ctx),

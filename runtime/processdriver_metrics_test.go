@@ -207,3 +207,39 @@ func TestTimerFiredCounter(t *testing.T) {
 	assert.EqualValues(t, 1, got,
 		"wrkflw_timer_fired_total = %d, want 1 after timer fires", got)
 }
+
+// TestTimerArmsRefusedCounter asserts wrkflw_timer_arms_refused_total is
+// incremented when an arm is refused because the scheduler cannot run it
+// (ADR-0176). Without it, a refused arm is a WARN line and nothing else: the
+// instance parks on a timer node that will never fire, and the only trace is
+// grep-able text — which is not something an operator can alert on.
+//
+// What makes it fail without the counter: the refusal path in timerJobsFor
+// emits no instrument at all, so the metric is absent and reads as 0.
+func TestTimerArmsRefusedCounter(t *testing.T) {
+	t.Parallel()
+
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+
+	// February: no 31st, so Monthly(12, {31}) is never due from here.
+	fc := clockwork.NewFakeClockAt(time.Date(2026, 2, 10, 9, 30, 0, 0, time.UTC))
+
+	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
+	store := runtimetest.MustMemStore(t)
+	r := runtimetest.MustProcessDriver(t, action.NewCatalog(nil), store,
+		runtime.WithClock(fc),
+		runtime.WithScheduler(sched),
+		runtime.WithMeterProvider(mp),
+	)
+
+	assert.EqualValues(t, 0, counterValue(collect(t, reader), "wrkflw_timer_arms_refused_total", nil),
+		"must be 0 before any arm is refused")
+
+	parked, err := r.Drive(t.Context(), neverDueTimerDef(schedule.Monthly(12, []int{31})), "refused-metric-1", nil)
+	require.NoError(t, err, "a refused arm is skipped, not an error")
+	require.Equal(t, engine.StatusRunning, parked.Status)
+
+	assert.EqualValues(t, 1, counterValue(collect(t, reader), "wrkflw_timer_arms_refused_total", nil),
+		"the refused arm must be counted, not only logged")
+}

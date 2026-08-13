@@ -83,6 +83,27 @@ func convertClockTimes(cs []schedule.ClockTime) []scheduler.ClockTime {
 	return out
 }
 
+// neverDueNextRun reports whether a next-run instant computed from
+// [scheduler.Trigger.Next] is unarmable — the ADR-0176 predicate. It is
+// applied at the two arm sites that compute a next run from a trigger:
+// timerJobsFor and scheduleStartTimerJob. The third, jobStore.Load, applies
+// the same condition in its own form, on the instant newScheduledTimerJob has
+// already stamped (which is the zero time exactly when this reports true).
+//
+// The two halves catch different things. ok=false is the trigger saying it can
+// never fire; ADR-0176 reconciled that answer with the live scheduler, so it
+// now also refuses the calendar specs gocron would search for without a bound.
+// A ZERO instant reported as fireable is the belt-and-braces half: it states
+// blocker 2's invariant directly — a zero next_run must never be persisted,
+// because MySQL rejects the literal and the other two dialects sort the row to
+// the head of the keyset index forever. No shape in ADR-0176's measured truth
+// table reaches that half, and deleting it leaves the arm-site tests green
+// (measured) — TestNeverDueNextRun is what pins it, and it is the guard if
+// Trigger.Next ever reports a zero instant as fireable again.
+func neverDueNextRun(next time.Time, ok bool) bool {
+	return !ok || next.IsZero()
+}
+
 // cancelKey identifies one durable timer row to delete inside the commit
 // transaction — the PK-exact (instanceID, timerID) pair. Cancels carry both
 // parts as a struct; no composite string ids are involved (ADR-0134).
@@ -153,11 +174,26 @@ func (driver *ProcessDriver) timerJobsFor(ctx context.Context, def *model.Proces
 						slog.Any("error", err))...)
 				continue
 			}
-			var nextRun time.Time
-			if next, ok := strig.Next(now); ok {
-				nextRun = next.UTC()
+			next, ok := strig.Next(now)
+			if neverDueNextRun(next, ok) {
+				// ADR-0176. Refusing HERE is what keeps the whole defect out of
+				// reach: this one site feeds both the in-tx jobStore.Save and
+				// the post-commit Activate, so a refused arm writes no
+				// next_run at all (MySQL rejects the zero literal and loses
+				// the step; Postgres and SQLite keep it and poison
+				// Stats.NextFireAt) and never reaches gocron's unbounded
+				// monthly search. Log-and-skip rather than error: the
+				// StepResult is already computed by now, and a step-time
+				// failure was measured to wedge the running instance instead.
+				driver.obs.timerArmsRefused.Add(ctx, 1)
+				driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: timer arm: trigger can never fire, skipping timer",
+					append(driver.obs.tel.LogAttrs(ctx),
+						slog.String("timer_id", cmd.TimerID),
+						slog.String("instance_id", instanceID),
+						slog.String("timer_kind", cmd.Kind.String()))...)
+				continue
 			}
-			arms = append(arms, driver.newTimerJob(def, instanceID, cmd.TimerID, cmd.Trigger, strig, nextRun, cmd.Kind))
+			arms = append(arms, driver.newTimerJob(def, instanceID, cmd.TimerID, cmd.Trigger, strig, next.UTC(), cmd.Kind))
 		case engine.CancelTimer:
 			cancels = append(cancels, cancelKey{instanceID: instanceID, timerID: cmd.TimerID})
 		}
@@ -458,6 +494,18 @@ func (driver *ProcessDriver) scheduleStartTimerJob(ctx context.Context, def *mod
 	strig, err := convertTrigger(trig)
 	if err != nil {
 		return nil, err
+	}
+	// ADR-0176: refuse a never-due timer-start before it reaches the scheduler.
+	// Both Scheduler implementations this repo ships reject an ok=false trigger
+	// in their own Schedule, but the runtime consumes the PORT — a
+	// consumer-supplied Scheduler is free to arm it, and was measured doing so
+	// with a zero next run and a nil error. No new sentinel: this is the same
+	// condition, and the same wrapped error, that NativeScheduler.Schedule
+	// reports for it.
+	if next, ok := strig.Next(driver.clk.Now().In(driver.schedulingLocation())); neverDueNextRun(next, ok) {
+		driver.obs.timerArmsRefused.Add(ctx, 1)
+		return nil, fmt.Errorf("workflow-runtime: timer-start %q trigger can never fire: %w",
+			timerID, scheduler.ErrUnsupportedTrigger)
 	}
 	fire := driver.startTimerFireFunc(def, nodeID, timerID)
 	job, err := scheduler.NewJobWithID(timerID, startTimerJobKind, strig,
