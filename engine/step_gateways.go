@@ -240,7 +240,7 @@ func resolveGatewayWin(ctx context.Context, def *model.ProcessDefinition, s *Ins
 	}
 
 	// Activate the gateway token and route it to the branch target.
-	tok.AwaitCommand = ""
+	tok.clearAwait()
 	tok.State = TokenActive
 	if branchTarget != "" {
 		// Close the gateway-node visit and open a visit at the branch target,

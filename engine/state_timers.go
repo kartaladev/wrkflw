@@ -5,13 +5,17 @@ package engine
 // without relying on the token's AwaitCommand (which is set to the TaskID for
 // user-task nodes, not the deadline timer ID).
 //
-// For intermediate-catch-event timers the TaskID field is empty because the
-// token parks on the TimerID itself and the tokenAwaiting lookup still works.
-// Recording them here provides a single, unified dispatch table.
+// It does NOT cover every scheduled timer. A plain intermediate-catch-event
+// timer is arm-borne: no record is written for it, the token parks on the
+// TimerID itself, and handleTimerFired routes it through the tokenAwaiting
+// fall-through instead of through this table (ADR-0177).
 type timerRecord struct {
 	// TimerID is the unique timer identifier emitted in ScheduleTimer.
 	TimerID string
-	// Kind discriminates intermediate, deadline, and in-wait timers.
+	// Kind discriminates the record's purpose: [TimerDeadline], [TimerInWait],
+	// [TimerRetry] or [TimerCompensationStall] — the four kinds written to this
+	// table. [TimerIntermediate] is never one of them: an intermediate timer is
+	// arm-borne and gets no record (ADR-0177).
 	Kind TimerKind
 	// Token is the ID of the parked engine token this timer guards.
 	Token string
@@ -130,22 +134,22 @@ func (s *InstanceState) cancelAllTimers() []Command {
 }
 
 // HasArmedTimers reports whether the instance holds any timer a consumer's test
-// harness may legitimately fire.
+// harness may legitimately fire. It is the FILTERED view of
+// [InstanceState.TimerWaiters], which enumerates every source unconditionally.
 //
-// It EXCLUDES [TimerCompensationStall] records (ADR-0175). Such a record is a
-// detection deadline, not work the instance is waiting to do: firing it
-// manufactures the very incident the window exists to detect. That distinction
-// is invisible outside this package — timerRecord.Kind is unexported — so the
-// engine has to answer the question rather than a consumer reading len(Timers).
+// It excludes walk-scoped kinds — today [TimerCompensationStall] alone
+// (ADR-0175); see [TimerKind.walkScoped]. Such a record is a detection
+// deadline, not work the instance is waiting to do: firing it manufactures the
+// very incident the window exists to detect.
 //
-// ⚠ KNOWN GAP, pre-existing and deliberately not closed here: it reads
-// s.Timers only, so a timer armed as a BOUNDARY, event-gateway or event
-// sub-process arm is invisible to it. Closing that needs an engine-side
-// TimerWaiters() enumerating all four sources, mirroring SignalWaiters and
-// MessageWaiters.
+// ⚠ It is deliberately NOT a len(s.Timers) test, and a consumer must not
+// re-derive it as one. Until ADR-0177 it was, and four of the five timer-arm
+// sources — boundary arms, event-gateway arms, event-sub-process arms and plain
+// timer intermediate catch events — never reach s.Timers, so an instance
+// waiting on exactly one of them measured false.
 func (s *InstanceState) HasArmedTimers() bool {
-	for _, tr := range s.Timers {
-		if tr.Kind != TimerCompensationStall {
+	for _, w := range s.TimerWaiters() {
+		if !w.Kind.walkScoped() {
 			return true
 		}
 	}

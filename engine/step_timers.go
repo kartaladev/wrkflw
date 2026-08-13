@@ -80,7 +80,7 @@ func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *I
 	// Fix A: explicitly set TokenActive before moveTokenToTarget for symmetry
 	// with HumanCompleted and as a defensive measure (moveTokenToTarget also
 	// sets it, but being explicit here makes the intent unambiguous).
-	tok.AwaitCommand = ""
+	tok.clearAwait()
 	tok.State = TokenActive
 	s.moveTokenToTargetAs(tok, deadlineTarget, at, CloseKindDeadlineExpired)
 
@@ -115,9 +115,10 @@ func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *I
 //
 // It raises ONE incident and does nothing else. Emitting no commands is a hard
 // constraint, not a stylistic choice: this runs on handleTimerFired's path 4,
-// which sits ahead of the !spawnsNewWork() guard, so it fires on DYING
-// instances — which is precisely the point, since the walks that terminate are
-// the ones an operator most needs to see wedged. A handler that emitted work
+// whose !spawnsNewWork() refusal EXEMPTS walk-scoped kinds
+// ([TimerKind.walkScoped], ADR-0178), so it still fires on DYING instances —
+// which is precisely the point, since the walks that terminate are the ones an
+// operator most needs to see wedged. A handler that emitted work
 // here would dispatch it to an instance an in-flight rollback has already
 // decided to kill (the measured ADR-0172 reminder hole).
 //

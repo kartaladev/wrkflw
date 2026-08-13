@@ -5,8 +5,10 @@ package engine_test
 // A compensation walk advances ONLY on a trigger carrying the cursor's
 // ActiveCmdID. If the dispatched action never reports back, the instance holds
 // no tokens, no timers and no waiters, so nothing can wake it. These tests cover
-// the arm/cancel half: a TimerCompensationStall record armed at each of the
-// THREE compensation dispatch sites, and cancelled wherever the walk moves on.
+// the arm/cancel half: a TimerCompensationStall record armed at each of
+// armCompensationStallTimer's call sites — beginCompensation,
+// stepCompensationAdvance, startCompensationWalk and retryStalledCompensation —
+// and cancelled wherever the walk moves on.
 
 import (
 	"testing"
@@ -139,12 +141,13 @@ func TestZeroWindowLeavesThrowWalkTimersUntouched(t *testing.T) {
 // TestScopeWideThrowFirstDispatchArmsStallTimer is T1c — the gap the design audit
 // found (C1).
 //
-// There are THREE compensation dispatch sites, not two: beginCompensation,
-// stepCompensationAdvance, and startCompensationWalk, which is the compensation
-// THROW walk's FIRST dispatch and lives in a different file. Arming only the
-// first two leaves a throw walk undetected until its second record — and a
-// single-record throw walk undetected entirely. It is also the site at which the
-// measured deferred-cancel deadlock arises.
+// The dispatch sites are not just beginCompensation and stepCompensationAdvance:
+// startCompensationWalk is the compensation THROW walk's FIRST dispatch and
+// lives in a different file (retryStalledCompensation, ADR-0175's own operator
+// escape, is the fourth). Leaving startCompensationWalk unarmed leaves a throw
+// walk undetected until its second record — and a single-record throw walk
+// undetected entirely. It is also the site at which the measured
+// deferred-cancel deadlock arises.
 //
 // Fails before the arm exists: driveToScopeWideThrow dispatches undoB through
 // startCompensationWalk and no ScheduleTimer of this kind is emitted.

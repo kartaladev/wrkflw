@@ -372,6 +372,35 @@ func messageWaitersOf[T any, PT armMatchable[T]](arms []T) []MessageWaiter {
 	return out
 }
 
+// timerWaitersOf returns a [TimerWaiter] for every TIMER arm in arms, in slice
+// order; nil when none is armed.
+//
+// It is the timer sibling of messageWaitersOf/signalNamesOf, with one
+// difference forced by the data: the shared triggerMatch embed carries no
+// TimerKind, so the kind cannot be read off the arm. Every arm-borne timer is
+// armed as [TimerIntermediate] (the three arm families' ScheduleTimer sites all
+// pass that kind), which is why the constant is applied here rather than
+// supplied per family. owner contributes the genuinely per-family part: the
+// BPMN node that owns the arm and the token it is attached to, if any — an
+// event-sub-process arm is keyed to a scope and carries no token.
+func timerWaitersOf[T any, PT armMatchable[T]](arms []T, owner func(*T) (nodeID, tokenID string)) []TimerWaiter {
+	var out []TimerWaiter
+	for i := range arms {
+		m := PT(&arms[i]).matchPtr()
+		if m.TimerID == "" {
+			continue
+		}
+		nodeID, tokenID := owner(&arms[i])
+		out = append(out, TimerWaiter{
+			TimerID: m.TimerID,
+			Kind:    TimerIntermediate,
+			NodeID:  nodeID,
+			TokenID: tokenID,
+		})
+	}
+	return out
+}
+
 // signalNamesOf returns the signal name of every SIGNAL arm in arms, in slice
 // order; nil when none is armed.
 func signalNamesOf[T any, PT armMatchable[T]](arms []T) []string {

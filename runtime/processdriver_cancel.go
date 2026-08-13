@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"github.com/kartaladev/wrkflw/definition/model"
@@ -14,6 +15,12 @@ import (
 // a DefinitionRegistry are both configured, running async child instances are
 // cancelled recursively (best-effort: errors are logged, never returned). Returns
 // the terminated parent InstanceState. See ADR-0028, ADR-0032.
+//
+// Returns [engine.ErrCancelNotApplicable] when the engine DROPPED this
+// instance's cancel — an admin partial rollback owns it, so the cancel did
+// nothing and never will (ADR-0180). That answer is a report, not an abort: the
+// returned state is the untouched one, and the child subtree has still been
+// cancelled by the time it is returned.
 func (driver *ProcessDriver) CancelInstance(ctx context.Context, def *model.ProcessDefinition, instanceID string) (engine.InstanceState, error) {
 	release, ok := driver.admit()
 	if !ok {
@@ -24,14 +31,19 @@ func (driver *ProcessDriver) CancelInstance(ctx context.Context, def *model.Proc
 	// Parent-first: terminate the parent before propagating to children so that
 	// no CallNotifier can resume a child-completed parent during propagation.
 	st, err := driver.applyTrigger(ctx, def, instanceID, engine.NewCancelRequested(driver.clk.Now()))
-	if err != nil {
+	// engine.ErrCancelNotApplicable REPORTS that this instance's own cancel was
+	// dropped; it is not a reason to abandon its children (ADR-0180). Returning
+	// here on it was measured leaving a subtree permanently running — strictly
+	// worse than the silent nil the sentinel replaces — so the sentinel is
+	// re-reported AFTER propagation, and only after it.
+	if err != nil && !errors.Is(err, engine.ErrCancelNotApplicable) {
 		return st, err
 	}
 	if driver.callLinks != nil && driver.defsReg != nil {
 		visited := map[string]bool{instanceID: true}
 		driver.propagateCancel(ctx, instanceID, visited)
 	}
-	return st, nil
+	return st, err
 }
 
 // propagateCancel recursively cancels all running async child instances of
@@ -81,12 +93,30 @@ func (driver *ProcessDriver) propagateCancel(ctx context.Context, parentID strin
 		// propagateCancel with the SAME shared visited map. Re-entering CancelInstance
 		// would allocate a fresh visited map per child, breaking the diamond guard.
 		if _, cancelErr := driver.applyTrigger(ctx, childDef, child.ChildInstanceID, engine.NewCancelRequested(driver.clk.Now())); cancelErr != nil {
-			driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn,
-				"runtime: propagateCancel: cancel child instance failed",
+			// A child whose own cancel is DROPPED (engine.ErrCancelNotApplicable,
+			// ADR-0180) keeps running by design — but its own children have no walk
+			// in flight and must still be cancelled. Skipping the recursion here was
+			// measured orphaning the whole grandchild subtree; every OTHER error is
+			// a failure to reach the child at all, where recursing would be guessing.
+			//
+			// The two outcomes are logged apart on purpose. A dropped cancel is the
+			// EXPECTED answer for a child owned by an admin partial rollback, so
+			// reporting it at WARN as a failure — which this did until
+			// `/code-review` caught it — trains an operator to ignore the one line
+			// that means the propagation really could not reach a child.
+			if !errors.Is(cancelErr, engine.ErrCancelNotApplicable) {
+				driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn,
+					"runtime: propagateCancel: cancel child instance failed",
+					slog.String("child_id", child.ChildInstanceID),
+					slog.String("error", cancelErr.Error()),
+				)
+				continue
+			}
+			driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelDebug,
+				"runtime: propagateCancel: child kept its own compensation walk; cancel dropped",
 				slog.String("child_id", child.ChildInstanceID),
-				slog.String("error", cancelErr.Error()),
+				slog.String("reason", cancelErr.Error()),
 			)
-			continue
 		}
 		// Recurse into the child's own subtree with the shared visited map.
 		driver.propagateCancel(ctx, child.ChildInstanceID, visited)

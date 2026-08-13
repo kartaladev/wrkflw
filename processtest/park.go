@@ -34,11 +34,18 @@ const (
 	ReasonSignal
 	// ReasonMessage means a token is waiting on a named message.
 	ReasonMessage
-	// ReasonTimer means the instance is parked with at least one armed timer and
-	// nothing higher-priority to resolve.
+	// ReasonTimer means the instance is parked on an armed timer, with nothing
+	// higher-priority to resolve.
+	//
+	// ⚠ ON, not merely BESIDE. A timer that is a secondary attachment to work the
+	// instance is waiting on through another handler — a boundary arm or a
+	// timer-triggered event sub-process arm on a token parked on an in-flight
+	// action or child instance — yields to [ReasonAsyncChild] instead. Park's
+	// HasArmedTimers still reports it. See primaryTimerPark.
 	ReasonTimer
 	// ReasonAsyncChild means a token is waiting on a command (typically an async
-	// call activity awaiting its child instance's outcome).
+	// call activity awaiting its child instance's outcome), and no armed timer
+	// outranks it.
 	ReasonAsyncChild
 	// ReasonUnknown means the instance is non-terminal but the classifier could not
 	// identify a resolvable park (e.g. an active token mid-burst).
@@ -95,8 +102,13 @@ type Park struct {
 	// ⚠ It EXCLUDES a compensation-stall timer (ADR-0175). Such a record is a
 	// DETECTION deadline, not work the instance waits on: counting it would make
 	// [AutoTimers] fire it by itself and manufacture the very stall incident the
-	// window exists to detect. The predicate is engine.InstanceState.HasArmedTimers,
-	// because the timer kind is not visible outside the engine package.
+	// window exists to detect.
+	//
+	// The predicate is engine.InstanceState.HasArmedTimers rather than a
+	// re-derivation here. A consumer CAN read the kinds — [engine.TimerKind] is
+	// exported and [engine.InstanceState.TimerWaiters] surfaces one per armed
+	// timer (ADR-0177) — but which kinds are excludable is the engine's decision
+	// to make and to keep current, not a rule a harness should copy.
 	HasArmedTimers bool
 	// Incidents holds the instance's open incident records.
 	Incidents []engine.Incident
@@ -114,6 +126,11 @@ func IsTerminal(s engine.Status) bool {
 // HasArmedTimers, Incidents) and sets Reason to the highest-priority park:
 // terminal > human-task > incident > signal > message > timer > async-child >
 // unknown.
+//
+// The timer/async-child pair is the one rung boundary that is not a plain
+// priority test: a timer outranks a command wait only when the timer is what the
+// instance waits ON, not when it is a boundary or event-sub-process arm attached
+// to work some other handler resolves. [primaryTimerPark] draws that line.
 //
 // AwaitingSignals and AwaitingMessages come from the engine's own authorities,
 // [engine.InstanceState.SignalWaiters] and [engine.InstanceState.MessageWaiters],
@@ -172,7 +189,9 @@ func Classify(state engine.InstanceState) Park {
 	case len(p.AwaitingMessages) > 0:
 		p.Reason = ReasonMessage
 		p.Node = awaitNode(state, func(t engine.Token) bool { return t.AwaitMessage != "" })
-	case p.HasArmedTimers:
+	// A timer outranks a command wait only when the timer is what the instance is
+	// actually waiting ON. See [primaryTimerPark].
+	case p.HasArmedTimers && (primaryTimerPark(state) || !hasCommandWait(state.Tokens)):
 		p.Reason = ReasonTimer
 		p.Node = firstNodeWhere(state.Tokens, func(t engine.Token) bool { return t.State == engine.TokenWaiting })
 	case hasCommandWait(state.Tokens):
@@ -290,6 +309,56 @@ func incidentNode(state engine.InstanceState) string {
 		return state.Incidents[0].NodeID
 	}
 	return firstNodeWhere(state.Tokens, func(t engine.Token) bool { return t.State == engine.TokenIncident })
+}
+
+// primaryTimerPark reports whether an armed timer is the thing the instance is
+// waiting ON, as opposed to a SECONDARY attachment to work it is waiting on
+// through some other handler. Only a primary timer may outrank a command wait:
+// otherwise [AutoTimers] fires an activity's boundary timer to its timeout
+// instead of letting the action handler resolve the park, contradicting the
+// contract AutoTimers documents.
+//
+// Two shapes are primary, and they are measured, not argued:
+//
+//   - A waiting token whose AwaitCommand IS one of the armed timer ids. That is
+//     the plain timer intermediate catch (token parks on the timer id) and the
+//     retry backoff (token parks on the TimerRetry record's id). This is a set
+//     membership test against the engine's own enumeration
+//     ([engine.InstanceState.TimerWaiters], ADR-0177), NOT an attempt to read
+//     meaning out of an identity — the thing ADR-0152 forbids. It is also why
+//     Token.AwaitTimer is not used here: AwaitTimer is unset on a token stored
+//     before ADR-0177 and unset on a retry park, while AwaitCommand has always
+//     been persisted.
+//   - An in-flight event-based gateway carrying a timer arm. Its token parks on
+//     an "evtgw:" sentinel no handler can deliver, so the timer race IS the park;
+//     yielding to that command wait would leave the gateway unresolvable by
+//     AutoTimers, which is what it did before ADR-0177 widened HasArmedTimers.
+//
+// Everything else — a timer boundary arm, a timer-triggered event sub-process
+// arm — is secondary. Measured on engine-built states (instance "i"):
+//
+//	svc[action work] ⊸ bnd[timer 3h]     token awaitCmd="i-c1"        waiter "i-tm1" → secondary
+//	evtsub[start timer 5h] + svc action  token awaitCmd="i-c1"        waiter "i-tm1" → secondary
+//	t-catch[timer 1h]                    token awaitCmd="i-tm1"       waiter "i-tm1" → primary
+//	svc[retry] after a retryable failure token awaitCmd="i-tm1"       waiter "i-tm1" → primary
+//	egw ⊸ t-arm[timer 1h]                token awaitCmd="evtgw:i-t1"  waiter "i-tm1" → primary
+func primaryTimerPark(state engine.InstanceState) bool {
+	if len(state.TimerArmedEventWaiters()) > 0 {
+		return true
+	}
+	armed := make(map[string]struct{})
+	for _, w := range state.TimerWaiters() {
+		armed[w.TimerID] = struct{}{}
+	}
+	for _, t := range state.Tokens {
+		if t.State != engine.TokenWaiting || t.AwaitCommand == "" {
+			continue
+		}
+		if _, ok := armed[t.AwaitCommand]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func hasCommandWait(tokens []engine.Token) bool {

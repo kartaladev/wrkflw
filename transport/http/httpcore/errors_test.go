@@ -12,6 +12,7 @@ import (
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/kartaladev/wrkflw/runtime/validation"
+	"github.com/kartaladev/wrkflw/service"
 	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
@@ -125,6 +126,50 @@ func TestClassifyErrorOutcomeSentinels(t *testing.T) {
 				assert.Equal(t, http.StatusBadRequest, status)
 				assert.Equal(t, "bad_request", body.Error)
 				assert.NotEmpty(t, body.Message, "a 4xx body must carry an actionable message")
+			},
+		},
+		{
+			// ADR-0180. A PIN, not a change: ClassifyError needed no new arm.
+			//
+			// ⚠ The status is 422, NOT the 409 ADR-0180 and spec §3b state: in this
+			// repo 409 is kernel.ErrConcurrentUpdate's alone, and service.ErrConflict
+			// has always mapped to 422 (see the arm above).
+			//
+			// This row is carried by the service.ErrConflict wrapper, which is exactly
+			// what it pins — MEASURED: unwrapping engine.ErrCancelNotApplicable from
+			// ErrInvalidTransition leaves this row GREEN. The engine wrapping is
+			// pinned by the next row instead.
+			name: "a dropped cancel classified by the service layer is a state conflict",
+			err: fmt.Errorf("%w: cancel instance %q: %w", service.ErrConflict, "i1",
+				fmt.Errorf("workflow-runtime: step: %w", engine.ErrCancelNotApplicable)),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusUnprocessableEntity, status)
+				assert.Equal(t, "conflict_state", body.Error)
+				assert.Contains(t, body.Message, "cancel is not applicable",
+					"the operator must be told WHY, not just refused")
+			},
+		},
+		{
+			// The driver is public API in its own right (ProcessDriver.CancelInstance),
+			// and its answer carries no service vocabulary at all. Falsifier: drop the
+			// ErrInvalidTransition wrapping in engine/errors.go and this row goes to a
+			// 500 with an empty body — measured, unlike the row above.
+			name: "a dropped cancel straight from the driver is a state conflict",
+			err:  fmt.Errorf("workflow-runtime: step: %w", engine.ErrCancelNotApplicable),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusUnprocessableEntity, status)
+				assert.Equal(t, "conflict_state", body.Error)
+			},
+		},
+		{
+			// ADR-0180's start guard. Same falsifier, and here it is the only carrier:
+			// no service-layer arm classifies this sentinel.
+			name: "a duplicate start is a state conflict",
+			err:  fmt.Errorf("workflow-service: start instance: %w", engine.ErrInstanceAlreadyStarted),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusUnprocessableEntity, status)
+				assert.Equal(t, "conflict_state", body.Error)
+				assert.Contains(t, body.Message, "already been started")
 			},
 		},
 		{
