@@ -238,20 +238,29 @@ func TestTrigger_Next(t *testing.T) {
 			},
 		},
 		{
-			name: "weekly with no weekdays reports no future fire",
+			// Changed by ADR-0176: this used to assert ok=false. The gocron
+			// adapter substitutes Sunday for an empty weekday set before
+			// arming, so the trigger does fire and Next now says so.
+			name: "weekly with no weekdays takes the substituted Sunday",
 			trig: scheduler.Weekly(1, nil, scheduler.ClockTime{Hour: 9}),
 			assert: func(t *testing.T, next time.Time, ok bool) {
-				if ok {
-					t.Fatalf("want ok=false, got next=%v", next)
+				// after is Wednesday 2026-07-22; the coming Sunday is the 26th.
+				want := time.Date(2026, 7, 26, 9, 0, 0, 0, time.UTC)
+				if !ok || !next.Equal(want) {
+					t.Fatalf("next=%v ok=%v want %v", next, ok, want)
 				}
 			},
 		},
 		{
-			name: "monthly with no days-of-month reports no future fire",
+			// Changed by ADR-0176: this used to assert ok=false. The same
+			// adapter substitutes the 1st for an empty day-of-month set.
+			name: "monthly with no days-of-month takes the substituted first of the month",
 			trig: scheduler.Monthly(1, nil, scheduler.ClockTime{Hour: 9}),
 			assert: func(t *testing.T, next time.Time, ok bool) {
-				if ok {
-					t.Fatalf("want ok=false, got next=%v", next)
+				// after is 2026-07-22; July's 1st has passed.
+				want := time.Date(2026, 8, 1, 9, 0, 0, 0, time.UTC)
+				if !ok || !next.Equal(want) {
+					t.Fatalf("next=%v ok=%v want %v", next, ok, want)
 				}
 			},
 		},
@@ -350,6 +359,391 @@ func TestTrigger_Next(t *testing.T) {
 			next, ok := tt.trig.Next(a)
 			tt.assert(t, next, ok)
 		})
+	}
+}
+
+// TestTrigger_NextAgreesWithLiveScheduler pins Next against the instants the
+// LIVE gocron scheduler actually arms (ADR-0176). Every want below was
+// measured by arming the same Trigger through NativeScheduler.Activate with
+// the clock pinned at the case's anchor and reading the engine's own next run
+// back through Scheduled — see docs/specs/2026-08-13-adr-0176-measurements.md
+// §14. ADR-0140 already promises this agreement; before ADR-0176 the whole
+// non-control half of this table reported ok=false with the zero time, so the
+// runtime persisted a zero next_run for definitions that arm and fire.
+func TestTrigger_NextAgreesWithLiveScheduler(t *testing.T) {
+	t.Parallel()
+
+	var (
+		tueFeb10 = time.Date(2026, 2, 10, 9, 30, 0, 0, time.UTC) // a month with no 31st
+		satJan31 = time.Date(2026, 1, 31, 9, 30, 0, 0, time.UTC) // the last day of its month
+		thuApr30 = time.Date(2026, 4, 30, 23, 0, 0, 0, time.UTC) // last day, past midnight's at-time
+		sunNov01 = time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)  // exactly midnight on a Sunday
+	)
+
+	type testCase struct {
+		name   string
+		after  time.Time
+		trig   scheduler.Trigger
+		assert func(t *testing.T, next time.Time, ok bool)
+	}
+
+	// fires asserts Next reports want. armed is the instant gocron was measured
+	// to schedule for the same trigger at the same anchor.
+	fires := func(want time.Time) func(*testing.T, time.Time, bool) {
+		return func(t *testing.T, next time.Time, ok bool) {
+			t.Helper()
+			if !ok || !next.Equal(want) {
+				t.Fatalf("next=%v ok=%v, want %v ok=true", next, ok, want)
+			}
+		}
+	}
+	neverDue := func(t *testing.T, next time.Time, ok bool) {
+		t.Helper()
+		if ok {
+			t.Fatalf("want ok=false, got next=%v", next)
+		}
+	}
+
+	tests := []testCase{
+		// An empty weekday set: scheduler/internal/gocron/trigger.go
+		// substitutes []time.Weekday{time.Sunday} before handing the job to
+		// gocron, so the trigger arms and fires on Sundays.
+		{
+			name:   "weekly with no weekdays takes the substituted Sunday",
+			after:  tueFeb10,
+			trig:   scheduler.Weekly(1, nil),
+			assert: fires(time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:   "weekly with no weekdays on a Sunday midnight anchor skips the due-now instant",
+			after:  sunNov01,
+			trig:   scheduler.Weekly(1, nil),
+			assert: fires(time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:   "weekly with no weekdays honours the interval grid",
+			after:  tueFeb10,
+			trig:   scheduler.Weekly(2, nil),
+			assert: fires(time.Date(2026, 2, 22, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:   "weekly with an empty non-nil weekday slice crosses the month boundary",
+			after:  satJan31,
+			trig:   scheduler.Weekly(1, []time.Weekday{}),
+			assert: fires(time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)),
+		},
+		// An out-of-range weekday: gocron's guard is `wd >= lastRun.Weekday()`
+		// and its candidate day is `lastRun.Day() + (wd - lastRun.Weekday())`,
+		// so a weekday above Saturday always matches on gocron's FIRST pass —
+		// landing that many days after the anchor and bypassing the interval.
+		{
+			name:   "weekly out-of-range weekday lands wd-anchor days out",
+			after:  tueFeb10,
+			trig:   scheduler.Weekly(1, []time.Weekday{time.Weekday(9)}),
+			assert: fires(time.Date(2026, 2, 17, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:   "weekly out-of-range weekday measures from the anchor weekday, not the normalised one",
+			after:  sunNov01,
+			trig:   scheduler.Weekly(1, []time.Weekday{time.Weekday(9)}),
+			assert: fires(time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:   "weekly out-of-range weekday ignores the interval",
+			after:  tueFeb10,
+			trig:   scheduler.Weekly(2, []time.Weekday{time.Weekday(9)}),
+			assert: fires(time.Date(2026, 2, 17, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:   "weekly out-of-range weekday 8 on a Sunday anchor is eight days out, not one",
+			after:  sunNov01,
+			trig:   scheduler.Weekly(1, []time.Weekday{time.Weekday(8)}),
+			assert: fires(time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:   "weekly far out-of-range weekday keeps counting past a fortnight",
+			after:  tueFeb10,
+			trig:   scheduler.Weekly(1, []time.Weekday{time.Weekday(13)}),
+			assert: fires(time.Date(2026, 2, 21, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:  "weekly out-of-range weekday beats an in-range weekday deferred to the next week",
+			after: tueFeb10,
+			// Sunday is BEFORE the Tuesday anchor, so gocron defers it to the
+			// next interval week (Feb 15) while Weekday(9) matches on the first
+			// pass (Feb 17) — and gocron returns the first pass, not the
+			// chronologically earlier instant.
+			trig:   scheduler.Weekly(1, []time.Weekday{time.Sunday, time.Weekday(9)}),
+			assert: fires(time.Date(2026, 2, 17, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:  "weekly negative weekday stays never-due",
+			after: tueFeb10,
+			// Measured: Activate returns nil but gocron computes a zero next
+			// run and drops the job, so it silently never fires.
+			trig:   scheduler.Weekly(1, []time.Weekday{time.Weekday(-1)}),
+			assert: neverDue,
+		},
+		// An empty day-of-month set is substituted with []int{1} by the same
+		// adapter file.
+		{
+			name:   "monthly with no days-of-month takes the substituted first of the month",
+			after:  tueFeb10,
+			trig:   scheduler.Monthly(1, nil),
+			assert: fires(time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:   "monthly with no days-of-month on a due-now anchor moves to the next month",
+			after:  sunNov01,
+			trig:   scheduler.Monthly(1, nil),
+			assert: fires(time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)),
+		},
+		// A negative day-of-month counts back from the end of the candidate
+		// month (gocron's handleNegativeDays): -1 is the last day.
+		{
+			name:   "monthly day -1 is the last day of a short month",
+			after:  tueFeb10,
+			trig:   scheduler.Monthly(1, []int{-1}),
+			assert: fires(time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:  "monthly day -1 is recomputed per month, not fixed at the anchor's length",
+			after: satJan31,
+			// January's last day is the anchor itself and its midnight has
+			// passed, so the next fire is February's 28th — not a 31st.
+			trig:   scheduler.Monthly(1, []int{-1}),
+			assert: fires(time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:   "monthly day -2 is the second-to-last day",
+			after:  thuApr30,
+			trig:   scheduler.Monthly(1, []int{-2}),
+			assert: fires(time.Date(2026, 5, 30, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:   "monthly negative day still obeys the interval grid",
+			after:  satJan31,
+			trig:   scheduler.Monthly(2, []int{-1}),
+			assert: fires(time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:  "monthly day -31 skips the months too short to hold it",
+			after: tueFeb10,
+			// February maps -31 to a day before the month starts, so it is
+			// skipped; March maps it to the 1st.
+			trig:   scheduler.Monthly(1, []int{-31}),
+			assert: fires(time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:   "monthly mixes positive and negative days",
+			after:  tueFeb10,
+			trig:   scheduler.Monthly(1, []int{1, -1}),
+			assert: fires(time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC)),
+		},
+		// A cron expression that parses but matches nothing: robfig/cron gives
+		// up after five years and returns the ZERO time with no error, which
+		// Next used to report as (zero, true) — defeating every ok-keyed gate.
+		{
+			name:   "cron that can never match reports never-due instead of a zero instant",
+			after:  tueFeb10,
+			trig:   scheduler.Cron("0 0 30 2 *"),
+			assert: neverDue,
+		},
+		// REGRESSION PIN, not new behaviour: this shape must KEEP reporting
+		// never-due. It is what lets the runtime refuse the arm before
+		// gocron's monthlyJob.next spins forever on it (ADR-0176 §4).
+		{
+			name:   "monthly every 12 months on the 31st stays never-due from a February anchor",
+			after:  tueFeb10,
+			trig:   scheduler.Monthly(12, []int{31}),
+			assert: neverDue,
+		},
+		{
+			name:  "at-times are ordered by minute and second, not just hour",
+			after: time.Date(2026, 2, 10, 9, 0, 0, 0, time.UTC),
+			// Given out of order and differing below the hour: the earliest
+			// still-future at-time wins. gocron sorts a job's at-times the same
+			// way at setup, so both agree on which one comes first. This pins
+			// the comparator that ADR-0176 moved from sort.Slice to
+			// slices.SortFunc — the hour tie-breaks had no test before.
+			trig: scheduler.Daily(1,
+				scheduler.ClockTime{Hour: 9, Minute: 30, Second: 10},
+				scheduler.ClockTime{Hour: 9, Minute: 5},
+				scheduler.ClockTime{Hour: 9, Minute: 30, Second: 5},
+			),
+			assert: fires(time.Date(2026, 2, 10, 9, 5, 0, 0, time.UTC)),
+		},
+		{
+			name:  "at-time ordering breaks a minute tie on seconds",
+			after: time.Date(2026, 2, 10, 9, 10, 0, 0, time.UTC),
+			trig: scheduler.Daily(1,
+				scheduler.ClockTime{Hour: 9, Minute: 30, Second: 10},
+				scheduler.ClockTime{Hour: 9, Minute: 30, Second: 5},
+			),
+			assert: fires(time.Date(2026, 2, 10, 9, 30, 5, 0, time.UTC)),
+		},
+		// The shapes gocron REFUSES at setup. Next used to report a fire
+		// instant for each of these, so the runtime armed them, wrote a
+		// durable row with that instant inside the commit transaction, and
+		// only then failed post-commit where failure is WARN-only — the timer
+		// never fires, the token parks forever, and the row re-fails on every
+		// boot. Same failure mode as blocker 2, without the zero literal.
+		{
+			name:  "monthly rejects the whole day list when one entry is out of range",
+			after: tueFeb10,
+			// gocron validates every entry and rejects the JOB, not the entry
+			// (job.go:522-524), so a single typo beside a valid day is fatal.
+			trig:   scheduler.Monthly(1, []int{15, 32}),
+			assert: neverDue,
+		},
+		{
+			name:   "monthly rejects a zero day beside a valid one",
+			after:  tueFeb10,
+			trig:   scheduler.Monthly(1, []int{15, 0}),
+			assert: neverDue,
+		},
+		{
+			name:   "monthly rejects a negative day below -31 beside a valid one",
+			after:  tueFeb10,
+			trig:   scheduler.Monthly(1, []int{15, -32}),
+			assert: neverDue,
+		},
+		{
+			name:   "monthly accepts the boundary days gocron accepts",
+			after:  tueFeb10,
+			trig:   scheduler.Monthly(1, []int{31, -31}),
+			assert: fires(time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:  "every-random rejects a min above its max",
+			after: tueFeb10,
+			// gocron's guard is min >= max (job.go:356), so the runtime must
+			// not arm one — it has a NON-zero next_run, which is why no
+			// next_run-keyed guard could ever see it.
+			trig:   scheduler.EveryRandom(2*time.Hour, time.Hour),
+			assert: neverDue,
+		},
+		{
+			name:   "every-random rejects equal bounds",
+			after:  tueFeb10,
+			trig:   scheduler.EveryRandom(time.Hour, time.Hour),
+			assert: neverDue,
+		},
+		{
+			name:   "every-random still reports the earliest bound for a valid range",
+			after:  tueFeb10,
+			trig:   scheduler.EveryRandom(time.Hour, 2*time.Hour),
+			assert: fires(tueFeb10.Add(time.Hour)),
+		},
+		{
+			name:  "daily rejects an hour above 23",
+			after: tueFeb10,
+			// ClockTime's fields are unvalidated uints all the way from the
+			// definition YAML; Go's time.Date would silently roll Hour 25 into
+			// the next day at 01:00 and persist that as the fire time.
+			trig:   scheduler.Daily(1, scheduler.ClockTime{Hour: 25}),
+			assert: neverDue,
+		},
+		{
+			name:   "weekly rejects a minute above 59",
+			after:  tueFeb10,
+			trig:   scheduler.Weekly(1, []time.Weekday{time.Monday}, scheduler.ClockTime{Minute: 99}),
+			assert: neverDue,
+		},
+		{
+			name:   "monthly rejects a second above 59",
+			after:  tueFeb10,
+			trig:   scheduler.Monthly(1, []int{15}, scheduler.ClockTime{Second: 60}),
+			assert: neverDue,
+		},
+		{
+			name:  "one bad at-time poisons the whole trigger, as it does for gocron",
+			after: tueFeb10,
+			trig: scheduler.Daily(1,
+				scheduler.ClockTime{Hour: 9},
+				scheduler.ClockTime{Hour: 24},
+			),
+			assert: neverDue,
+		},
+		{
+			name:   "the at-time boundary values gocron accepts still fire",
+			after:  tueFeb10,
+			trig:   scheduler.Daily(1, scheduler.ClockTime{Hour: 23, Minute: 59, Second: 59}),
+			assert: fires(time.Date(2026, 2, 10, 23, 59, 59, 0, time.UTC)),
+		},
+		// Controls: shapes that already agreed with the scheduler must not move.
+		{
+			name:   "control in-range weekday is unchanged",
+			after:  sunNov01,
+			trig:   scheduler.Weekly(1, []time.Weekday{time.Monday}),
+			assert: fires(time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:   "control positive day-of-month is unchanged",
+			after:  tueFeb10,
+			trig:   scheduler.Monthly(1, []int{15}),
+			assert: fires(time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC)),
+		},
+		{
+			name:   "control daily is unchanged",
+			after:  tueFeb10,
+			trig:   scheduler.Daily(1),
+			assert: fires(time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC)),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			next, ok := tt.trig.Next(tt.after)
+			tt.assert(t, next, ok)
+		})
+	}
+}
+
+// TestTrigger_NextMonthlyScanSkipsOffGridMonths guards the cost of the one
+// shape that has to exhaust calendarNext's scan: a valid day-of-month that no
+// month on the interval grid contains. The scan bound is scaled by interval
+// (ADR-0140), and interval is an unvalidated uint carried from the definition,
+// so walking every day of every off-grid month made this linear in a
+// consumer-supplied number — paid on the arm path, inside the commit
+// transaction.
+//
+// Skipping each off-grid month in one step is what this pins. Measured for the
+// trigger below: 633 ms before / 45 ms after, and 5.31 s before / 0.32 s after
+// under -race, which is the slower of the two runs and therefore the one the
+// bound must survive. 2 s sits ~6x above the passing measurement and ~2.6x
+// below the failing one, so it discriminates in both directions without being
+// flaky under load. (The interval is 12000 rather than a rounder 120000 to
+// keep the FAILING case from costing 53 s under -race.)
+//
+// ⚠ It is NOT a claim that the scan is cheap: cost is still linear in
+// interval, just with a ~16x smaller constant. See the handover backlog.
+func TestTrigger_NextMonthlyScanSkipsOffGridMonths(t *testing.T) {
+	t.Parallel()
+
+	// February: no 31st, and with a 12000-month grid no candidate month has
+	// one either, so the scan runs to exhaustion.
+	after := time.Date(2026, 2, 4, 12, 0, 0, 0, time.UTC)
+
+	type result struct {
+		next time.Time
+		ok   bool
+	}
+	done := make(chan result, 1)
+	go func() {
+		next, ok := scheduler.Monthly(12000, []int{31}).Next(after)
+		done <- result{next: next, ok: ok}
+	}()
+
+	select {
+	case got := <-done:
+		if got.ok {
+			t.Fatalf("want ok=false for a day no grid month holds, got %v", got.next)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Next did not return within 2s: the scan is walking off-grid months day by day")
 	}
 }
 

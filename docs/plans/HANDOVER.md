@@ -12,9 +12,88 @@ top to bottom; it is meant to stay short enough that you can.
 > with the plan. This file carries only: where `main` is, what is in flight, and
 > what to do next.
 
-## State — updated 2026-08-12
+## State — updated 2026-08-13
 
-**▶ NOTHING IS IN FLIGHT.** `main` is clean and pushed; there is no half-finished work.
+**▶ IN FLIGHT: ADR-0176 — IMPLEMENTED, VERIFIED, and BOTH review gates PASSED. Ready to merge.**
+
+Branch **`feat/never-due-timer-triggers`**, ONE commit (docs + code, amended). `main` is
+untouched, clean and pushed. **Read the plan's `▶ Progress` first** —
+`docs/plans/2026-08-13-never-due-timer-triggers.md`.
+
+**What is done**: all three phases (P1 `scheduler` → P2 → P3 `runtime`), the full Verification
+section, all five prescribed mutations plus a sixth, and every document corrected against what
+actually shipped.
+
+**`/code-review` returned 5 findings — 4 fixed, 1 fixed-in-part with the remainder explicitly
+declined.** Two were Major and both were real: eight MORE trigger shapes reported a fire instant
+the live scheduler refuses at setup (same failure mode as blocker 2 without the zero literal),
+and a **TOCTOU** — the arm guard and the arm read the clock at different instants, so
+`Monthly(12,{31})` armable at `2026-01-31T23:59:59Z` is never-due one second later and could
+still reach the livelock. Full detail in the plan's `▶ Progress` and measurements §16.
+
+**`/security-review`: 0 findings.** It source-verified the gocron validation rules the two new
+predicates mirror, independently differential-tested the month-skip (356,400 combinations, 0
+mismatches, incl. a midnight-DST zone), and confirmed no refusal path can fail a security control
+open — the safety-relevant timer kinds (`TimerCompensationStall`, `TimerRetry`) build
+`AfterDuration`, whose `Next` is unconditionally ok, so the refusal predicate cannot fire on them.
+
+**What is left**: merge. Re-run the suite on the MERGED tree, then merge `--no-ff` to `main` and
+push.
+
+**Verified, re-run after every review fix** (Docker up, nothing skipped, all judged by exit
+code): `go test -race ./...` EXIT=0 over **64 packages, no races**; coverage **74.4 %**
+repo-wide (baseline 74.2 %), with `runtime` **93.4 %** and `scheduler` **93.1 %**; `go build`,
+`go vet ./...` EXIT=0; `golangci-lint run ./...` **repo-wide 0 issues**.
+
+### What ADR-0176 shipped
+
+**The runtime never persists or activates a timer the scheduler cannot run**, in two ordered
+parts — the order is load-bearing and P1 landed first:
+
+1. **`scheduler.Trigger.Next` now agrees with the live scheduler** (ADR-0140's own contract).
+   Empty weekday / day-of-month sets take the substituted Sunday and 1st; a negative
+   day-of-month counts back from month end per candidate month; a cron with no findable
+   occurrence reports `!ok` instead of `(zero, true)`; and `calendarNext`'s weekly branch is now
+   a **transcription of gocron's `weeklyJob.next`** rather than a scan.
+2. **Four arm sites guard on `neverDueNextRun` (`!ok || next.IsZero()`)** — `timerJobsFor`,
+   `scheduleStartTimerJob`, `jobStore.Load`, and a re-check immediately before `Activate` —
+   each refusing with a WARN, no arm, no row, and a `wrkflw_timer_arms_refused_total` increment.
+
+That closes **blocker 2** on all three dialects and the **whole-process livelock**, the latter
+on *both* reachable paths: a fresh arm and a boot rehydration. Each has a regression test that
+**hung for its full 10 s timeout before the fix and returns in under a second after** —
+demonstrated, not asserted.
+
+🚨 **The livelock was a real availability defect in shipped code**: `Activate` on
+`Monthly(12,[31])` never returns, because gocron v2.22.0's `monthlyJob.next` has an unbounded
+`for next.IsZero()` loop (confirmed in its source at `job.go:1469-1474`) inside gocron's single
+`selectNewJob` goroutine — so every arm, cancel and rehydrate in the process blocks behind it.
+**Clock-month dependent**: only the five months without a 31st. ⚠ It inverts the dialect
+framing — **MySQL was accidentally the SAFE dialect**, because its commit fails before
+`Activate` is reached.
+
+### ⚠ Process lessons this delivery earned
+
+1. **Implementation refuted FOUR of the audited bundle's own claims** — an audit that ran three
+   Opus lenses and accepted 8 Criticals still shipped four false premises into implementation.
+   Two of them would have produced **vacuous or mis-aimed tests**. See the plan's `▶ Progress`
+   and measurements §15. The generalisable one: *a guard's justification is a claim about
+   current behaviour and needs executing like any other.*
+2. **"Executed" is only as good as the call path you executed** — the pre-audit design probed
+   `Trigger.Next` when the thing that arms is `Activate`. This delivery repeated the lesson at
+   a smaller scale: the start-timer path's "ungated today" claim was true of the *port* and
+   false of both *implementations*, and only running it separated them.
+3. **A behaviour change shows up as an existing test failing.** Exactly two `scheduler` tests
+   moved, both asserting the divergence being fixed. That *no other test in the repo moved* is
+   the evidence the weekly rewrite is behaviour-preserving — a stronger signal than any
+   argument about the rewrite.
+4. **A timing bound measured in one mode is a claim about that mode only.** The new scan-cost
+   guard was tuned at 3 s against a 0.39 s measurement, and the full `-race` run failed it:
+   `-race` is ~8x slower, so the *passing* case cost 3.17 s there. Retuned only after measuring
+   BOTH modes, and mutation-verified RED under `-race`.
+5. **`/code-review` earns its place at the gate.** It found two Major defects — including a
+   TOCTOU in the very guard this delivery is about — that neither the design audit nor
+   implementation caught, and it independently fuzz-verified the parts that were right.
 
 **`main` is clean and pushed. Its head SHA is deliberately NOT quoted here** — every edit to
 this file changes it, and quoting it is how this line went stale three times in one hour.
@@ -24,63 +103,26 @@ The stable anchors instead: **ADR-0175 merged at `6e4addc8`** (a merge commit, s
 moves), on top of **`5270838`** (ADR-0174). Anything after `6e4addc8` on `main` is
 documentation follow-ups only — no code.
 
-**Latest ADR = 0175; next free = 0176.** ADR numbers 0155–0157 remain reserved by the parked
-`feat/durable-waiters-delivery-correctness`.
+**Latest ADR = 0176 (this one, not yet merged); next free = 0177.** ADR numbers 0155–0157
+remain reserved by the parked `feat/durable-waiters-delivery-correctness`.
 
-### What ADR-0175 shipped
+### ▶ NEXT WORK
 
-Opt-in detection of a stalled compensation walk — one whose dispatched compensation action
-never reports back, which was measured to be **permanently stuck AND permanently invisible**
-(`tokens=0 timers=0 incidents=0`, both waiter sets empty, every operator lever a silent no-op).
+**Finish ADR-0176**: owner runs `/code-review` then `/security-review`; fold findings via
+`--amend`; re-run the suite on the merged tree; merge `--no-ff` and push.
 
-- `StepOptions.CompensationStallAfter` — **zero disables, and zero is the default**, so nothing
-  changes for a consumer who does not opt in. Fed by `runtime.WithCompensationStallTimeout(d)`.
-- A `TimerCompensationStall` armed at **all three** compensation dispatch sites; on breach it
-  raises a walk-scoped `IncidentCompensationStall` (`TokenID` empty) and emits **no commands**.
-- Three operator verbs on one cursor-matched trigger — **retry / skip / abandon** — through
-  `ProcessDriver.ResolveCompensationStall` → `service` → `POST
-  /admin/instances/{id}/compensation/resolve-stall` (mounted in all three adapters'
-  `AdminRoutes`, which are deliberately NOT part of `Mount`).
-- `resolve-incident` now REFUSES a stall incident instead of silently eating it.
-- `service.ProcessInstance` projects `compensating.{active_command_id,since,scope_id}` and
-  `incidents[].kind`.
+After it, the strongest candidates:
 
-**Gates:** `/code-review` 9 findings — 6 fixed, 3 adjudicated in the spec (§8, 4d–4k);
-⚠ the record originally listed only FIVE of the six fixes — the `processtest.ReasonIncident`
-doc fix shipped unlisted and was added in a follow-up. *Recount your own summary numbers
-against the list they summarise.*
-`/security-review` **0 findings**. `go test -race ./...` EXIT=0 over 64 packages, no races;
-repo coverage 74.2 % (baseline unchanged); `golangci-lint run ./...` clean. Verified on the
-MERGED tree before pushing.
-
-### ⚠ Process lessons this delivery earned (they cost real rework)
-
-1. **An audit's own fix can invalidate another claim in the same bundle.** C3 restricted
-   `abandon` to `walkAdmin`, which silently falsified the ADR's separate claim that abandon
-   discharges the deferred-cancel deadlock — `PendingCancel` is only ever stamped on walks that
-   RESUME, exactly the set C3 refuses. **`skip` is that verb.** When a finding changes a
-   decision, re-verify every other sentence that mentions it.
-2. **"Deleting a line left the suite green" means UNTESTED before it means REDUNDANT.** I drew
-   the wrong conclusion and wrote it into the ADR, spec, plan and a code comment;
-   `/code-review` caught it. `TestAbandonRetiresTheStallIncident` now exists and is RED without
-   the line.
-3. **Two PRESCRIBED mutations were the wrong mutation.** Both named an ORDERING as
-   load-bearing; reordering stayed green because `Step` returns the zero `StepResult` on error,
-   so the caller discards the mutated clone. A mutation that cannot discriminate is evidence
-   the CLAIM is wrong, not that the test is weak.
-
-### ▶ NEXT WORK — pick from the blockers and backlog below
-
-No delivery is queued. The strongest candidates, in rough order:
-
-1. **Blocker 2** — a zero `next_run` cannot be armed on MySQL (`Error 1292`). Small, self-
-   contained, needs a reject-vs-normalise ADR.
-2. **Blocker 9 / backlog 3c** — an engine-side `TimerWaiters()`. ADR-0175 added
+1. **Blocker 9 / backlog 3c** — an engine-side `TimerWaiters()`. ADR-0175 added
    `engine.InstanceState.HasArmedTimers()` and inherited this gap; closing it should extend
    that method.
+2. **The four gates ADR-0176 deliberately deferred** (backlog 22), each for a measured defect —
+   a deploy-time `model.Validate` gate, a step-time engine gate, `StepOptions.SchedulingLocation`,
+   and migrating the orphan zero-`next_run` rows. Their own ADR.
 3. **Backlog 16 + 4k** — the retry/incident story for a compensation action returning
-   `ActionFailed`, now adjacent to ADR-0175's incident kind, plus the late-reply
-   `ErrTokenNotFound` shape `/code-review` surfaced.
+   `ActionFailed`, plus the late-reply `ErrTokenNotFound` shape `/code-review` surfaced.
+4. **Backlog 0/1/2 from the ADR-0175 audit** — three pre-existing measured defects,
+   including the `TimerInWait` reminder that fires a real `InvokeAction` on a dying instance.
 
 ## Pre-v0.1.0 blockers
 
@@ -90,9 +132,13 @@ No delivery is queued. The strongest candidates, in rough order:
    🚨 **Before DEPLOYING ADR-0167**: audit stored definition rows for 5 pre-ADR-0144
    camelCase keys (`compensateAction`, `compensationAction`, `completionAction`,
    `correlationKey`, `messageName`) — rows carrying one stop loading.
-2. **A zero `next_run` cannot be armed on MySQL.** `runtime/timerops.go` arms a zero
-   `nextRun` when `TriggerSpec.Next` reports `ok == false`; `DATETIME(6) NOT NULL`
-   rejects it (Error 1292). Postgres and SQLite are fine. Reject-vs-normalise ADR.
+2. ✅ **A never-due timer arm — CLOSED by ADR-0176** (on the branch; not yet merged to `main`).
+   The zero `next_run` MySQL rejects (Error 1292 — ⚠ the *literal*, not a range floor: year-1
+   and year-999 were measured as accepted) is no longer produced, on any dialect.
+2b. ✅ **The `scheduler.Activate` livelock on `Monthly(12,[31])` — CLOSED by ADR-0176**, on both
+   the fresh-arm and boot-rehydration paths, each proven by a test that hung its full timeout
+   before the fix. ⚠ Still **open on `main`** until this branch merges: it is the
+   highest-severity item there.
 3. `Upsert` can persist `State: Claimed, Claim: nil` — the read path upholds the
    invariant, the write path does not.
 4. ✅ **ADR-0159's misnamed symbols — CLOSED.** It was **three**, not two.
@@ -143,6 +189,15 @@ No delivery is queued. The strongest candidates, in rough order:
 3d. **The instance document gains fields**: `incidents[].kind`, and a `compensating` object
     (`active_command_id`, `since`, `scope_id`). Additive, but a consumer pinning the document
     byte-for-byte will see them.
+
+**Adjudicated at ADR-0175's `/code-review`, recorded in that spec §8 4i–4k:**
+
+3e. **`service.Service` gained a method — a BREAKING interface change** for a consumer who
+    implements or decorates it. Needs a release note.
+3f. **The stall incident's `ScopeID` is empty for a TARGETED compensation throw** — read
+    `NodeID` instead; an empty `ScopeID` is ambiguous with the root scope.
+3g. **A late reply to a superseded compensation command returns `ErrTokenNotFound`** rather
+    than being treated as a benign duplicate. Belongs with item 16.
 
 **Deferred from ADR-0175's design:**
 
@@ -197,6 +252,45 @@ No delivery is queued. The strongest candidates, in rough order:
     ⚠ NOT on `main`, NOT pushed (public repo; unfixed Critical/High findings). ⚠ Treat its
     claims as **unverified**.
 
+**From ADR-0176:**
+
+22. **The four gates it deliberately deferred**, each for a *measured* defect in the first
+    design — a deploy-time `model.Validate` gate (its prescribed mechanism was an **import
+    cycle**; the wire form via `toWire` is the real one, and it must live in
+    `validateStructure` or every nested sub-process is exempt), a step-time engine gate (**wedges
+    a running instance**), `StepOptions.SchedulingLocation` (only a step-time gate needs it),
+    and migrating existing orphan zero-`next_run` rows. Their own ADR.
+23. **Orphan rows are not reclaimed.** The rehydration guard stops them wedging boot, but
+    nothing deletes them — `PruneTimers` was measured deleting **1 of 5**. Manual remediation
+    only. Pairs with item 22.
+24. **A refused arm leaves the engine's in-memory `timerRecord` with no durable row**, so
+    `HasArmedTimers()` over-reports and the parked token is *less* diagnosable than the poisoned
+    row was. Making it visible needs a post-step incident channel that does not exist.
+25. ✅ **`EveryRandom(min>max)` — CLOSED** at ADR-0176's `/code-review`: `Next` now refuses
+    `min >= max`, matching gocron. It could never have been caught by a `next_run`-keyed guard,
+    because its `next_run` is non-zero.
+26. **The calendar scan is still linear in a consumer-supplied `interval`** — but at MONTH, not
+    day, granularity after ADR-0176's `/code-review` (off-grid months are skipped whole):
+    `Monthly(120000,[31])` went 6.34 s → 392 ms. ⚠ Also now a **`Daily`/`Monthly`-only** concern,
+    since the weekly branch no longer scans at all. Closing it fully needs day-count arithmetic
+    across DST in the highest-risk function.
+27. **The definition store round-trips semantically invalid definitions** — a stored definition
+    is not re-validated on load.
+28. ⚠ **A weekday set mixing in-range and out-of-range weekdays changed answer** in ADR-0176
+    (it now reports gocron's instant, not the in-range one). `Trigger.Next` is exported —
+    **release note**. The same note covers the eight shapes ADR-0176's `/code-review` moved from
+    "reports an instant" to "never due": bad monthly day entries, `EveryRandom(min>=max)`, and
+    out-of-range at-times.
+29. ⚠ **The arm guard is not atomic with the arm** — `activateJob` re-derives from the trigger at
+    gocron's own clock reading, so a trigger that goes never-due between the check and that
+    reading can still reach the unbounded search. ADR-0176 narrowed the window from a whole
+    commit to a few instructions; closing it needs gocron to honour the instant it is handed.
+30. **`weeklyNext`'s `int(interval)*7` overflows** at an interval ≥ ~1.3e18, returning a PAST
+    instant with `ok=true` (measured: anchor 2026-08-13 → 2026-08-10). Adjudicated NOT a
+    security finding at `/security-review` — no trust boundary is crossed and gocron's own
+    algorithm overflows identically, so the two still agree — but it is a real correctness wart.
+    Pairs with item 26 (both want `interval` bounded).
+
 ## Where things live
 
 | | |
@@ -207,9 +301,10 @@ No delivery is queued. The strongest candidates, in rough order:
 | **`parked/scope-and-fanout-design`** | ⚠ **SUPERSEDED — do NOT use as an input** |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept for its audit tags |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — parked, docs only. Owner DECIDED not to push it. Holds ADR numbers **0155–0157** |
+| **`feat/never-due-timer-triggers`** | ⭐ **the live delivery** — ADR-0176, ONE amended commit (docs + code), implemented and verified, awaiting the owner-only review gates. NOT pushed |
 | `docs/architecture-audit` | `393e516` — `AUDIT.md`, ⚠ deliberately NOT on `main` and NOT pushed |
-| worktrees | ✅ **CLEAN** — `git worktree list` shows only the primary checkout. The three stale ones under `…/87601c38-…/scratchpad/wt-{design,premise,tests}` were removed 2026-08-12 with the owner's approval, after re-verifying `git status --porcelain` was empty in each immediately beforehand. Their commit `33e4692` (superseded ADR-0168/0169 pre-merge history) remains in the object store; its content shipped via `b12bba3`. |
-| Latest ADR | **0175** (SHIPPED). Next free is **0176** |
+| worktrees | ✅ **CLEAN** — `git worktree list` shows only the primary checkout. The three ADR-0176 audit worktrees under `.claude/worktrees/agent-*` were removed 2026-08-13 after verifying `git status --porcelain` was empty in each and that their audit records are committed in-repo. The three older ones under `…/87601c38-…/scratchpad/wt-*` went the same way on 2026-08-12. |
+| Latest ADR | **0176** (implemented, on its branch, NOT merged). Newest SHIPPED on `main` is **0175**. Next free is **0177** |
 | v0.1.0 | not tagged |
 
 ## Standing constraints
@@ -246,6 +341,12 @@ No delivery is queued. The strongest candidates, in rough order:
 - **Per-delivery state** — the `▶ Progress` block at the top of that delivery's plan.
 - **ADR-0175's build-affecting audit outcomes** —
   `docs/plans/2026-08-12-stalled-compensation-walk-escape.md` `▶ Progress`.
+- **ADR-0176 (in flight)** — spec `docs/specs/2026-08-13-never-due-timer-triggers.md`, plan
+  `docs/plans/2026-08-13-never-due-timer-triggers.md` (`▶ Progress` first), audit
+  `docs/specs/2026-08-13-adr-0176-audit-lens-{a,b,c}.md`, raw measurements
+  `docs/specs/2026-08-13-adr-0176-measurements.md` — ⚠ read that file **backwards**: its
+  **§15 (what implementation refuted) and §14 (the arming instants) supersede §13, which
+  supersedes §1–§10**.
 - **ADR-0175's audit record** — `docs/specs/2026-08-12-adr-0175-audit-evidence.md`.
 - **ADR-0174's implementation record** —
   `docs/plans/2026-08-11-dying-instance-harvests-open-scopes.md` `▶ Progress`.

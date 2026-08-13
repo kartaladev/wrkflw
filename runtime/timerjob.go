@@ -63,10 +63,19 @@ var _ scheduler.ScheduledJob = (*scheduledTimerJob)(nil)
 
 func (s *scheduledTimerJob) NextRun() time.Time { return s.nextRun }
 
-// newScheduledTimerJob wraps j with NextRun = j.trig.Next(now). Callers build
-// j from a successfully converted trigger, so Next reports ok; on the
-// impossible not-ok path the zero time is stamped (the scheduler re-validates
-// the trigger at arm time anyway).
+// newScheduledTimerJob wraps j with NextRun = j.trig.Next(now), which is the
+// instant handed to the scheduler at Activate. It is NOT what gets persisted:
+// jobStore.Save writes j's descriptor, carrying the authoritative NextRun its
+// caller computed.
+//
+// Next's ok is discarded here because both callers have already refused a
+// trigger that reports not-ok — timerJobsFor for a fresh arm, jobStore.Load
+// for a rehydrated row (ADR-0176). Before that, this line stamped the zero
+// time on the not-ok path and the comment here called that path impossible,
+// asserting the scheduler would re-validate the trigger at arm time anyway.
+// Both were false: the zero instant was persisted inside the commit
+// transaction, and the post-commit Activate that would have rejected it runs
+// where failure is deliberately WARN-only.
 func newScheduledTimerJob(j *timerJob, now time.Time) *scheduledTimerJob {
 	next, _ := j.trig.Next(now)
 	return &scheduledTimerJob{timerJob: j, nextRun: next}

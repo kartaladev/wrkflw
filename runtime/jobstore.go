@@ -42,6 +42,12 @@ func newJobStore(driver *ProcessDriver) *jobStore { return &jobStore{driver: dri
 // A genuine infrastructure failure (e.g. a ListArmed DB error) is returned as
 // a plain non-sentinel error and is always fatal.
 //
+// Load also skips, at WARN and without failing the batch, any row whose
+// trigger will not convert and any row that cannot be armed at all — one
+// whose trigger reports no next fire from the current clock (ADR-0176).
+// Nothing reclaims a skipped row: it stays in the timer store until an
+// operator removes it, and Pruner.PruneTimers does not delete it.
+//
 // Save persists j's typed descriptor via the driver's TimerWriter (recovered
 // by type-asserting j to the runtime's own descriptor-bearing job shape);
 // Delete removes the durable row identified by timer id alone. Both are
@@ -82,6 +88,32 @@ func (j *jobStore) Load(ctx context.Context) ([]scheduler.ScheduledJob, error) {
 					slog.String("timer_id", a.TimerID),
 					slog.String("instance_id", a.InstanceID),
 					slog.Any("error", err))...)
+			continue
+		}
+		if sj.NextRun().IsZero() {
+			// ADR-0176. Rehydration re-arms from the TRIGGER, not from the
+			// stored next_run — rehydrateTrigger hands a recurring trigger
+			// back verbatim, and every never-due calendar kind is recurring —
+			// so a zero arm instant here is exactly neverDueNextRun over that
+			// re-derived trigger (newScheduledTimerJob stamps the zero time on
+			// the not-ok path). Skipping is what stops a persisted row wedging
+			// boot: the scheduler is a process-wide singleton, so one row
+			// gocron cannot resolve blocks every arm, cancel and rehydrate
+			// behind it.
+			//
+			// This is deliberately keyed on the RE-DERIVED instant rather than
+			// on a zero stored next_run: a row armed in a month with a 31st
+			// carries a valid stored instant and still cannot be re-armed in
+			// February (measured). The converse also matters — a row whose
+			// stored value is zero but whose trigger still fires is re-armed
+			// here rather than stranded.
+			j.driver.obs.timerArmsRefused.Add(ctx, 1)
+			j.driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: load scheduled timers: trigger can never fire, skipping timer",
+				append(j.driver.obs.tel.LogAttrs(ctx),
+					slog.String("timer_id", a.TimerID),
+					slog.String("instance_id", a.InstanceID),
+					slog.String("timer_kind", a.Kind.String()),
+					slog.Time("stored_next_run", a.NextRun))...)
 			continue
 		}
 		jobs = append(jobs, sj)
