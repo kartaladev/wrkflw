@@ -284,8 +284,7 @@ parked `feat/durable-waiters-delivery-correctness`.
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept for its audit tags |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — parked, docs only. Owner DECIDED not to push it. Holds ADR numbers **0155–0157** |
 | `docs/architecture-audit` | `393e516` — `AUDIT.md`, ⚠ deliberately NOT on `main` and NOT pushed |
-| worktrees | ✅ **CLEAN** — `git worktree list` shows only the primary checkout. The three ADR-0176 audit worktrees under `.claude/worktrees/agent-*` were removed 2026-08-13 after verifying `git status --porcelain` was empty in each and that their audit records are committed in-repo. The three older ones under `…/87601c38-…/scratchpad/wt-*` went the same way on 2026-08-12. |
-| `worktree-agent-{a2454…,a4a2d…,ac702…}` | 🧹 three LOCAL leftover branches from the ADR-0176 audit worktrees (worktrees already removed). Their content — the three audit-lens documents — **is on `main`**, verified with `git ls-files`. Safe to `git branch -D`; left in place because deleting them was not asked for |
+| worktrees | ✅ **CLEAN** — `git worktree list` shows only the primary checkout, and `git branch` carries no `worktree-agent-*` leftovers. The three ADR-0176 audit worktrees were removed 2026-08-13 after verifying `git status --porcelain` was empty in each; their three branches were deleted the same day, after diffing each audit-lens document against `main` and confirming it byte-identical. ⚠ The one thing those refs carried that `main` does not is `726fe7ad`, the **pre-rewrite** ADR-0176 design the audit refuted — deliberately discarded, since the spec's §8 and the three lens documents on `main` record what it said and why it was wrong. The older worktrees under `…/87601c38-…/scratchpad/wt-*` went the same way on 2026-08-12. |
 | Latest ADR | **0176** (SHIPPED at `52bf0f80`). Next free is **0177** |
 | v0.1.0 | not tagged |
 
