@@ -74,7 +74,14 @@ public packages live directly at the repo root.
 - `docs/adr/` — Architecture Decision Records, `NNNN-<slug>.md`, **Nygard
   template** (see `docs/adr/0001-record-architecture-decisions.md`).
 - `docs/specs/` — **specs/design docs** produced by `superpowers:brainstorming`
-  (and any spec-writing skill). One `<slug>.md` per feature/decision.
+  (and any spec-writing skill). One `<slug>.md` per feature/decision — **plus that
+  delivery's evidence records**: rule-#9 audit write-ups, premise re-derivations and
+  raw measurement logs, named `<date>-{adr-NNNN|<slug>}-{audit-*,measurements,premise-evidence}.md`
+  (prefer the ADR-numbered form; one pre-existing file uses the slug form).
+  They live beside the spec deliberately: an audit is read against the document it
+  attacks, and the date-slug ordering keeps them adjacent. Keep evidence **in-repo** —
+  a previous delivery lost its auditors' write-ups to a temporary directory and had to
+  repair dangling citations afterwards.
 - `docs/plans/` — **implementation plans** produced by `superpowers:writing-plans`
   (and `superpowers:executing-plans` inputs). One `<slug>.md` per plan. Two files
   here are not plans: **`HANDOVER.md`**, the live current-state handover a fresh
