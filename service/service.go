@@ -98,7 +98,10 @@ type InstanceOps interface {
 
 	// CancelInstance terminates a running process instance, running any
 	// definition-level cancel actions best-effort. Returns ErrConflict when the
-	// instance has already reached a terminal state.
+	// instance has already reached a terminal state, and also when the engine
+	// DROPPED the cancel because an admin partial rollback owns the instance —
+	// that cancel will never terminate anything, and the caller is told so rather
+	// than given a 200 for nothing (ADR-0180).
 	CancelInstance(ctx context.Context, req CancelInstanceRequest) (ProcessInstance, error)
 }
 
@@ -525,7 +528,9 @@ func (e *ProcessEngine) ResolveCompensationStall(ctx context.Context, req Resolv
 }
 
 // CancelInstance resolves the instance's definition, rejects an already-terminal
-// instance with ErrConflict, and delegates to ProcessDriver.CancelInstance.
+// instance with ErrConflict, and delegates to ProcessDriver.CancelInstance. A
+// cancel the engine dropped is likewise ErrConflict (ADR-0180); the driver has
+// still cancelled the instance's async children by then.
 func (e *ProcessEngine) CancelInstance(ctx context.Context, req CancelInstanceRequest) (ProcessInstance, error) {
 	def, st, err := e.resolveDefinition(ctx, req.InstanceID)
 	if err != nil {
@@ -535,6 +540,14 @@ func (e *ProcessEngine) CancelInstance(ctx context.Context, req CancelInstanceRe
 		return nil, fmt.Errorf("%w: instance %q is already terminal", ErrConflict, req.InstanceID)
 	}
 	st, err = e.driver.CancelInstance(ctx, def, req.InstanceID)
+	// A DROPPED cancel (ADR-0180) is a state conflict, not a transport-level
+	// failure: a compensation walk owns the instance, so this cancel did nothing
+	// and never will. Classified explicitly rather than left to the engine
+	// sentinel's ErrInvalidTransition wrapping, so a consumer of THIS layer keys
+	// on this layer's vocabulary; the engine cause stays inspectable.
+	if err != nil && errors.Is(err, engine.ErrCancelNotApplicable) {
+		return nil, fmt.Errorf("%w: cancel instance %q: %w", ErrConflict, req.InstanceID, err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("workflow-service: cancel instance: %w", err)
 	}

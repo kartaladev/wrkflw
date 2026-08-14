@@ -2,17 +2,19 @@ package engine_test
 
 // ADR-0175 — a breached stall window raises an incident and changes nothing else.
 //
-// The fire handler is a case in handleTimerFired's path-4 Kind switch, which
-// sits AHEAD of the !spawnsNewWork() guard. That placement is load-bearing:
-// the walks that terminate (walkAdmin — cancel, error and the admin full
-// rollback — walkReverse, and any throw walk carrying PendingCancel) are exactly
-// the walks for which spawnsNewWork() is false, and they are the ones an
-// operator most needs to see wedged.
+// The fire handler is a case in handleTimerFired's path-4 Kind switch. Since
+// ADR-0178 that switch sits BEHIND a !spawnsNewWork() refusal, so on a DYING
+// instance the record reaches the switch only because that refusal EXEMPTS
+// walk-scoped kinds (TimerKind.walkScoped). The exemption is load-bearing: the
+// walks that terminate (walkAdmin — cancel, error and the admin full rollback —
+// walkReverse, and any throw walk carrying PendingCancel) are exactly the walks
+// for which spawnsNewWork() is false, and they are the ones an operator most
+// needs to see wedged. A blanket guard would silence detection precisely there.
 //
 // ⚠ Path 4 is NOT inherently safe on a dying instance: a TimerInWait reminder
-// was measured emitting a real InvokeAction from there. This handler is safe
-// only because it emits NOTHING — a constraint on the handler, not a property
-// inherited from its location.
+// was measured emitting a real InvokeAction from there — the hole ADR-0178's
+// refusal closes. This handler is safe only because it emits NOTHING, a
+// constraint on the handler, not a property inherited from its location.
 
 import (
 	"testing"
@@ -97,7 +99,7 @@ func TestStallIncidentIsRaisedOnADyingWalk(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, res.State.Incidents, 1,
-		"path 4 sits AHEAD of the !spawnsNewWork() guard, so a dying walk still reports")
+		"path 4's !spawnsNewWork() refusal exempts walk-scoped kinds, so a dying walk still reports")
 	assert.Equal(t, engine.IncidentCompensationStall, res.State.Incidents[0].Kind)
 	assert.Empty(t, res.Commands)
 }

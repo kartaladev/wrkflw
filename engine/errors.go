@@ -66,6 +66,61 @@ var (
 	// both hold. See ADR-0165.
 	ErrTaskNotOpen = fmt.Errorf("workflow-engine: human task is not open: %w", ErrInvalidTransition)
 
+	// ErrInstanceAlreadyStarted is returned when [StartInstance] is delivered to an
+	// instance that has already been started.
+	//
+	// Without it the start is accepted on ANY non-terminal instance and
+	// SUPERIMPOSES a second start on the live one: measured, tokens 1 → 3 and human
+	// tasks 1 → 2 in a single step, with the old parked token, its task and its
+	// armed timers all surviving beside the new ones, [InstanceState.StartVariables]
+	// — the audit record of what the process was started with — overwritten, and a
+	// compensation cursor left naming an ActiveCmdID on an instance whose status the
+	// restart flipped back to running, so the worker still executing that
+	// compensation is answered with [ErrTokenNotFound].
+	//
+	// The guard is deliberately NOT a status test: StatusRunning is the zero value,
+	// so a never-started state already reads as running and a status-keyed guard
+	// would refuse every legitimate start. It is not a StartedAt test alone either —
+	// [Step] is public API and the caller supplies the trigger's OccurredAt, so a
+	// zero one leaves StartedAt.IsZero() true on an instance that HAS started
+	// (measured: the naive guard let a second start through, tokens 1 → 2). The
+	// predicate reads every witness of a prior start: StartedAt, Tokens and History.
+	//
+	// It wraps [ErrInvalidTransition] for the same classification reason as
+	// [ErrInstanceTerminal] — the instance exists and is in the wrong state for this
+	// trigger. See ADR-0180.
+	ErrInstanceAlreadyStarted = fmt.Errorf("workflow-engine: instance has already been started: %w", ErrInvalidTransition)
+
+	// ErrCancelNotApplicable is returned when a [CancelRequested] is DROPPED: a
+	// terminal or admin partial-rollback compensation walk is already in flight, so
+	// re-entering compensation would double-run the records it is still consuming,
+	// and the cancel therefore does nothing at all.
+	//
+	// It reports an outcome; it does not abort anything. The engine's answer here
+	// used to be err=<nil> with zero commands and a state byte-identical to the one
+	// it was given, after which a partial rollback resumed and the "cancelled"
+	// instance went back to running while its operator held an HTTP 200. Nothing
+	// about that behaviour changes — only the honesty of the answer.
+	//
+	// ⚠ Callers must treat it as a REPORTING outcome, never as a propagation-halting
+	// error. runtime.ProcessDriver.CancelInstance therefore excludes it from its
+	// early return and re-reports it AFTER cancelling the instance's async children,
+	// and propagateCancel's child loop recurses into a dropped child's own subtree
+	// rather than skipping it. Measured with the naive shape (return on any error):
+	// a terminated parent kept a permanently RUNNING child and grandchild — strictly
+	// worse than the silent nil it replaces.
+	//
+	// It is deliberately NOT returned by the DEFERRED site (PendingCancel = true on
+	// a RESUMING walk), which keeps returning nil: that cancel recorded its intent
+	// and the instance really will terminate. "Will not terminate at all" and "will
+	// terminate later" are different answers.
+	//
+	// It wraps [ErrInvalidTransition] for the same classification reason as
+	// [ErrInstanceTerminal], so the service layer classifies it as its ErrConflict
+	// and the HTTP transports answer 422 rather than a 500 with an empty body.
+	// See ADR-0180.
+	ErrCancelNotApplicable = fmt.Errorf("workflow-engine: cancel is not applicable while a compensation walk is in flight: %w", ErrInvalidTransition)
+
 	// ErrNoCompensationWalk is returned when a [ResolveCompensationStall] escape
 	// verb arrives with no compensation walk in flight — the instance is not
 	// compensating, or its cursor holds no dispatched command.

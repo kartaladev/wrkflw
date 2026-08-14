@@ -835,7 +835,12 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 			Kind:    TimerIntermediate,
 		})
 		tok.State = TokenWaiting
+		// Dual-write (ADR-0177): AwaitCommand stays the dispatch key that
+		// handleTimerFired's fall-through routes on; AwaitTimer is the
+		// enumeration marker TimerTokenWaiters reads, because AwaitCommand alone
+		// cannot say whether the id names a timer, a task or an action command.
 		tok.AwaitCommand = timerID
+		tok.AwaitTimer = timerID
 	} else if ice.SignalName != "" {
 		// Signal intermediate catch event: park the token awaiting the signal.
 		// The SignalReceived trigger (broadcast) will resume it later.
@@ -1132,10 +1137,11 @@ func startCompensationWalk(c *stepCtx, cmds []Command, tok *Token, records []Com
 	c.s.consumeDispatchedRecord(len(records) - 1)
 	rec := records[len(records)-1]
 	cmds = append(cmds, compensationInvoke(rec, cmdID))
-	// This is the throw walk's FIRST dispatch and therefore the third of the
-	// three compensation dispatch sites (ADR-0175). Arming only the other two
-	// leaves a single-record throw walk with no stall detection at all — and this
-	// is the site the measured deferred-cancel deadlock arises at.
+	// This is the throw walk's FIRST dispatch, and one of the four compensation
+	// dispatch sites that must arm the stall timer (ADR-0175): beginCompensation,
+	// stepCompensationAdvance, retryStalledCompensation and this one. Leaving it
+	// unarmed would give a single-record throw walk no stall detection at all —
+	// and this is the site the measured deferred-cancel deadlock arises at.
 	cmds = append(cmds, armCompensationStallTimer(c.s, c.pol, rec.NodeID)...)
 	tok.State = TokenWaiting
 	return cmds

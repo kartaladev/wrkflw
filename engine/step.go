@@ -81,7 +81,7 @@ type stepPolicy struct {
 	// StepOptions.Evaluator, or the pure package-global default.
 	eval ConditionEvaluator
 	// stallAfter is StepOptions.CompensationStallAfter. Zero disables stall
-	// detection; it reaches the three compensation dispatch sites through this
+	// detection; it reaches armCompensationStallTimer's call sites through this
 	// field (ADR-0175).
 	stallAfter time.Duration
 }

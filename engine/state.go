@@ -101,8 +101,23 @@ type Token struct {
 	// It is evaluated from model.Node.CorrelationKey against the instance variables
 	// at park time. Empty means no key was configured — match on name alone.
 	AwaitMessageKey string
-	Payload         map[string]any
-	EnteredAt       time.Time
+	// AwaitTimer is the scheduled timer id this token is parked on (plain timer
+	// intermediate catch event). It is an ENUMERATION MARKER, not a dispatch key:
+	// the same id is written to AwaitCommand, which is what handleTimerFired
+	// still routes on, so this field is purely additive (ADR-0177).
+	//
+	// It exists because AwaitCommand is overloaded — measured holding human-task
+	// ids, event-gateway sentinels, action command ids, timer ids and "" — so a
+	// timer park is not identifiable from state alone without a dedicated field.
+	// [InstanceState.TimerTokenWaiters] is its only reader.
+	//
+	// ⚠ It must be CLEARED wherever AwaitCommand is cleared; see
+	// [Token.clearAwait], which is the only writer of the empty value. Left set,
+	// [InstanceState.HasArmedTimers] reports true forever for a token that is
+	// waiting on nothing.
+	AwaitTimer string
+	Payload    map[string]any
+	EnteredAt  time.Time
 
 	// RetryAttempts is the number of execution attempts already made for this
 	// token's current node (0 = first attempt has not started yet, 1 = one
@@ -112,6 +127,25 @@ type Token struct {
 	// initiated. It serves as the anchor for MaxElapsed budget calculations.
 	// Zero value means the token is not currently retrying.
 	RetryStartedAt time.Time
+}
+
+// clearAwait drops the await markers a token stops holding the moment it is
+// resumed: the command/task/timer id it parked on ([Token.AwaitCommand]) and
+// the timer-catch enumeration marker ([Token.AwaitTimer]).
+//
+// It exists so the two can never drift. AwaitTimer is written alongside
+// AwaitCommand at the plain timer intermediate-catch arm site, and left set it
+// makes [InstanceState.TimerWaiters] report an arm the scheduler no longer
+// holds — the inverted-purpose defect ADR-0177's audit caught. Every site that
+// clears AwaitCommand calls this instead; that is the invariant, not an
+// optimisation.
+//
+// It deliberately leaves AwaitSignal/AwaitMessage alone: those are cleared (or
+// not) by the signal/message resume paths on their own terms, and folding them
+// in here would change behaviour rather than preserve it.
+func (t *Token) clearAwait() {
+	t.AwaitCommand = ""
+	t.AwaitTimer = ""
 }
 
 // IncidentKind discriminates what an [Incident] is about, so a reader can tell
@@ -223,7 +257,14 @@ type InstanceState struct {
 	// Tasks holds the in-flight human-task records for this instance.
 	Tasks []humantask.HumanTask
 
-	// Timers is the auxiliary bookkeeping table for all scheduled timers.
+	// Timers is the auxiliary bookkeeping table for the timers the engine
+	// dispatches by RECORD: deadline, in-wait/reminder, retry and
+	// compensation-stall. It is NOT every scheduled timer — the arm-borne
+	// sources (timer boundaries, event-gateway timer arms, event-sub-process
+	// timer arms and plain timer intermediate catch events) arm a timer without
+	// writing a record here, so a len(Timers) test is not a test for "any armed
+	// timer". [InstanceState.TimerWaiters] is the authority spanning all five
+	// sources (ADR-0177).
 	// Keyed implicitly by index; looked up by TimerID. A timer record is removed
 	// when the timer is consumed (fired and handled) or cancelled so that a
 	// late/duplicate TimerFired is a clean no-op.

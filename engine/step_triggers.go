@@ -25,7 +25,19 @@ var ErrNoManualStart = errors.New("workflow-engine: definition has no manual sta
 // handleStartInstance processes a StartInstance trigger: initialises instance
 // state, places the start token, arms top-level event sub-processes, and drives
 // forward from the start node.
+//
+// It refuses an instance that has already been started with
+// [ErrInstanceAlreadyStarted] (ADR-0180) — the handler has no reset semantics, so
+// a second start would superimpose itself on the live one.
 func handleStartInstance(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t StartInstance, opt StepOptions) (StepResult, error) {
+	// Refuse a start on an instance that has already been started: this handler
+	// never clears Tokens/Tasks/Timers, so a second start SUPERIMPOSES itself on
+	// the live one (ADR-0180). Every witness of a prior start is read, because no
+	// single one is sufficient — StatusRunning is the zero value, and OccurredAt
+	// comes from the caller so StartedAt can be zero on a started instance.
+	if hasStarted(s) {
+		return StepResult{}, fmt.Errorf("%w: %q", ErrInstanceAlreadyStarted, s.InstanceID)
+	}
 	s.Status = StatusRunning
 	s.StartedAt = t.OccurredAt()
 	s.DefID = def.ID
@@ -52,6 +64,19 @@ func handleStartInstance(ctx context.Context, def *model.ProcessDefinition, s *I
 		return StepResult{}, driveErrStart
 	}
 	return StepResult{State: *s, Commands: append(espCmds, driveCmdsStart...)}, nil
+}
+
+// hasStarted reports whether s carries any witness that a StartInstance has
+// already been applied to it. It is the predicate behind
+// [ErrInstanceAlreadyStarted] (ADR-0180).
+//
+// Three witnesses, because each alone is defeatable: StartedAt is written from
+// the trigger's caller-supplied OccurredAt and can therefore be zero on a started
+// instance; Tokens is empty for a parked-nowhere instance mid-compensation; and
+// History is the append-only visit log a start always writes to. A state with
+// none of the three has never run a node.
+func hasStarted(s *InstanceState) bool {
+	return !s.StartedAt.IsZero() || len(s.Tokens) > 0 || len(s.History) > 0
 }
 
 // resolveManualStart returns the id of the definition's single manual
@@ -109,7 +134,7 @@ func handleActionCompleted(ctx context.Context, def *model.ProcessDefinition, s 
 		}
 	}
 	mergeVars(s, t.Output)
-	tok.AwaitCommand = ""
+	tok.clearAwait()
 	// Advance the token past the completed ServiceTask so drive sees it at
 	// the next node, not re-firing the action. Use the token's scope definition
 	// so inner-scope tokens resolve flows against the nested definition.
@@ -207,6 +232,27 @@ func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s 
 		// Limitation: a cancel racing an admin PARTIAL rollback is therefore dropped
 		// (the partial walk resumes at its ToNode) — a rare admin-debug edge accepted
 		// in exchange for the no-double-compensation guarantee.
+		//
+		// The drop is REPORTED — but ONLY when the walk in flight RESUMES the
+		// instance, which is the case that loses the cancel (ADR-0180). Nothing else
+		// changes: no commands, no state change, the in-flight walk still owns the
+		// instance. Only the caller stops being told this worked — measured, an
+		// operator got a 200 and then watched the "cancelled" instance resume.
+		//
+		// ⚠ This site serves TWO situations, and implementation refuted the ADR's
+		// claim that both take the sentinel. A walkAdmin walk (the terminal
+		// cancel/error rollback) ENDS the instance, so a redundant cancel is
+		// idempotently satisfied — ADR-0034's post-acceptance idempotent re-cancel,
+		// pinned by TestSecondCancelMidCompensationWalkDoesNotDoubleCompensate, which
+		// went RED under the blanket form. Only walkPartial (the admin rollback that
+		// resumes at ToNode) is the measured defect. walkTerminates is the shared
+		// predicate, so this stays in step with what the finish actually does.
+		//
+		// ⚠ Callers must treat the sentinel as an outcome, not a halt: propagation to
+		// async children must still run (see [ErrCancelNotApplicable]).
+		if !s.Compensating.walkTerminates(s.PendingCancel) {
+			return StepResult{State: *s, Commands: nil}, fmt.Errorf("%w: instance %q", ErrCancelNotApplicable, s.InstanceID)
+		}
 		return StepResult{State: *s, Commands: nil}, nil
 	}
 
@@ -288,7 +334,7 @@ func handleCompensateRequested(ctx context.Context, def *model.ProcessDefinition
 func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t ActionFailed, opt StepOptions) (StepResult, error) {
 	// Best-effort compensation: if the engine is compensating and the failed
 	// command is the active compensation action, skip that record and advance
-	// the walk rather than re-entering propagateError/retry (ADR-0034 §2.5).
+	// the walk rather than re-entering propagateError/retry (ADR-0034 Decision 4).
 	if s.Status == StatusCompensating && s.Compensating.ActiveCmdID == t.CommandID {
 		return stepCompensationAdvance(ctx, def, s, t.OccurredAt(), resolvePolicy(opt))
 	}
@@ -373,7 +419,7 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 			}
 			tok.RetryAttempts = 0
 			tok.RetryStartedAt = time.Time{}
-			tok.AwaitCommand = ""
+			tok.clearAwait()
 			tok.State = TokenActive
 			s.moveTokenToTarget(tok, target, t.OccurredAt())
 			driveCmds, err := drive(ctx, def, s, t.OccurredAt(), resolvePolicy(opt))
@@ -490,16 +536,17 @@ func handleHumanReassigned(s *InstanceState, t HumanReassigned) (StepResult, err
 }
 
 // handleTimerFired processes a TimerFired trigger: dispatches in priority order
-// through event-gateway arms, boundary arms, event sub-process arms,
-// deadline/in-wait/retry timer records, and finally standalone intermediate timers.
+// through event-gateway arms, boundary arms, event sub-process arms, the
+// s.Timers record table, and finally standalone intermediate timers.
 //
-// The TimerDeadline/TimerInWait/TimerRetry sub-dispatch is preserved exactly as today.
+// The record sub-dispatch switches on every kind s.Timers can hold:
+// TimerDeadline, TimerInWait, TimerRetry and TimerCompensationStall.
 func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t TimerFired, opt StepOptions) (StepResult, error) {
 	// Dispatch order:
 	// 1) event-based gateway arm (first-event-wins routing).
 	// 2) boundary event arm (interrupting/non-interrupting).
 	// 3) event sub-process arm (interrupting: cancel scope; non-interrupting: spawn alongside).
-	// 4) deadline/in-wait timer record (task-guarded timers).
+	// 4) s.Timers record (deadline, in-wait/reminder, retry, compensation-stall).
 	// 5) standalone intermediate catch event (token parks on TimerID).
 
 	// A terminal instance never reaches this cascade: dispatch's structural guard
@@ -520,13 +567,55 @@ func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *Inst
 		return StepResult{State: *s, Commands: cmds}, nil
 	}
 
-	// 4) deadline/in-wait/retry timer record.
-	// s.Timers holds deadline (TimerDeadline), in-wait/reminder (TimerInWait), and retry
-	// (TimerRetry) records. Intermediate timers (TimerIntermediate) are never
-	// appended to s.Timers; for those, the token parks on the TimerID as its
-	// AwaitCommand, so they route via the tokenAwaiting path below.
+	// 4) s.Timers record.
+	// The table holds deadline (TimerDeadline), in-wait/reminder (TimerInWait),
+	// retry (TimerRetry) and compensation-stall (TimerCompensationStall) records —
+	// the four kinds the switch below dispatches. Intermediate timers
+	// (TimerIntermediate) are never appended to s.Timers; for those, the token
+	// parks on the TimerID as its AwaitCommand, so they route via the
+	// tokenAwaiting path below.
 	rec := s.timerByID(t.TimerID)
 	if rec != nil {
+		// ADR-0178: a DYING instance is given no work by a fired timer. Path 4 was
+		// the only one of the five with no spawnsNewWork() guard — this function's
+		// other guard sits BELOW the switch and protects path 5 alone, and every
+		// return in the switch jumps over it. Measured on a walk carrying a
+		// deferred cancel (spawnsNewWork()==false, Status still compensating): a
+		// TimerInWait dispatched a live reminder action, a TimerRetry re-invoked the service
+		// action (NOT fire-and-forget, so its ActionCompleted would land on a
+		// terminated instance), and a TimerDeadline dispatched an action, cancelled
+		// the open human task and CONSUMED the token — advancing a dying branch.
+		//
+		// ⚠ The exemption is a correctness requirement, not an optimisation: a
+		// walk-scoped timer belongs to the compensation walk rather than to the
+		// instance's forward work, and the terminating walks — exactly the
+		// spawnsNewWork()==false ones — are the walks an operator most needs to see
+		// wedged (ADR-0175, pinned by TestStallIncidentIsRaisedOnADyingWalk). A
+		// blanket guard here would silence stall detection precisely where it
+		// matters.
+		if !rec.Kind.walkScoped() && !s.spawnsNewWork() {
+			slog.WarnContext(ctx, "fired timer refused on a dying instance",
+				"instance_id", s.InstanceID,
+				"timer_id", rec.TimerID,
+				"timer_kind", rec.Kind.String(),
+				"node_id", rec.NodeID,
+				"status", s.Status.String(),
+			)
+			// Retire the record rather than leaving it armed: on an instance that
+			// spawns no new work a timer that would re-fire (a recurring reminder)
+			// has nothing left to do. This is a state mutation on a refusal path,
+			// and deliberate.
+			//
+			// ⚠ Retiring the record makes the refusal the LAST chance to disarm the
+			// scheduler job, so the CancelTimer is emitted here and is not optional.
+			// The terminal sweep (endInstance → cancelAllTimers) derives its
+			// CancelTimer commands from s.Timers, so a record removed here is a
+			// record that sweep will never see. A TimerInWait reminder is armed with
+			// a RECURRING trigger: without this command its scheduler job outlives
+			// the instance and keeps firing against a terminated one forever.
+			s.removeTimer(rec.TimerID)
+			return StepResult{State: *s, Commands: []Command{CancelTimer{TimerID: rec.TimerID}}}, nil
+		}
 		switch rec.Kind {
 		case TimerDeadline:
 			return handleDeadlineFired(ctx, def, s, *rec, t.OccurredAt(), resolvePolicy(opt))
@@ -566,7 +655,7 @@ func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *Inst
 	}
 	// Intermediate timer: remove its record (if any) so a later dup is a no-op.
 	s.removeTimer(t.TimerID)
-	tok.AwaitCommand = ""
+	tok.clearAwait()
 	// Cancel any in-wait reminder armed on this parked token (timer catch): the
 	// reminder is a DIFFERENT TimerInWait than the intermediate that just fired;
 	// exclude t.TimerID defensively.
@@ -738,7 +827,7 @@ func handleHumanCompleted(ctx context.Context, def *model.ProcessDefinition, s *
 		Note:    t.Note,
 	}
 	tok.State = TokenActive
-	tok.AwaitCommand = ""
+	tok.clearAwait()
 	// Clone before the record escapes to a consumer-supplied TaskStore: task
 	// points into s.Tasks, which is committed as instance state (ADR-0163).
 	cmds := []Command{UpdateTask{Task: task.Clone()}}
@@ -999,7 +1088,7 @@ func handleSubInstanceCompleted(ctx context.Context, def *model.ProcessDefinitio
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 	}
 	mergeVars(s, t.Output)
-	tok.AwaitCommand = ""
+	tok.clearAwait()
 	// Advance the token past the call-activity node using the token's scope
 	// definition (call-activity nodes can live inside a sub-process scope).
 	tdef, err := defForScope(def, s, tok.ScopeID)
