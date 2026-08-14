@@ -214,6 +214,79 @@ func (p *Pruner) PruneTimers(ctx context.Context, cutoff time.Time) (int64, erro
 	return n, nil
 }
 
+// ReclaimNeverDueTimers deletes orphan timer rows: rows whose next_run is
+// strictly before the Unix epoch AND whose trigger is recurring. Returns the
+// number of rows deleted. It takes no cutoff — the epoch sentinel is structural,
+// not a retention policy.
+//
+// Such a row is never-due by construction. ADR-0176 stopped the engine writing
+// a zero next_run for a recurring trigger it could not schedule, but it did not
+// reclaim the rows already stored, and [Pruner.PruneTimers] provably cannot: its
+// trigger_kind IN-list is exactly [nonRecurringTriggerKinds], so the reachable
+// set and the orphan set are disjoint by construction — no cutoff makes
+// PruneTimers see an orphan. Such a row heads the keyset index forever, pinning
+// [TimerStore.Stats] NextFireAt at 0001-01-01 (ADR-0181).
+//
+// This is a second, disjoint predicate and deliberately NOT a widening of
+// [Pruner.PruneTimers]' IN-list. Widening that list would make an expired
+// next_run on a recurring row eligible for deletion — but under D16 next_run is
+// written once when a recurring timer is armed and never updated per
+// recurrence, so an expired next_run there does not mean the timer is done
+// firing. Deleting those rows is exactly the bug ADR-0134 fixed, and the reason
+// the IN-list exists.
+//
+// The threshold is the Unix epoch, not an equality against the zero instant.
+// SQLite stores next_run as TEXT and compares it lexicographically, and rows
+// written with the pre-ADR-0151 trimmed encoding ("0001-01-01T00:00:00Z") are
+// still readable — see [parseTimeText] — but are not byte-equal to the
+// fixed-width zero ("0001-01-01T00:00:00.000000000Z"). An equality predicate
+// silently misses those rows and reports success. The epoch also sits inside
+// MySQL's DATETIME range and above a non-strict MySQL's coerced
+// '0000-00-00 00:00:00', and is unreachable by a legitimately armed recurring
+// row, whose next_run is always computed strictly forward from the arming
+// instant.
+//
+// The sweep is a single statement so the predicate is re-evaluated atomically:
+// a row concurrently re-armed by upsertTimer is simply no longer sub-epoch and
+// survives. A SELECT-then-DELETE-by-PK variant would open a TOCTOU window in
+// between and destroy such a row.
+//
+// Deleting the row does not unpark the instance it belongs to — the orphan is
+// the artefact of an instance parked forever, and removing it removes the
+// timer-side diagnostic while the instance stays stuck. Read
+// [TimerStore.ListArmed] or [TimerStore.Stats] first if the identities matter;
+// the sweep reports only a count.
+//
+// On MySQL this is a no-op by construction: a zero next_run cannot be stored
+// there at all under the default strict mode, so there is no orphan population.
+func (p *Pruner) ReclaimNeverDueTimers(ctx context.Context) (int64, error) {
+	q, err := database.From(p.conn)
+	if err != nil {
+		return 0, fmt.Errorf("workflow-store: pruner: reclaim never-due timers: conn: %w", err)
+	}
+
+	res, err := q.Exec(ctx,
+		p.dialect.Rebind(
+			`DELETE FROM wrkflw_timers
+			  WHERE next_run < ?
+			    AND trigger_kind IN (?, ?, ?, ?, ?, ?, ?)`),
+		timeArg(p.dialect, time.Unix(0, 0).UTC()),
+		int16(recurringTriggerKinds[0]), int16(recurringTriggerKinds[1]),
+		int16(recurringTriggerKinds[2]), int16(recurringTriggerKinds[3]),
+		int16(recurringTriggerKinds[4]), int16(recurringTriggerKinds[5]),
+		int16(recurringTriggerKinds[6]),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("workflow-store: pruner: reclaim never-due timers: %w", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("workflow-store: pruner: reclaim never-due timers: rows affected: %w", err)
+	}
+	return n, nil
+}
+
 // nonRecurringTriggerKinds are the [schedule.Kind] values that fire at most
 // once — the trigger_kind values [Pruner.PruneTimers] treats as eligible for
 // expiry-based deletion. Every other schedule.Kind value is recurring
@@ -223,4 +296,24 @@ var nonRecurringTriggerKinds = [3]schedule.Kind{
 	schedule.KindUnset,
 	schedule.KindOneTime,
 	schedule.KindExpr,
+}
+
+// recurringTriggerKinds are the [schedule.Kind] values that fire repeatedly —
+// the trigger_kind values [Pruner.ReclaimNeverDueTimers] treats as eligible for
+// sub-epoch orphan deletion.
+//
+// It is the exact complement of [nonRecurringTriggerKinds]: measured against
+// the schedule package, [schedule.TriggerSpec.Recurring] reports true for
+// exactly these seven kinds and false for exactly those three, and the two
+// lists together are every declared Kind. Keep them complementary — the two
+// sweeps are correct only while their trigger_kind sets are disjoint and their
+// union is total.
+var recurringTriggerKinds = [7]schedule.Kind{
+	schedule.KindDuration,
+	schedule.KindDurationRand,
+	schedule.KindCron,
+	schedule.KindDaily,
+	schedule.KindWeekly,
+	schedule.KindMonthly,
+	schedule.KindEveryExpr,
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kartaladev/wrkflw/definition/schedule"
 	"github.com/kartaladev/wrkflw/internal/dbtest"
 	"github.com/kartaladev/wrkflw/persistence"
 )
@@ -144,4 +145,65 @@ func TestPruner_PruneTimers_ThroughInterface(t *testing.T) {
 		`SELECT COUNT(*) FROM wrkflw_timers WHERE instance_id='inst-prune'`)
 	require.NoError(t, row.Scan(&remaining))
 	assert.Equal(t, 1, remaining, "post-cutoff timer must survive")
+}
+
+// TestNeverDueTimerReclaimerCapability pins the reachability decision of
+// ADR-0181: the orphan sweep must be callable from consumer wiring.
+//
+// Every public pruner constructor returns the persistence.Pruner *interface*,
+// and internal/persistence/store is unimportable by a consumer, so a method
+// living only on the concrete store type would be dead code. This test
+// therefore exercises exactly the assertion a consumer writes — through the
+// interface type the constructor actually returns — and never touches the
+// concrete type.
+//
+// It then calls the method against a seeded fixture rather than only asserting
+// the assertion succeeds: a capability that type-asserts but is wired to
+// nothing would still return (0, nil). The orphan must go and the sub-epoch
+// one-shot control (reachable by PruneTimers, and the guard on the two sweeps
+// staying disjoint) must survive.
+//
+// SQLite is the backend here because it is the only one that can hold the
+// fixture: MySQL rejects a zero next_run outright (Error 1292, ADR-0176
+// measurements §4), and it is container-free (dbtest.RunTestSQLite, pure Go).
+func TestNeverDueTimerReclaimerCapability(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db := dbtest.RunTestSQLite(t)
+
+	// Fixed-width nine-digit-fraction RFC3339 — the encoding SQLite timestamp
+	// columns are written in (ADR-0151).
+	const textTimeLayout = "2006-01-02T15:04:05.000000000Z07:00"
+	zero := time.Time{}.UTC().Format(textTimeLayout)
+
+	seed := func(instanceID, nextRun string, kind schedule.Kind) {
+		t.Helper()
+		_, err := db.ExecContext(ctx,
+			`INSERT INTO wrkflw_timers (instance_id, timer_id, next_run, kind, def_id, def_version, trigger_kind)
+			 VALUES (?, 't1', ?, 0, 'd', 1, ?)`,
+			instanceID, nextRun, int16(kind))
+		require.NoError(t, err, "seed timer row %s", instanceID)
+	}
+	seed("orphan-recurring", zero, schedule.KindDuration)
+	seed("control-suboneshot", zero, schedule.KindOneTime)
+
+	// A consumer only ever holds this interface — NewSQLitePruner, NewMySQLPruner
+	// and NewPruner all return it.
+	var pruner persistence.Pruner
+	pruner, err := persistence.NewSQLitePruner(db)
+	require.NoError(t, err)
+
+	reclaimer, ok := pruner.(persistence.NeverDueTimerReclaimer)
+	require.True(t, ok, "a Pruner from persistence.NewSQLitePruner must satisfy NeverDueTimerReclaimer")
+
+	n, err := reclaimer.ReclaimNeverDueTimers(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), n, "only the sub-epoch recurring orphan is reclaimed")
+
+	var survivor string
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT instance_id FROM wrkflw_timers`).Scan(&survivor))
+	assert.Equal(t, "control-suboneshot", survivor,
+		"a sub-epoch one-shot is PruneTimers' business, not the orphan sweep's")
 }

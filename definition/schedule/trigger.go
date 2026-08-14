@@ -152,6 +152,73 @@ func (s TriggerSpec) Random() (time.Duration, time.Duration, bool) {
 	return 0, 0, false
 }
 
+// NeverDue reports whether this trigger can never fire at ANY anchor instant — a spec that is
+// broken by construction rather than merely inconvenient, such as Every(0), Daily(0) or
+// Monthly(1, []int{32}). It exists so a definition carrying such a trigger can be rejected when it
+// is authored, instead of parking a process instance on a timer that will never arrive.
+//
+// It is SOUND but deliberately NOT COMPLETE: a true answer is always correct, a false answer means
+// only "not provably never-due from the spec alone". Three classes are knowingly not judged and
+// report false:
+//
+//   - Anchor-dependent calendar specs. Whether a spec fires can depend on when it is armed:
+//     Monthly(12, []int{31}) is never due anchored in February — no February has a 31st, and a
+//     12-month interval never leaves that month — yet due anchored in August. Only the
+//     anchor-independent classes are decided here.
+//   - Cron. Both never-due cron causes — an unparseable expression, and a parseable one matching no
+//     instant, such as "0 0 30 2 *" (30 February) — can only be detected by parsing the expression,
+//     which would pull a cron library into the definition layer. That dependency was declined, so
+//     every KindCron spec reports false.
+//   - The engine-resolved expression forms, AfterExpr and EveryExpr, whose duration is not known
+//     until the expression is evaluated at run time.
+//
+// For those classes the scheduler's own arm-time guard remains the only layer that refuses the
+// timer, and it is not superseded by this method.
+//
+// The decided set mirrors, one branch at a time, the anchor-independent refusals in the scheduler's
+// Trigger.Next: a non-positive Every interval; EveryRandom bounds with min <= 0 or min >= max; a
+// zero Daily/Weekly/Monthly interval; an at-time outside 0..23:59:59; a Monthly day-of-month outside
+// -31..-1 or 1..31 (a negative day is legal and counts back from the end of the month); and a
+// non-empty Weekly weekday set in which EVERY weekday is negative (a set mixing a negative weekday
+// with a valid one still fires, and a weekday above Saturday is a legal raw day offset).
+func (s TriggerSpec) NeverDue() bool {
+	switch s.kind {
+	case KindDuration:
+		return s.dur <= 0
+	case KindDurationRand:
+		return s.min <= 0 || s.min >= s.max
+	case KindDaily, KindWeekly, KindMonthly:
+		if s.interval == 0 {
+			return true
+		}
+		for _, at := range s.atTimes {
+			if at.Hour > 23 || at.Minute > 59 || at.Second > 59 {
+				return true
+			}
+		}
+		if s.kind == KindMonthly {
+			for _, d := range s.days {
+				if d == 0 || d > 31 || d < -31 {
+					return true
+				}
+			}
+		}
+		if s.kind == KindWeekly && len(s.weekdays) > 0 {
+			allNegative := true
+			for _, w := range s.weekdays {
+				if w >= 0 {
+					allNegative = false
+					break
+				}
+			}
+			return allNegative
+		}
+		return false
+	default:
+		return false
+	}
+}
+
 // Calendar returns the interval, days-of-month, weekdays, at-times, and ok=true for Daily, Weekly,
 // and Monthly (KindDaily/KindWeekly/KindMonthly). Returns ok=false for all other forms.
 func (s TriggerSpec) Calendar() (uint, []int, []time.Weekday, []ClockTime, bool) {

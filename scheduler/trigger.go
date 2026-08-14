@@ -106,11 +106,10 @@ func Every(d time.Duration) Trigger {
 // EveryRandom builds a recurring Trigger that fires at a random interval
 // uniformly distributed between min and max. [Trigger.Next] reports the
 // earliest possible bound (after+min); the live scheduler resolves the
-// actual random delay for each fire. min must be positive, or
-// [Trigger.Next] reports ok=false for the same never-advances reason as
-// [Every]. Bounds are not validated here — a min greater than max is not
-// rejected by this constructor; that validation happens at schedule time,
-// and until then Next always uses min as the earliest bound regardless.
+// actual random delay for each fire. This constructor validates nothing;
+// [Trigger.Next] is where the bounds are judged, and it reports ok=false for
+// a non-positive min (the same never-advances reason as [Every]) AND for
+// min >= max, which the live scheduler refuses outright.
 func EveryRandom(minimum, maximum time.Duration) Trigger {
 	return Trigger{kind: triggerEveryRandom, min: minimum, max: maximum}
 }
@@ -197,8 +196,8 @@ func (t Trigger) Recurring() bool {
 //   - a [Cron] expression that fails to parse, or one that parses but whose
 //     next occurrence robfig/cron cannot find within the five years it
 //     searches (e.g. "0 0 30 2 *", 30 February);
-//   - a non-positive duration for [Every], or a non-positive min for
-//     [EveryRandom];
+//   - a non-positive duration for [Every], or a non-positive min or a
+//     min >= max for [EveryRandom];
 //   - a zero interval for [Daily], [Weekly], or [Monthly];
 //   - a [Weekly] whose weekdays are all negative;
 //   - a [Daily] or [Monthly] whose forward scan exhausts its bound (5 years,
@@ -227,10 +226,10 @@ func (t Trigger) Recurring() bool {
 // zero-Trigger rule. [Every] reports (after+d, true) for a positive d, and
 // ok=false for a non-positive d (which would otherwise never advance).
 // [EveryRandom] reports the earliest possible bound (after+min, true) for a
-// positive min — the live scheduler resolves the actual draw per fire — and
-// ok=false for a non-positive min, for the same reason as [Every]; bounds
-// are not validated here (e.g. min>max), so Next always uses min as the
-// earliest bound regardless.
+// min in (0, max) — the live scheduler resolves the actual draw per fire —
+// and ok=false for a non-positive min, for the same reason as [Every], or for
+// min >= max, which the live scheduler refuses outright and which no
+// next_run-keyed guard downstream would catch (ADR-0176).
 //
 // [Cron], [Daily], [Weekly], and [Monthly] resolve the next matching
 // occurrence in the location of after (ADR-0137). A UTC after yields UTC.
