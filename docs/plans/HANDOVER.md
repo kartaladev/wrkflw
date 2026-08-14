@@ -9,7 +9,7 @@ top to bottom; it is meant to stay short enough that you can.
 > POINT" blocks and was silently abandoned for 45 ADRs — see
 > `docs/plans/HANDOVER-archive.md`. Per-delivery detail does **not** belong here:
 > it belongs in that delivery's plan under a `▶ Progress` block, where it dies
-> with the plan. This file carries only: where `main` is, what is in flight, and
+> with the plan. This file carries only: where `main` is, what is unmerged, and
 > what to do next.
 
 ## State — updated 2026-08-14
@@ -52,11 +52,12 @@ dropped-cancel site serves **two** situations where the ADR had generalised from
   are **deliberately re-deferred** with ADR-0176's measured reason recorded.
 - **C** — NEXT WORK item 3. Retry + visibility for a failed compensation action (backlog 16, 3g).
 
-### ⚠ Ordering constraint
+### ⚠ Ordering constraint — SATISFIED
 
-**A must merge before C.** Bundle A introduces `TimerKind.walkScoped()`; bundle C extends it with
-`TimerCompensationRetry`. Without that extension ADR-0178's guard refuses every compensation retry
-and ADR-0179 **silently never works**. B is independent of both.
+A had to merge before C, and **it has** (`a5b33e4c`). `TimerKind.walkScoped()` is now on `main`;
+bundle C must **extend** it with `TimerCompensationRetry`, or ADR-0178's guard refuses every
+compensation retry and ADR-0179 **silently never works**. That extension is bundle C's job and is
+listed in its plan. B is independent of both.
 
 ### ⚠ Process lessons this session earned
 
@@ -106,7 +107,8 @@ and ADR-0179 **silently never works**. B is independent of both.
 3. **Audit bundle C's rewrite** (`feat/compensation-failure-retry-and-visibility`) — three lenses,
    one dedicated to re-counting. ⚠ Its dispatch-site count has been wrong **twice**: ADR-0175
    shipped "the third of the three" when there were four, and pre-split ADR-0179 said "all four"
-   when its own retry makes five. Then implement. **A must merge before C.**
+   when its own retry makes five. Then implement. ⚠ It **must extend `walkScoped()`** with
+   `TimerCompensationRetry` — now on `main` — or ADR-0178's guard silently disables every retry.
 4. Then the remaining backlog below.
 
 ## Pre-v0.1.0 blockers
@@ -128,9 +130,9 @@ and ADR-0179 **silently never works**. B is independent of both.
    boots (~60s of a ~2min suite). Fix: honour `WRKFLW_TEST_POSTGRES_DSN` / `WRKFLW_TEST_MYSQL_DSN`
    with testcontainers as fallback, plus `scripts/testdb.sh up|down` and CI wiring.
 8. **The `forceTerminate` → `endInstance` boundary sweep is entirely uncovered.**
-9. ⏳ **`Park.HasArmedTimers` misses four arm sources — CLOSED BY BUNDLE A once merged.**
-   ⚠ It is **four**, not two: boundary, event-gateway, event-sub-process **and plain
-   intermediate-catch**, the last of which appears in no enumeration anywhere.
+9. ✅ **`Park.HasArmedTimers` missed four arm sources — CLOSED by ADR-0177, ON `main`.**
+   ⚠ It was **four**, not two: boundary, event-gateway, event-sub-process **and plain
+   intermediate-catch**, the last of which appeared in no enumeration anywhere.
 
 ## Backlog
 
@@ -139,7 +141,7 @@ not repeated here in full. What remains:
 
 **Pre-existing defects (measured, unclaimed):**
 
-1. ⏳ `engine/step_triggers.go:291`'s `ADR-0034 §2.5` — **fixed in bundle A**. ⚠ Not invented: the
+1. ✅ `engine/step_triggers.go`'s `ADR-0034 §2.5` — **FIXED, on `main`** (one of thirteen). ⚠ Not invented: the
    2026-06-23 spec really has a `### 2.5`. A wrong-*document* attribution.
 3b. **The cancel path flips `s.Timers` from nil to an empty non-nil slice.** Pre-existing shape drift.
 3d. **The instance document gains fields** (`incidents[].kind`, `compensating` object) — additive.
