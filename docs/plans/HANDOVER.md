@@ -14,15 +14,14 @@ top to bottom; it is meant to stay short enough that you can.
 
 ## State — updated 2026-08-14
 
-**▶ THREE BUNDLES ON THREE BRANCHES. Bundle A is IMPLEMENTED and waiting at the owner's Delivery
-Gate; B and C are design-only.**
-`main` is unchanged and still clean — the newest code on it is the **ADR-0176 merge `52bf0f80`**;
-everything after that is docs-only. ⚠ Do not quote main's head; re-derive with
+**▶ ADR-0177/0178/0180 SHIPPED. Two design-only bundles remain on branches.**
+The newest code on `main` is the **ADR-0177/0178/0180 merge `a5b33e4c`** (pushed), on top of the
+ADR-0176 merge `52bf0f80`. ⚠ Do not quote main's head; re-derive with
 `git rev-parse --short refs/heads/main`.
 
 | bundle | branch | ADRs | audited? | state |
 |---|---|---|---|---|
-| **A** | `feat/engine-visibility-and-truthfulness` | 0177, 0178, 0180 | ✅ 3 lenses, 27 findings + ✅ `/code-review` 3 findings, all folded | ✅ **IMPLEMENTED, gate-green. ⏸ ONLY `/security-review` REMAINS** |
+| ~~A~~ | ✅ **SHIPPED — merge `a5b33e4c`, pushed, branch deleted** | 0177, 0178, 0180 | 3 lenses (27) + `/code-review` (3) + `/security-review` (0) | done |
 | **B** | `feat/never-due-gate-and-orphan-reclamation` | 0181, 0182 | ✅ 3 lenses, ~40 findings — ⚠ **NOT yet folded into the documents** | design **unsound as written**; fold the audit first, then implement |
 | **C** | `feat/compensation-failure-retry-and-visibility` | 0179 | ⚠ **failed its first audit; rewritten; NOT re-audited** | audit the rewrite first |
 
@@ -84,15 +83,14 @@ and ADR-0179 **silently never works**. B is independent of both.
 
 ## ▶ NEXT WORK — in order
 
-1. ⏸ **Bundle A — OWNER ACTION.** Implemented, gate-green, and **`/code-review` is DONE** (3
-   findings — one HIGH, one MEDIUM, one LOW — all folded via `--amend`, suite re-run green).
-   **Only `/security-review` remains.** Run it, fold any findings via `git commit --amend` (never
-   stacked), re-run the suite, then `git merge --no-ff` and push. An agent cannot invoke the gate.
+1. ✅ **Bundle A is SHIPPED** (merge `a5b33e4c`, pushed). Both gates passed: `/code-review` 3
+   findings all folded, `/security-review` **0 findings**.
    ⚠ The HIGH was an **orphaned recurring scheduler job**: the dying-instance refusal retired the
    timer record, which is exactly what stops the terminal sweep from later emitting `CancelTimer` —
    and the delivery's own test asserted `Commands` was empty, pinning the leak as the spec. Three
    audit lenses and implementation all missed it. **Eighth consecutive delivery where the real gate
-   found something the stand-ins did not.**
+   found something the stand-ins did not.** ⚠⚠ The controller's adjudicated fix for the MEDIUM was
+   itself **refuted by measurement** — see the plan's `▶ Progress` P5.
 2. **Fold bundle B's audit into its documents, then implement.** ⚠ **Do not implement it as
    written** — three lenses agree the never-due predicate is **unsound**: `Weekly(1,[Weekday(9)])`
    and `Monthly(1,[-1])` are DUE at every anchor and would be wrongly rejected;
