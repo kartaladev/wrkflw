@@ -45,8 +45,18 @@ func newJobStore(driver *ProcessDriver) *jobStore { return &jobStore{driver: dri
 // Load also skips, at WARN and without failing the batch, any row whose
 // trigger will not convert and any row that cannot be armed at all — one
 // whose trigger reports no next fire from the current clock (ADR-0176).
-// Nothing reclaims a skipped row: it stays in the timer store until an
-// operator removes it, and Pruner.PruneTimers does not delete it.
+// Of the two skip reasons, Pruner.PruneTimers cannot delete a row skipped as
+// NEVER-DUE: its trigger_kind IN-list covers only the non-recurring kinds, and
+// every never-due kind is recurring. Reclaiming one is the separate, disjoint
+// sweep of ADR-0181, reached through the persistence.NeverDueTimerReclaimer
+// capability; until an operator runs it the row stays in the timer store.
+// ⚠ Reclaiming the row does not unpark the instance that armed it.
+//
+// A row skipped because its trigger will not CONVERT is a different case and
+// gets no such protection: KindUnset and KindExpr are both non-recurring, so an
+// expired row of either kind is deleted by an ordinary PruneTimers retention
+// pass. Only pre-existing rows can be in that state — timerJobsFor no longer
+// persists an unconvertible trigger.
 //
 // Save persists j's typed descriptor via the driver's TimerWriter (recovered
 // by type-asserting j to the runtime's own descriptor-bearing job shape);

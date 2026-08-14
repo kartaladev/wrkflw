@@ -175,6 +175,22 @@ var (
 	// wait overruns, so the trigger must be one-shot (AfterDuration, At, or
 	// AfterExpr).
 	ErrDeadlineTriggerRecurring = errors.New("workflow-definition: deadline trigger must be one-shot")
+	// ErrTriggerNeverDue is returned when a node carries a timer or in-wait
+	// trigger that can never fire at any anchor — schedule.Every(0),
+	// schedule.Daily(0), a Monthly day-of-month outside -31..-1 or 1..31, and
+	// the rest of schedule.TriggerSpec.NeverDue's decided set (ADR-0182). Such a
+	// trigger arms a durable timer the scheduler then refuses, parking the
+	// instance forever, so it is rejected while the definition is authored
+	// instead of at run time.
+	//
+	// The rule is SOUND but deliberately NOT COMPLETE, exactly as NeverDue is:
+	// anchor-dependent calendar specs (Monthly(12, []int{31})), cron, and the
+	// engine-resolved expression forms are NOT judged here and stay the arm-time
+	// guard's business. Deadline triggers are out of scope for a different
+	// reason — no never-due one-shot deadline is reachable through the model
+	// (a zero schedule.At converts to a due After(0)), and the recurring half is
+	// already rejected by ErrDeadlineTriggerRecurring.
+	ErrTriggerNeverDue = errors.New("workflow-definition: trigger can never fire")
 	// ErrCompletionActionUnsupportedKind is returned when a node's
 	// CompletionAction is non-empty but the node's kind is not UserTask or
 	// ReceiveTask — the only two kinds with an external completion trigger that
@@ -657,6 +673,36 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		deadline, _, _ := DeadlineOf(n)
 		if !deadline.IsZero() && deadline.Recurring() {
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrDeadlineTriggerRecurring, n.ID()))
+		}
+	}
+
+	// Never-due timer and in-wait triggers (ADR-0182). Both fields reach the
+	// same durable-arm path — a timer trigger through the node's own arm, an
+	// in-wait trigger through engine.armWaitReminder's ScheduleTimer{Kind:
+	// TimerInWait} — where a spec that can never fire parks the instance on a
+	// timer that never arrives. Reject it while the definition is authored.
+	//
+	// This loop lives INSIDE validateStructure, not in Validate, so it reaches
+	// nested sub-processes: Validate is called on the root only, and a nested
+	// definition is visited solely through this function's own recursion, which
+	// wraps the error with the host node id. Placement is the decision.
+	//
+	// The timer trigger is read from the wire form because there is no TimerOf
+	// accessor and there cannot be one: the timer lives on the leaf event types
+	// and model -> event is a real import cycle. The in-wait trigger uses
+	// WaitActionOf, the same accessor engine.armWaitReminder reads, so the gate
+	// and the arm path cannot disagree about which spec is being judged. Zero
+	// specs (no trigger at all) are skipped, as the deadline rules above skip
+	// nodes without a deadline.
+	//
+	// DeadlineTimer is deliberately NOT gated here; see ErrTriggerNeverDue.
+	for _, n := range d.Nodes {
+		w := toWire(n)
+		if timer := ReadTrigger(w.TimerTrigger, w.TimerDuration, false); !timer.IsZero() && timer.NeverDue() {
+			errs = append(errs, fmt.Errorf("%w: timer trigger on node %q", ErrTriggerNeverDue, n.ID()))
+		}
+		if wait, _ := WaitActionOf(n); !wait.IsZero() && wait.NeverDue() {
+			errs = append(errs, fmt.Errorf("%w: in-wait trigger on node %q", ErrTriggerNeverDue, n.ID()))
 		}
 	}
 

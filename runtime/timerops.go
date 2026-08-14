@@ -84,11 +84,14 @@ func convertClockTimes(cs []schedule.ClockTime) []scheduler.ClockTime {
 }
 
 // neverDueNextRun reports whether a next-run instant computed from
-// [scheduler.Trigger.Next] is unarmable — the ADR-0176 predicate. It is
-// applied at the two arm sites that compute a next run from a trigger:
-// timerJobsFor and scheduleStartTimerJob. The third, jobStore.Load, applies
-// the same condition in its own form, on the instant newScheduledTimerJob has
-// already stamped (which is the zero time exactly when this reports true).
+// [scheduler.Trigger.Next] is unarmable — the ADR-0176 predicate. Four sites
+// refuse an arm on it, which is exactly the number of timerArmsRefused
+// increments in this package. Two call this function, at the arm sites that
+// compute a next run from a trigger: timerJobsFor and scheduleStartTimerJob.
+// The other two apply the same condition in its own form, on the instant
+// newScheduledTimerJob has already stamped (which is the zero time exactly
+// when this reports true): jobStore.Load, and the post-commit re-check inside
+// deliverLoop added at ADR-0176's /code-review.
 //
 // The two halves catch different things. ok=false is the trigger saying it can
 // never fire; ADR-0176 reconciled that answer with the live scheduler, so it
