@@ -14,47 +14,30 @@ top to bottom; it is meant to stay short enough that you can.
 
 ## State — updated 2026-08-14
 
-**▶ Bundle B (ADR-0181/0182) is IMPLEMENTED and has PASSED BOTH DELIVERY GATES. Bundle C is
-still design-only and unaudited.**
+**▶ Bundle B (ADR-0181/0182) SHIPPED. Bundle C is the only thing in flight, and it is still
+design-only and unaudited.**
 
-The newest code on `main` is the **ADR-0177/0178/0180 merge `a5b33e4c`** (pushed). ⚠ Do not quote
-main's head; re-derive with `git rev-parse --short refs/heads/main`.
+The newest code on `main` is the **ADR-0181/0182 merge `1ac140f6`** (pushed), on top of the
+ADR-0177/0178/0180 merge `a5b33e4c`. ⚠ Do not quote main's head; re-derive with
+`git rev-parse --short refs/heads/main`.
 
 | bundle | branch | ADRs | audited? | state |
 |---|---|---|---|---|
 | ~~A~~ | ✅ **SHIPPED — merge `a5b33e4c`, pushed, branch deleted** | 0177, 0178, 0180 | 3 lenses (27) + `/code-review` (3) + `/security-review` (0) | done |
-| **B** | `feat/never-due-gate-and-orphan-reclamation` | 0181, 0182 | ✅ 3 lenses (~40) folded + **`/code-review` (3, folded) + `/security-review` (0)** | ✅ **implemented, green, BOTH GATES PASSED — ready to merge `--no-ff` and push** |
+| ~~B~~ | ✅ **SHIPPED — merge `1ac140f6`, pushed, branch deleted** | 0181, 0182 | 3 lenses (~40) + `/code-review` (3) + `/security-review` (0) | done |
 | **C** | `feat/compensation-failure-retry-and-visibility` | 0179 | ⚠ **failed its first audit; rewritten; NOT re-audited** | audit the rewrite first |
 
-### Bundle B — state at the moment of merge
+### ⏸ Bundle C — what a fresh session must do next
 
-It is one commit on its branch, rebased onto current `main`, fully implemented across six packages,
-and its Verification is green:
+Bundle C (`feat/compensation-failure-retry-and-visibility`, ADR-0179) **failed its first audit, was
+rewritten, and has NOT been re-audited.** A bundle that has not survived its audit is not an
+implementation input. Audit the rewrite first — three lenses, one dedicated to re-counting.
 
-- `go test -race -coverprofile=cover.out ./...` → **EXIT=0, zero failures** (repo-root, so it covers
-  checklist items 1 and 2 together). Docker was up; nothing skipped.
-- `golangci-lint run ./...` **repo-wide** → **0 issues**.
-- Coverage total **74.6 %** (was 74.5 %). ⚠ **`persistence` is 84.1 %, below the 85 % floor** — but
-  it was **83.9 % on `main`** (measured in a throwaway worktree), so this bundle *raised* it. Not
-  closed here on purpose; see the plan's `▶ Progress` and backlog 34.
+⚠ **It must extend `TimerKind.walkScoped()`** with `TimerCompensationRetry` — now on `main` via
+ADR-0178 — or that guard refuses every compensation retry and ADR-0179 **silently never works**.
 
-✅ **`/code-review` has run — 3 findings, all accepted and folded via `--amend`**, and the suite
-re-run green afterwards. Detail in the plan's `▶ Progress`. The MEDIUM is the one to know:
-**the destructive `DELETE` had zero Postgres coverage**, defended by a test comment claiming SQLite
-was the only backend that could hold the fixture — which **contradicted the bundle's own spec §2.2**
-("postgres accepted"). It now has a mutation-verified Postgres test, which also discharges the
-bundle's last open `ASSUMPTION`.
-
-✅ **`/security-review` has also run — 0 findings.** Both Delivery Gate reviews are complete.
-
-What remains is mechanical: `git merge --no-ff` to `main`, re-run the suite **on the merged tree**,
-push, and delete the branch.
-
-⚠ Implementation corrected the design **four** times plus one review-found gap; all are amended
-in-bundle and recorded in the plan's `▶ Progress`. The one worth knowing before reviewing the diff:
-**the plan's prescribed ADR-0134 regression guard could not fail** — the named control row is
-excluded by the threshold clause before the `trigger_kind` clause is ever consulted, so as
-prescribed *no seeded row exercised the kind clause at all*. A sub-epoch one-shot control now does.
+⚠ Its dispatch-site count has been wrong **twice**: ADR-0175 shipped "the third of the three" when
+there were four, and pre-split ADR-0179 said "all four" when its own retry makes five.
 
 **Latest ADR = 0182. Next free = 0183.** ADR numbers 0155–0157 remain reserved by the parked
 `feat/durable-waiters-delivery-correctness`.
@@ -94,11 +77,12 @@ independent of both.
 
 ## ▶ NEXT WORK — in order
 
-1. **Bundle B: MERGE IT.** Both gates have passed (`/code-review` 3 findings folded,
-   `/security-review` 0). `git merge --no-ff` to `main`, re-run the suite on the merged tree, push,
-   delete the branch. ⚠ **Nine consecutive deliveries** have now had the real `/code-review` find
-   something every stand-in missed — on this one, a destructive `DELETE` with zero coverage on the
-   primary production backend, defended by a comment that contradicted the bundle's own spec.
+1. ✅ **Bundle B is SHIPPED** (merge `1ac140f6`, pushed, branch deleted). Both gates passed:
+   `/code-review` 3 findings all folded, `/security-review` **0 findings**.
+   ⚠ **Nine consecutive deliveries** have now had the real `/code-review` find something every
+   stand-in missed — here, a destructive `DELETE` with **zero coverage on the primary production
+   backend**, defended by a test comment that **contradicted the bundle's own spec §2.2**. Do not
+   skip the gate because the suite is green.
 2. **Audit bundle C's rewrite** (`feat/compensation-failure-retry-and-visibility`) — three lenses,
    one dedicated to re-counting. ⚠ Its dispatch-site count has been wrong **twice**: ADR-0175
    shipped "the third of the three" when there were four, and pre-split ADR-0179 said "all four"
@@ -190,8 +174,8 @@ instance (public API); `service` guards it with `ErrConflict`, the driver does n
 
 | | |
 |---|---|
-| `main` | **ADR-0177/0178/0180 is the newest SHIPPED bundle**, merge `a5b33e4c`, pushed. ⚠ Never quote main's HEAD; re-derive: `git rev-parse --short refs/heads/main` |
-| bundle B | `feat/never-due-gate-and-orphan-reclamation` — spec/plan `docs/{specs,plans}/2026-08-13-never-due-gate-and-orphan-reclamation.md`, audit `docs/specs/2026-08-13-adr-0181-0182-audit-lens-{a,b,c}.md`, **adjudication `…-audit-adjudication.md`**, evidence `…-adr-0181-0182-premise-evidence.md` |
+| `main` | **ADR-0181/0182 is the newest SHIPPED bundle**, merge `1ac140f6`, pushed. ⚠ Never quote main's HEAD; re-derive: `git rev-parse --short refs/heads/main` |
+| bundle B | ✅ shipped — its spec/plan/ADRs/audit/adjudication are all on `main` under `docs/` |
 | bundle C | `feat/compensation-failure-retry-and-visibility` — `…-compensation-failure-retry-and-visibility.md`, `…-adr-0179-premise-evidence.md`, `…-adr-0179-inherited-audit-lens-{a,b,c}.md` |
 | *(merged branches)* | Deleted once pushed. **`origin` carries only `main`** plus dependabot |
 | `backup/terminal-trigger-guard-presquash` | `a3aa889` — ADR-0165 pre-squash, provenance only |
