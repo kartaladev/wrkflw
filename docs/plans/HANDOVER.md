@@ -65,12 +65,21 @@ after the retry**, and correct. Derive it in the test, never hard-code it.
   `StepOptions.SchedulingLocation` are **deliberately re-deferred** with ADR-0176's measured reason.
 - **C** — NEXT WORK item 3. Retry + visibility for a failed compensation action (backlog 16, 3g).
 
-### ⚠ Ordering constraint — still open for C
+### ⚠ Ordering constraint — SATISFIED, and its old wording was REFUTED
 
-A merged before C, as required. `TimerKind.walkScoped()` is on `main`; bundle C must **extend** it
-with `TimerCompensationRetry`, or ADR-0178's guard refuses every compensation retry and ADR-0179
-**silently never works**. That extension is bundle C's job and is listed in its plan. B is
-independent of both.
+A merged before C, as required, so `TimerKind.walkScoped()` is on `main`.
+
+⚠⚠ **This section used to say bundle C must EXTEND `walkScoped()` with `TimerCompensationRetry`,
+"or ADR-0178's guard refuses every compensation retry and ADR-0179 silently never works". C's audit
+refuted that sentence twice over. Do not act on it.**
+
+- **Extending it is HARMFUL.** It is one boolean serving two consumers: ADR-0178's dying-instance
+  guard *and* `HasArmedTimers`. Extending it measures `HasArmedTimers=false`,
+  `Classify.Reason="unknown"`, `AutoTimers fires=false` — every consumer opting into
+  `CompensationRetryPolicy` gets `ErrUnhandledPark`. It must be **SPLIT** into
+  `firesOnDyingInstance()` and `detectionOnly()`.
+- **The justification was a false universal.** The guard is `!walkScoped() && !spawnsNewWork()`, and
+  `spawnsNewWork()` is **true** on any resuming walk. The work is needed for **terminating** walks.
 
 ### ⚠ Process lessons this session earned
 
@@ -198,8 +207,8 @@ instance (public API); `service` guards it with `ErrConflict`, the driver does n
 |---|---|
 | `main` | **ADR-0181/0182 is the newest SHIPPED bundle**, merge `1ac140f6`, pushed. ⚠ Never quote main's HEAD; re-derive: `git rev-parse --short refs/heads/main` |
 | bundle B | ✅ shipped — its spec/plan/ADRs/audit/adjudication are all on `main` under `docs/` |
-| bundle C | `feat/compensation-failure-retry-and-visibility` — `…-compensation-failure-retry-and-visibility.md`, `…-adr-0179-premise-evidence.md`, `…-adr-0179-inherited-audit-lens-{a,b,c}.md` |
-| *(merged branches)* | Deleted once pushed. **`origin` carries only `main`** plus dependabot |
+| bundle C | `feat/compensation-failure-retry-and-visibility` — ⚠ **ONE COMMIT, LOCAL ONLY, NOT PUSHED** (`origin` carries only `main`). Spec/plan `docs/{specs,plans}/2026-08-13-compensation-failure-retry-and-visibility.md`; ADR `docs/adr/0179-*.md`; evidence `docs/specs/2026-08-13-adr-0179-premise-evidence.md`; first audit `docs/specs/2026-08-13-adr-0179-inherited-audit-lens-{a,b,c}.md`; **second audit `docs/specs/2026-08-14-adr-0179-audit-lens-{a,b,c}.md`**; **adjudication `docs/specs/2026-08-14-adr-0179-audit-adjudication.md` — read first** |
+| *(merged branches)* | Deleted once pushed. **`origin` carries only `main`** plus dependabot. ⚠ **Consequence: every unmerged branch below, including bundle C, exists on this machine ONLY.** A fresh session on the same machine is fine; a different machine has `main` and nothing else |
 | `backup/terminal-trigger-guard-presquash` | `a3aa889` — ADR-0165 pre-squash, provenance only |
 | **`parked/scope-and-fanout-design`** | ⚠ **SUPERSEDED — do NOT use as an input** |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept for its audit tags |
