@@ -25,19 +25,34 @@ ADR-0177/0178/0180 merge `a5b33e4c`. ⚠ Do not quote main's head; re-derive wit
 |---|---|---|---|---|
 | ~~A~~ | ✅ **SHIPPED — merge `a5b33e4c`, pushed, branch deleted** | 0177, 0178, 0180 | 3 lenses (27) + `/code-review` (3) + `/security-review` (0) | done |
 | ~~B~~ | ✅ **SHIPPED — merge `1ac140f6`, pushed, branch deleted** | 0181, 0182 | 3 lenses (~40) + `/code-review` (3) + `/security-review` (0) | done |
-| **C** | `feat/compensation-failure-retry-and-visibility` | 0179 | ⚠ **failed its first audit; rewritten; NOT re-audited** | audit the rewrite first |
+| **C** | `feat/compensation-failure-retry-and-visibility` | 0179 | ✅ **audited TWICE** — first audit 4 Criticals, rewrite's own audit **9 more**; both folded 2026-08-17 | ⏸ **design-only, but NOW an implementation input** |
 
 ### ⏸ Bundle C — what a fresh session must do next
 
-Bundle C (`feat/compensation-failure-retry-and-visibility`, ADR-0179) **failed its first audit, was
-rewritten, and has NOT been re-audited.** A bundle that has not survived its audit is not an
-implementation input. Audit the rewrite first — three lenses, one dedicated to re-counting.
+**Implement it.** ADR-0179 has now survived a second audit (3 lenses, ~30 findings, 9 Criticals,
+all adjudicated and folded 2026-08-17) and IS an implementation input. Read
+`docs/specs/2026-08-14-adr-0179-audit-adjudication.md` first — §2 holds four decisions the previous
+text named as "required" and left blank.
 
-⚠ **It must extend `TimerKind.walkScoped()`** with `TimerCompensationRetry` — now on `main` via
-ADR-0178 — or that guard refuses every compensation retry and ADR-0179 **silently never works**.
+Five phases across five packages: **P1 `engine`** (serial, the bulk), then **P2 `runtime` ‖
+P3 `processtest` ‖ P4 `internal/persistence/store`**, then P5 doc-only.
 
-⚠ Its dispatch-site count has been wrong **twice**: ADR-0175 shipped "the third of the three" when
-there were four, and pre-split ADR-0179 said "all four" when its own retry makes five.
+⚠ **`walkScoped()` is SPLIT, not extended.** Two lenses converged independently: extending it
+measures `HasArmedTimers=false`, `Classify.Reason="unknown"`, `AutoTimers fires=false` — every
+consumer opting into `CompensationRetryPolicy` would get `ErrUnhandledPark`. The old instruction
+("must extend it, or the guard refuses every retry and the ADR silently never works") was **also a
+false universal**: the guard is `!walkScoped() && !spawnsNewWork()`, and `spawnsNewWork()` is true
+on any resuming walk. The work is needed for **terminating** walks.
+
+⚠ **This is a BREAKING change for `processtest` consumers even with retry off** — the always-on
+incident re-classifies a park `timer → incident` and `AutoTimers()` stops driving it. Release note.
+
+⚠ **Accepted residual, do not present as fixed**: making the retry timer un-prunable closes the
+retention route only. A timer skipped at boot or never rehydrated still strands the walk — the
+ADR-0034 property the ADR claims to preserve. Backlog 37.
+
+⚠ Its dispatch-site count has been wrong **twice** before; re-derived this audit as **4 today, 5
+after the retry**, and correct. Derive it in the test, never hard-code it.
 
 **Latest ADR = 0182. Next free = 0183.** ADR numbers 0155–0157 remain reserved by the parked
 `feat/durable-waiters-delivery-correctness`.
@@ -83,11 +98,10 @@ independent of both.
    stand-in missed — here, a destructive `DELETE` with **zero coverage on the primary production
    backend**, defended by a test comment that **contradicted the bundle's own spec §2.2**. Do not
    skip the gate because the suite is green.
-2. **Audit bundle C's rewrite** (`feat/compensation-failure-retry-and-visibility`) — three lenses,
-   one dedicated to re-counting. ⚠ Its dispatch-site count has been wrong **twice**: ADR-0175
-   shipped "the third of the three" when there were four, and pre-split ADR-0179 said "all four"
-   when its own retry makes five. Then implement. ⚠ It **must extend `walkScoped()`** with
-   `TimerCompensationRetry` — now on `main` — or ADR-0178's guard silently disables every retry.
+2. ✅ **Bundle C's rewrite has been audited** (2026-08-17, 3 lenses, ~30 findings, 9 Criticals) and
+   the findings are **adjudicated and folded**. **Implement it** — see the section above and the
+   plan's phase table. ⚠ Do not carry forward the old "extend `walkScoped()`" instruction; it is
+   both harmful and justified by a false universal.
 3. Then the remaining backlog below.
 
 ## Pre-v0.1.0 blockers
@@ -158,6 +172,14 @@ instance (public API); `service` guards it with `ErrConflict`, the driver does n
 
 **🆕 opened this session:**
 
+37. **A compensation retry timer lost at boot still strands the walk** (ADR-0179 accepted residual).
+    Un-prunability closes the retention-job route; a row skipped by `jobStore.Load` or never
+    rehydrated is not covered, and exhaustion is reachable only by the timer firing. Escape is
+    ADR-0175's operator verbs.
+38. **`Incidents[0]` is read positionally by THREE sites**, and the defect ships today for
+    `IncidentCompensationStall`: `runtime/outbox.go` (`terminalEventErr`),
+    `runtime/processdriver_action.go` (`terminalErr`), and `processtest/park.go`. ADR-0179's P2
+    fixes the first two with an allow-list; the third is untouched.
 34. **`persistence` is 84.1 % covered, under the 85 % floor** — pre-existing (83.9 % on `main`).
     The real gap is `scheduler_locker`'s `NewPostgresSchedulerLocker` / `NewMySQLSchedulerLocker` /
     `Lock` / `Unlock`, entirely uncovered; the rest is 8 trivial `MySQLWith*` option setters and
