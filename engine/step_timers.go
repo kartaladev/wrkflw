@@ -115,12 +115,12 @@ func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *I
 //
 // It raises ONE incident and does nothing else. Emitting no commands is a hard
 // constraint, not a stylistic choice: this runs on handleTimerFired's path 4,
-// whose !spawnsNewWork() refusal EXEMPTS walk-scoped kinds
-// ([TimerKind.walkScoped], ADR-0178), so it still fires on DYING instances —
-// which is precisely the point, since the walks that terminate are the ones an
-// operator most needs to see wedged. A handler that emitted work
-// here would dispatch it to an instance an in-flight rollback has already
-// decided to kill (the measured ADR-0172 reminder hole).
+// whose !spawnsNewWork() refusal EXEMPTS the kinds that must still be delivered
+// to a dying instance ([TimerKind.firesOnDyingInstance], ADR-0178), so it still
+// fires on DYING instances — which is precisely the point, since the walks that
+// terminate are the ones an operator most needs to see wedged. A handler that
+// emitted work here would dispatch it to an instance an in-flight rollback has
+// already decided to kill (the measured ADR-0172 reminder hole).
 //
 // Guards, in order:
 //   - not compensating any more: the walk finished under the timer. Drop the

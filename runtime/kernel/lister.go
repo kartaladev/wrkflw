@@ -147,10 +147,22 @@ type InstanceSummary struct {
 	// EndedAt is the time the instance reached a terminal state, or nil if
 	// the instance is still running.
 	EndedAt *time.Time
-	// IncidentCount is the number of open incidents on this instance. An
-	// incident is created when a retryable action exhausts its retry budget
-	// (or encounters a non-retryable error). A non-zero value indicates the
-	// instance is parked and requires operator intervention via ResolveIncident.
+	// IncidentCount is the number of open incidents on this instance, across
+	// every [engine.IncidentKind] — the count does not discriminate, so a
+	// non-zero value says only that something needs an operator's attention,
+	// not which verb clears it:
+	//
+	//   - engine.IncidentAction, created when a retryable action exhausts its
+	//     retry budget (or encounters a non-retryable error). It parks a token
+	//     and IS cleared through ResolveIncident.
+	//   - The walk-scoped kinds — engine.IncidentCompensationStall (ADR-0175)
+	//     and engine.IncidentCompensationFailed (ADR-0179). They park no token,
+	//     and ResolveIncident REFUSES both with engine.ErrIncidentNotResolvable
+	//     (it whitelists engine.IncidentAction); the verbs that act on them are
+	//     retry, skip and abandon on the compensation walk.
+	//
+	// Read the instance's Incidents and switch on Kind to decide what to offer
+	// an operator. A count alone cannot be routed.
 	IncidentCount int
 }
 

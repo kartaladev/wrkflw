@@ -107,7 +107,32 @@ func handleActionCompleted(ctx context.Context, def *model.ProcessDefinition, s 
 	// compensation cursor rather than doing normal token routing. This keeps
 	// compensation sequencing deterministic and observable (one action at a time).
 	if s.Status == StatusCompensating && s.Compensating.ActiveCmdID == t.CommandID {
+		// This record ultimately SUCCEEDED, so any IncidentCompensationFailed
+		// raised against this very command — the walk was sitting in a retry
+		// backoff and the worker answered late, or the failure was never retried —
+		// describes an attempt that is no longer owed. Retire it (ADR-0179
+		// Decision 6).
+		//
+		// ⚠ Deliberately HERE and not inside stepCompensationAdvance, which every
+		// route that moves a walk on funnels through: that function is also reached
+		// from the exhaustion path in handleActionFailed and from the operator skip
+		// verb, and on both of those the incident is the durable record the ADR
+		// exists to leave behind. This is the only route on which the record
+		// actually ran to completion.
+		s.retireCompensationFailedIncidents(t.CommandID)
 		return stepCompensationAdvance(ctx, def, s, t.OccurredAt(), resolvePolicy(opt))
+	}
+	// A reply to a compensation command the walk has already MOVED PAST is
+	// benign, not an error (ADR-0179 Decision 5). Placed after the short-circuit
+	// above, which owns the ACTIVE command's reply — see
+	// isBenignCompensationDuplicate for why that order is what keeps the walk
+	// advancing. Without this, an at-least-once worker's ordinary redelivery
+	// falls through to the tokenAwaiting lookup below (a walk parks no token on
+	// its dispatch), returns ErrTokenNotFound, and reaches the consumer as a 422
+	// on a perfectly healthy walk. Measured on this branch's base:
+	// `no token awaiting command: invalid state transition: "i-dup-c3"`.
+	if s.isBenignCompensationDuplicate(t.CommandID) {
+		return StepResult{State: *s}, nil
 	}
 
 	tok := s.tokenAwaiting(t.CommandID)
@@ -336,7 +361,84 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 	// command is the active compensation action, skip that record and advance
 	// the walk rather than re-entering propagateError/retry (ADR-0034 Decision 4).
 	if s.Status == StatusCompensating && s.Compensating.ActiveCmdID == t.CommandID {
-		return stepCompensationAdvance(ctx, def, s, t.OccurredAt(), resolvePolicy(opt))
+		// IDEMPOTENCY FIRST, ahead of the incident raise (ADR-0179 Decision 3). A
+		// retry backoff is already armed for this exact command, so this delivery is
+		// a REDELIVERY of the failure that armed it: answer it as a clean no-op.
+		//
+		// ⚠ The order is load-bearing. Below the incident raise, a redelivered
+		// ActionFailed would leave a SECOND IncidentCompensationFailed behind before
+		// being turned away.
+		//
+		// ⚠ InstanceState's dispatched-id ring does NOT cover this case and must
+		// not: isBenignCompensationDuplicate excludes ActiveCmdID, because the id is
+		// appended AT DISPATCH and bare membership would classify every normal reply
+		// as a duplicate — a hung walk. RetryTimerID != "" is the only thing that
+		// closes this window; without it the redelivery raises a second incident,
+		// arms a second timer and doubles the attempt count, leaving two timers
+		// dispatching one record (ADR-0034's double-refund hazard).
+		if s.Compensating.RetryTimerID != "" {
+			return StepResult{State: *s}, nil
+		}
+		// That skip used to be SILENT: no log line, no incident, no command, so a
+		// compensation that never ran was indistinguishable from one that
+		// succeeded. Make it visible before advancing (ADR-0179 Decision 1).
+		//
+		// NodeID comes from the record the walk currently has in flight, which sits
+		// at s.Compensating.NextIndex. ⚠ Bounds-check it: cursorRecords can return
+		// a slice SHORTER than NextIndex — a cursor persisted before ADR-0171
+		// carries no pinned Records, so it falls back to a live read whose source a
+		// sibling branch may have nilled mid-walk. That is the ADR-0171 panic
+		// shape, and an unreadable record must cost the operator the node id, not
+		// the whole trace.
+		failedNodeID := ""
+		if records := cursorRecords(s, s.Compensating); s.Compensating.NextIndex < len(records) {
+			failedNodeID = records[s.Compensating.NextIndex].NodeID
+		}
+		slog.WarnContext(ctx, "compensation action failed",
+			"instance_id", s.InstanceID,
+			"command_id", t.CommandID,
+			"node_id", failedNodeID,
+			// ScopeID mirrors the CURSOR's scope, the convention
+			// armCompensationStallTimer also uses: it is what the walk is
+			// iterating. It is empty for a targeted throw, whose records live in
+			// ArchivedCompensations rather than in a scope — read node_id, not
+			// scope_id, to locate such a failure.
+			"scope_id", s.Compensating.ScopeID,
+			"error", t.Err,
+		)
+		s.Incidents = append(s.Incidents, Incident{
+			ID:   s.nextIncidentID(),
+			Kind: IncidentCompensationFailed,
+			// TokenID is empty by construction: the walk owns this incident, not a
+			// token. removeOrphanedIncidents deliberately KEEPS an empty-TokenID
+			// record, and removeIncidentsForToken("") returns early (ADR-0152).
+			NodeID:    failedNodeID,
+			ScopeID:   s.Compensating.ScopeID,
+			CommandID: t.CommandID,
+			Error:     t.Err,
+			CreatedAt: t.OccurredAt(),
+		})
+		pol := resolvePolicy(opt)
+		// Retry when the consumer opted in (ADR-0179 Decision 2). Taking this
+		// branch leaves ActiveCmdID and NextIndex alone: the walk has not moved,
+		// the same record is being tried again once the backoff fires.
+		if retryCmds, retrying := armCompensationRetryTimer(s, pol, failedNodeID, t.Err, t.Retryable); retrying {
+			return StepResult{State: *s, Commands: retryCmds}, nil
+		}
+		// No policy, non-retryable, or budget exhausted: SKIP AND CONTINUE, exactly
+		// as before ADR-0179. The walk never parks on an exhausted retry
+		// (Decision 7) — parking would reverse ADR-0034's safety argument that a
+		// failed compensation never strands the instance.
+		return stepCompensationAdvance(ctx, def, s, t.OccurredAt(), pol)
+	}
+	// The same benign-duplicate rule as handleActionCompleted, and it must be on
+	// BOTH reply paths: a worker that redelivers a FAILURE for a superseded
+	// compensation command hits the identical ErrTokenNotFound → 422 (ADR-0179
+	// Decision 5). No incident is raised — the walk moved past this record long
+	// ago, and the failure that mattered was recorded by the short-circuit above
+	// when it was still the active command.
+	if s.isBenignCompensationDuplicate(t.CommandID) {
+		return StepResult{State: *s}, nil
 	}
 
 	tok := s.tokenAwaiting(t.CommandID)
@@ -540,13 +642,15 @@ func handleHumanReassigned(s *InstanceState, t HumanReassigned) (StepResult, err
 // s.Timers record table, and finally standalone intermediate timers.
 //
 // The record sub-dispatch switches on every kind s.Timers can hold:
-// TimerDeadline, TimerInWait, TimerRetry and TimerCompensationStall.
+// TimerDeadline, TimerInWait, TimerRetry, TimerCompensationStall and
+// TimerCompensationRetry.
 func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t TimerFired, opt StepOptions) (StepResult, error) {
 	// Dispatch order:
 	// 1) event-based gateway arm (first-event-wins routing).
 	// 2) boundary event arm (interrupting/non-interrupting).
 	// 3) event sub-process arm (interrupting: cancel scope; non-interrupting: spawn alongside).
-	// 4) s.Timers record (deadline, in-wait/reminder, retry, compensation-stall).
+	// 4) s.Timers record (deadline, in-wait/reminder, retry, compensation-stall,
+	//    compensation-retry).
 	// 5) standalone intermediate catch event (token parks on TimerID).
 
 	// A terminal instance never reaches this cascade: dispatch's structural guard
@@ -569,8 +673,10 @@ func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *Inst
 
 	// 4) s.Timers record.
 	// The table holds deadline (TimerDeadline), in-wait/reminder (TimerInWait),
-	// retry (TimerRetry) and compensation-stall (TimerCompensationStall) records —
-	// the four kinds the switch below dispatches. Intermediate timers
+	// retry (TimerRetry), compensation-stall (TimerCompensationStall) and
+	// compensation-retry (TimerCompensationRetry) records — the five kinds the
+	// switch below dispatches, re-derived from the package's own
+	// `s.Timers = append` sites when ADR-0179 added the fifth. Intermediate timers
 	// (TimerIntermediate) are never appended to s.Timers; for those, the token
 	// parks on the TimerID as its AwaitCommand, so they route via the
 	// tokenAwaiting path below.
@@ -593,7 +699,7 @@ func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *Inst
 		// wedged (ADR-0175, pinned by TestStallIncidentIsRaisedOnADyingWalk). A
 		// blanket guard here would silence stall detection precisely where it
 		// matters.
-		if !rec.Kind.walkScoped() && !s.spawnsNewWork() {
+		if !rec.Kind.firesOnDyingInstance() && !s.spawnsNewWork() {
 			slog.WarnContext(ctx, "fired timer refused on a dying instance",
 				"instance_id", s.InstanceID,
 				"timer_id", rec.TimerID,
@@ -625,6 +731,8 @@ func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *Inst
 			return handleRetryFired(ctx, def, s, *rec, t.OccurredAt(), resolvePolicy(opt))
 		case TimerCompensationStall:
 			return handleCompensationStallFired(s, *rec, t.OccurredAt())
+		case TimerCompensationRetry:
+			return retryFailedCompensation(ctx, def, s, *rec, t.OccurredAt(), resolvePolicy(opt))
 		}
 	}
 
@@ -1285,10 +1393,12 @@ func handleResolveIncident(ctx context.Context, def *model.ProcessDefinition, s 
 		return StepResult{State: *s, Commands: nil}, nil
 	}
 	inc := s.Incidents[idx]
-	// Refuse a kind this operation cannot act on (ADR-0175). A compensation-stall
-	// incident carries TokenID "", so an unguarded call falls straight through to
-	// the tok == nil branch: measured err=<nil>, cmds=[], incidents=0, i.e. it
-	// silently EATS the only record that the walk had stalled, leaving the stall
+	// Refuse a kind this operation cannot act on (ADR-0175). This is a WHITELIST of
+	// IncidentAction, so it also refuses IncidentCompensationFailed (ADR-0179) and
+	// any kind appended after it, with no case of its own. Both walk-scoped kinds
+	// carry TokenID "", so an unguarded call falls straight through to the
+	// tok == nil branch: measured on a stall, err=<nil>, cmds=[], incidents=0, i.e.
+	// it silently EATS the only record that the walk had stalled, leaving the stall
 	// invisible as well as unresolved. The error names the verbs that do work.
 	//
 	// ⚠ Placed above the removal for readability, NOT because the position is what

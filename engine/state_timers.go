@@ -13,8 +13,10 @@ type timerRecord struct {
 	// TimerID is the unique timer identifier emitted in ScheduleTimer.
 	TimerID string
 	// Kind discriminates the record's purpose: [TimerDeadline], [TimerInWait],
-	// [TimerRetry] or [TimerCompensationStall] — the four kinds written to this
-	// table. [TimerIntermediate] is never one of them: an intermediate timer is
+	// [TimerRetry], [TimerCompensationStall] or [TimerCompensationRetry] — the
+	// five kinds written to this table, re-derived from the package's
+	// `s.Timers = append` sites when ADR-0179 added the fifth.
+	// [TimerIntermediate] is never one of them: an intermediate timer is
 	// arm-borne and gets no record (ADR-0177).
 	Kind TimerKind
 	// Token is the ID of the parked engine token this timer guards.
@@ -137,10 +139,14 @@ func (s *InstanceState) cancelAllTimers() []Command {
 // harness may legitimately fire. It is the FILTERED view of
 // [InstanceState.TimerWaiters], which enumerates every source unconditionally.
 //
-// It excludes walk-scoped kinds — today [TimerCompensationStall] alone
-// (ADR-0175); see [TimerKind.walkScoped]. Such a record is a detection
+// It excludes detection-only kinds — today [TimerCompensationStall] alone
+// (ADR-0175); see [TimerKind.detectionOnly]. Such a record is a detection
 // deadline, not work the instance is waiting to do: firing it manufactures the
 // very incident the window exists to detect.
+//
+// ⚠ The filter is NOT "belongs to a compensation walk". A
+// [TimerCompensationRetry] is walk-scoped and is still reported here, because it
+// is forward work the harness must fire for the backoff to end (ADR-0179).
 //
 // ⚠ It is deliberately NOT a len(s.Timers) test, and a consumer must not
 // re-derive it as one. Until ADR-0177 it was, and four of the five timer-arm
@@ -149,7 +155,7 @@ func (s *InstanceState) cancelAllTimers() []Command {
 // waiting on exactly one of them measured false.
 func (s *InstanceState) HasArmedTimers() bool {
 	for _, w := range s.TimerWaiters() {
-		if !w.Kind.walkScoped() {
+		if !w.Kind.detectionOnly() {
 			return true
 		}
 	}

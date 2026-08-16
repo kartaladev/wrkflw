@@ -296,3 +296,51 @@ func WithShutdownTimeout(d time.Duration) Option {
 func WithCompensationStallTimeout(d time.Duration) Option {
 	return func(driver *ProcessDriver) { driver.compensationStallAfter = d }
 }
+
+// WithCompensationRetryPolicy makes a compensation action that reports back
+// [engine.ActionFailed] be RE-DISPATCHED after a backoff instead of skipped
+// (ADR-0179). Without this option retry is disabled — the default — and the
+// command stream keeps ADR-0034 Decision 4's skip-and-advance timing exactly;
+// only the always-on WARN and the IncidentCompensationFailed record are new.
+//
+// The attempt budget is PER COMPENSATION RECORD and is zeroed whenever the walk
+// advances to the next one, so a walk draining ten records gives each of them
+// MaxAttempts rather than sharing one budget across the walk.
+//
+// A failure is retried only when the action reported it as retryable (see
+// [action.IsRetryable]) and the policy's NonRetryableErrors does not match the
+// error text — the same two tests the forward token path applies.
+//
+// ⚠ On exhaustion the walk SKIPS AND CONTINUES; it never parks (ADR-0179
+// Decision 7). Parking would reverse ADR-0034's safety argument that a failed
+// compensation must not strand the instance. The incident is the durable record
+// that it happened.
+//
+// ⚠ MaxAttempts == 0 means UNLIMITED, matching the engine's token-retry
+// convention. It is not a way to disable retry — leaving the option unset is.
+//
+// ⚠ MaxElapsed is NOT honoured on this path. A compensation walk holds no token
+// of its own, so there is no per-attempt start timestamp to measure elapsed time
+// against; bound the retries with MaxAttempts instead.
+//
+// ⚠ An unset MaxInterval is NOT "no cap": [model.RetryPolicy.Normalize] fills it
+// from [model.DefaultRetryPolicy] (100s) and the backoff is capped against it, so
+// a policy of {InitialInterval: 2 * time.Minute} arms at now+100s. Set MaxInterval
+// explicitly when the compensation backoff must exceed that.
+//
+// ⚠ The backoff is NOT jittered, deliberately diverging from the forward token
+// path. That path multiplies the interval by a runtime-sampled jitter fraction
+// which defaults to zero — on this path that would make the first backoff
+// instantaneous, i.e. not a backoff at all.
+//
+// ⚠ One engine-wide policy is a deliberate v1 simplification, the same
+// trade-off [WithCompensationStallTimeout] documents. Compare
+// [WithDefaultRetryPolicy], which is the base of a three-tier action > node >
+// default chain precisely because one policy for every action is wrong. A
+// per-node tier for compensation is deliberate backlog, not scope.
+//
+// The policy value is copied on each call, so subsequent mutations by the caller
+// do not affect the ProcessDriver.
+func WithCompensationRetryPolicy(p model.RetryPolicy) Option {
+	return func(driver *ProcessDriver) { driver.compensationRetryPolicy = &p }
+}

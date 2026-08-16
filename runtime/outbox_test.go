@@ -36,7 +36,10 @@ func TestTerminalOutboxEvent(t *testing.T) {
 				}}, got)
 			},
 		},
-		"running -> failed prefers first incident error": {
+		// Kind is left at its zero value, engine.IncidentAction — what every stored
+		// pre-ADR-0175 incident decodes to, and the one kind the cause-of-death
+		// allow-list admits.
+		"running -> failed prefers the first action incident's error": {
 			prev: engine.StatusRunning,
 			st: engine.InstanceState{
 				InstanceID: "i2",

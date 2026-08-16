@@ -4,8 +4,9 @@ package engine_test
 //
 // The fire handler is a case in handleTimerFired's path-4 Kind switch. Since
 // ADR-0178 that switch sits BEHIND a !spawnsNewWork() refusal, so on a DYING
-// instance the record reaches the switch only because that refusal EXEMPTS
-// walk-scoped kinds (TimerKind.walkScoped). The exemption is load-bearing: the
+// instance the record reaches the switch only because that refusal EXEMPTS the
+// walk-scoped kinds (TimerKind.firesOnDyingInstance). The exemption is
+// load-bearing: the
 // walks that terminate (walkAdmin — cancel, error and the admin full rollback —
 // walkReverse, and any throw walk carrying PendingCancel) are exactly the walks
 // for which spawnsNewWork() is false, and they are the ones an operator most
@@ -141,6 +142,12 @@ func TestLateStallTimerFireIsDropped(t *testing.T) {
 // lives there and not in handleActionCompleted: a sweep placed in the completion
 // handler would miss the ActionFailed row entirely (ADR-0034 Decision 4 makes a
 // failed compensation a best-effort skip that still advances).
+//
+// ⚠ The shared assertion below checks that no STALL incident survives, not that
+// the incident list is empty. It asserted emptiness until ADR-0179, which raises
+// an IncidentCompensationFailed on the ActionFailed row — a walk-scoped record
+// about a different fact. Emptiness would now conflate "the stall was retired"
+// (what this test is about) with "nothing else may ever be recorded here".
 func TestStallIncidentRetiredWhenWalkMovesOn(t *testing.T) {
 	type testCase struct {
 		name    string
@@ -157,6 +164,8 @@ func TestStallIncidentRetiredWhenWalkMovesOn(t *testing.T) {
 			assert: func(t *testing.T, res engine.StepResult) {
 				assert.NotNil(t, invokeActionNamed(res.Commands, "c2"),
 					"the walk advances to the next record")
+				assert.Empty(t, res.State.Incidents,
+					"a compensation that eventually SUCCEEDED leaves nothing behind at all")
 			},
 		},
 		{
@@ -167,6 +176,9 @@ func TestStallIncidentRetiredWhenWalkMovesOn(t *testing.T) {
 			assert: func(t *testing.T, res engine.StepResult) {
 				assert.NotNil(t, invokeActionNamed(res.Commands, "c2"),
 					"a failed compensation is a best-effort skip that still advances")
+				require.Len(t, res.State.Incidents, 1,
+					"the stall is retired, but ADR-0179 leaves the FAILURE on the record")
+				assert.Equal(t, engine.IncidentCompensationFailed, res.State.Incidents[0].Kind)
 			},
 		},
 	}
@@ -187,8 +199,10 @@ func TestStallIncidentRetiredWhenWalkMovesOn(t *testing.T) {
 				tc.trigger(fireAt.Add(time.Minute), cmdID), opt)
 			require.NoError(t, err)
 
-			assert.Empty(t, res.State.Incidents,
-				"a walk that moved on must not keep reporting itself as stalled")
+			for _, inc := range res.State.Incidents {
+				assert.NotEqual(t, engine.IncidentCompensationStall, inc.Kind,
+					"a walk that moved on must not keep reporting itself as stalled")
+			}
 			tc.assert(t, res)
 		})
 	}
@@ -198,11 +212,14 @@ func TestStallIncidentRetiredWhenWalkMovesOn(t *testing.T) {
 //
 // A walk that stalls, is noticed, and then RECOVERS on its own must terminate
 // with its real cause of death. Without the retirement sweep this was measured
-// as incidents=1 with Incidents[0].Error == "compensation action stalled":
-// runtime/outbox.go's terminalEventErr and runtime/processdriver_action.go's
-// terminalErr both return Incidents[0] unconditionally, so the recovered walk
-// would publish "compensation action stalled" instead of "cancelled" — to the
-// outbox, and to a call-activity parent.
+// as incidents=1 with Incidents[0].Error == "compensation action stalled". At the
+// time, runtime/outbox.go's terminalEventErr and runtime/processdriver_action.go's
+// terminalErr both returned Incidents[0] unconditionally, so the recovered walk
+// published "compensation action stalled" instead of "cancelled" — to the outbox,
+// and to a call-activity parent. ADR-0179 put both behind the causeOfDeathIncident
+// allow-list (IncidentAction only), so that mis-publication is no longer the
+// failure mode; the retained record is still counted in incident_count, rendered
+// by the service/ audit view and returned on InstanceState.Incidents.
 //
 // This asserts the ENGINE-side precondition those two readers consume: zero
 // stall incidents, with FinalErr intact.
@@ -230,7 +247,7 @@ func TestNormalTerminalFinishLeavesNoStallIncident(t *testing.T) {
 
 	require.Equal(t, engine.StatusTerminated, res.State.Status)
 	assert.Empty(t, res.State.Incidents,
-		"a recovered walk must not publish \"compensation action stalled\" as its cause of death")
+		"a recovered walk must not carry \"compensation action stalled\" into its terminal snapshot")
 	assert.Contains(t, res.Commands, engine.FailInstance{Err: "cancelled"},
 		"the instance dies of the cancel that started the walk")
 }
@@ -245,8 +262,11 @@ func TestNormalTerminalFinishLeavesNoStallIncident(t *testing.T) {
 // EndTerminate, and forceTerminate → endInstance ends the instance while the
 // stalled command is still outstanding.
 //
-// Without the sweep the stall incident becomes Incidents[0] on the terminal
-// instance, which terminalEventErr publishes as the cause of death.
+// Without the sweep the stall incident survives on the terminal instance, where
+// incident_count, the service/ audit view and every reader of
+// InstanceState.Incidents report a stall that is over. (Pre-ADR-0179 it was also
+// what terminalEventErr published as the cause of death; the causeOfDeathIncident
+// allow-list — IncidentAction only — closed that route.)
 func TestForceTerminationSweepsOpenStallIncident(t *testing.T) {
 	ctx := t.Context()
 	opt := engine.StepOptions{CompensationStallAfter: stallWindow}

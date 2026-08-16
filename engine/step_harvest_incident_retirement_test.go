@@ -8,7 +8,9 @@ package engine_test
 // the consequence is invisible from inside this package's own contracts and CROSSES A
 // PACKAGE BOUNDARY:
 //
-//	runtime/outbox.go's terminalEventErr prefers Incidents[0].Error when building the
+//	runtime/outbox.go's terminalEventErr prefers the Error of the first incident
+//	runtime's causeOfDeathIncident allow-list admits — an engine.IncidentAction, which
+//	is exactly what this fixture's exhausted branch raises — when building the
 //	instance.failed event. Retiring the incident therefore changes both that payload's
 //	error string and the incident_count a consumer sees — for the same process, same
 //	definition, same failure, across an engine upgrade.
@@ -213,6 +215,6 @@ func TestHarvestRetiresTheSurvivingTokensIncident(t *testing.T) {
 	assert.Empty(t, final.Incidents,
 		"ACCEPTED CONSEQUENCE, pinned deliberately (ADR-0174, spec M7): the incident that ADR-0164 "+
 			"Decision 3 preserved on this shape is now retired, so runtime/outbox.go's "+
-			"terminalEventErr no longer finds Incidents[0].Error and the instance.failed payload "+
-			"plus incident_count both change for consumers")
+			"terminalEventErr finds no allow-listed incident to quote and the instance.failed "+
+			"payload plus incident_count both change for consumers")
 }

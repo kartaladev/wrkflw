@@ -123,9 +123,13 @@ func TestAbandonTerminatesAndRetainsOnlyUndispatchedRecords(t *testing.T) {
 // early-returns. The call on the abandon path is LOAD-BEARING.
 //
 // Without it an abandoned walk terminates carrying a stale "compensation action
-// stalled" record as Incidents[0], which runtime/outbox.go's terminalEventErr
-// and runtime/processdriver_action.go's terminalErr publish unconditionally as
-// the instance's cause of death.
+// stalled" record, which incident_count, the service/ audit view and every
+// reader of InstanceState.Incidents then report. Before ADR-0179 that record was
+// also published as the instance's cause of death by runtime/outbox.go's
+// terminalEventErr and runtime/processdriver_action.go's terminalErr; both now
+// go through runtime's causeOfDeathIncident allow-list, which admits
+// IncidentAction only, so the publication route is closed and the visibility
+// ones are not.
 func TestAbandonRetiresTheStallIncident(t *testing.T) {
 	state, cmdID, timerID := startedStallWalk(t)
 	def := threeCompensableDef()

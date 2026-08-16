@@ -154,9 +154,10 @@ func raiseIncidentOnFlaky(t *testing.T, def *model.ProcessDefinition, instanceID
 // over-delivering on ADR-0163's invariant. handleUnhandledError's immediate
 // branch leaves s.Tokens in place, so the incident's token survives the terminal
 // transition and the incident must survive with it: runtime/outbox.go's
-// terminalEventErr reads Incidents[0].Error to report the concrete failure in
-// instance.failed, and the service/ audit view renders them after the instance
-// is terminal (ADR-0164 Decision 3).
+// terminalEventErr reports the concrete failure in instance.failed from the first
+// incident runtime's causeOfDeathIncident allow-list admits — an IncidentAction,
+// which is what this fixture's exhausted branch raises — and the service/ audit
+// view renders them after the instance is terminal (ADR-0164 Decision 3).
 //
 // A wholesale s.Incidents = nil in endInstance MUST fail this test.
 func TestTerminalFailureKeepsIncidentOfSurvivingToken(t *testing.T) {

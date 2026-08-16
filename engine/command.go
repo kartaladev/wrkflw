@@ -38,6 +38,19 @@ const (
 	// giving a new kind anything but the next free value reinterprets every
 	// stored timer row.
 	TimerCompensationStall
+	// TimerCompensationRetry is a one-shot backoff timer between two dispatches of
+	// the SAME compensation record, after that record's action replied
+	// ActionFailed (ADR-0179). Like TimerCompensationStall it guards the walk
+	// rather than a token, but unlike it, it is forward work: it exists to
+	// re-dispatch, not merely to detect. That is the axis
+	// [TimerKind.firesOnDyingInstance] and [TimerKind.detectionOnly] split on —
+	// both kinds belong to the walk, and only this one is drivable by a harness.
+	//
+	// Armed by armCompensationRetryTimer, from handleActionFailed's compensation
+	// short-circuit; consumed by retryFailedCompensation.
+	//
+	// ⚠ APPENDED deliberately, for the same reason as TimerCompensationStall.
+	TimerCompensationRetry
 )
 
 // String returns the name of the TimerKind for debugging/logging.
@@ -53,6 +66,8 @@ func (k TimerKind) String() string {
 		return "TimerRetry"
 	case TimerCompensationStall:
 		return "TimerCompensationStall"
+	case TimerCompensationRetry:
+		return "TimerCompensationRetry"
 	default:
 		return "TimerKind(unknown)"
 	}
@@ -63,8 +78,10 @@ func (k TimerKind) String() string {
 // WHEN (and, for recurring forms, how often) the timer fires: the engine passes
 // the trigger through unchanged and the scheduler owns the firing math and any
 // native recurrence.
-// Kind distinguishes intermediate, deadline, in-wait, and retry timers (see
-// [TimerKind]) so the runtime can apply the right scheduling policy.
+// Kind distinguishes the six timer purposes the engine schedules today —
+// intermediate, deadline, in-wait, retry, compensation-stall and
+// compensation-retry (see [TimerKind]) — so the runtime can apply the right
+// scheduling policy.
 type ScheduleTimer struct {
 	TimerID string
 	Token   string

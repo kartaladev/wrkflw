@@ -86,6 +86,18 @@ type ProcessDriver struct {
 	// dispatch and reply.
 	compensationStallAfter time.Duration
 
+	// compensationRetryPolicy makes a COMPENSATION action that reports back
+	// ActionFailed be re-dispatched after a backoff instead of skipped
+	// (ADR-0179). nil disables retry and is the default, keeping ADR-0034
+	// Decision 4's skip-and-advance behaviour byte-for-byte.
+	//
+	// It is deliberately separate from defaultRetryPolicy, which governs the
+	// FORWARD path: that one is a three-tier chain (action > node > default) and
+	// its budget is carried on the failing token, whereas a compensation walk
+	// holds no token and spends a per-record budget on the walk cursor.
+	// Set via [WithCompensationRetryPolicy].
+	compensationRetryPolicy *model.RetryPolicy
+
 	// conditionEval, when non-nil, is the expression evaluator the runner passes
 	// into engine.Step via StepOptions.Evaluator for every step. When nil (the
 	// default) the engine uses its pure, wall-clock-free package-global evaluator,
@@ -169,7 +181,12 @@ type ProcessDriver struct {
 //   - Node-kind capabilities: [WithHumanTasks], [WithScheduler], [WithSignalBus],
 //     [WithDefinitions], [WithCallLinkStore], [WithTimerStore].
 //   - Execution policy: [WithDefaultRetryPolicy], [WithActionTimeout],
-//     [WithExpressionTimeout], [WithConditionEvaluator], [WithJitterSource].
+//     [WithCandidateResolveTimeout], [WithExpressionTimeout],
+//     [WithConditionEvaluator], [WithJitterSource].
+//   - Compensation policy: [WithCompensationStallTimeout],
+//     [WithCompensationRetryPolicy].
+//   - Identity: [WithIDGenerator].
+//   - Lifecycle: [WithShutdownTimeout].
 //   - Time source: [WithClock] (default [clockwork.NewRealClock]).
 //   - Observability: [WithLogger], [WithTracerProvider], [WithMeterProvider].
 func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
@@ -619,6 +636,9 @@ func (driver *ProcessDriver) deliverLoop(
 			// ADR-0175: zero disables stall detection, and zero is the default, so an
 			// unconfigured driver's command stream is unchanged.
 			CompensationStallAfter: driver.compensationStallAfter,
+			// ADR-0179: nil disables compensation retry, and nil is the default, so an
+			// unconfigured driver's command stream is unchanged.
+			CompensationRetryPolicy: driver.compensationRetryPolicy,
 			// One id strategy for the whole product surface: the same generator
 			// that mints instance ids also names the tokens, tasks, commands,
 			// timers, incidents, and scopes the engine creates (ADR-0149).

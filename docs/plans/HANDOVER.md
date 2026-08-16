@@ -12,106 +12,81 @@ top to bottom; it is meant to stay short enough that you can.
 > with the plan. This file carries only: where `main` is, what is unmerged, and
 > what to do next.
 
-## State — updated 2026-08-14
+## State — updated 2026-08-17
 
-**▶ Bundle B (ADR-0181/0182) SHIPPED. Bundle C is the only thing in flight, and it is still
-design-only and unaudited.**
+**▶ Bundle C (ADR-0179) is IMPLEMENTED on its branch and is waiting on the owner-invoked
+delivery gate. Nothing else is in flight.**
 
-The newest code on `main` is the **ADR-0181/0182 merge `1ac140f6`** (pushed), on top of the
-ADR-0177/0178/0180 merge `a5b33e4c`. ⚠ Do not quote main's head; re-derive with
+The newest code on `main` is still the **ADR-0181/0182 merge `1ac140f6`** (pushed); the two commits
+after it are docs-only. ⚠ Do not quote main's head; re-derive with
 `git rev-parse --short refs/heads/main`.
 
-| bundle | branch | ADRs | audited? | state |
-|---|---|---|---|---|
-| ~~A~~ | ✅ **SHIPPED — merge `a5b33e4c`, pushed, branch deleted** | 0177, 0178, 0180 | 3 lenses (27) + `/code-review` (3) + `/security-review` (0) | done |
-| ~~B~~ | ✅ **SHIPPED — merge `1ac140f6`, pushed, branch deleted** | 0181, 0182 | 3 lenses (~40) + `/code-review` (3) + `/security-review` (0) | done |
-| **C** | `feat/compensation-failure-retry-and-visibility` | 0179 | ✅ **audited TWICE** — first audit 4 Criticals, rewrite's own audit **9 more**; both folded 2026-08-17 | ⏸ **design-only, but NOW an implementation input** |
+| bundle | branch | ADRs | state |
+|---|---|---|---|
+| ~~A~~ | ✅ SHIPPED — merge `a5b33e4c` | 0177, 0178, 0180 | done |
+| ~~B~~ | ✅ SHIPPED — merge `1ac140f6` | 0181, 0182 | done |
+| **C** | `feat/compensation-failure-retry-and-visibility` | **0179** | ⏸ **implemented, ONE COMMIT, LOCAL ONLY — awaiting the gate** |
 
-### ⏸ Bundle C — what a fresh session must do next
+### ▶ NEXT WORK — in order
 
-**Implement it.** ADR-0179 has now survived a second audit (3 lenses, ~30 findings, 9 Criticals,
-all adjudicated and folded 2026-08-17) and IS an implementation input. Read
-`docs/specs/2026-08-14-adr-0179-audit-adjudication.md` first — §2 holds four decisions the previous
-text named as "required" and left blank.
+1. **`/security-review` on bundle C** — the last gate step. `/code-review` is **DONE**: 6 findings,
+   1 HIGH, all fixed or adjudicated out-of-scope-with-reason, folded via `--amend`. Then merge
+   `--no-ff` and push.
+   ⚠ **Eleven consecutive deliveries** have had the real `/code-review` find something every
+   adversarial stand-in missed — this one a **permanent walk wedge**. Do not skip `/security-review`
+   because the suite is green.
+2. Then the backlog below.
 
-Five phases across five packages: **P1 `engine`** (serial, the bulk), then **P2 `runtime` ‖
-P3 `processtest` ‖ P4 `internal/persistence/store`**, then P5 doc-only.
+⚠ **What `/code-review` caught, because it generalises.** ADR-0175's operator `retry` verb, used
+during an ADR-0179 backoff, left the cursor naming an already-cancelled timer; the next failure hit
+the new idempotency guard, was read as a redelivery, and the instance sat in `StatusCompensating`
+**forever** with nothing armed to move it. Root cause: the guard was built on `RetryTimerID` without
+enumerating the writers of the field it keys on (`ActiveCmdID`).
+⭐ **`skip` and `abandon` were clean only incidentally** — they own no bespoke cursor logic and
+inherit it from two helpers this ADR revised. `retryStalledCompensation` is the one verb path with
+bespoke handling and the one this ADR never touched.
+**When a feature revises shared helpers, the sites at risk are the ones that BYPASS those helpers.
+Enumerate the bypassers, not the callers.**
 
-⚠ **`walkScoped()` is SPLIT, not extended.** Two lenses converged independently: extending it
-measures `HasArmedTimers=false`, `Classify.Reason="unknown"`, `AutoTimers fires=false` — every
-consumer opting into `CompensationRetryPolicy` would get `ErrUnhandledPark`. The old instruction
-("must extend it, or the guard refuses every retry and the ADR silently never works") was **also a
-false universal**: the guard is `!walkScoped() && !spawnsNewWork()`, and `spawnsNewWork()` is true
-on any resuming walk. The work is needed for **terminating** walks.
+### What bundle C is, in one paragraph
 
-⚠ **This is a BREAKING change for `processtest` consumers even with retry off** — the always-on
-incident re-classifies a park `timer → incident` and `AutoTimers()` stops driving it. Release note.
+A compensation action replying `ActionFailed` used to be skipped in **total silence** — no retry, no
+incident, and, despite ADR-0034's Consequences claiming otherwise, **no log line**. It now always
+emits a WARN and raises an `IncidentCompensationFailed`, and it is re-dispatched after a backoff when
+the consumer opts in. Closes backlog **16** and **3g**. Also fixes a **pre-existing** defect: the
+cause of death was read positionally from `Incidents[0]`, so a walk-scoped incident already beat the
+real error today.
 
-⚠ **Accepted residual, do not present as fixed**: making the retry timer un-prunable closes the
-retention route only. A timer skipped at boot or never rehydrated still strands the walk — the
-ADR-0034 property the ADR claims to preserve. Backlog 37.
+### ⚠ Things a fresh session must not get wrong about bundle C
 
-⚠ Its dispatch-site count has been wrong **twice** before; re-derived this audit as **4 today, 5
-after the retry**, and correct. Derive it in the test, never hard-code it.
+- **It is BREAKING in three ways, and all three fail SILENTLY — no compile error.** See
+  `CHANGELOG.md` ▸ Unreleased ▸ Breaking changes, which is the authoritative list.
+- **Two accepted residuals, do NOT present either as fixed**: a retry timer lost at boot still
+  strands the walk (un-prunability closes only the retention route); and a *leaked* retry row is now
+  **permanent**, because no bulk sweep can delete the kind any more.
+- **The ADR was amended BY implementation in six places** — each marked
+  `⚠ AMENDED / ADDED AT IMPLEMENTATION` with the measurement that forced it. The two that matter
+  most: Decision 2's opt-in was **unreachable** through `runtime.ProcessDriver` (fixed in-bundle),
+  and Decision 6's literal wording **deleted the incident at birth** (measured `incidents=0`).
 
-**Latest ADR = 0182. Next free = 0183.** ADR numbers 0155–0157 remain reserved by the parked
-`feat/durable-waiters-delivery-correctness`.
+### ⚠ The process lesson this delivery earned
 
-### What each bundle closes
+**Two audits, six lenses, and none of them could see the defect that mattered most.** ADR-0179's
+retry opt-in was reachable only through `engine.StepOptions`; `runtime.ProcessDriver` never set it
+and no option existed, so the feature would have shipped promised-but-unusable. Every lens read *one
+design document*; the gap existed only in the **seam between two packages**. A design audit
+structurally cannot find it — it took writing the code and asking "can a consumer actually turn this
+on?"
 
-- **A** — NEXT WORK items 1 and 4. Shipped.
-- **B** — NEXT WORK item 2. Orphan zero-`next_run` row reclamation (backlog 23) and an
-  authoring-time never-due gate (part of backlog 22). ⚠ The step-time gate and
-  `StepOptions.SchedulingLocation` are **deliberately re-deferred** with ADR-0176's measured reason.
-- **C** — NEXT WORK item 3. Retry + visibility for a failed compensation action (backlog 16, 3g).
+⚠ **Corollary for the next rule-#9 audit: give one lens the job of tracing each new option end to
+end from the consumer's entry point**, not of reading the decision that introduces it.
 
-### ⚠ Ordering constraint — SATISFIED, and its old wording was REFUTED
+Second lesson, quantified in the plan's `▶ Progress`: **8 inherited counts were re-derived during
+implementation and 6 were wrong** — and **4 of the 6 were in the controller's own briefs**, not in
+the audited documents. Re-derivation is not an audit-time activity; it is a per-edit activity.
 
-A merged before C, as required, so `TimerKind.walkScoped()` is on `main`.
-
-⚠⚠ **This section used to say bundle C must EXTEND `walkScoped()` with `TimerCompensationRetry`,
-"or ADR-0178's guard refuses every compensation retry and ADR-0179 silently never works". C's audit
-refuted that sentence twice over. Do not act on it.**
-
-- **Extending it is HARMFUL.** It is one boolean serving two consumers: ADR-0178's dying-instance
-  guard *and* `HasArmedTimers`. Extending it measures `HasArmedTimers=false`,
-  `Classify.Reason="unknown"`, `AutoTimers fires=false` — every consumer opting into
-  `CompensationRetryPolicy` gets `ErrUnhandledPark`. It must be **SPLIT** into
-  `firesOnDyingInstance()` and `detectionOnly()`.
-- **The justification was a false universal.** The guard is `!walkScoped() && !spawnsNewWork()`, and
-  `spawnsNewWork()` is **true** on any resuming walk. The work is needed for **terminating** walks.
-
-### ⚠ Process lessons this session earned
-
-1. **A fixture can be as vacuous as an assertion.** The bundle's own audit was thorough — three
-   lenses, ~40 findings — and it still prescribed a "regression guard" test whose control row could
-   not fail on the axis it was named for. The lesson generalises: *check which clause each fixture
-   row can actually discriminate*, not just that the test asserts something.
-2. **Both audit lenses measured the wrong surface.** Lens A and lens B both drove
-   `scheduler.Trigger.…` constructors **directly**, which is not a path a definition can reach —
-   lens A retracted its own F9 on discovering this. The corpus had to be re-measured through
-   `convertTrigger` before it could be trusted. *Measure the chain production uses, not the nearest
-   reachable proxy.*
-3. **A prose enumeration of a code path's branches rots, in both directions at once.** ADR-0182's
-   reject list was unsound on two classes it named and silent on four it did not. It is now a table
-   of executed verdicts.
-4. **An in-repo measurement refuted an "unverified" assumption nobody re-read.** MySQL's
-   `Error 1292` was measured during ADR-0176 and sat in `docs/specs/`; bundle B labelled the same
-   claim "needs Docker" and prescribed a run that cannot execute.
-
-## ▶ NEXT WORK — in order
-
-1. ✅ **Bundle B is SHIPPED** (merge `1ac140f6`, pushed, branch deleted). Both gates passed:
-   `/code-review` 3 findings all folded, `/security-review` **0 findings**.
-   ⚠ **Nine consecutive deliveries** have now had the real `/code-review` find something every
-   stand-in missed — here, a destructive `DELETE` with **zero coverage on the primary production
-   backend**, defended by a test comment that **contradicted the bundle's own spec §2.2**. Do not
-   skip the gate because the suite is green.
-2. ✅ **Bundle C's rewrite has been audited** (2026-08-17, 3 lenses, ~30 findings, 9 Criticals) and
-   the findings are **adjudicated and folded**. **Implement it** — see the section above and the
-   plan's phase table. ⚠ Do not carry forward the old "extend `walkScoped()`" instruction; it is
-   both harmful and justified by a false universal.
-3. Then the remaining backlog below.
+**Latest ADR = 0182 shipped; 0179 is implemented-not-merged. Next free = 0183.** ADR numbers
+0155–0157 remain reserved by the parked `feat/durable-waiters-delivery-correctness`.
 
 ## Pre-v0.1.0 blockers
 
@@ -136,8 +111,7 @@ refuted that sentence twice over. Do not act on it.**
 
 ## Backlog
 
-⚠ Items **16, 3g** are addressed by in-flight bundle C. Items **0, 2, 3, 3c** closed by A;
-**22, 23** closed by B (pending its merge). What remains:
+⚠ Items **16** and **3g** are closed by bundle C (pending its merge).
 
 **Pre-existing defects (measured, unclaimed):**
 
@@ -146,9 +120,9 @@ refuted that sentence twice over. Do not act on it.**
 3e. **`service.Service` gained a method** (ADR-0175) — BREAKING for a decorator; needs a release note.
 3f. **The stall incident's `ScopeID` is empty for a TARGETED compensation throw** — read `NodeID`.
 
-**Deferred from ADR-0175's design:** 4. a per-node `CompensationStallAfter` tier (and, after bundle
-C, a per-node compensation **retry** tier). 5. a bound on repeated `retry`. 6. whether stall
-detection should default ON.
+**Deferred from ADR-0175's design:** 4. a per-node `CompensationStallAfter` tier **and a per-node
+compensation retry tier** (bundle C ships one engine-wide policy). 5. a bound on repeated `retry`.
+6. whether stall detection should default ON.
 
 **From ADR-0174:** 7. a pre-ADR-0171 unpinned cursor keeps ADR-0173's accepted double-run at the
 `endInstance` harvest — wants a cursor-migration ADR. 8. records stranded on pre-ADR-0174 rows stay
@@ -157,65 +131,65 @@ unreachable. 9. ADR-0164's "eight terminal sites" is stale — ten today. 10.
 
 **From ADR-0158/0172:** 11. a flow targeting a NON-EXISTENT node parks a permanent wedge. 12.
 `PendingCancel=true` survives onto a `Running` instance and **will terminate the NEXT throw or
-reverse walk**. 13. micro mode loses a signal delivery. 15. `engine/step_nodes.go:501`'s nested
+reverse walk**. 13. micro mode loses a signal delivery. 15. `engine/step_nodes.go`'s nested
 arm retirement is uncovered.
 
 **From ADR-0168–0171:** 17. the event-sub-process hole's remaining direction. 18. ADR-0171's two
-open bounds. 19. `processtest.Classify` has no reason for a compensation-walk park. 20. repo-wide
-coverage ~74.6 % (⚠ `service` ~52.6 %). 21. **`AUDIT.md`** on `docs/architecture-audit`, ⚠ NOT on
-`main` and NOT pushed (public repo, unfixed Critical/High findings); claims **unverified**.
+open bounds. 19. ✅ **`processtest.Classify` has no reason for a compensation-walk park — PARTLY
+CLOSED by bundle C**: a compensation-failure park is now drivable, but there is still no
+`ReasonCompensation` of its own. 20. repo-wide coverage (⚠ `service` ~52.6 %). 21. **`AUDIT.md`**
+on `docs/architecture-audit`, ⚠ NOT on `main` and NOT pushed (public repo, unfixed Critical/High
+findings); claims **unverified**.
 
 **From ADR-0176:** 24. a refused arm leaves an in-memory `timerRecord` with no durable row. 26. the
-calendar scan is still linear in `interval` (now at MONTH granularity; `Daily`/`Monthly` only). 27.
-the definition store round-trips semantically invalid definitions. 28. a weekday set mixing
-in/out-of-range weekdays changed answer — **release note**. 29. the arm guard is not atomic with the
-arm. 30. `weeklyNext`'s `int(interval)*7` overflows at ≥ ~1.3e18.
+calendar scan is still linear in `interval`. 27. the definition store round-trips semantically
+invalid definitions. 28. a weekday set mixing in/out-of-range weekdays changed answer — **release
+note**. 29. the arm guard is not atomic with the arm. 30. `weeklyNext`'s `int(interval)*7` overflows.
 
-**From ADR-0177/0178/0180:** 31. three dangling ADR-section citations (`scheduler/trigger.go:382`,
-`scheduler/trigger_test.go:554` cite a nonexistent "ADR-0176 §4"; `engine/state_compensation.go:391`
-cites "ADR-0174 §5.3"). 32. **downgrade drops new state fields** — whole-state `json.Marshal` with no
-`DisallowUnknownFields`, so an older build silently drops what a newer one wrote; after bundle C a
-dropped `RetryAttempts` **resets the retry budget so a poison compensation retries forever**. 33.
-**`ProcessDriver.CancelInstance` still answers `err=<nil> status=terminated`** on an already-terminal
-instance (public API); `service` guards it with `ErrConflict`, the driver does not.
+**From ADR-0177/0178/0180:** 31. three dangling ADR-section citations. 32. **downgrade drops new
+state fields** — whole-state `json.Marshal` with no `DisallowUnknownFields`. ⚠ **Bundle C raises the
+stakes**: a dropped `RetryAttempts` **resets the retry budget so a poison compensation retries
+forever**, and a dropped `IncidentKind` degrades the new incident into a *resolvable, deletable*
+`IncidentAction`. 33. **`ProcessDriver.CancelInstance` still answers `err=<nil> status=terminated`**
+on an already-terminal instance; `service` guards it with `ErrConflict`, the driver does not.
 
-**🆕 opened this session:**
+**From ADR-0181/0182:** 34. `persistence` under the 85 % floor — close it by testing the **advisory
+lock**, not the option setters. 35. ADR-0182's gate cannot judge the legacy flat trigger strings.
+36. Cron is out of scope for the never-due gate (owner decision).
 
-37. **A compensation retry timer lost at boot still strands the walk** (ADR-0179 accepted residual).
-    Un-prunability closes the retention-job route; a row skipped by `jobStore.Load` or never
-    rehydrated is not covered, and exhaustion is reachable only by the timer firing. Escape is
-    ADR-0175's operator verbs.
-38. **`Incidents[0]` is read positionally by THREE sites**, and the defect ships today for
-    `IncidentCompensationStall`: `runtime/outbox.go` (`terminalEventErr`),
-    `runtime/processdriver_action.go` (`terminalErr`), and `processtest/park.go`. ADR-0179's P2
-    fixes the first two with an allow-list; the third is untouched.
-34. **`persistence` is 84.1 % covered, under the 85 % floor** — pre-existing (83.9 % on `main`).
-    The real gap is `scheduler_locker`'s `NewPostgresSchedulerLocker` / `NewMySQLSchedulerLocker` /
-    `Lock` / `Unlock`, entirely uncovered; the rest is 8 trivial `MySQLWith*` option setters and
-    `NewCallNotifier`. ⚠ Close it by testing the **advisory lock**, not the option setters —
-    Golang rule #8 exists precisely to stop the latter.
-35. **ADR-0182's gate cannot judge the legacy flat trigger strings.** `ReadTrigger` decodes a nil
-    wire with a non-empty flat string to `AfterExpr`/`EveryExpr` — engine-resolved expression kinds.
-    Never-due values there reach the arm guard only. Documented in the ADR, not fixed.
-36. **Cron is out of scope for the never-due gate** (owner decision — declines a `robfig/cron`
-    import in `definition/model`). Both an unparseable cron and a parseable-but-impossible one
-    (`"0 0 30 2 *"`) still validate clean. Measured; reopen only with the dependency decision.
+**🆕 opened by bundle C:**
+
+37. **A compensation retry timer lost at boot still strands the walk.** Un-prunability closes the
+    retention-job route; a row skipped by `jobStore.Load` or never rehydrated is not covered.
+    Escape is ADR-0175's operator verbs.
+38. **`Incidents[0]` is read positionally by FOUR sites**, not three. Bundle C fixed the two
+    `runtime` resolvers via an allow-list and de-positionalised `processtest`'s `incidentNode`.
+    ⚠ **Still open: `examples/scenarios/admin_monitoring/main.go`**, which feeds the value to
+    `ResolveIncident` and will now hit `ErrIncidentNotResolvable` on a walk-scoped incident.
+39. **A leaked `TimerCompensationRetry` row is permanent.** `PruneTimers` excludes the kind and
+    `ReclaimNeverDueTimers` only matches recurring `trigger_kind`, so no bulk sweep can reach it.
+    Intended for a live walk; unbounded accumulation for a row leaked by an instance that died.
+40. **`engine.NewActionFailed` gives a consumer a ZERO retry backoff.** The delay is
+    `JitterFraction * Backoff(attempt)` and the public constructor defaults `JitterFraction` to 0.
+    The shipped `ProcessDriver` passes a real fraction (full-jitter — correct by design), but this
+    is **public API of a library** and a direct caller gets an immediate retry. ⚠ `engine/trigger.go`
+    also documents zero as "no jitter", which is false — zero means zero *delay*.
+41. **No `ReasonCompensation` in `processtest`** — see backlog 19.
 
 ## Where things live
 
 | | |
 |---|---|
-| `main` | **ADR-0181/0182 is the newest SHIPPED bundle**, merge `1ac140f6`, pushed. ⚠ Never quote main's HEAD; re-derive: `git rev-parse --short refs/heads/main` |
-| bundle B | ✅ shipped — its spec/plan/ADRs/audit/adjudication are all on `main` under `docs/` |
-| bundle C | `feat/compensation-failure-retry-and-visibility` — ⚠ **ONE COMMIT, LOCAL ONLY, NOT PUSHED** (`origin` carries only `main`). Spec/plan `docs/{specs,plans}/2026-08-13-compensation-failure-retry-and-visibility.md`; ADR `docs/adr/0179-*.md`; evidence `docs/specs/2026-08-13-adr-0179-premise-evidence.md`; first audit `docs/specs/2026-08-13-adr-0179-inherited-audit-lens-{a,b,c}.md`; **second audit `docs/specs/2026-08-14-adr-0179-audit-lens-{a,b,c}.md`**; **adjudication `docs/specs/2026-08-14-adr-0179-audit-adjudication.md` — read first** |
-| *(merged branches)* | Deleted once pushed. **`origin` carries only `main`** plus dependabot. ⚠ **Consequence: every unmerged branch below, including bundle C, exists on this machine ONLY.** A fresh session on the same machine is fine; a different machine has `main` and nothing else |
+| `main` | ADR-0181/0182 merge `1ac140f6` is the newest shipped code. ⚠ Never quote main's HEAD; re-derive |
+| **bundle C** | `feat/compensation-failure-retry-and-visibility` — ⚠ **ONE COMMIT, LOCAL ONLY, NOT PUSHED.** Spec/plan `docs/{specs,plans}/2026-08-13-compensation-failure-retry-and-visibility.md`; ADR `docs/adr/0179-*.md`; evidence `docs/specs/2026-08-13-adr-0179-premise-evidence.md`; audits `docs/specs/2026-08-1{3,4}-adr-0179-*lens-{a,b,c}.md`; adjudication `docs/specs/2026-08-14-adr-0179-audit-adjudication.md` |
+| *(merged branches)* | Deleted once pushed. **`origin` carries only `main`** plus dependabot. ⚠ **Every unmerged branch, including bundle C, exists on this machine ONLY** |
 | `backup/terminal-trigger-guard-presquash` | `a3aa889` — ADR-0165 pre-squash, provenance only |
 | **`parked/scope-and-fanout-design`** | ⚠ **SUPERSEDED — do NOT use as an input** |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept for its audit tags |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — parked, docs only; holds ADR **0155–0157** |
 | `docs/architecture-audit` | `393e516` — `AUDIT.md`, ⚠ deliberately NOT on `main`, NOT pushed |
 | worktrees | ✅ **CLEAN** — `git worktree list` shows only the primary checkout |
-| Latest ADR | **0182**. Next free is **0183** |
+| Latest ADR | **0182** shipped; **0179** implemented-not-merged. Next free is **0183** |
 | v0.1.0 | not tagged |
 
 ## Standing constraints
@@ -225,25 +199,25 @@ instance (public API); `service` guards it with `ErrConflict`, the driver does n
   any container-free subset as the partial result it is. ⚠ Everything else asks, and **a subagent
   brief must say so explicitly**.
 - **`golangci-lint`: probe and run; if absent, offer to install or skip** — never substitute
-  `go vet`, never claim "lint clean" for a run that did not execute. (Present this session: 2.12.2.)
+  `go vet`, never claim "lint clean" for a run that did not execute.
 - **Container-free packages**: `engine`, `runtime/{calllink,signal,task}`, `service`, `processtest`,
   `transport/http`. ⚠ **`./runtime/...` as a whole is NOT**, and ⚠ `internal/persistence/store` is
-  NOT — **but `RunTestSQLite` is pure-Go and starts no container**, which is how bundle B's entire
-  store phase was built and measured without Docker.
-- ⚠ **`go vet ./...` compiles every test file**, including Docker-only ones.
+  NOT — **but `RunTestSQLite` is pure-Go and starts no container**.
+- ⚠ **`go vet ./...` compiles every test file**, including Docker-only ones — cheap proof that a
+  breaking type or symbol change has no hidden consumer. It compiles them; it does not run them.
 - **Judge a test run by its exit code**, never a pipeline tail; use `-count=1`.
 - **Run the suite on the MERGED tree**, and re-run after any `/code-review` fix.
-- `/code-review` and `/security-review` are **owner-invoked only**. Adversarial Opus stand-ins
-  first anyway — but they are **not** the gate.
-- **Fan out subagents by Go package.** A delivery entirely inside `engine` runs **strictly serial**.
-  Bundle B fanned out across six packages and it worked cleanly — P1‖P3, then P2‖P4, then P5.
+- `/code-review` and `/security-review` are **owner-invoked only**.
+- **Fan out subagents by Go package.** A delivery entirely inside one package runs **strictly
+  serial**. ⚠ Bundle C's wave 2 ran three packages concurrently and one agent saw a transient build
+  failure from another's mid-edit file — expected, cleared on retry, but do not read a `go build`
+  failure as your own during a parallel wave.
 - **An agent that must measure against a patched tree gets a `git worktree`**, the brief must say
   so, *and* must require verifying the bundle is present as step 0.
 - ⚠ **Brief long-running agents to persist findings per finding, before the next probe.**
 - ⚠ **Restore a mutation from a `cp` backup, never `git checkout <path>`.**
-- ⚠ **`git reset --soft main` on a branch cut from an OLDER main stages a REVERT of everything
-  merged in between.** Hit this session; recovered with `git reset --mixed <branch-tip>` and a
-  rebase. Check `git merge-base HEAD main` before any soft reset.
+- ⚠ **`git reset --soft main` on a branch cut from an OLDER main stages a REVERT.** Check
+  `git merge-base HEAD main` before any soft reset.
 - Push on merge (standing preference).
 
 ## Where the detail lives

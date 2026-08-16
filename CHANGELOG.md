@@ -17,6 +17,64 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **A failed compensation action is now visible, and retryable (ADR-0179).** A compensation action
+  replying `ActionFailed` used to be skipped in **total silence** — no retry, no incident, and (despite
+  ADR-0034's Consequences claiming otherwise) **no log line**. It now always emits a
+  `slog.WarnContext` and raises an `engine.IncidentCompensationFailed`, and it is re-dispatched after
+  a backoff when the consumer opts in via `runtime.WithCompensationRetryPolicy` (or
+  `engine.StepOptions.CompensationRetryPolicy`). Opting in is **not** required to be affected by the
+  visibility half — that is on for everyone.
+
+  ⚠ **Three breaking surfaces, and all three fail SILENTLY — none produces a compile error:**
+
+  1. **`processtest` consumers, even with retry OFF.** An incident is not an inert document field.
+     `processtest.Classify` ranked its incident rung above its timer rung, so one walk-scoped
+     incident flipped a park `timer → incident`; `AutoTimers()` acts only on `ReasonTimer` and
+     stopped driving it, so `drive` reported `ErrUnhandledPark`. Measured end-to-end as
+     `unhandled park: incident at node "charge"`. **Fixed in this release** (see item 3) — but a
+     consumer who pinned the old classification will see the change.
+  2. **A hand-built `engine.Incident{}` fixture loses its `ReasonIncident` classification** if it
+     carries no `TokenID` and no companion `TokenIncident` token. That shape is unreachable from the
+     engine itself (every real `IncidentAction` names and parks its token), so **no reachable state
+     regresses** — but a test fixture is not a reachable state, and one such fixture existed in this
+     repo's own suite.
+  3. **`Classify`'s incident rung is now split by scope, and a walk-scoped incident no longer
+     outranks an actionable park.** ⚠ **This also changes the pre-existing ADR-0175
+     `IncidentCompensationStall` kind, not only the new one.**
+     - a **token-scoped** incident (one naming a `TokenID`, or with a token in `TokenIncident`)
+       keeps its position above the signal rung — it genuinely parks the instance;
+     - a **walk-scoped** incident (token-less: `IncidentCompensationStall`,
+       `IncidentCompensationFailed`) now sits immediately **above `ReasonUnknown`** and below every
+       other reason.
+
+     So a stall or failure incident coinciding with a signal, message, human-task or async-child
+     park now classifies as **that** reason, where it previously classified `incident`. It still
+     classifies `incident` when nothing else explains the park, which preserves ADR-0175's recorded
+     consequence (c). `Park.Incidents` continues to report **every** incident unconditionally, so
+     nothing is hidden — only the *primary reason* moved.
+
+     Rationale: `Park.Reason` names what the harness must **do** to unblock the instance. A
+     walk-scoped incident is a *record that something failed* — `ResolveIncident` refuses the kind by
+     design — so it must never displace a reason that is actionable. Only `AutoTimers` is
+     `Reason`-gated, so shipped handlers are unaffected; a consumer's own `Reason`-switching handler
+     will see the change.
+
+  **Also changed, non-breaking but worth knowing:**
+  - `terminalEventErr` and `terminalErr` now publish an instance's cause of death through an
+    **allow-list** (`engine.IncidentAction` only). This fixes a defect that **shipped before this
+    release**: `st.Incidents[0].Error` was read positionally, so a walk-scoped
+    `IncidentCompensationStall` at index 0 already won over the genuine failure at index 1.
+  - `ErrIncidentNotResolvable` now covers two incident kinds, and its message names the
+    compensation-**walk** verbs rather than the compensation-stall verbs.
+  - `Pruner.PruneTimers` no longer deletes `engine.TimerCompensationRetry` rows: deleting one
+    strands a live compensation walk. ⚠ Consequence: no bulk sweep can delete such a row, so one
+    leaked by an instance that died mid-walk is **permanent**. Correctness is preserved;
+    housekeeping is not.
+  - ⚠ An **unset `MaxInterval` is not "no cap"** on a compensation retry: `Normalize()` fills it
+    from `DefaultRetryPolicy()` (100s) and the backoff caps against it. Set it explicitly for long
+    backoffs. `MaxElapsed` is **not** honoured (a walk holds no token, so there is no per-attempt
+    start timestamp), and the backoff is **not** jittered.
+
 - **Definition decoding rejects unknown fields (ADR-0167).** `model.ParseYAML` and
   `ProcessDefinition.UnmarshalJSON` silently discarded field names they did not
   recognise. A misspelled `eligible_roles` therefore left a `UserTask` with empty

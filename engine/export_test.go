@@ -194,5 +194,11 @@ func WalkModeName(s *InstanceState) string {
 	}
 }
 
+// ActiveCompensationCmdID exposes the compensation cursor's ActiveCmdID for
+// engine_test, so a test can ASSERT that an incident names the command the walk
+// still has in flight rather than assume it — the difference between a sweep
+// that is aimed at the incident and one that could never have matched it.
+func ActiveCompensationCmdID(s *InstanceState) string { return s.Compensating.ActiveCmdID }
+
 // CompensatingSince exposes the compensation cursor's StartedAt for engine_test.
 func CompensatingSince(s *InstanceState) time.Time { return s.Compensating.StartedAt }

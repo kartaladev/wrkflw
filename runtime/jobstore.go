@@ -56,7 +56,10 @@ func newJobStore(driver *ProcessDriver) *jobStore { return &jobStore{driver: dri
 // gets no such protection: KindUnset and KindExpr are both non-recurring, so an
 // expired row of either kind is deleted by an ordinary PruneTimers retention
 // pass. Only pre-existing rows can be in that state — timerJobsFor no longer
-// persists an unconvertible trigger.
+// persists an unconvertible trigger — which is also why ADR-0179's second
+// PruneTimers exclusion (engine.TimerCompensationRetry) does not qualify the
+// sentence above: that timer kind is armed with a convertible KindOneTime
+// trigger and postdates every row that can be stuck unconvertible.
 //
 // Save persists j's typed descriptor via the driver's TimerWriter (recovered
 // by type-asserting j to the runtime's own descriptor-bearing job shape);

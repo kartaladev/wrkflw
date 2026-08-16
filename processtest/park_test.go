@@ -92,11 +92,20 @@ func TestClassify(t *testing.T) {
 			},
 		},
 		{
+			// The incident NAMES its token and that token sits in TokenIncident —
+			// the shape the engine actually produces. Measured on an engine-built
+			// retry exhaustion: kind=IncidentAction tokenID="p1-t1" nodeID="call",
+			// token state=TokenIncident. The fixture used to carry neither, which
+			// since ADR-0179 is a walk-scoped record that deliberately yields to
+			// the signal rung.
 			name: "incident takes precedence over signal",
 			state: engine.InstanceState{
 				Status:    engine.StatusRunning,
-				Incidents: []engine.Incident{{ID: "inc-1", NodeID: "call-api"}},
-				Tokens:    []engine.Token{{ID: "t1", NodeID: "wait-sig", AwaitSignal: "go"}},
+				Incidents: []engine.Incident{{ID: "inc-1", Kind: engine.IncidentAction, TokenID: "t2", NodeID: "call-api"}},
+				Tokens: []engine.Token{
+					{ID: "t1", NodeID: "wait-sig", AwaitSignal: "go"},
+					{ID: "t2", NodeID: "call-api", State: engine.TokenIncident},
+				},
 			},
 			assert: func(t *testing.T, p processtest.Park) {
 				assert.Equal(t, processtest.ReasonIncident, p.Reason)
@@ -267,8 +276,11 @@ func TestClassifyPinsUnknownReasonForCompensationWalkPark(t *testing.T) {
 	// and drive turns a passed park into ErrUnhandledPark. The contrast that keeps
 	// this from being vacuous is the existing "AutoTimers drives a timer flow to
 	// completion" case in handlers_test.go: AutoTimers does not pass on the one
-	// park it handles. A ReasonTimer park cannot be built here for an inline
-	// contrast — InstanceState.Timers has an unexported element type.
+	// park it handles. (An inline ReasonTimer contrast IS constructible since
+	// ADR-0177 gave Token.AwaitTimer its own waiter source — see armedTimerToken
+	// in park_compensation_failure_test.go. The claim previously made here, that
+	// InstanceState.Timers' unexported element type made one impossible, was true
+	// only of the RECORD source.)
 	d, err := processtest.Chain(processtest.AutoTimers())(t.Context(), p)
 	require.NoError(t, err)
 	assert.Equal(t, processtest.Pass(), d,

@@ -237,8 +237,14 @@ func (driver *ProcessDriver) timerJobsFor(ctx context.Context, def *model.Proces
 // normally self-heals — re-armed at next boot, fires again, and that fire cancels
 // it — but a fire whose applyTrigger fails for a non-CAS reason (e.g. the instance
 // has since completed and been pruned) is dropped, so the row is re-armed every
-// boot and lingers in the admin listing. Pruner.PruneTimers reclaims exactly these
-// rows; it is the required mitigation, not an optional nicety (ADR-0159).
+// boot and lingers in the admin listing. Pruner.PruneTimers reclaims such a row;
+// it is the required mitigation, not an optional nicety (ADR-0159).
+//
+// ⚠ It does NOT reclaim all of them. ADR-0179 excludes engine.TimerCompensationRetry
+// rows from PruneTimers at every cutoff — the backoff is a one-shot, so it lands in
+// exactly the population described above, and the exclusion is what stops a retention
+// pass stranding a compensation walk. A lingering compensation-retry row therefore
+// needs the operator verbs (ADR-0175), not retention.
 //
 // It is invoked only for a TimerFired trigger, so the read stays off the hot path
 // of non-timer steps entirely.
