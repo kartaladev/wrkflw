@@ -17,18 +17,39 @@ const (
 	ReasonTerminal Reason = iota
 	// ReasonHumanTask means at least one human task is open (unclaimed or claimed).
 	ReasonHumanTask
-	// ReasonIncident means the instance has at least one open incident.
+	// ReasonIncident means the instance has an open incident and no other park to
+	// report. It is raised from TWO rungs at opposite ends of [Classify]'s ladder,
+	// because the two shapes of incident demand opposite treatment:
 	//
-	// ⚠ It covers TWO shapes since ADR-0175, and they are resolved by DIFFERENT
-	// operations. An IncidentAction parks a TOKEN (retry budget exhausted or a
-	// non-retryable failure) and is cleared with ResolveIncident. An
-	// IncidentCompensationStall parks NO token — it reports a compensation walk
-	// whose dispatched action stopped reporting back — and ResolveIncident REFUSES
-	// it with engine.ErrIncidentNotResolvable; the escape verbs are retry, skip
-	// and abandon on ProcessDriver.ResolveCompensationStall.
+	//   - TOKEN-SCOPED (a token in engine.TokenIncident, or an incident whose
+	//     engine.Incident.TokenID is non-empty — in practice engine.IncidentAction
+	//     from an exhausted retry budget or a non-retryable failure). The token is
+	//     stuck, ResolveIncident is what frees it, and nothing lower in the ladder
+	//     can. It fires from the HIGH rung, above signal, message and timer.
+	//   - WALK-SCOPED (engine.IncidentCompensationStall, ADR-0175, and
+	//     engine.IncidentCompensationFailed, ADR-0179). These park no token: they
+	//     carry an empty TokenID because a compensation walk is not driven by a
+	//     token of its own, and ResolveIncident REFUSES them with
+	//     engine.ErrIncidentNotResolvable. The escape verbs are retry, skip and
+	//     abandon on ProcessDriver.ResolveCompensationStall. It fires from the LAST
+	//     rung, below every reason a harness can act on and immediately above
+	//     [ReasonUnknown].
 	//
-	// A handler that blindly feeds Park.Incidents[0].ID to ResolveIncident will
-	// therefore fail on a stall. Switch on the incident's Kind.
+	// ⚠ The split is what a walk-scoped record's meaning requires. Reason names
+	// what the harness must DO to unblock the instance; a walk-scoped incident is
+	// a record that something failed, not an action, so it must never displace a
+	// signal, message, timer, human task or command wait that IS actionable. The
+	// engine raises engine.IncidentCompensationFailed on every failed compensation
+	// action for every consumer, retry policy or not, and such a record is never
+	// retired on an instance the walk RESUMED — so before the split a healthy
+	// Running instance could carry one forever and report this reason for a park a
+	// Reason-switching harness had a perfectly good case for.
+	//
+	// Every incident is reported in full on Park.Incidents regardless of which
+	// rung fired, or whether either did. A handler that gets this Reason must not
+	// feed Park.Incidents[0].ID to ResolveIncident blindly — index 0 may be a
+	// walk-scoped record while the incident that raised the reason sits further
+	// along. Switch on the incident's Kind.
 	ReasonIncident
 	// ReasonSignal means a token is waiting on a named signal.
 	ReasonSignal
@@ -110,7 +131,12 @@ type Park struct {
 	// timer (ADR-0177) — but which kinds are excludable is the engine's decision
 	// to make and to keep current, not a rule a harness should copy.
 	HasArmedTimers bool
-	// Incidents holds the instance's open incident records.
+	// Incidents holds the instance's open incident records — EVERY one of them,
+	// including a walk-scoped compensation record that was outranked by a lower
+	// rung (ADR-0179; such a record raises [ReasonIncident] only when nothing
+	// actionable is parked). It is the harness's visibility surface, and it is
+	// populated from the snapshot before any rung is evaluated, so it is
+	// independent of which rung fired — nothing is hidden by the rung split.
 	Incidents []engine.Incident
 }
 
@@ -124,13 +150,31 @@ func IsTerminal(s engine.Status) bool {
 // Classify inspects an instance snapshot and returns its [Park]. It always fills
 // the discrete fields (OpenTasks, AwaitingSignals, AwaitingMessages,
 // HasArmedTimers, Incidents) and sets Reason to the highest-priority park:
-// terminal > human-task > incident > signal > message > timer > async-child >
-// unknown.
 //
-// The timer/async-child pair is the one rung boundary that is not a plain
-// priority test: a timer outranks a command wait only when the timer is what the
-// instance waits ON, not when it is a boundary or event-sub-process arm attached
-// to work some other handler resolves. [primaryTimerPark] draws that line.
+//	terminal > human-task > TOKEN-SCOPED incident > signal > message > timer >
+//	async-child > WALK-SCOPED incident > unknown
+//
+// [ReasonIncident] therefore appears TWICE, at opposite ends. That split, and one
+// other rung, exist so a park the harness CAN drive is never masked by one it
+// cannot:
+//
+//   - incident, split by SCOPE: a token in engine.TokenIncident, or an incident
+//     naming a token, keeps the high rung — ResolveIncident is the only thing that
+//     frees it. A WALK-SCOPED incident (empty TokenID:
+//     engine.IncidentCompensationStall, engine.IncidentCompensationFailed) is a
+//     record of a failure rather than an actionable park — ResolveIncident refuses
+//     the kind by design — so it drops to the last rung, where it still outranks
+//     [ReasonUnknown] and nothing else. See [tokenScopedIncident] and
+//     [ReasonIncident].
+//   - timer vs async-child: a timer outranks a command wait only when the timer
+//     is what the instance waits ON, not when it is a boundary or
+//     event-sub-process arm attached to work some other handler resolves.
+//     [primaryTimerPark] draws that line.
+//
+// ⚠ The high rung's position is load-bearing and must not be merged downwards: a
+// token-parked engine.IncidentAction still outranks an armed timer, which is what
+// keeps a stuck token from being papered over by a timer the harness happens to
+// be able to fire.
 //
 // AwaitingSignals and AwaitingMessages come from the engine's own authorities,
 // [engine.InstanceState.SignalWaiters] and [engine.InstanceState.MessageWaiters],
@@ -138,20 +182,32 @@ func IsTerminal(s engine.Status) bool {
 // ARM classifies as a signal/message park like a token await does — such arms set
 // no field on any token.
 //
-// KNOWN GAP — a compensation-walk park has no reason of its own. An instance
-// waiting on an in-flight reverse-order compensation walk sits at
-// [engine.StatusCompensating] with zero tokens: the walk is awaited through the
-// engine's compensation cursor, which no token carries, so ReasonAsyncChild
-// (which requires a token with AwaitCommand) does not match and the park falls
-// through to [ReasonUnknown]. A handler with no case for it Passes, and drive
-// then reports [ErrUnhandledPark]. Measured reason="unknown" on both a
-// hand-built snapshot and a real mid-walk state produced by the engine
-// (ADR-0168, which widens the routes reaching that state; it is reachable
-// through whole-instance rollback regardless). It bites a consumer classifying
-// a STORED mid-walk snapshot: measured, the default synchronous drive loop
-// completes the walk inside one ApplyTrigger and never parks on it. Closing the
-// gap means a ReasonCompensation whose [Park] surfaces the awaited command id so
-// a handler can deliver the walk's ActionCompleted — deliberately not done here.
+// KNOWN GAP — a compensation-walk park still has no reason of its own, EXCEPT
+// while its retry backoff is armed. An instance waiting on an in-flight
+// reverse-order compensation walk sits at [engine.StatusCompensating] with zero
+// tokens: the walk is awaited through the engine's compensation cursor, which no
+// token carries, so ReasonAsyncChild (which requires a token with AwaitCommand)
+// does not match and the park falls through to [ReasonUnknown]. A handler with no
+// case for it Passes, and drive then reports [ErrUnhandledPark]. Measured
+// reason="unknown" on both a hand-built snapshot and a real mid-walk state
+// produced by the engine (ADR-0168, which widens the routes reaching that state;
+// it is reachable through whole-instance rollback regardless). It bites a
+// consumer classifying a STORED mid-walk snapshot: measured, the default
+// synchronous drive loop completes the walk inside one ApplyTrigger and never
+// parks on it.
+//
+// ADR-0179 narrows the gap at one point, measured on an engine-built state: a
+// walk paused on an armed engine.TimerCompensationRetry backoff classifies
+// [ReasonTimer], because that timer is forward work the engine reports through
+// HasArmedTimers. [AutoTimers] fires it and the walk re-dispatches. Every other
+// walk park is untouched — a walk whose engine.IncidentCompensationStall has been
+// raised still classifies [ReasonIncident] naming the stalled record's node
+// (nothing else is parked, so the last rung is the one that fires), and a walk
+// with an action merely in flight still classifies [ReasonUnknown].
+//
+// Closing the gap properly still means a ReasonCompensation whose [Park] surfaces
+// the awaited command id so a handler can deliver the walk's ActionCompleted —
+// deliberately not done here.
 func Classify(state engine.InstanceState) Park {
 	p := Park{
 		State:          state,
@@ -180,7 +236,11 @@ func Classify(state engine.InstanceState) Park {
 	case len(p.OpenTasks) > 0:
 		p.Reason = ReasonHumanTask
 		p.Node = p.OpenTasks[0].NodeID
-	case len(p.Incidents) > 0 || hasIncidentToken(state.Tokens):
+	// TOKEN-SCOPED incidents only. A token stuck here is unblocked by
+	// ResolveIncident and by nothing below it, so it keeps the high rung. The
+	// WALK-SCOPED half sits at the BOTTOM of the ladder — see the penultimate
+	// case and [tokenScopedIncident].
+	case hasIncidentToken(state.Tokens) || tokenScopedIncident(state.Incidents) != nil:
 		p.Reason = ReasonIncident
 		p.Node = incidentNode(state)
 	case len(p.AwaitingSignals) > 0:
@@ -199,6 +259,15 @@ func Classify(state engine.InstanceState) Park {
 		p.Node = firstNodeWhere(state.Tokens, func(t engine.Token) bool {
 			return t.State == engine.TokenWaiting && t.AwaitCommand != ""
 		})
+	// WALK-SCOPED incidents (every incident left over once the rung above named
+	// none that carries a TokenID). Deliberately the LAST rung before
+	// [ReasonUnknown]: such a record is a report that something failed, not a park
+	// a harness has any verb for, so it must not displace one that IS actionable.
+	// It stays above ReasonUnknown because with nothing else parked it is the most
+	// informative thing to report — ADR-0175 consequence (c).
+	case len(state.Incidents) > 0:
+		p.Reason = ReasonIncident
+		p.Node = incidentNode(state)
 	default:
 		p.Reason = ReasonUnknown
 	}
@@ -304,11 +373,77 @@ func hasIncidentToken(tokens []engine.Token) bool {
 	return false
 }
 
-func incidentNode(state engine.InstanceState) string {
-	if len(state.Incidents) > 0 {
-		return state.Incidents[0].NodeID
+// tokenScopedIncident returns the first incident that NAMES a token, or nil when
+// every incident present is walk-scoped (or there are none).
+//
+// It is the predicate of [Classify]'s HIGH incident rung, and the thing the LAST
+// rung is defined as the complement of. Both directions are load-bearing:
+//
+//   - A walk-scoped record must NOT mask a park the harness can drive. The engine
+//     raises an engine.IncidentCompensationFailed on every failed compensation
+//     action, for every consumer, with retry switched off — and no route retires
+//     it on an instance the walk RESUMED (a throw-targeted or partial rollback),
+//     so it is permanent. While it sat on the high rung, an instance parked on an
+//     ordinary timer, signal, message or command wait classified as an incident
+//     the harness had no verb for and drive reported [ErrUnhandledPark].
+//   - A walk-scoped record must STILL raise the reason when nothing actionable is
+//     parked. ADR-0175 shipped engine.IncidentCompensationStall reaching
+//     [ReasonIncident] as an intended consequence, and told consumers to handle a
+//     stall by switching on the incident's Kind. Dropping the rung to
+//     [ReasonUnknown] would silently retract that, so the last rung sits ABOVE
+//     unknown rather than replacing it.
+//
+// ⚠ An earlier revision expressed the first point as a yield term on the single
+// rung — a walk-scoped incident raised the reason only when [Park.HasArmedTimers]
+// was false. That could not be made correct in place: HasArmedTimers is not the
+// timer rung's own condition (which additionally requires
+// [primaryTimerPark] || !hasCommandWait), so a walk-scoped incident beside a
+// SECONDARY timer arm yielded to a rung that then declined the park, and the term
+// said nothing at all about the signal, message and command-wait rungs it was
+// also outranking. Splitting by scope subsumes every case the term was reaching
+// for and needs no timer term at all.
+//
+// The scan is deliberately not a look at Incidents[0]: a walk-scoped record and a
+// token-parked one coexist routinely — a cancel walk raises its own incident
+// while an earlier action failure still sits open — and slice position says
+// nothing about which is which. The runtime's cause-of-death resolvers had the
+// same positional defect (ADR-0179).
+//
+// The test is TokenID rather than Kind: it is the property the rung actually
+// depends on (is a token stuck here?), so a compensation kind added later needs
+// no change here to be treated correctly.
+func tokenScopedIncident(incidents []engine.Incident) *engine.Incident {
+	for i := range incidents {
+		if incidents[i].TokenID != "" {
+			return &incidents[i]
+		}
 	}
-	return firstNodeWhere(state.Tokens, func(t engine.Token) bool { return t.State == engine.TokenIncident })
+	return nil
+}
+
+// incidentNode names the node the incident park sits on. It serves BOTH incident
+// rungs, and its order is the order in which their predicates can fire: the first
+// token-scoped incident, else a token sitting in engine.TokenIncident (the high
+// rung's two disjuncts), else — the last rung's walk-scoped case — the first
+// incident of any kind.
+//
+// The last fallback is not decorative. It is how a stall park keeps naming the
+// record it was compensating (measured: node "b"), which a plain Incidents[0] read
+// gave it before ADR-0179 and which dropping the fallback silently took away.
+func incidentNode(state engine.InstanceState) string {
+	stuckTokenNode := func() string {
+		return firstNodeWhere(state.Tokens, func(t engine.Token) bool { return t.State == engine.TokenIncident })
+	}
+	if len(state.Incidents) == 0 {
+		return stuckTokenNode()
+	}
+	if inc := tokenScopedIncident(state.Incidents); inc != nil {
+		return inc.NodeID
+	}
+	if id := stuckTokenNode(); id != "" {
+		return id
+	}
+	return state.Incidents[0].NodeID
 }
 
 // primaryTimerPark reports whether an armed timer is the thing the instance is

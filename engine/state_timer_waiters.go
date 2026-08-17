@@ -3,7 +3,7 @@ package engine
 // TimerWaiter identifies one scheduled timer the instance is currently waiting
 // on. A runtime or test harness correlates a TimerFired back to the instance
 // using TimerID, and reads Kind to decide whether the timer is work the
-// instance is waiting to do (see [TimerKind.walkScoped]).
+// instance is waiting to do (see [TimerKind.detectionOnly]).
 //
 // It is the timer analogue of [MessageWaiter]: a flat value struct, safe to
 // copy, carrying no engine internals. Unlike a message waiter it needs a Kind,
@@ -26,24 +26,50 @@ type TimerWaiter struct {
 	TokenID string
 }
 
-// walkScoped reports whether a timer of this kind belongs to a compensation
-// WALK rather than to the instance's forward work. A walk-scoped timer is not
-// work the instance is waiting to do, so [InstanceState.HasArmedTimers]
-// excludes it: firing a compensation-stall deadline manufactures the very
-// incident the detection window exists to detect (ADR-0175).
+// firesOnDyingInstance reports whether a timer of this kind must still be
+// delivered to an instance that spawns no new work. It is the exemption
+// ADR-0178's dying-instance guard consults: a timer belonging to a compensation
+// WALK is not forward work the guard exists to suppress, and the walks that
+// TERMINATE are exactly the ones an operator most needs to see wedged
+// (ADR-0175) or rolled back to completion (ADR-0179).
 //
-// It is the one place the exclusion is defined, so a future walk-scoped kind is
-// added here rather than at every predicate. ADR-0179's compensation-retry
-// timer is the next such kind.
-func (k TimerKind) walkScoped() bool {
+// It is the one place that exemption is defined, so a future walk-scoped kind is
+// added here rather than at the guard.
+//
+// ⚠ It is NOT the same question as [TimerKind.detectionOnly], though the two
+// coincided while [TimerCompensationStall] was the only walk-scoped kind. See
+// that method for the axis the two split on.
+func (k TimerKind) firesOnDyingInstance() bool {
+	return k == TimerCompensationStall || k == TimerCompensationRetry
+}
+
+// detectionOnly reports whether a timer of this kind exists purely to OBSERVE
+// that something has not happened, as opposed to being work the instance is
+// waiting to do. [InstanceState.HasArmedTimers] excludes such a timer: firing a
+// compensation-stall deadline manufactures the very incident the detection
+// window exists to detect (ADR-0175), so a harness must not treat it as
+// drivable.
+//
+// ⚠ Walk-scoped does not imply detection-only, which is why this is a separate
+// predicate from [TimerKind.firesOnDyingInstance] rather than one boolean
+// (ADR-0179). Both compensation kinds belong to the walk, but the retry timer is
+// forward work — it exists to RE-DISPATCH the failed compensation action, not
+// merely to notice it failed. Answering this question with the walk-scoped one
+// would hide a live backoff from every consumer's test harness, which then
+// reports the park as unhandled instead of firing the timer.
+func (k TimerKind) detectionOnly() bool {
 	return k == TimerCompensationStall
 }
 
 // TimerRecordWaiters returns a waiter for every timer RECORD in s.Timers —
-// deadline, in-wait/reminder, retry and compensation-stall timers, the four
-// kinds the engine tracks in its own bookkeeping table. It is the only source
-// whose entries carry a kind other than [TimerIntermediate], and the only one
+// deadline, in-wait/reminder, retry, compensation-stall and compensation-retry
+// timers, the five kinds the engine tracks in its own bookkeeping table
+// (ADR-0179 added the fifth). It is the only source whose entries carry a kind
+// other than [TimerIntermediate], and the only one
 // [InstanceState.HasArmedTimers] saw before ADR-0177.
+//
+// It reports every record unfiltered, INCLUDING the detection-only stall kind:
+// filtering is HasArmedTimers' job, not this one's.
 //
 // The result preserves s.Timers slice order (deterministic) and is nil when the
 // instance holds no record.

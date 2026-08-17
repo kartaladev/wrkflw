@@ -409,6 +409,7 @@ func beginCompensation(ctx context.Context, def *model.ProcessDefinition, s *Ins
 	cur.ReverseResetVars = reverseResetVars
 	cur.RestoreTargetVars = restoreTargetVars
 	s.Compensating = cur
+	s.recordCompensationDispatch(cmdID)
 	cmds := append(preCmds, compensationInvoke(rec, cmdID))
 	// Arm the stall guard AFTER the s.cancelAllTimers() in the prologue above,
 	// which nils s.Timers — an arm hoisted above it is silently discarded.
@@ -416,23 +417,48 @@ func beginCompensation(ctx context.Context, def *model.ProcessDefinition, s *Ins
 	return StepResult{State: *s, Commands: cmds}, nil
 }
 
-// cancelCompensationStallTimers removes every outstanding TimerCompensationStall
-// record and returns a CancelTimer for each, so the scheduler is never left
-// holding a timer for a walk that has moved on (ADR-0175).
+// cancelCompensationWalkTimers removes every outstanding WALK-SCOPED timer
+// record — both TimerCompensationStall and TimerCompensationRetry — and returns
+// a CancelTimer for each, so the scheduler is never left holding a timer for a
+// walk that has moved on (ADR-0175, widened to the retry kind by ADR-0179).
+//
+// The membership question is [TimerKind.firesOnDyingInstance], which is where
+// "this kind belongs to a compensation WALK rather than to the instance's
+// forward work" is defined — so a future walk-scoped kind joins this sweep by
+// being added there, not here. ⚠ It is deliberately NOT
+// [TimerKind.detectionOnly]: that predicate answers whether a harness may fire
+// the timer, and the retry kind answers it the other way (ADR-0179 Decision 4).
+//
+// Widening it is what stops a retry record outliving its walk. Measured before:
+// a two-record RESUMING walk finished with `leakedTimerRecords=2` and emitted no
+// CancelTimer, and stepCompensationFinish had already zeroed the cursor — so
+// each orphan later fired against compensationCursor{}, the shape ADR-0171
+// documents as having panicked in the pure core. (A TERMINATE finish hid this:
+// endInstance's cancelAllTimers sweeps every record regardless of kind.)
 //
 // It sweeps by KIND rather than by key. The records carry Token: "" and an empty
 // key names no record (ADR-0152), so neither cancelTimersForToken nor
-// cancelTimersByTaskID can ever reach one — this is the only sweep that does.
+// cancelTimersByTaskID can ever reach one — this is the only SELECTIVE sweep
+// that does. ⚠ Not the only remover: cancelAllTimers reaches one by taking
+// everything, but only on a terminal transition, and removeTimer reaches one
+// only where the caller already holds its id (retryFailedCompensation, for the
+// record that just fired).
 // It returns WITHOUT touching s.Timers when there is nothing to cancel — the
 // common case, and the one that keeps detection genuinely free when disabled.
 // Rebuilding unconditionally would turn a nil Timers into an empty slice, and
 // s.Timers is marshalled into the persisted snapshot: every stored row's
 // `timers` would flip from null to [] on a walk that armed nothing (the
 // stored-shape drift ADR-0174 hit with Scopes).
-func cancelCompensationStallTimers(s *InstanceState) []Command {
+//
+// ⚠ The early return is not a third filter to widen — it is DERIVED from the
+// emit loop below it (cmds == nil iff that loop matched nothing), so widening
+// the loop widens it. Leaving the loop narrow while widening only the rebuild
+// would make the function return early and cancel nothing whenever detection is
+// off, which is the default configuration.
+func cancelCompensationWalkTimers(s *InstanceState) []Command {
 	var cmds []Command
 	for _, tr := range s.Timers {
-		if tr.Kind == TimerCompensationStall {
+		if tr.Kind.firesOnDyingInstance() {
 			cmds = append(cmds, CancelTimer{TimerID: tr.TimerID})
 		}
 	}
@@ -441,14 +467,14 @@ func cancelCompensationStallTimers(s *InstanceState) []Command {
 	}
 	out := make([]timerRecord, 0, len(s.Timers))
 	for _, tr := range s.Timers {
-		if tr.Kind != TimerCompensationStall {
+		if !tr.Kind.firesOnDyingInstance() {
 			out = append(out, tr)
 		}
 	}
-	// nil, not an empty slice, when the stall record was the only one — matching
-	// cancelAllTimers and the early return above. Otherwise every RESUME finish of
-	// a walk that armed a stall guard would persist `timers: []` where it used to
-	// persist null.
+	// nil, not an empty slice, when a walk-scoped record was the only one —
+	// matching cancelAllTimers and the early return above. Otherwise every RESUME
+	// finish of a walk that armed a stall guard or a retry backoff would persist
+	// `timers: []` where it used to persist null.
 	if len(out) == 0 {
 		s.Timers = nil
 		return cmds
@@ -463,13 +489,17 @@ func cancelCompensationStallTimers(s *InstanceState) []Command {
 // and leaving two live records would let a stale one raise an incident against a
 // command that already completed.
 //
-// It is a no-op when detection is disabled (pol.stallAfter == 0, the default),
-// which is what keeps every existing command stream byte-identical.
+// Its ARM half is a no-op when detection is disabled (pol.stallAfter == 0, the
+// default), which is what keeps every existing command stream byte-identical.
+// Its CANCEL half runs unconditionally, and since ADR-0179 that half also
+// retires the retry backoff of the command this dispatch supersedes: every
+// dispatch site calls this, so an advance out of a live backoff sweeps the
+// orphan here rather than leaving it armed until the walk's finish.
 //
 // ⚠ At beginCompensation this MUST be called after s.cancelAllTimers(), which
 // sets s.Timers to nil — an earlier arm is silently discarded.
 func armCompensationStallTimer(s *InstanceState, pol stepPolicy, nodeID string) []Command {
-	cmds := cancelCompensationStallTimers(s)
+	cmds := cancelCompensationWalkTimers(s)
 	if pol.stallAfter <= 0 {
 		return cmds
 	}
@@ -495,6 +525,95 @@ func armCompensationStallTimer(s *InstanceState, pol stepPolicy, nodeID string) 
 		Trigger: schedule.AfterDuration(pol.stallAfter),
 		Kind:    TimerCompensationStall,
 	})
+}
+
+// armCompensationRetryTimer decides whether the compensation record currently in
+// flight is to be RE-DISPATCHED after a backoff rather than skipped, and when it
+// is, arms the TimerCompensationRetry that will do it (ADR-0179 Decision 3).
+//
+// It returns (commands, true) when the retry branch is taken — the caller must
+// then return WITHOUT advancing the walk — and (nil, false) when it is not, which
+// is every case ADR-0034 Decision 4 already covered: no policy configured (the
+// default), a non-retryable failure, an error the policy names non-retryable.
+//
+// nodeID is the failed record's node; errMsg and retryable come from the
+// ActionFailed trigger, and are consulted the way the token retry path in
+// handleActionFailed consults them.
+func armCompensationRetryTimer(s *InstanceState, pol stepPolicy, nodeID, errMsg string, retryable bool) ([]Command, bool) {
+	if pol.compensationRetry == nil {
+		return nil, false
+	}
+	eff := pol.compensationRetry.Normalize()
+	if !retryable || eff.IsNonRetryable(errMsg) {
+		return nil, false
+	}
+	cur := s.Compensating
+	// Budget, PER RECORD. Mirrors the token path's own exhaustion term in
+	// handleActionFailed — `eff.MaxAttempts != 0 && attempt+1 >= eff.MaxAttempts`,
+	// read here in its non-terminal form — including the MaxAttempts == 0 escape
+	// that model.RetryPolicy documents as UNLIMITED and Normalize deliberately
+	// preserves.
+	//
+	// ⚠ Exhaustion does NOT park the walk (ADR-0179 Decision 7): the caller falls
+	// through to stepCompensationAdvance and the record is skipped, exactly as
+	// ADR-0034 Decision 4 has always done. The incident is the durable record that
+	// it happened.
+	//
+	// ⚠ MaxElapsed is not evaluated. A walk holds no token of its own, so there is
+	// no per-attempt start timestamp to measure against — cursor.StartedAt is the
+	// WALK's start and is deliberately never restamped (ADR-0175 decision 5).
+	if eff.MaxAttempts != 0 && cur.RetryAttempts+1 >= eff.MaxAttempts {
+		return nil, false
+	}
+	// Backoff takes a ZERO-BASED attempt number, and RetryAttempts is the count
+	// already spent on this record — so the pre-increment value is the right
+	// argument: the first retry of a record waits InitialInterval.
+	//
+	// ⚠ Deliberately NOT the token path's `JitterFraction * Backoff(attempt)`
+	// formula. ActionFailed.JitterFraction defaults to ZERO, so that expression
+	// yields a zero delay unless the runtime samples a fraction — which would make
+	// the default compensation backoff instantaneous, i.e. not a backoff at all.
+	delay := eff.Backoff(cur.RetryAttempts)
+	// CANCEL THE STALL GUARD FIRST, THEN ARM THE BACKOFF. The stall guard's job is
+	// done: the action REPLIED, it did not go silent. Leaving it armed makes it
+	// fire during a healthy backoff and tell the operator "compensation action
+	// stalled" about an action that already answered — a visibility regression in
+	// the ADR whose headline is visibility — and it opens a
+	// CompensationEscape{Retry} race against the scheduled retry, because
+	// handleResolveCompensationStall accepts the same still-active command id.
+	//
+	// ⚠ The two lines must not be swapped, and since cancelCompensationWalkTimers
+	// was widened to every walk-scoped kind (ADR-0179 Decision 3, plan P1 step 10)
+	// that is now LOAD-BEARING rather than merely prudent: an arm written ABOVE
+	// the cancel is swept by it, so no retry record survives the call and the
+	// retry never fires at all. Mutation-verified by swapping the two statements —
+	// the whole package went red, where the same swap was observationally
+	// equivalent while the sweep still filtered strictly on TimerCompensationStall.
+	cmds := cancelCompensationWalkTimers(s)
+	timerID := s.nextTimerID()
+	s.Timers = append(s.Timers, timerRecord{
+		TimerID: timerID,
+		Kind:    TimerCompensationRetry,
+		// Token is deliberately empty, as on the stall record: the timer guards
+		// the WALK, which is not driven by a token of its own.
+		NodeID: nodeID,
+		// ScopeID mirrors the CURSOR's scope, the same convention
+		// armCompensationStallTimer uses — empty for a targeted throw, whose
+		// records live in ArchivedCompensations rather than in a scope.
+		ScopeID: cur.ScopeID,
+		// CommandID is the command that FAILED. retryFailedCompensation compares it
+		// against ActiveCmdID to drop a late fire, exactly as
+		// handleCompensationStallFired does.
+		CommandID: cur.ActiveCmdID,
+	})
+	cur.RetryTimerID = timerID
+	cur.RetryAttempts++
+	s.Compensating = cur
+	return append(cmds, ScheduleTimer{
+		TimerID: timerID,
+		Trigger: schedule.AfterDuration(delay),
+		Kind:    TimerCompensationRetry,
+	}), true
 }
 
 // compensationInvoke returns the InvokeAction that runs rec's compensation
@@ -565,12 +684,27 @@ func stepCompensationAdvance(ctx context.Context, def *model.ProcessDefinition, 
 	cmdID := s.nextCommandID()
 	cur.NextIndex = nextIdx
 	cur.ActiveCmdID = cmdID
+	// The retry budget is PER RECORD (ADR-0179 Decision 3), and this is the only
+	// site in the package where NextIndex ADVANCES — the other two writers,
+	// beginCompensation and startCompensationWalk, start a walk from the cursor
+	// stepCompensationFinish has already zeroed. Measured without this reset: the
+	// second record was skipped outright with zero retries and the walk TERMINATED
+	// (status terminated, FailInstance{cancelled}, no backoff armed), because the
+	// first poison record had burned the whole budget. Resetting nowhere is the
+	// mirror bug — unbounded retrying.
+	//
+	// RetryTimerID is cleared with it. Advancing with a stale non-empty value would
+	// make handleActionFailed's idempotency guard swallow the NEXT record's first
+	// genuine failure as though it were a redelivery.
+	cur.RetryAttempts = 0
+	cur.RetryTimerID = ""
 	s.Compensating = cur
 	// Hand ownership of this record over as it is dispatched (ADR-0173), so a walk
 	// ABANDONED before its finish — a force-termination end event is the measured
 	// route — leaves behind exactly the records it never ran. Written AFTER the
 	// cursor assignment above because it updates the cursor's own window count.
 	s.consumeDispatchedRecord(nextIdx)
+	s.recordCompensationDispatch(cmdID)
 	cmds := []Command{compensationInvoke(rec, cmdID)}
 	// Re-arm the stall guard against the NEW ActiveCmdID. Written after the
 	// cursor assignment above, which is what the helper reads.
@@ -852,19 +986,24 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 	// Clear the cursor — compensation walk is done.
 	s.Compensating = compensationCursor{}
 
-	// Retire the stall guard here, so all five walk modes are covered by one line
-	// (ADR-0175). Only the TERMINATE mode reaches cancelAllTimers, via
-	// endInstance; the four RESUME finishes — throw-targeted, throw-scope-wide,
-	// partial rollback and full reverse — never touch s.Timers, so without this
+	// Retire the walk's own timers here — the stall guard and, since ADR-0179, any
+	// retry backoff still armed — so all five walk modes are covered by one line
+	// (ADR-0175). Only a TERMINATING finish reaches cancelAllTimers, via
+	// endInstance; a finish that RESUMES — the four modes throw-targeted,
+	// throw-scope-wide, partial rollback and full reverse, less whichever of them
+	// a deferred cancel flips to terminating (see [compensationCursor.walkTerminates])
+	// — never touches s.Timers, so without this
 	// the record leaks onto a Running instance and the scheduler keeps a timer
-	// with nothing left to guard.
+	// with nothing left to guard. Worse for the retry kind than for the stall
+	// kind: the cursor is zeroed two lines above, so a leaked retry record fires
+	// against compensationCursor{}.
 	//
 	// ⚠ The position relative to applyFinish is NOT load-bearing, and an earlier
 	// revision of this comment claimed it was. Measured by moving the call below
 	// applyFinish: the terminate mode still emits exactly ONE CancelTimer, because
 	// whichever of the two sweeps runs first removes the record and the other then
 	// finds nothing. Pinned by TestTerminalFinishCancelsStallTimerExactlyOnce.
-	stallCancels := cancelCompensationStallTimers(s)
+	walkTimerCancels := cancelCompensationWalkTimers(s)
 
 	// Build the finishPlan matching this walk's outcome. Branch order mirrors the
 	// pre-refactor precedence: throw resume, then partial, then full-reverse, then
@@ -974,7 +1113,7 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 	if err != nil {
 		return StepResult{}, err
 	}
-	res.Commands = append(stallCancels, res.Commands...)
+	res.Commands = append(walkTimerCancels, res.Commands...)
 	return res, nil
 }
 
@@ -1288,18 +1427,133 @@ func retryStalledCompensation(ctx context.Context, def *model.ProcessDefinition,
 		return stepCompensationFinish(ctx, def, s, cur.ToNode, at, pol)
 	}
 	rec := records[cur.NextIndex]
-	// Retire the incident against the OLD command id, BEFORE the cursor is
+	// Retire the incidents against the OLD command id, BEFORE the cursor is
 	// overwritten below — afterwards ActiveCmdID names the retry and matches
-	// nothing.
+	// nothing. This is the same ordering constraint retryFailedCompensation
+	// observes, for the same reason.
+	//
+	// BOTH walk-scoped kinds, not just the stall. This verb re-dispatches the same
+	// record under a fresh command id, which is the identical "this attempt is
+	// superseded" event retryFailedCompensation retires for — and ADR-0179
+	// Decision 6 bounds the failure record at ONE PER EXHAUSTED RECORD, not one
+	// per attempt. Since ADR-0175's verb has no cap, retiring only the stall kind
+	// grows the count without bound: measured, three open
+	// IncidentCompensationFailed records after two operator retries, one naming
+	// each superseded command.
+	//
+	// ⚠ Scoped to cur.ActiveCmdID, never to the kind. The record raised by the
+	// FINAL failure is the durable evidence of an unrecoverable compensation, and
+	// no re-dispatch supersedes it — armCompensationRetryTimer declines once the
+	// budget is spent and the walk skips and continues (Decision 7), so nothing
+	// retires it. A kind-wide sweep here would delete the one outcome ADR-0179
+	// exists to make visible.
+	//
+	// ⚠ Deliberately NOT mirrored into the bounds-check branch above. That branch
+	// routes to the walk's FINISH because the record source vanished — no retry
+	// goes out, so the attempt is not superseded by anything and its failure record
+	// must survive. Only the stall retirement belongs there, where the guard is
+	// simply no longer owed.
 	s.retireCompensationStallIncidents(cur.ActiveCmdID)
+	s.retireCompensationFailedIncidents(cur.ActiveCmdID)
 	cmdID := s.nextCommandID()
 	cur.ActiveCmdID = cmdID
+	// Reset the ADR-0179 retry cursor alongside ActiveCmdID. This verb can arrive
+	// DURING a live backoff — armCompensationRetryTimer arms one and leaves the
+	// same command active, which is exactly the state this function's own guards
+	// accept — and armCompensationStallTimer's cancel half below sweeps every
+	// walk-scoped record, the retry backoff included. Leaving RetryTimerID naming
+	// the swept record makes handleActionFailed's idempotency guard answer the
+	// re-dispatch's NEXT genuine failure as a redelivery: no incident, no backoff,
+	// no advance, and the instance stays StatusCompensating with nothing armed to
+	// move it (measured: cmds=[] incidents unchanged timers=0).
+	//
+	// RetryAttempts goes with it. The operator's retry is a fresh attempt at this
+	// record, not a continuation of the budget the superseded dispatch spent —
+	// keeping the count would silently shorten the escape hatch's own budget, and
+	// under MaxAttempts:1 would exhaust it before the first backoff.
+	//
+	// ⚠ retryFailedCompensation deliberately does NOT zero RetryAttempts: there
+	// the budget is being CONSUMED by the engine, not restarted by an operator.
+	// stepCompensationAdvance zeroes both because it moves to a new record.
+	cur.RetryAttempts = 0
+	cur.RetryTimerID = ""
 	s.Compensating = cur
 	// Deliberately NOT consumeDispatchedRecord: ownership of this record
 	// transferred at the ORIGINAL dispatch (ADR-0173). Consuming it again would
 	// shrink the walk's teardown window a second time for one record.
+	s.recordCompensationDispatch(cmdID)
 	cmds := []Command{compensationInvoke(rec, cmdID)}
 	cmds = append(cmds, armCompensationStallTimer(s, pol, rec.NodeID)...)
+	return StepResult{State: *s, Commands: cmds}, nil
+}
+
+// retryFailedCompensation is the TimerCompensationRetry fire handler (ADR-0179
+// Decision 2): the backoff armed after an ActionFailed has elapsed, so the
+// record the walk still has in flight is re-dispatched under a FRESH command id.
+// The cursor's NextIndex does not move — this is the same record, tried again.
+//
+// ⚠ It is a NEW function and deliberately not a generalisation of
+// retryStalledCompensation, which looks superficially identical. Source-verified,
+// that one retires STALL incidents on both of its branches (the wrong incident
+// here), arms armCompensationStallTimer as its only timer (the wrong kind), and
+// has no policy, no attempt counter and no exhaustion branch. What the two do
+// share — the bounds check and the recordCompensationDispatch call — is mirrored
+// here rather than extracted, because the surrounding decisions differ.
+//
+// Guards, in order, mirroring handleCompensationStallFired's:
+//   - not compensating any more: the walk finished under the backoff. Drop the
+//     record, no-op.
+//   - CommandID no longer matches ActiveCmdID: a LATE fire against a command the
+//     walk has already moved past. Drop the record, no-op.
+//   - NextIndex out of range for the record source: the source shrank or vanished
+//     (a cursor persisted before ADR-0171, whose live-read fallback now returns
+//     nothing). Route to the walk's finish, as retryStalledCompensation does —
+//     records[NextIndex] on that shape PANICS inside the pure engine core, i.e.
+//     in the consumer's process.
+//
+// RetryAttempts is deliberately left alone: it was incremented when the backoff
+// was ARMED, and it counts attempts for THIS record until the walk advances past
+// it.
+func retryFailedCompensation(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, pol stepPolicy) (StepResult, error) {
+	s.removeTimer(rec.TimerID)
+	if s.Status != StatusCompensating || rec.CommandID != s.Compensating.ActiveCmdID {
+		return StepResult{State: *s, Commands: nil}, nil
+	}
+	cur := s.Compensating
+	records := cursorRecords(s, cur)
+	if cur.NextIndex < 0 || cur.NextIndex >= len(records) {
+		// The finish DRIVES (a resuming walk places a token and advances it), so it
+		// needs the real ctx, def and timestamp — the same reason
+		// retryStalledCompensation's own bounds branch passes them through.
+		return stepCompensationFinish(ctx, def, s, cur.ToNode, at, pol)
+	}
+	r := records[cur.NextIndex]
+	// Retire the failure incident for the OLD command id, BEFORE the cursor is
+	// overwritten below — afterwards ActiveCmdID names the retry and matches
+	// nothing. This is the same ordering constraint retryStalledCompensation
+	// observes for the stall kind, for the same reason.
+	//
+	// The attempt this incident describes is superseded by the dispatch two lines
+	// down, so keeping it would accumulate one incident PER ATTEMPT. What ADR-0179
+	// Decision 6 promises is one per exhausted record: the LAST attempt's incident
+	// is never retired here, because no further re-dispatch happens once the
+	// budget is spent (armCompensationRetryTimer returns false and the walk skips
+	// and continues instead).
+	s.retireCompensationFailedIncidents(cur.ActiveCmdID)
+	cmdID := s.nextCommandID()
+	cur.ActiveCmdID = cmdID
+	// The backoff is over. Clearing this re-opens the idempotency window in
+	// handleActionFailed: the NEXT ActionFailed for this record is a real failure
+	// to be counted, not a redelivery of the one already being retried.
+	cur.RetryTimerID = ""
+	s.Compensating = cur
+	// Deliberately NOT consumeDispatchedRecord, for the reason retryStalledCompensation
+	// gives: ownership of this record transferred at the ORIGINAL dispatch
+	// (ADR-0173), and consuming it again would shrink the walk's teardown window a
+	// second time for one record.
+	s.recordCompensationDispatch(cmdID)
+	cmds := []Command{compensationInvoke(r, cmdID)}
+	cmds = append(cmds, armCompensationStallTimer(s, pol, r.NodeID)...)
 	return StepResult{State: *s, Commands: cmds}, nil
 }
 
@@ -1339,9 +1593,12 @@ func abandonCompensationWalk(ctx context.Context, def *model.ProcessDefinition, 
 	// TestAbandonRetiresTheStallIncident exists — an earlier revision read that
 	// green run as "redundant" and said so in this comment. It was untested, not
 	// redundant. Without the call an abandoned walk terminates carrying a stale
-	// "compensation action stalled" as Incidents[0], which
-	// runtime/outbox.go's terminalEventErr and processdriver_action.go's
-	// terminalErr publish as the instance's cause of death.
+	// "compensation action stalled" record, which incident_count, the service/
+	// audit view and every reader of InstanceState.Incidents then report. (Before
+	// ADR-0179 that record also reached runtime/outbox.go's terminalEventErr and
+	// processdriver_action.go's terminalErr as the published cause of death; both
+	// now go through the causeOfDeathIncident allow-list, which admits
+	// IncidentAction only.)
 	s.retireCompensationStallIncidents(cur.ActiveCmdID)
 	// Delegate with the walk's own recorded outcome.
 	//

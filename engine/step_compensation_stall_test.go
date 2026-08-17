@@ -126,7 +126,7 @@ func TestZeroWindowDisablesStallDetection(t *testing.T) {
 // where it used to persist null — with detection switched OFF.
 //
 // Falsifiable: delete the `if cmds == nil { return nil }` early return in
-// cancelCompensationStallTimers and the nil assertion reddens.
+// cancelCompensationWalkTimers and the nil assertion reddens.
 func TestZeroWindowLeavesThrowWalkTimersUntouched(t *testing.T) {
 	at := time.Date(2026, 7, 10, 9, 0, 0, 0, time.UTC)
 	def := rootSagaWithScopeWideThrow()
@@ -256,7 +256,7 @@ func TestResumeFinishCancelsStallTimer(t *testing.T) {
 // TestResumeFinishLeavesTimersNilNotEmpty closes the other half of the
 // persisted-shape promise (found by /code-review).
 //
-// cancelCompensationStallTimers already early-returns when there is nothing to
+// cancelCompensationWalkTimers already early-returns when there is nothing to
 // cancel, precisely so a nil Timers is not rewritten to []. But when it DOES
 // cancel and the stall record was the only one, the rebuild yields a non-nil
 // empty slice — so every resume finish of a walk that armed a stall guard

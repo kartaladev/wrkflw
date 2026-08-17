@@ -73,14 +73,19 @@ func outboundMessageEvents(st engine.InstanceState, cmds []engine.Command) []ker
 // existing diagnostics survive. It prefers the most concrete description
 // available, in order:
 //
-//  1. the first recorded incident's error (the normal unhandled-error path),
+//  1. the first incident that may stand as the cause of death — see
+//     [causeOfDeathIncident], which allow-lists engine.IncidentAction so a
+//     walk-scoped compensation incident cannot be published as the cause,
 //  2. the terminal FailInstance command's Err — the SubInstanceFailed path
 //     records no incident yet carries a rich message ("child parked…",
 //     "recursion depth limit…") there, and the cancel path carries "cancelled",
 //  3. a status-keyed generic fallback.
+//
+// Rung 2 is why this and [terminalErr] diverge once rung 1 finds nothing; that
+// divergence is documented at [causeOfDeathIncident].
 func terminalEventErr(st engine.InstanceState, cmds []engine.Command) string {
-	if len(st.Incidents) > 0 {
-		return st.Incidents[0].Error
+	if inc, ok := causeOfDeathIncident(st); ok {
+		return inc.Error
 	}
 	for _, c := range cmds {
 		if f, ok := c.(engine.FailInstance); ok && f.Err != "" {

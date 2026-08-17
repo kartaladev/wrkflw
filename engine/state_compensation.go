@@ -178,7 +178,39 @@ type compensationCursor struct {
 	StartedAt time.Time
 	// ActiveCmdID is the CommandID of the compensation InvokeAction currently
 	// in flight. Cleared when the step completes.
+	//
+	// ⚠ It SURVIVES an ActionFailed that takes the retry branch (ADR-0179
+	// Decision 3) and keeps naming the FAILED command until the backoff fires and
+	// re-dispatches. That is what lets the retry timer's fire handler make the
+	// same late-fire check handleCompensationStallFired makes.
 	ActiveCmdID string
+	// RetryAttempts counts the compensation-retry attempts already spent on the
+	// record CURRENTLY in flight (ADR-0179 Decision 3). Zero means the record has
+	// failed no times yet, or has not been dispatched yet.
+	//
+	// ⚠ It is PER RECORD, not per walk: stepCompensationAdvance zeroes it wherever
+	// it moves NextIndex — the single advance site in the package. Without that
+	// reset the first poison record burns the whole budget and every later record
+	// in the same walk gets zero retries; the mirror bug, resetting nowhere, is
+	// unbounded retrying.
+	//
+	// A plain scalar, keeping this struct value-copyable by cloneState (see the
+	// Records comment above).
+	RetryAttempts int
+	// RetryTimerID is the TimerID of the TimerCompensationRetry backoff armed for
+	// ActiveCmdID, or "" when no backoff is in flight (ADR-0179 Decision 3).
+	//
+	// ⚠ Non-empty is the ONLY thing that makes a redelivered ActionFailed for the
+	// still-active command idempotent. InstanceState's dispatched-id ring
+	// deliberately does not cover that case — isBenignCompensationDuplicate
+	// excludes ActiveCmdID, and must, or every normal reply would be a duplicate
+	// and the walk would never advance. Without this field a redelivery raises a
+	// SECOND incident, arms a SECOND retry timer and doubles the attempt count,
+	// leaving two timers dispatching the same record: the double-refund hazard
+	// ADR-0034's post-acceptance fix exists to prevent.
+	//
+	// A plain scalar, for the same reason as RetryAttempts.
+	RetryTimerID string
 	// FinalStatus is the Status the instance must enter when the full-rollback
 	// branch of stepCompensationFinish fires (toNode == "" and ResumeNode == "").
 	// The zero value (StatusRunning == 0) means UNSET: stepCompensationFinish

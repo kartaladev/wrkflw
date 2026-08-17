@@ -164,20 +164,23 @@ var (
 	ErrCompensationWalkResumes = fmt.Errorf("workflow-engine: cannot abandon a compensation walk that resumes; use skip: %w", ErrInvalidTransition)
 
 	// ErrIncidentNotResolvable is returned when [ResolveIncident] names an
-	// incident whose kind it cannot act on — today, an
-	// [IncidentCompensationStall].
+	// incident whose kind it cannot act on. handleResolveIncident whitelists a
+	// single kind — [IncidentAction] — so it refuses every other kind: today
+	// [IncidentCompensationStall] (ADR-0175) and [IncidentCompensationFailed]
+	// (ADR-0179), and any kind appended after them inherits the refusal.
 	//
 	// The refusal exists to prevent data loss, not merely to be tidy.
 	// handleResolveIncident removes the incident BEFORE looking up its token and
-	// returns no commands when the token is nil; a stall incident carries
-	// TokenID "", so unguarded it is silently EATEN (measured: err=<nil>, cmds=[],
-	// incidents=0). An operator hitting the already-shipped resolve-incident
-	// endpoint would delete the only record that the walk had stalled, making it
-	// invisible as well as unresolved. The message names the verbs that do work.
-	// See ADR-0175.
+	// returns no commands when the token is nil; both walk-scoped kinds carry
+	// TokenID "", so unguarded they are silently EATEN (measured on a stall:
+	// err=<nil>, cmds=[], incidents=0). An operator hitting the already-shipped
+	// resolve-incident endpoint would delete the only record that the walk had
+	// stalled — or that a compensation action had failed — making it invisible as
+	// well as unresolved. The message names the verbs that do work.
+	// See ADR-0175, ADR-0179.
 	ErrIncidentNotResolvable = fmt.Errorf(
 		"workflow-engine: this incident is not resolvable with resolve-incident; "+
-			"use the compensation-stall verbs (retry, skip, abandon): %w", ErrInvalidTransition)
+			"use the compensation-walk verbs (retry, skip, abandon): %w", ErrInvalidTransition)
 
 	// ErrNoMatchingFlow is returned when a gateway has no matching/default outgoing
 	// flow. It is a definition/data error, not a wrong-state transition.

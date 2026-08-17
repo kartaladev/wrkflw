@@ -141,10 +141,17 @@ unexported — reading it off the `Park` is a custom handler's only way to disco
 it. `DeliverMessage` still matches by name alone.
 
 `Reason` is one of `ReasonTerminal`, `ReasonHumanTask`, `ReasonIncident`,
-`ReasonSignal`, `ReasonMessage`, `ReasonTimer`, `ReasonAsyncChild`, `ReasonUnknown`
-(that is also the priority order when several apply). Switch on `Reason` for the
-common case, or read the discrete fields to handle a *secondary* park (e.g. fire a
-reminder timer while a task is still open).
+`ReasonSignal`, `ReasonMessage`, `ReasonTimer`, `ReasonAsyncChild`, `ReasonUnknown`.
+The priority order when several apply is
+
+```
+terminal > human-task > token-scoped incident > signal > message > timer >
+async-child > walk-scoped incident > unknown
+```
+
+— `ReasonIncident` appears twice, at opposite ends; see the walk-scoped note
+below. Switch on `Reason` for the common case, or read the discrete fields to
+handle a *secondary* park (e.g. fire a reminder timer while a task is still open).
 
 Because arms compete in that ladder like token awaits, a definition carrying a
 live arm may report `ReasonSignal`/`ReasonMessage` where it previously reported
@@ -158,11 +165,33 @@ keeps working. A genuine token signal-catch still outranks a timer.
 > and an arm-derived park never yields to a coexisting timer. If your handler
 > switches on `Reason` for timer parks, drive through a `Harness`.
 
-> **Not closed for timers.** `HasArmedTimers` reads `state.Timers` only, so a
-> boundary or event-gateway **timer** arm is still invisible to it and a definition
-> parked purely on a timer arm remains undriveable through the harness. That gap
-> needs an engine-side timer authority mirroring `SignalWaiters` and is filed as a
-> follow-up.
+> **Closed for timers since ADR-0177.** `HasArmedTimers` no longer reads
+> `state.Timers` only: it is the filtered view of `InstanceState.TimerWaiters()`,
+> which enumerates all five sources — token timer-catch awaits, timer boundaries,
+> event-gateway timer arms, event-subprocess timer arms, and the record table. A
+> definition parked purely on a timer arm is therefore driveable. One kind is
+> deliberately excluded: a compensation-**stall** timer is a detection deadline,
+> and firing it would manufacture the very stall it exists to detect (ADR-0175). A
+> compensation-**retry** backoff is not excluded — it is forward work (ADR-0179).
+
+> **A walk-scoped incident is the LAST rung.** The compensation incident kinds
+> (`IncidentCompensationStall`, `IncidentCompensationFailed`) carry an empty
+> `TokenID`: they are records *about* a compensation walk, not a park, and
+> `ResolveIncident` refuses both. `Reason` names what your handler must **do** to
+> unblock the instance, so since ADR-0179 either of them raises `ReasonIncident`
+> only when nothing actionable is parked — below signal, message, timer,
+> human-task and async-child, and immediately above `ReasonUnknown`. An instance
+> carrying one while parked on a firable timer classifies `ReasonTimer`, on a
+> signal await `ReasonSignal`, and so on; a stalled walk with nothing else parked
+> still classifies `ReasonIncident` exactly as ADR-0175 shipped it. An incident
+> that parks a *token* (a token in `TokenIncident`, or an incident naming one) is
+> a different rung entirely and always wins — it is the one `ResolveIncident`
+> clears. Every incident is reported in full on `Park.Incidents` regardless of
+> which rung fired, so nothing is hidden.
+>
+> This matters most for a **resumed** instance: a throw-targeted or partial
+> rollback leaves the walk-scoped record behind permanently, so an otherwise
+> healthy `Running` instance carries one for the rest of its life.
 
 ---
 

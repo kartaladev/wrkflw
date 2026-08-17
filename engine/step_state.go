@@ -453,5 +453,10 @@ func cloneState(st InstanceState) InstanceState {
 	// Deep-copy DeferredCompensationThrows: a []string of token IDs (value type),
 	// so an append-copy is sufficient to isolate the clone from the original.
 	s.DeferredCompensationThrows = append([]string(nil), st.DeferredCompensationThrows...)
+	// Deep-copy RecentCompensationCmdIDs: a []string of command ids (value type),
+	// so an append-copy is sufficient. Without it two clones of one base append
+	// into the same backing slot, a dispatched id vanishes, and the duplicate-reply
+	// 422 this ring closes returns non-deterministically (ADR-0179 Decision 5).
+	s.RecentCompensationCmdIDs = append([]string(nil), st.RecentCompensationCmdIDs...)
 	return s
 }

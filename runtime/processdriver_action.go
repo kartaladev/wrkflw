@@ -25,12 +25,18 @@ import (
 )
 
 // terminalErr derives a short, human-readable error message from a terminal
-// instance state. It prefers the first recorded incident's error text (the most
-// concrete description of what went wrong); if no incidents are present it
-// falls back to a status-keyed generic message.
+// instance state — the cause of death a call-activity parent sees on
+// kernel.CallOutcome.Err. It prefers the error text of the first incident that
+// may stand as the cause of death (see [causeOfDeathIncident], which allow-lists
+// engine.IncidentAction); if there is none it falls back to a status-keyed
+// generic message.
+//
+// Unlike [terminalEventErr] it has no FailInstance{Err} rung between the two —
+// it is handed only the state, never the commands. See [causeOfDeathIncident],
+// where that divergence is documented; do not add one here.
 func terminalErr(st engine.InstanceState) string {
-	if len(st.Incidents) > 0 {
-		return st.Incidents[0].Error
+	if inc, ok := causeOfDeathIncident(st); ok {
+		return inc.Error
 	}
 	switch st.Status {
 	case engine.StatusTerminated:

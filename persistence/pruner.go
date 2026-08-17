@@ -45,6 +45,21 @@ type Pruner interface {
 	// this to drop them. Choose a cutoff safely past any window in which a timer
 	// could still fire or be rescheduled. Applies to all dialects (Postgres,
 	// MySQL, SQLite). Returns the number of rows deleted.
+	//
+	// Two populations are excluded at EVERY cutoff, so a caller must not read
+	// this as "deletes every expired row":
+	//
+	//   - Rows whose trigger is a recurring kind. next_run is written once when
+	//     such a timer is armed and is not updated per recurrence, so an expired
+	//     next_run there does not mean the timer is done firing (ADR-0134).
+	//     Reclaiming the never-due subset of these needs
+	//     [NeverDueTimerReclaimer].
+	//   - Compensation-retry rows (engine.TimerCompensationRetry, ADR-0179).
+	//     The backoff is armed as a one-shot, so the recurring-kind clause does
+	//     not cover it, and the row is the only thing that will resume its
+	//     compensation walk — deleting it strands the walk.
+	//
+	// A row of either kind therefore survives this call no matter how old it is.
 	PruneTimers(ctx context.Context, cutoff time.Time) (int64, error)
 }
 

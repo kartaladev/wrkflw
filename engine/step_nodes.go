@@ -1136,10 +1136,12 @@ func startCompensationWalk(c *stepCtx, cmds []Command, tok *Token, records []Com
 	// record in the archive for a later walk to re-run.
 	c.s.consumeDispatchedRecord(len(records) - 1)
 	rec := records[len(records)-1]
+	c.s.recordCompensationDispatch(cmdID)
 	cmds = append(cmds, compensationInvoke(rec, cmdID))
-	// This is the throw walk's FIRST dispatch, and one of the four compensation
+	// This is the throw walk's FIRST dispatch, and one of the five compensation
 	// dispatch sites that must arm the stall timer (ADR-0175): beginCompensation,
-	// stepCompensationAdvance, retryStalledCompensation and this one. Leaving it
+	// stepCompensationAdvance, retryStalledCompensation, retryFailedCompensation
+	// (ADR-0179's fifth site) and this one. Leaving it
 	// unarmed would give a single-record throw walk no stall detection at all —
 	// and this is the site the measured deferred-cancel deadlock arises at.
 	cmds = append(cmds, armCompensationStallTimer(c.s, c.pol, rec.NodeID)...)

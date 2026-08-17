@@ -197,9 +197,20 @@ type compensatingJSON struct {
 
 type incidentJSON struct {
 	ID string `json:"id"`
-	// Kind distinguishes a failed action from a stalled compensation walk
-	// (ADR-0175). They are resolved by DIFFERENT operations: resolve-incident
-	// refuses a compensation stall and names the three escape verbs instead.
+	// Kind is the field a consumer switches on, because the three kinds are
+	// resolved by DIFFERENT operations:
+	//
+	//   - "IncidentAction" — a service action that failed and exhausted its
+	//     retries. It parks a token and IS cleared by resolve-incident.
+	//   - "IncidentCompensationStall" (ADR-0175) and "IncidentCompensationFailed"
+	//     (ADR-0179) — walk-scoped: token_id is empty, because a compensation walk
+	//     is not driven by a token of its own. resolve-incident REFUSES both and
+	//     names the three escape verbs (retry, skip, abandon) instead.
+	//
+	// ⚠ Do NOT route on slice position. A walk-scoped record and a token-parked
+	// one coexist routinely, and `incidents[0]` says nothing about which is which
+	// — the positional read is the defect ADR-0179 fixed in the runtime's own
+	// cause-of-death resolvers.
 	Kind      string    `json:"kind"`
 	TokenID   string    `json:"token_id"`
 	NodeID    string    `json:"node_id"`

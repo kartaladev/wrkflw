@@ -166,6 +166,24 @@ const (
 	// It must NOT be resolved through ResolveIncident — see handleResolveIncident,
 	// which refuses it and names the three escape verbs instead.
 	IncidentCompensationStall
+	// IncidentCompensationFailed is a dispatched compensation action that replied
+	// ActionFailed (ADR-0179). Before it the walk skipped that record in total
+	// silence — no log line, no incident, no command — so a compensation that
+	// never ran looked identical to one that succeeded.
+	//
+	// Like IncidentCompensationStall it is walk-scoped: TokenID is empty, because
+	// the walk is not driven by a token of its own, and the record is keyed by
+	// CommandID — the failed compensation dispatch.
+	//
+	// It is not resolvable through ResolveIncident, and needs no case of its own
+	// to be refused: handleResolveIncident whitelists a single kind
+	// (`inc.Kind != IncidentAction` refuses everything else), so every kind added
+	// here is refused automatically.
+	//
+	// ⚠ APPENDED deliberately, for the same reason as IncidentCompensationStall:
+	// IncidentKind is persisted as a plain integer, so giving a new kind anything
+	// but the next free value re-labels every stored incident row.
+	IncidentCompensationFailed
 )
 
 // String returns the name of the IncidentKind for debugging/logging.
@@ -175,16 +193,26 @@ func (k IncidentKind) String() string {
 		return "IncidentAction"
 	case IncidentCompensationStall:
 		return "IncidentCompensationStall"
+	case IncidentCompensationFailed:
+		return "IncidentCompensationFailed"
 	default:
 		return "IncidentKind(unknown)"
 	}
 }
 
-// Incident records work that has stopped and needs operator attention: a token
-// that exhausted its retry budget or hit a non-retryable error (IncidentAction,
-// created as the engine moves that token to [TokenIncident]), or a compensation
-// walk whose dispatched action stopped reporting back (IncidentCompensationStall,
-// ADR-0175). See [IncidentKind] — the two are resolved by different operations.
+// Incident records work that has stopped and needs operator attention. Three
+// kinds exist today, and [ResolveIncident] acts on only the first of them:
+//
+//   - IncidentAction — a token that exhausted its retry budget or hit a
+//     non-retryable error, created as the engine moves that token to
+//     [TokenIncident].
+//   - IncidentCompensationStall — a compensation walk whose dispatched action
+//     stopped reporting back (ADR-0175).
+//   - IncidentCompensationFailed — a dispatched compensation action that replied
+//     ActionFailed (ADR-0179).
+//
+// See [IncidentKind]: the two walk-scoped kinds carry no TokenID and are cleared
+// by the compensation-walk verbs (retry, skip, abandon), not by ResolveIncident.
 type Incident struct {
 	// ID is the unique identifier for this incident, generated deterministically
 	// from InstanceState.IncidentSeq.
@@ -374,6 +402,31 @@ type InstanceState struct {
 	// the service.ProcessInstance JSON projection like Compensating/PendingCancel).
 	DeferredCompensationThrows []string
 
+	// RecentCompensationCmdIDs is a bounded ring of the last
+	// maxRecentCompensationCmdIDs compensation command ids this instance has
+	// dispatched, appended by recordCompensationDispatch at every
+	// compensationInvoke site (ADR-0179 Decision 5). Both reply handlers consult
+	// it so a late or redelivered reply to a command the walk has already moved
+	// past is answered as a benign no-op instead of ErrTokenNotFound — which
+	// wraps ErrInvalidTransition and reaches a consumer as HTTP 422 on a
+	// perfectly healthy walk (backlog 3g).
+	//
+	// It lives HERE and not on compensationCursor deliberately. The cursor is
+	// zeroed at both walk-finish sites, so a cursor-resident set would cover only
+	// the mid-walk duplicate and miss the post-finish one — the likeliest cell in
+	// production, where an at-least-once worker redelivers after a fast walk has
+	// already finished. It is consequently NEVER cleared at walk finish; that is
+	// the entire point. Keeping it off the cursor also keeps that struct
+	// all-scalar, which its own doc comments justify as load-bearing for
+	// cloneState.
+	//
+	// ⚠ Unlike the cursor's scalars this is a reference type, so cloneState must
+	// deep-copy it (see TestCloneStateDeepCopiesRecentCompensationCmdIDs, the
+	// only gate for that). Engine bookkeeping: persisted with the state and
+	// excluded from the service.ProcessInstance JSON projection, like
+	// Compensating and DeferredCompensationThrows.
+	RecentCompensationCmdIDs []string
+
 	// Deterministic ID counters (never randomness or the clock).
 	CmdSeq   int
 	TokenSeq int
@@ -455,16 +508,65 @@ func (s *InstanceState) removeOrphanedIncidents() {
 // It is called wherever a walk moves on — stepCompensationAdvance, and the
 // escape verbs before they delegate to a finish — plus a final sweep in
 // endInstance. Without it, a walk that recovered on its own carries a stale
-// "compensation action stalled" incident into its terminal state, where
+// "compensation action stalled" incident into its terminal state.
+//
+// ⚠ The sweep is STILL REQUIRED after ADR-0179, but its justification narrowed.
 // runtime/outbox.go's terminalEventErr and runtime/processdriver_action.go's
-// terminalErr both read Incidents[0] unconditionally and would publish it as the
-// instance's cause of death — to the outbox, and to a call-activity parent.
+// terminalErr used to read Incidents[0] unconditionally, so a retained stall
+// record was published as the instance's cause of death — to the outbox, and to
+// a call-activity parent. Both now go through runtime's causeOfDeathIncident
+// allow-list, which admits IncidentAction only, so a stall record is no longer
+// PUBLISHED that way. It is still a lie in the durable snapshot: it is counted
+// in incident_count, rendered by the service/ audit view, and returned on
+// InstanceState.Incidents to every consumer. Retiring it is what keeps those
+// surfaces honest.
 func (s *InstanceState) retireCompensationStallIncidents(commandID string) {
 	if commandID == "" {
 		return
 	}
 	s.Incidents = slices.DeleteFunc(s.Incidents, func(inc Incident) bool {
 		return inc.Kind == IncidentCompensationStall && inc.CommandID == commandID
+	})
+}
+
+// retireCompensationFailedIncidents removes every open IncidentCompensationFailed
+// raised against commandID (ADR-0179 Decision 6). An empty commandID names no
+// incident and retires nothing, mirroring ADR-0152 and its stall-kind sibling.
+//
+// ⚠ Its call sites are DELIBERATELY narrower than
+// [InstanceState.retireCompensationStallIncidents]'s. That one is called
+// wherever a walk moves on, including endInstance's remainder sweep; this one is
+// called only where the attempt it names has genuinely stopped being owed. There
+// are THREE, and the first two are the same event reached by two routes — the
+// record is about to be re-dispatched under a fresh command id:
+//
+//   - retryFailedCompensation, for the OLD command id as the backoff's retry
+//     re-dispatches — that attempt is superseded by the one about to go out.
+//   - retryStalledCompensation, for the OLD command id as ADR-0175's operator
+//     `retry` verb re-dispatches. ⚠ ADDED AT THE DELIVERY GATE: that function
+//     predates IncidentCompensationFailed and retired only the stall kind, and
+//     the verb has no cap — so an operator retrying a failing compensation
+//     accumulated one open record per invocation (measured: three after two
+//     retries) against Decision 6's bound of one per exhausted record.
+//   - handleActionCompleted's compensation short-circuit, for ActiveCmdID — the
+//     record ultimately SUCCEEDED.
+//
+// Every one of the three passes the SUPERSEDED command id, never the fresh one
+// and never a kind-wide sweep. That is what leaves the final failure's record
+// standing.
+//
+// It is NOT called from stepCompensationAdvance, and must not be: that function
+// is also the exhaustion and operator-skip route, where the incident IS the
+// durable record ADR-0179 exists to leave behind. Putting it there would delete
+// the incident of every unrecoverable compensation at the moment the walk skips
+// it — the one outcome the ADR is written to make visible. What survives is
+// exactly one incident per exhausted record, not one per attempt.
+func (s *InstanceState) retireCompensationFailedIncidents(commandID string) {
+	if commandID == "" {
+		return
+	}
+	s.Incidents = slices.DeleteFunc(s.Incidents, func(inc Incident) bool {
+		return inc.Kind == IncidentCompensationFailed && inc.CommandID == commandID
 	})
 }
 
@@ -502,10 +604,12 @@ func (s *InstanceState) endInstance(status Status, at time.Time, terminal Comman
 	s.harvestOpenScopeCompensations()
 	// Retire any stall incident still open, BEFORE the cursor clear takes away the
 	// ActiveCmdID that names it (ADR-0175). The walk ends here, so an incident
-	// saying it is stalled is stale by construction — and leaving one behind makes
-	// it Incidents[0] on a terminal instance, which runtime/outbox.go's
-	// terminalEventErr and runtime/processdriver_action.go's terminalErr publish
-	// unconditionally as the cause of death.
+	// saying it is stalled is stale by construction — and leaving one behind ships
+	// that lie in the terminal snapshot, where it is counted in incident_count,
+	// rendered by the service/ audit view, and handed to every consumer reading
+	// InstanceState.Incidents. (Before ADR-0179 it was also PUBLISHED as the cause
+	// of death; runtime's causeOfDeathIncident allow-list now admits IncidentAction
+	// only, which closes that route but not the ones above.)
 	//
 	// This is the REMAINDER sweep. The routes that move a walk on retire their own
 	// incident first — a late ActionCompleted, a late ActionFailed and the skip
@@ -560,6 +664,74 @@ func (s *InstanceState) cancelOpenTasks() []Command {
 // the receiver (and vice versa).
 func (s InstanceState) Clone() InstanceState {
 	return cloneState(s)
+}
+
+// maxRecentCompensationCmdIDs bounds [InstanceState.RecentCompensationCmdIDs]:
+// the ring keeps the last K = 16 dispatched compensation command ids and drops
+// the oldest beyond that (ADR-0179 Decision 5).
+//
+// A bound is required, not merely tidy: ADR-0175's operator verb
+// retryStalledCompensation sets a fresh ActiveCmdID per invocation with no cap,
+// and the whole state is re-marshalled every Step, so an unbounded slice would
+// grow without limit under repeated operator retries. 16 comfortably spans the
+// in-flight window an at-least-once worker can redeliver across while a walk
+// keeps advancing; a reply older than the last 16 dispatches falls back to
+// today's ErrTokenNotFound.
+const maxRecentCompensationCmdIDs = 16
+
+// recordCompensationDispatch appends cmdID to the bounded ring of recently
+// dispatched compensation command ids, evicting the oldest ids beyond
+// [maxRecentCompensationCmdIDs].
+//
+// It MUST be called at every compensationInvoke dispatch site;
+// TestDispatchedCmdIDsAreDerivedFromEverySite derives that set from the
+// package's own sources rather than trusting a count, because ADR-0179 adds a
+// fifth site and this decision's history has miscounted the dispatch sites
+// twice.
+//
+// The ring is deliberately never cleared at walk finish — a post-finish
+// redelivery is the likeliest duplicate in production.
+//
+// No empty-id guard. ⚠ NOT because the mint cannot fail: nextID returns "" when
+// an injected IDGenerator errors (engine/idgen.go). The guarantee comes from one
+// level up — Step checks sp.ids.err after dispatch and returns StepResult{} with
+// that error, so a state carrying an empty-id ring never escapes the step and is
+// never persisted. Were "" ever admitted, the reply handlers' slices.Contains
+// would classify a CommandID-less reply as a benign duplicate instead of the
+// caller error it is (ADR-0152's empty-identity-key hazard).
+//
+// Eviction re-allocates rather than resliceing so the dropped ids become
+// garbage instead of being retained by a shared backing array for the life of
+// the instance.
+func (s *InstanceState) recordCompensationDispatch(cmdID string) {
+	s.RecentCompensationCmdIDs = append(s.RecentCompensationCmdIDs, cmdID)
+	if n := len(s.RecentCompensationCmdIDs); n > maxRecentCompensationCmdIDs {
+		s.RecentCompensationCmdIDs = append([]string(nil),
+			s.RecentCompensationCmdIDs[n-maxRecentCompensationCmdIDs:]...)
+	}
+}
+
+// isBenignCompensationDuplicate reports whether cmdID names a compensation
+// command this instance dispatched and has since MOVED PAST — a late or
+// redelivered reply that both reply handlers must answer as a clean no-op rather
+// than ErrTokenNotFound (ADR-0179 Decision 5).
+//
+// ⚠ The `!= ActiveCmdID` term is not an optimisation, it is what stops this
+// feature becoming a hung walk. recordCompensationDispatch appends AT DISPATCH,
+// so the in-flight id is in the ring the moment it is dispatched; bare
+// membership would classify every normal reply as a duplicate and the walk would
+// never advance — strictly worse than the 422 it replaces. It is also why the
+// callers place this check AFTER their StatusCompensating short-circuit, which
+// is what consumes the active id's reply.
+//
+// Deliberately NOT gated on Status == StatusCompensating. The likeliest
+// duplicate in production is a POST-FINISH one, where the walk has already ended
+// and the status is back to running or terminal; gating on the status would miss
+// exactly the cell the ring exists for. After a finish ActiveCmdID is "", so the
+// first term holds for every non-empty id.
+func (s *InstanceState) isBenignCompensationDuplicate(cmdID string) bool {
+	return cmdID != s.Compensating.ActiveCmdID &&
+		slices.Contains(s.RecentCompensationCmdIDs, cmdID)
 }
 
 // spawnsNewWork reports whether the instance may still START new work — open a

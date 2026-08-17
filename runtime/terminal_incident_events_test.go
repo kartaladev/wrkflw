@@ -7,8 +7,11 @@ package runtime_test
 // whose token the terminal transition dropped, and keeps the rest. That is an
 // engine-side state change, but its consumer-visible effect lands here: the
 // terminal outbox payload's "error" comes from terminalEventErr
-// (runtime/outbox.go), which prefers st.Incidents[0].Error over the terminal
-// FailInstance's Err, and the listing's IncidentCount counts the same slice.
+// (runtime/outbox.go), which prefers the first engine.IncidentAction on
+// st.Incidents (see causeOfDeathIncident) over the terminal FailInstance's Err,
+// and the listing's IncidentCount counts the same slice. Both incidents these
+// two tests raise are IncidentAction, so the allow-list admits them and the
+// sweep is still what decides the payload.
 // runtime/outbox_test.go feeds terminalEventErr hand-built states, so it keeps
 // passing whatever the engine actually produces — these two tests drive the
 // real engine instead.
@@ -20,7 +23,7 @@ package runtime_test
 //
 // The surviving-token case also pins ADR-0164's cross-instance consequence:
 // terminalErr (runtime/processdriver_action.go) shares terminalEventErr's
-// Incidents[0]-first preference and feeds kernel.CallOutcome.Err, which a child
+// cause-of-death allow-list and feeds kernel.CallOutcome.Err, which a child
 // hands its parent through SubInstanceFailed. Whatever the sweep leaves behind
 // is what a parent instance reports as its own failure text.
 
@@ -96,8 +99,8 @@ func terminalPayloadError(t *testing.T, evs []kernel.OutboxEvent, topic string) 
 //
 // handleCancelRequested's immediate branch nils s.Tokens, so the parked
 // incident's token is gone and endInstance retires the incident with it. The
-// terminal payload therefore falls through terminalEventErr's Incidents[0]
-// preference to the FailInstance Err ("cancelled"), and the listing reports
+// terminal payload therefore falls through terminalEventErr's cause-of-death
+// scan to the FailInstance Err ("cancelled"), and the listing reports
 // IncidentCount==0. This is a deliberate, ADR-documented diagnostic loss — the
 // concrete "downstream ledger refused the charge" no longer reaches the event —
 // and it had no test outside engine/ before this pin.

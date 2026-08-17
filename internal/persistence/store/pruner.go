@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/internal/database"
 	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 )
@@ -172,12 +173,31 @@ func (p *Pruner) PruneProcessedMessages(ctx context.Context, cutoff time.Time) (
 	return d.Prune(ctx, cutoff)
 }
 
-// PruneTimers deletes timer rows whose next_run is strictly before cutoff and
-// whose trigger is not recurring. Returns the number of rows deleted.
+// PruneTimers deletes timer rows whose next_run is strictly before cutoff,
+// whose trigger is not recurring, and which are not [engine.TimerCompensationRetry]
+// records. Returns the number of rows deleted.
 //
 // Fired timers that are no longer needed can accumulate in wrkflw_timers; this
 // method lets a consumer's retention job drop them. Choose a cutoff safely past
 // any window in which a timer could still fire or be rescheduled.
+//
+// Compensation-retry rows (kind = [engine.TimerCompensationRetry]) are excluded
+// unconditionally, at any cutoff (ADR-0179). Such a row is the only thing that
+// will resume its compensation walk: between the compensation action's failure
+// and the backoff firing the walk makes no forward progress and holds no token
+// of its own, and the retry budget's exhaustion is reachable only by the timer
+// firing. The exclusion is needed because the trigger_kind IN-list does not
+// cover it — the backoff is armed with [schedule.AfterDuration], whose
+// [schedule.Kind] is [schedule.KindOneTime] and therefore inside
+// [nonRecurringTriggerKinds]. Note the two clauses read DIFFERENT columns
+// carrying different enums: trigger_kind carries a [schedule.Kind], kind carries
+// an [engine.TimerKind].
+//
+// ⚠ This closes the retention-job route to a stranded walk, and only that route.
+// A retry row skipped by the runtime's job-store load at boot, or never
+// rehydrated at all, still strands its walk; the escape there is ADR-0175's
+// operator verbs. Do not read this exclusion as making a lost retry timer
+// impossible.
 //
 // Recurring rows (trigger_kind outside [nonRecurringTriggerKinds]) are excluded
 // even when next_run is expired: under D16, next_run is written once when the
@@ -199,9 +219,11 @@ func (p *Pruner) PruneTimers(ctx context.Context, cutoff time.Time) (int64, erro
 		p.dialect.Rebind(
 			`DELETE FROM wrkflw_timers
 			  WHERE next_run < ?
-			    AND trigger_kind IN (?, ?, ?)`),
+			    AND trigger_kind IN (?, ?, ?)
+			    AND kind <> ?`),
 		timeArg(p.dialect, cutoff.UTC()),
 		int16(nonRecurringTriggerKinds[0]), int16(nonRecurringTriggerKinds[1]), int16(nonRecurringTriggerKinds[2]),
+		int16(engine.TimerCompensationRetry),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("workflow-store: pruner: prune timers: %w", err)

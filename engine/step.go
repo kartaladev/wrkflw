@@ -66,6 +66,29 @@ type StepOptions struct {
 	// three-tier chain precisely because one timeout for every action is wrong.
 	// A per-node tier is deliberate backlog, not scope.
 	CompensationStallAfter time.Duration
+	// CompensationRetryPolicy makes a compensation action that replies
+	// ActionFailed be RE-DISPATCHED after a backoff instead of skipped
+	// (ADR-0179). nil DISABLES retry, and nil is the default: with it unset the
+	// command stream keeps ADR-0034 Decision 4's skip-and-advance timing exactly,
+	// and only the always-on WARN + IncidentCompensationFailed are new.
+	//
+	// The budget is PER RECORD (compensationCursor.RetryAttempts, zeroed whenever
+	// the walk advances), so a walk draining ten records gives each of them
+	// MaxAttempts, not the walk as a whole.
+	//
+	// ⚠ MaxElapsed is NOT honoured on this path. The walk holds no token, so
+	// there is no RetryStartedAt to measure elapsed time against — the token
+	// path's own MaxElapsed term reads tok.RetryStartedAt. MaxAttempts and
+	// NonRetryableErrors are honoured, and so is ActionFailed.Retryable.
+	//
+	// ⚠ On exhaustion the walk SKIPS AND CONTINUES; it never parks (ADR-0179
+	// Decision 7). Parking would reverse ADR-0034's safety argument that a failed
+	// compensation never strands the instance. The incident is the durable record
+	// that it happened.
+	//
+	// ⚠ One engine-wide policy is a deliberate v1 simplification, the same
+	// trade-off CompensationStallAfter documents. A per-node tier is backlog.
+	CompensationRetryPolicy *model.RetryPolicy
 }
 
 // stepPolicy bundles the per-Step policy values that the drive,
@@ -84,15 +107,22 @@ type stepPolicy struct {
 	// detection; it reaches armCompensationStallTimer's call sites through this
 	// field (ADR-0175).
 	stallAfter time.Duration
+	// compensationRetry is StepOptions.CompensationRetryPolicy. nil disables
+	// compensation retry; it reaches handleActionFailed's compensation
+	// short-circuit and retryFailedCompensation through this field (ADR-0179).
+	// Carried un-normalized, exactly as CompensationStallAfter is carried raw —
+	// the decision site normalizes once, mirroring effectiveRetryPolicy.
+	compensationRetry *model.RetryPolicy
 }
 
 // resolvePolicy reduces a caller's StepOptions to the resolved stepPolicy the
 // internal call chains thread. Called once per dispatch.
 func resolvePolicy(opt StepOptions) stepPolicy {
 	return stepPolicy{
-		mode:       opt.Mode,
-		eval:       resolveEvaluator(opt),
-		stallAfter: opt.CompensationStallAfter,
+		mode:              opt.Mode,
+		eval:              resolveEvaluator(opt),
+		stallAfter:        opt.CompensationStallAfter,
+		compensationRetry: opt.CompensationRetryPolicy,
 	}
 }
 
