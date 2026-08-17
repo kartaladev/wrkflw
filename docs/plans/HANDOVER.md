@@ -14,28 +14,35 @@ top to bottom; it is meant to stay short enough that you can.
 
 ## State — updated 2026-08-17
 
-**▶ Bundle C (ADR-0179) is IMPLEMENTED on its branch and is waiting on the owner-invoked
-delivery gate. Nothing else is in flight.**
+**▶ NOTHING IS IN FLIGHT. `main` is clean, pushed, and all three bundles have shipped.**
 
-The newest code on `main` is still the **ADR-0181/0182 merge `1ac140f6`** (pushed); the two commits
-after it are docs-only. ⚠ Do not quote main's head; re-derive with
+Bundle C (ADR-0179) shipped as merge **`962aeb25`**, pushed; its branch is deleted. Both gates
+passed: `/code-review` 6 findings (1 HIGH) all fixed or adjudicated out-of-scope-with-reason;
+`/security-review` **0 findings**. ⚠ Do not quote main's head; re-derive with
 `git rev-parse --short refs/heads/main`.
 
-| bundle | branch | ADRs | state |
-|---|---|---|---|
-| ~~A~~ | ✅ SHIPPED — merge `a5b33e4c` | 0177, 0178, 0180 | done |
-| ~~B~~ | ✅ SHIPPED — merge `1ac140f6` | 0181, 0182 | done |
-| **C** | `feat/compensation-failure-retry-and-visibility` | **0179** | ⏸ **implemented, ONE COMMIT, LOCAL ONLY — awaiting the gate** |
+| bundle | ADRs | state |
+|---|---|---|
+| ~~A~~ | 0177, 0178, 0180 | ✅ SHIPPED — merge `a5b33e4c` |
+| ~~B~~ | 0181, 0182 | ✅ SHIPPED — merge `1ac140f6` |
+| ~~C~~ | **0179** | ✅ **SHIPPED — merge `962aeb25`**, pushed, branch deleted |
 
-### ▶ NEXT WORK — in order
+### ▶ NEXT WORK
 
-1. **`/security-review` on bundle C** — the last gate step. `/code-review` is **DONE**: 6 findings,
-   1 HIGH, all fixed or adjudicated out-of-scope-with-reason, folded via `--amend`. Then merge
-   `--no-ff` and push.
-   ⚠ **Eleven consecutive deliveries** have had the real `/code-review` find something every
-   adversarial stand-in missed — this one a **permanent walk wedge**. Do not skip `/security-review`
-   because the suite is green.
-2. Then the backlog below.
+Pick from the **Pre-v0.1.0 blockers** below — the queue is empty of in-flight work, so the next
+delivery starts at brainstorming (rule #7), then spec/ADR/plan, then ONE rule-#9 audit of the whole
+bundle before any code.
+
+⚠ **The strongest candidates**, because bundle C raised their stakes or measured them:
+- **Blocker 3** (`Upsert` can persist `State: Claimed, Claim: nil`) — the read path upholds the
+  invariant, the write path does not.
+- **Backlog 32** (downgrade drops new state fields) — now materially worse: a dropped
+  `RetryAttempts` **resets the retry budget so a poison compensation retries forever**, and a dropped
+  `IncidentKind` degrades a walk-scoped incident into a *resolvable, deletable* `IncidentAction`.
+- **Blocker 7** (suite speed) — the full `-race` run now takes several minutes of container boots,
+  and this delivery paid that cost repeatedly.
+- **The fail-open `AuthzSpec`** (under blocker 1) — an empty spec, `eligible_roles: []`, a bare key
+  and `null` all parse cleanly and mean allow-all. Wants its own ADR; ADR-0167 did **not** close it.
 
 ⚠ **What `/code-review` caught, because it generalises.** ADR-0175's operator `retry` verb, used
 during an ADR-0179 backoff, left the cursor naming an already-cancelled timer; the next failure hit
@@ -180,9 +187,9 @@ lock**, not the option setters. 35. ADR-0182's gate cannot judge the legacy flat
 
 | | |
 |---|---|
-| `main` | ADR-0181/0182 merge `1ac140f6` is the newest shipped code. ⚠ Never quote main's HEAD; re-derive |
-| **bundle C** | `feat/compensation-failure-retry-and-visibility` — ⚠ **ONE COMMIT, LOCAL ONLY, NOT PUSHED.** Spec/plan `docs/{specs,plans}/2026-08-13-compensation-failure-retry-and-visibility.md`; ADR `docs/adr/0179-*.md`; evidence `docs/specs/2026-08-13-adr-0179-premise-evidence.md`; audits `docs/specs/2026-08-1{3,4}-adr-0179-*lens-{a,b,c}.md`; adjudication `docs/specs/2026-08-14-adr-0179-audit-adjudication.md` |
-| *(merged branches)* | Deleted once pushed. **`origin` carries only `main`** plus dependabot. ⚠ **Every unmerged branch, including bundle C, exists on this machine ONLY** |
+| `main` | **ADR-0179 merge `962aeb25`** is the newest shipped code, pushed. ⚠ Never quote main's HEAD; re-derive |
+| bundle C | ✅ shipped — its spec/plan/ADR/audits/adjudication are all on `main` under `docs/` |
+| *(merged branches)* | Deleted once pushed. **`origin` carries only `main`** plus dependabot. ⚠ **Every unmerged branch below exists on this machine ONLY** |
 | `backup/terminal-trigger-guard-presquash` | `a3aa889` — ADR-0165 pre-squash, provenance only |
 | **`parked/scope-and-fanout-design`** | ⚠ **SUPERSEDED — do NOT use as an input** |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept for its audit tags |
