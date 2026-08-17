@@ -10,6 +10,7 @@ import (
 
 	"github.com/kartaladev/wrkflw/authz"
 	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/kartaladev/wrkflw/runtime/validation"
 	"github.com/kartaladev/wrkflw/service"
@@ -178,6 +179,89 @@ func TestClassifyErrorOutcomeSentinels(t *testing.T) {
 			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
 				assert.Equal(t, http.StatusBadRequest, status)
 				assert.Equal(t, "bad_request", body.Error)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			status, body := httpcore.ClassifyError(tc.err)
+			tc.assert(t, status, body)
+		})
+	}
+}
+
+// TestClassifyErrorClaimInvariantSentinels pins the two ADR-0183 sentinels as
+// client errors carrying their message. Both arrive WRAPPED in production —
+// humantask.Validate wraps ErrInvalidTask itself, and the runtime, the store and
+// the caching decorator each add a prefix — so the wrapped rows are the real
+// shapes, not extra credit. The control row keeps the table honest: it fails the
+// moment ClassifyError starts classifying everything.
+func TestClassifyErrorClaimInvariantSentinels(t *testing.T) {
+	t.Parallel()
+
+	// A real contradictory task, so the asserted message is the production text
+	// rather than one invented here.
+	invalidTask := humantask.Validate(humantask.HumanTask{TaskID: "t-1", State: humantask.Claimed})
+
+	type testCase struct {
+		name   string
+		err    error
+		assert func(t *testing.T, status int, body httpcore.ErrorBody)
+	}
+
+	cases := []testCase{
+		{
+			name: "a contradictory task shape is a state conflict",
+			err:  invalidTask,
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusUnprocessableEntity, status)
+				assert.Equal(t, "conflict_state", body.Error)
+				assert.NotEmpty(t, body.Message, "a 4xx body must carry an actionable message")
+				assert.Contains(t, body.Message, "t-1",
+					"the caller must be told WHICH task contradicts itself")
+			},
+		},
+		{
+			name: "a wrapped contradictory task shape is still a state conflict",
+			err:  fmt.Errorf("workflow-runtime: commit step: %w", invalidTask),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusUnprocessableEntity, status)
+				assert.Equal(t, "conflict_state", body.Error)
+				assert.Contains(t, body.Message, "requires a claim",
+					"the caller must be told WHAT contradicts")
+			},
+		},
+		{
+			name: "an empty reassignment target is a bad request",
+			err:  engine.ErrEmptyReassignTarget,
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusBadRequest, status)
+				assert.Equal(t, "bad_request", body.Error)
+				assert.NotEmpty(t, body.Message, "a 4xx body must carry an actionable message")
+			},
+		},
+		{
+			name: "a wrapped empty reassignment target is still a bad request",
+			err: fmt.Errorf("workflow-service: apply trigger: %w",
+				fmt.Errorf("%w: engine.HumanReassigned.To", engine.ErrEmptyReassignTarget)),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusBadRequest, status)
+				assert.Equal(t, "bad_request", body.Error)
+				assert.Contains(t, body.Message, "reassignment target is empty")
+			},
+		},
+		{
+			// CONTROL. Neither new arm may widen the default: an error carrying
+			// neither sentinel stays a 500 with an empty body.
+			name: "an unclassified error still hides behind a 500",
+			err:  fmt.Errorf("workflow-runtime: commit step: %w", errors.New("pgx: deadlock detected")),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusInternalServerError, status)
+				assert.Equal(t, "internal_error", body.Error)
+				assert.Empty(t, body.Message, "a 5xx must not leak the raw error")
 			},
 		},
 	}

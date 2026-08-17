@@ -16,15 +16,22 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
-// countingTaskStore counts backing Get calls to prove cache hits skip the backing.
+// countingTaskStore counts backing Get calls to prove cache hits skip the backing,
+// and backing Upsert calls to prove a rejected write never reaches the backing store.
 type countingTaskStore struct {
 	*humantask.MemTaskStore
-	gets int
+	gets    int
+	upserts int
 }
 
 func (s *countingTaskStore) Get(ctx context.Context, token string) (humantask.HumanTask, error) {
 	s.gets++
 	return s.MemTaskStore.Get(ctx, token)
+}
+
+func (s *countingTaskStore) Upsert(ctx context.Context, t humantask.HumanTask) error {
+	s.upserts++
+	return s.MemTaskStore.Upsert(ctx, t)
 }
 
 func TestCachingTaskStore(t *testing.T) {
@@ -77,6 +84,26 @@ func TestCachingTaskStore(t *testing.T) {
 				if backing.gets == before {
 					t.Fatal("not-found must NOT be cached; backing should be hit again")
 				}
+			},
+		},
+		{
+			// The decorator must reject a contradictory task ITSELF (ADR-0183 decision
+			// point 2), so wrapping a consumer's permissive store still upholds the
+			// contract. Asserting only that ErrInvalidTask comes back proves nothing —
+			// the embedded MemTaskStore is strict and would return it anyway. The
+			// discriminator is that the backing Upsert was never called at all.
+			name: "Upsert rejects an invalid task without reaching the backing store",
+			assert: func(t *testing.T, cs *persistence.CachingTaskStore, backing *countingTaskStore) {
+				ctx := t.Context()
+				before := backing.upserts
+
+				err := cs.Upsert(ctx, humantask.HumanTask{TaskID: "bad", State: humantask.Claimed})
+
+				require.ErrorIs(t, err, humantask.ErrInvalidTask)
+				assert.Equal(t, before, backing.upserts, "rejected Upsert must not reach the backing store")
+
+				_, err = cs.Get(ctx, "bad")
+				assert.ErrorIs(t, err, humantask.ErrTaskNotFound, "a rejected Upsert must cache nothing")
 			},
 		},
 	}

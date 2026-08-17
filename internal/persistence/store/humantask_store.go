@@ -126,9 +126,34 @@ const humanTaskColumns = `task_id, instance_id, node_id, state, claimed_by,
 // columns: claimed_by, claimed_at, completed_by, completed_at, outcome and note
 // are scalars — indexable and directly queryable — and only each actor's
 // roles/attributes remainder rides in a JSON column. The timestamps are the
-// presence discriminators: claimed_at is NULL exactly when the task is
-// unclaimed, completed_at exactly when it is not completed.
+// presence discriminators, and both key on the RECORD POINTER, never on State:
+// claimed_at is NULL exactly when t.Claim is nil, and completed_at exactly when
+// t.Completion is nil — see [htClaimBinds] and [htCompletionBinds], each of
+// which returns its zero bind (SQL NULL) on a nil pointer and reads no other
+// field.
+//
+// The older wording — "claimed_at is NULL exactly when the task is unclaimed,
+// completed_at exactly when it is not completed" — was false in BOTH halves, and
+// remains false after the [humantask.Validate] guard below, which constrains only
+// Claimed and Unclaimed. A Cancelled or Completed task carrying no claim has a
+// NULL claimed_at without being Unclaimed, and a Completed task carrying no
+// Completion — a shape Validate deliberately accepts, since the completion axis
+// is unconstrained (ADR-0183) — has a NULL completed_at while being completed.
+//
+// Upsert rejects a task failing [humantask.Validate] with
+// [humantask.ErrInvalidTask]. For direction R1 the invariant cannot be enforced
+// on read at all — a state='claimed' row whose claimed_at is NULL is
+// indistinguishable from one that was never claimed — so the write path is the
+// only seam there is (ADR-0183).
 func (s *HumanTaskStore) Upsert(ctx context.Context, t humantask.HumanTask) error {
+	// Returned UNWRAPPED by this method's "upsert task %s" prefix: the error
+	// already names the task and the contradiction, so wrapping would say both
+	// twice. A deliberate inconsistency with the errZeroAuditTime paths below,
+	// which do get the prefix because their messages name only the column.
+	if err := humantask.Validate(t); err != nil {
+		return err
+	}
+
 	eligibility, err := json.Marshal(t.Eligibility)
 	if err != nil {
 		return fmt.Errorf("workflow-store: upsert task %s: marshal eligibility: %w", t.TaskID, err)

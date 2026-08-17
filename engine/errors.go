@@ -216,4 +216,17 @@ var (
 	// irrelevant here, the trigger itself is malformed. Transports classify it 400,
 	// alongside the other caller-correctable input sentinels. See ADR-0152.
 	ErrEmptyTriggerKey = errors.New("workflow-engine: trigger identity key is empty")
+
+	// ErrEmptyReassignTarget reports a HumanReassigned trigger whose To names no
+	// actor. Reassignment moves a task's claim from one actor to another; the empty
+	// string names none, so the result would be a Claimed task nobody holds —
+	// invisible to AssignedTo (no claimant to match) and to ClaimableBy (not
+	// Unclaimed), i.e. reachable only by ID.
+	//
+	// Deliberately NOT [ErrEmptyTriggerKey]: that sentinel is documented as an
+	// *identity key* naming one specific record, and To is a required field rather
+	// than the trigger's identity — TaskID already is. Like it, this is not wrapped
+	// in [ErrInvalidTransition]: the instance state is irrelevant, the trigger
+	// itself is malformed. Transports classify it 400. See ADR-0183.
+	ErrEmptyReassignTarget = errors.New("workflow-engine: reassignment target is empty")
 )

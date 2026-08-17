@@ -29,8 +29,15 @@ func NewMemTaskStore() *MemTaskStore {
 	return &MemTaskStore{m: make(map[string]HumanTask)}
 }
 
-// Upsert inserts or replaces the task identified by t.TaskID.
+// Upsert inserts or replaces the task identified by t.TaskID. It rejects a task
+// whose state contradicts its claim with [ErrInvalidTask]; see [Validate].
 func (s *MemTaskStore) Upsert(_ context.Context, t HumanTask) error {
+	// Validate before storing: this fake backs the reference wiring and much of the
+	// suite, so staying permissive would let a test green-light a shape the SQL
+	// store rejects (ADR-0183).
+	if err := Validate(t); err != nil {
+		return err
+	}
 	// Defensive copy of mutable fields before storing.
 	t = copyTask(t)
 

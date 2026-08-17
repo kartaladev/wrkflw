@@ -220,6 +220,32 @@ func (driver *ProcessDriver) overrideRetryPolicy(def *model.ProcessDefinition, s
 	return &mp
 }
 
+// validateTaskCommands rejects a step whose task projections are internally
+// contradictory, BEFORE this iteration's state is committed.
+//
+// This is the primary enforcement seam for the invariant [humantask.Validate]
+// defines. It cannot live in perform(): perform runs AFTER the commit, and a
+// perform error aborts the remaining command queue — so a rejection there commits
+// the state, drops the later commands, raises no incident, and leaves the token
+// parked on a command that will never be answered. Measured; see ADR-0183.
+//
+// It mirrors [ProcessDriver.resolveHumanCandidates], which runs pre-commit for a
+// related reason. Only UpdateTask is inspected: AwaitHuman has a single emit
+// site and performAwaitHuman builds its task with State: Unclaimed and no Claim,
+// so it cannot be claim-invalid.
+func validateTaskCommands(cmds []engine.Command) error {
+	for _, c := range cmds {
+		ut, ok := c.(engine.UpdateTask)
+		if !ok {
+			continue
+		}
+		if err := humantask.Validate(ut.Task); err != nil {
+			return fmt.Errorf("workflow-runtime: reject step: %w", err)
+		}
+	}
+	return nil
+}
+
 // resolveHumanCandidates expands the eligibility spec of every AwaitHuman command
 // emitted by a step into concrete actors and writes them onto the matching task
 // in st, so the candidates ride the SAME commit that parks the task.

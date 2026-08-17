@@ -43,9 +43,16 @@ func ClassifyError(err error) (int, ErrorBody) {
 		// An empty trigger identity key is a malformed request the caller can fix
 		// by supplying the id (ADR-0152), not a server fault. This changes the
 		// human-task routes from 404/422 and the incident route from 200.
-		errors.Is(err, engine.ErrEmptyTriggerKey):
+		errors.Is(err, engine.ErrEmptyTriggerKey),
+		// Likewise a reassignment naming no actor: a required field the caller
+		// omitted and can supply, not a server fault (ADR-0183).
+		errors.Is(err, engine.ErrEmptyReassignTarget):
 		return http.StatusBadRequest, ErrorBody{Error: "bad_request", Message: err.Error()}
-	case errors.Is(err, service.ErrConflict), errors.Is(err, engine.ErrInvalidTransition):
+	case errors.Is(err, service.ErrConflict), errors.Is(err, engine.ErrInvalidTransition),
+		// A contradictory task shape is engine-authored — editing the request
+		// cannot fix it — so it is 422 like the other unprocessable states, and
+		// the message names the task and the contradiction (ADR-0183).
+		errors.Is(err, humantask.ErrInvalidTask):
 		return http.StatusUnprocessableEntity, ErrorBody{Error: "conflict_state", Message: err.Error()}
 	default:
 		return http.StatusInternalServerError, ErrorBody{Error: "internal_error"}

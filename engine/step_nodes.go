@@ -747,11 +747,16 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	// case too: that visit closes in the same step but still names its task.
 	c.s.setVisitTask(tok.ID, node.ID(), taskID)
 	if ut.Manual && ut.ManualImmediate {
-		// Immediate manual task: no actor acts on it, so it never parks. Record a
-		// completed task for audit (mirrors the state handleHumanCompleted sets)
-		// and advance the token along its single outgoing flow immediately. No
-		// eligibility check, no payload, no deadline/reminder/boundary arming —
-		// none of those are meaningful without a wait period.
+		// Immediate manual task: no actor acts on it, so it never parks. Record the
+		// task as Completed for audit and advance the token along its single outgoing
+		// flow immediately. No eligibility check, no payload, no deadline/reminder/
+		// boundary arming — none are meaningful without a wait period.
+		//
+		// The record carries NEITHER a Claim NOR a Completion: no actor claimed it and
+		// none completed it. This deliberately does NOT mirror handleHumanCompleted,
+		// which records a Completion from the completing actor's trigger. It is why
+		// humantask.Validate leaves the completion axis unconstrained (ADR-0183), and
+		// why the deferred completion rule must carve this path out.
 		ht.State = humantask.Completed
 		c.s.Tasks = append(c.s.Tasks, ht)
 		c.s.moveAlongSingleFlow(c.tdef, tok, c.at)

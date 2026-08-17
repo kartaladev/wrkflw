@@ -39,6 +39,15 @@
 // [SpyCatalog], [SpyAuthorizer], and [CaptureSender] are also usable standalone,
 // independent of the [Harness].
 //
+// # Store conformance
+//
+// [RunTaskStoreConformance] checks a [humantask.TaskStore] implementation against
+// the claim invariant its Upsert contract requires (ADR-0183): each invalid shape
+// is rejected, and the rejected row reaches neither Get nor either inbox query.
+// Consumers who supply their own task store should run it from their own test
+// suite: adopting the invariant does not change the interface signature, so a
+// non-conforming store keeps compiling and keeps accepting contradictory rows.
+//
 // # Lower-level entry point
 //
 // [DriveToCompletion] (the package function) runs the same loop against a

@@ -413,3 +413,35 @@ func TestStaticActorResolver_Candidates_SingleRole(t *testing.T) {
 	assert.Equal(t, "actor-a", got[0].ID)
 	assert.Equal(t, "actor-b", got[1].ID)
 }
+
+func TestMemTaskStoreUpsertRejectsAnInvalidTask(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, 8, 17, 10, 0, 0, 0, time.UTC)
+
+	type testCase struct {
+		name string
+		task humantask.HumanTask
+	}
+
+	cases := []testCase{
+		{"claimed without a claim", humantask.HumanTask{TaskID: "m-1", State: humantask.Claimed}},
+		{"unclaimed carrying a claim", humantask.HumanTask{
+			TaskID: "m-3", State: humantask.Unclaimed,
+			Claim: &humantask.Claim{Actor: authz.Actor{ID: "alice"}, At: at}}},
+		{"out-of-range state", humantask.HumanTask{TaskID: "m-4", State: humantask.TaskState(99)}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			store := humantask.NewMemTaskStore()
+			require.ErrorIs(t, store.Upsert(t.Context(), tc.task), humantask.ErrInvalidTask)
+
+			_, getErr := store.Get(t.Context(), tc.task.TaskID)
+			require.ErrorIs(t, getErr, humantask.ErrTaskNotFound,
+				"a rejected Upsert must not store the task")
+		})
+	}
+}

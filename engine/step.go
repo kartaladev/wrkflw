@@ -156,6 +156,12 @@ func Step(ctx context.Context, def *model.ProcessDefinition, st InstanceState, t
 	if err := validateTriggerKey(trg); err != nil {
 		return StepResult{}, err
 	}
+	// A reassignment naming nobody would mint a Claimed task no inbox can see
+	// (ADR-0183). Rejected here, beside the identity-key check and ahead of
+	// cloneState, so a malformed trigger has no side effects at all.
+	if r, ok := trg.(HumanReassigned); ok && r.To == "" {
+		return StepResult{}, fmt.Errorf("%w: %T.To", ErrEmptyReassignTarget, trg)
+	}
 	s := cloneState(st)
 	sp := &s
 	// Install the id-generation seam on the working clone for the duration of

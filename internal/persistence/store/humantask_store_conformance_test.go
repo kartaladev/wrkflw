@@ -578,6 +578,163 @@ func TestHumanTaskStoreConformance(t *testing.T) {
 			}
 		})
 
+		// The claim invariant (ADR-0183) is enforced on WRITE. For direction R1 it
+		// cannot be enforced on read at all — a state='claimed' row whose claimed_at
+		// is NULL is indistinguishable from one that was never claimed — so Upsert is
+		// the only seam there is.
+		//
+		// The two leading rows are POSITIVE CONTROLS, and they are load-bearing:
+		// without them the rejection rows would prove only that a row which was never
+		// written cannot be listed, which no implementation could fail. The second
+		// control also pins the ADR-0148 amendment 1 §4 kiosk shape as LEGAL, so a
+		// guard that over-rejects an empty claimant fails here too.
+		//
+		// The follow-on inbox checks use assert.*, not require.*, deliberately:
+		// require is FailNow, which with the guard working makes them tautologies and
+		// with it broken aborts the subtest before it ever reaches them.
+		t.Run("upsert_rejects_an_invalid_task", func(t *testing.T) {
+			at := time.Date(2026, 8, 17, 10, 0, 0, 0, time.UTC)
+
+			contains := func(tasks []humantask.HumanTask, taskID string) bool {
+				for _, task := range tasks {
+					if task.TaskID == taskID {
+						return true
+					}
+				}
+				return false
+			}
+
+			// Every fixture declares alice as a candidate AND "mgr" as an eligibility
+			// role, so both inbox queries below are asked with an actor the row would
+			// genuinely match — absence is then evidence, not a foregone conclusion.
+			base := func(id string) humantask.HumanTask {
+				return humantask.HumanTask{
+					TaskID:      id + "-" + b.name,
+					InstanceID:  "inst-inv",
+					NodeID:      "approve",
+					Eligibility: authz.AuthzSpec{Roles: []string{"mgr"}},
+					Candidates:  []authz.Actor{{ID: "alice"}},
+					CreatedAt:   at,
+				}
+			}
+
+			// mustNotBeListed asserts a rejected task reached neither inbox.
+			//
+			// ⚠ Which of the two queries can actually discriminate differs per shape,
+			// and none of them is redundant: an Unclaimed row carrying a claim is
+			// double-listed when unguarded (measured: AssignedTo=1 AND ClaimableBy=1);
+			// an out-of-range row is caught by AssignedTo only, since ClaimableBy
+			// filters on state='unclaimed'; a Claimed row with no claim reaches
+			// NEITHER inbox even unguarded — for that shape the Get assertion above is
+			// the sole discriminator.
+			mustNotBeListed := func(t *testing.T, taskID string) {
+				t.Helper()
+
+				assigned, err := ts.AssignedTo(t.Context(), "alice")
+				assert.NoError(t, err, "%s: AssignedTo", b.name)
+				assert.False(t, contains(assigned, taskID),
+					"%s: a rejected task must not reach AssignedTo", b.name)
+
+				claimable, err := ts.ClaimableBy(t.Context(), authz.Actor{ID: "alice", Roles: []string{"mgr"}})
+				assert.NoError(t, err, "%s: ClaimableBy", b.name)
+				assert.False(t, contains(claimable, taskID),
+					"%s: a rejected task must not reach ClaimableBy", b.name)
+			}
+
+			rejected := func(t *testing.T, task humantask.HumanTask, err error) {
+				assert.ErrorIs(t, err, humantask.ErrInvalidTask,
+					"%s: a contradictory task must be refused; got %v", b.name, err)
+
+				_, getErr := ts.Get(t.Context(), task.TaskID)
+				assert.ErrorIs(t, getErr, humantask.ErrTaskNotFound,
+					"%s: a rejected Upsert must persist nothing", b.name)
+
+				mustNotBeListed(t, task.TaskID)
+			}
+
+			type testCase struct {
+				name   string
+				task   humantask.HumanTask
+				assert func(t *testing.T, task humantask.HumanTask, err error)
+			}
+
+			cases := []testCase{
+				{
+					name: "control: a legally claimed task is stored and listed",
+					task: func() humantask.HumanTask {
+						task := base("tok-legal")
+						task.State = humantask.Claimed
+						task.Claim = &humantask.Claim{Actor: authz.Actor{ID: "alice"}, At: at}
+						return task
+					}(),
+					assert: func(t *testing.T, task humantask.HumanTask, err error) {
+						require.NoError(t, err, "%s: a legal shape must persist", b.name)
+
+						assigned, err := ts.AssignedTo(t.Context(), "alice")
+						require.NoError(t, err, "%s: AssignedTo", b.name)
+						assert.True(t, contains(assigned, task.TaskID),
+							"%s: control — a legally Claimed task MUST appear in AssignedTo", b.name)
+					},
+				},
+				{
+					// ADR-0148 amendment 1 §4: the kiosk claimant is anonymous but
+					// carries roles. Claimed + an EMPTY claimant is legal, and a
+					// design round that rejected it was reversed.
+					name: "control: the kiosk shape (claimed, empty claimant) stays legal",
+					task: func() humantask.HumanTask {
+						task := base("tok-kiosk")
+						task.State = humantask.Claimed
+						task.Claim = &humantask.Claim{Actor: authz.Actor{Roles: []string{"kiosk"}}, At: at}
+						return task
+					}(),
+					assert: func(t *testing.T, task humantask.HumanTask, err error) {
+						require.NoError(t, err, "%s: the kiosk shape must persist", b.name)
+
+						got, getErr := ts.Get(t.Context(), task.TaskID)
+						require.NoError(t, getErr, "%s: the kiosk shape must read back", b.name)
+						require.NotNil(t, got.Claim, "%s: the kiosk claim must survive", b.name)
+						assert.Empty(t, got.Claim.Actor.ID, "%s: an empty claimant stays empty", b.name)
+						assert.Equal(t, []string{"kiosk"}, got.Claim.Actor.Roles, "%s: claimant roles", b.name)
+					},
+				},
+				{
+					name: "claimed without a claim is rejected",
+					task: func() humantask.HumanTask {
+						task := base("tok-inv-claimednil")
+						task.State = humantask.Claimed
+						return task
+					}(),
+					assert: rejected,
+				},
+				{
+					name: "unclaimed carrying a claim is rejected",
+					task: func() humantask.HumanTask {
+						task := base("tok-inv-unclaimedclaim")
+						task.State = humantask.Unclaimed
+						task.Claim = &humantask.Claim{Actor: authz.Actor{ID: "alice"}, At: at}
+						return task
+					}(),
+					assert: rejected,
+				},
+				{
+					name: "an out-of-range state is rejected",
+					task: func() humantask.HumanTask {
+						task := base("tok-inv-badstate")
+						task.State = humantask.TaskState(99)
+						task.Claim = &humantask.Claim{Actor: authz.Actor{ID: "alice"}, At: at}
+						return task
+					}(),
+					assert: rejected,
+				},
+			}
+
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					tc.assert(t, tc.task, ts.Upsert(t.Context(), tc.task))
+				})
+			}
+		})
+
 		// A degraded row logs a WARN and is otherwise invisible forever. Corruption
 		// that silently persists is an operational problem, so the drop is also
 		// counted, making it alertable rather than something a human must notice in
