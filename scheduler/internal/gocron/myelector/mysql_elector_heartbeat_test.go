@@ -43,7 +43,7 @@ func TestMySQLElectorHeartbeatKeepsLeadershipAlive(t *testing.T) {
 
 	// Become leader: the heartbeat starts on first acquisition.
 	require.NoError(t, elector.IsLeader(ctx), "first instance must be elected leader")
-	require.Eventually(t, func() bool { return acquisitions.Load() == 1 }, time.Second, 10*time.Millisecond,
+	require.Eventually(t, func() bool { return acquisitions.Load() == 1 }, eventuallyBudget, 10*time.Millisecond,
 		"on-leadership-acquired callback must fire exactly once for the initial win")
 
 	// Wait for the heartbeat goroutine to be parked on the ticker, then fire
@@ -55,7 +55,7 @@ func TestMySQLElectorHeartbeatKeepsLeadershipAlive(t *testing.T) {
 	}
 
 	// Still leader after the ticks.
-	require.Eventually(t, func() bool { return elector.IsLeader(ctx) == nil }, time.Second, 10*time.Millisecond,
+	require.Eventually(t, func() bool { return elector.IsLeader(ctx) == nil }, eventuallyBudget, 10*time.Millisecond,
 		"leadership must survive heartbeat ticks while the connection is healthy")
 
 	// The acquisition count must NOT have grown: a spurious step-down would

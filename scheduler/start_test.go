@@ -48,7 +48,7 @@ func TestSchedulerCtxCancelCloses(t *testing.T) {
 	require.Eventually(t, func() bool {
 		_, serr := s.Schedule(context.Background(), mustJob(t, "x", surfaceKind, scheduler.At(fc.Now().Add(time.Hour)), nil))
 		return errors.Is(serr, scheduler.ErrSchedulerClosed)
-	}, 2*time.Second, 10*time.Millisecond, "ctx cancellation must close the scheduler")
+	}, eventuallyBudget, 10*time.Millisecond, "ctx cancellation must close the scheduler")
 }
 
 // TestSchedulerStartAfterAutoStartInstallsWatcher verifies that an explicit
@@ -74,7 +74,7 @@ func TestSchedulerStartAfterAutoStartInstallsWatcher(t *testing.T) {
 	require.Eventually(t, func() bool {
 		_, serr := s.Schedule(context.Background(), mustJob(t, "t2", surfaceKind, scheduler.At(fc.Now().Add(time.Hour)), nil))
 		return errors.Is(serr, scheduler.ErrSchedulerClosed)
-	}, 2*time.Second, 10*time.Millisecond, "Start after auto-start must bind ctx cancellation to shutdown")
+	}, eventuallyBudget, 10*time.Millisecond, "Start after auto-start must bind ctx cancellation to shutdown")
 }
 
 // TestSchedulerScheduleAfterCloseErrors verifies Schedule after Close is a

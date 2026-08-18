@@ -17,6 +17,38 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **`processtest.RunTaskStoreConformance` now verifies that an accepted task reaches its inbox
+  (ADR-0184).** ADR-0183 shipped this helper precisely because adopting it is a *silent* break for a
+  consumer's own `humantask.TaskStore`. The helper had the same defect: its documentation promised a
+  rejected write is *"neither readable through `Get` nor listed by `AssignedTo` or `ClaimableBy`"*,
+  and a thirty-line comment argued the two inbox queries were essential and non-redundant — but the
+  **legal** leg never asked an inbox anything, so nothing established the queries worked at all.
+  Measured: a store answering both inbox queries with `nil, nil` **passed the entire suite**, with
+  every `NotContains` holding vacuously.
+
+  Each conformance case now declares which inbox must return it. The legal `Unclaimed` control must
+  be returned by `ClaimableBy` for an actor holding the `manager` role, and the legal `Claimed`
+  control by `AssignedTo(its claimant)`. The terminal and anonymous-kiosk shapes declare no
+  expectation, because neither query is contracted to return them.
+
+  ⚠ **The break is SILENT, exactly like ADR-0183's.** There is no signature change, so nothing
+  recompiles differently: a consumer `TaskStore` that passes today can fail after upgrading. This is
+  a *correct* tightening — a store that fails the new assertions was never satisfying the documented
+  contract, and the failure it now reports is a real defect in that store, most likely list queries
+  that silently return nothing.
+
+  The three bundled implementations were verified against the tightened contract and all pass:
+  `humantask.MemTaskStore`, the SQL `store.HumanTaskStore` on SQLite, and
+  `persistence.CachingTaskStore` (a decorator with its own inbox caching).
+
+  Not a behaviour change, but shipped alongside: the helper's two misuse guards (a nil factory, and
+  a factory returning a nil store) are now executed by tests for the first time, and every
+  `require.Eventually` under `scheduler/` now shares a per-package `eventuallyBudget` constant
+  instead of a per-site literal (1–3 s) — a test-only change that raises the bound at all 40 sites
+  to 10 s, ~1000× the measured 0.01 s fire time. This does not remove the load-dependent
+  bound; `require.Eventually` is still a real-time wait, just a much larger one. ⚠ It is also **not**
+  what closes backlog 42 — see Fixed, below.
+
 - **A human task's claim invariant is now enforced before it can be committed (ADR-0183).**
   `humantask.HumanTask` has always documented *"`Claim` … nil when Unclaimed"* on its own field, and
   the read path was built to uphold it; the **write** path upheld nothing. `Upsert` bound the state
@@ -682,6 +714,25 @@ release.
   two methods, filtering `State().Tasks` by `humantask.IsOpen()`, returning a
   **non-nil** slice **sorted by `TaskID`** (`ActiveTasks`) and the **first** such
   match (`ActiveTask`).
+
+### Fixed
+
+- **`ScheduleJob` no longer reports a zero next-run for a past-due timer (ADR-0184, closes backlog
+  42).** A one-shot whose absolute fire time had already elapsed is registered with
+  `OneTimeJobStartImmediately` + `WithLimitedRuns(1)`, so gocron could run and retire it *before*
+  `ScheduleJob` asked for its first-run time — returning `(time.Time{}, nil)`: a zero instant with a
+  **nil error**, for a timer that was armed correctly and did fire. A caller could not distinguish
+  that from "never scheduled". Measured (fresh re-derivation, 7 runs × 1000 arms each, fake clock):
+  **~12 % of arms without `-race`** (848/7,000) and **~0.9 % under `-race`** (63/7,000) — the two
+  modes differ by roughly 13×, confirming the race is real but far rarer under `-race`'s added
+  synchronization. The fire-immediately case is now computed as the clock's current time rather than
+  raced out of gocron, so after the fix the branch **cannot return zero by construction** — that is
+  not a symmetric "0 of N" measurement, since the old racy path no longer exists to compare against.
+
+  Scope: `ScheduleJob` is in an internal package and its only in-repo caller discards the returned
+  instant, so no shipped behaviour depended on the wrong value — this hardens a contract rather than
+  fixing an observed production failure. `GocronScheduler.NextRun(id)` is deliberately unchanged: a
+  fired one-shot genuinely has no next run.
 
 ### Added
 

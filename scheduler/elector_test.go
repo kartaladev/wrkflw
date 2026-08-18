@@ -140,7 +140,7 @@ func TestSchedulerElectorHeartbeatStepsDown(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		return !scheduler.SchedulerIsLeader(ctx, s)
-	}, 3*time.Second, 10*time.Millisecond,
+	}, eventuallyBudget, 10*time.Millisecond,
 		"the façade elector must step down after its connection is severed")
 }
 

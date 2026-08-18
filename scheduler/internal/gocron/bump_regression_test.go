@@ -55,5 +55,5 @@ func TestBumpRegression_OneShotFiresExactlyOnce(t *testing.T) {
 	require.Eventually(t, func() bool {
 		_, ok := s.NextRun("bump-t1")
 		return !ok
-	}, 2*time.Second, 10*time.Millisecond, "consumed one-shot must report NextRun ok=false")
+	}, eventuallyBudget, 10*time.Millisecond, "consumed one-shot must report NextRun ok=false")
 }

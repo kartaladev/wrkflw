@@ -26,6 +26,14 @@ const (
 	// factoryFatalHelper is the name of the helper test, used both to select it in
 	// the child process and to attribute output lines to it.
 	factoryFatalHelper = "TestConformanceFactoryFatalHelper"
+
+	// nilNewStoreEnv arms [TestConformanceNilNewStoreHelper], which FAILS by
+	// design and so must stay skipped in an ordinary run.
+	nilNewStoreEnv    = "WRKFLW_PROCESSTEST_NIL_NEWSTORE"
+	nilNewStoreHelper = "TestConformanceNilNewStoreHelper"
+	// nilStoreEnv arms [TestConformanceNilStoreHelper], likewise.
+	nilStoreEnv    = "WRKFLW_PROCESSTEST_NIL_STORE"
+	nilStoreHelper = "TestConformanceNilStoreHelper"
 )
 
 // TestConformanceFactoryFatalHelper is the fixture, not an assertion: it hands
@@ -42,6 +50,26 @@ func TestConformanceFactoryFatalHelper(t *testing.T) {
 		t.Fatalf("%s: this factory could not provision its store", factoryFatalMarker)
 		return nil
 	})
+}
+
+// TestConformanceNilNewStoreHelper is a fixture, not an assertion: it hands
+// RunTaskStoreConformance a nil factory, which the helper must refuse BEFORE
+// running any case. It fails on purpose and runs only in a child process.
+func TestConformanceNilNewStoreHelper(t *testing.T) {
+	if os.Getenv(nilNewStoreEnv) != "1" {
+		t.Skipf("armed only by the child process of TestRunTaskStoreConformanceRefusesANilFactory (%s=1)", nilNewStoreEnv)
+	}
+	processtest.RunTaskStoreConformance(t, nil)
+}
+
+// TestConformanceNilStoreHelper hands RunTaskStoreConformance a factory that
+// returns a nil store — a consumer whose constructor silently yields nothing.
+// It fails on purpose and runs only in a child process.
+func TestConformanceNilStoreHelper(t *testing.T) {
+	if os.Getenv(nilStoreEnv) != "1" {
+		t.Skipf("armed only by the child process of TestRunTaskStoreConformanceRefusesANilStore (%s=1)", nilStoreEnv)
+	}
+	processtest.RunTaskStoreConformance(t, func(*testing.T) humantask.TaskStore { return nil })
 }
 
 // TestRunTaskStoreConformanceAttributesAFactoryFailureToItsSubtest pins the
@@ -72,19 +100,9 @@ func TestRunTaskStoreConformanceAttributesAFactoryFailureToItsSubtest(t *testing
 	}
 	t.Parallel()
 
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "go", "test", "-count=1", "-v", "-run", "^"+factoryFatalHelper+"$", ".")
-	cmd.Env = append(os.Environ(), factoryFatalEnv+"=1")
-	out, err := cmd.CombinedOutput()
-	output := string(out)
+	output, err := runConformanceHelperChild(t, factoryFatalHelper, factoryFatalEnv)
 
 	require.Error(t, err, "the helper test must FAIL — its factory fatals on every case:\n%s", output)
-	require.NotContains(t, output, "no tests to run",
-		"the -run filter selected nothing, so this test proves nothing:\n%s", output)
-	require.NotContains(t, output, "SKIP",
-		"the helper must be armed by %s, not skipped:\n%s", factoryFatalEnv, output)
 
 	assert.Containsf(t, output, factoryFatalMarker,
 		"the factory's own message must reach the output:\n%s", output)
@@ -93,8 +111,69 @@ func TestRunTaskStoreConformanceAttributesAFactoryFailureToItsSubtest(t *testing
 	assert.Truef(t, strings.HasPrefix(attributedTest(output, factoryFatalMarker), factoryFatalHelper+"/"),
 		"the factory's message must be attributed to the failing SUBTEST, not to %q:\n%s",
 		attributedTest(output, factoryFatalMarker), output)
-	assert.GreaterOrEqualf(t, failedSubtests(output), 2,
+	assert.GreaterOrEqualf(t, failedSubtests(output, factoryFatalHelper), 2,
 		"every case must still get its turn: a FailNow on the parent aborts the whole suite at the first one:\n%s", output)
+}
+
+// TestRunTaskStoreConformanceRefusesANilFactory pins the guard at the top of
+// RunTaskStoreConformance. A nil factory must be refused BEFORE any subtest
+// runs — the alternative is a nil-func panic inside the first case, which names
+// the case rather than the misuse.
+func TestRunTaskStoreConformanceRefusesANilFactory(t *testing.T) {
+	if os.Getenv(nilNewStoreEnv) == "1" {
+		t.Skip("already inside the child process; running this again would spawn another")
+	}
+	t.Parallel()
+
+	output, err := runConformanceHelperChild(t, nilNewStoreHelper, nilNewStoreEnv)
+
+	require.Error(t, err, "the helper must FAIL: a nil factory is refused:\n%s", output)
+	assert.Containsf(t, output, "requires a non-nil newStore",
+		"the guard's own message must reach the output:\n%s", output)
+	assert.Zerof(t, failedSubtests(output, nilNewStoreHelper),
+		"the refusal must happen before any case runs, so no SUBTEST may fail:\n%s", output)
+	assert.NotContainsf(t, output, "nil pointer dereference",
+		"the guard must report the misuse, not let a nil func value panic:\n%s", output)
+}
+
+// TestRunTaskStoreConformanceRefusesANilStore pins the per-case guard: a factory
+// that returns nil is reported against the case it broke, not as a panic.
+func TestRunTaskStoreConformanceRefusesANilStore(t *testing.T) {
+	if os.Getenv(nilStoreEnv) == "1" {
+		t.Skip("already inside the child process; running this again would spawn another")
+	}
+	t.Parallel()
+
+	output, err := runConformanceHelperChild(t, nilStoreHelper, nilStoreEnv)
+
+	require.Error(t, err, "the helper must FAIL: a nil store is refused:\n%s", output)
+	assert.Containsf(t, output, "returned a nil humantask.TaskStore",
+		"the guard's own message must reach the output:\n%s", output)
+	assert.Truef(t, strings.HasPrefix(attributedTest(output, "returned a nil humantask.TaskStore"), nilStoreHelper+"/"),
+		"the guard runs per case, so its message must be attributed to a SUBTEST, not to %q:\n%s",
+		attributedTest(output, "returned a nil humantask.TaskStore"), output)
+	assert.NotContainsf(t, output, "nil pointer dereference",
+		"the guard must report the misuse, not let a nil store panic on first use:\n%s", output)
+}
+
+// runConformanceHelperChild runs one env-armed helper test in a child `go test`
+// and returns its combined output. It is the shared body of the parent tests
+// above, which differ only in what they assert about that output.
+func runConformanceHelperChild(t *testing.T, helper, env string) (string, error) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "go", "test", "-count=1", "-v", "-run", "^"+helper+"$", ".")
+	cmd.Env = append(os.Environ(), env+"=1")
+	out, err := cmd.CombinedOutput()
+	output := string(out)
+
+	require.NotContains(t, output, "no tests to run",
+		"the -run filter selected nothing, so this test proves nothing:\n%s", output)
+	require.NotContains(t, output, "SKIP", "the helper must be armed by %s, not skipped:\n%s", env, output)
+	return output, err
 }
 
 // attributedTest returns the test name `go test -v` output attributes the first
@@ -125,11 +204,11 @@ func verboseTestName(line string) (string, bool) {
 	return "", false
 }
 
-// failedSubtests counts the `--- FAIL:` lines naming a subtest of the helper.
-func failedSubtests(output string) int {
+// failedSubtests counts the `--- FAIL:` lines naming a subtest of helper.
+func failedSubtests(output, helper string) int {
 	n := 0
 	for line := range strings.Lines(output) {
-		if strings.Contains(line, "--- FAIL: "+factoryFatalHelper+"/") {
+		if strings.Contains(line, "--- FAIL: "+helper+"/") {
 			n++
 		}
 	}

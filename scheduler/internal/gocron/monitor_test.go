@@ -135,7 +135,7 @@ func TestGocronScheduler_MonitorStatus(t *testing.T) {
 
 				require.Eventually(t, func() bool {
 					return sumFor(t, reader, jobRunsTotalMetric, "status", "fail") >= 1
-				}, time.Second, 5*time.Millisecond, "job_runs_total{status=fail} must reach 1")
+				}, eventuallyBudget, 5*time.Millisecond, "job_runs_total{status=fail} must reach 1")
 
 				assert.GreaterOrEqual(t, histogramCountFor(t, reader, jobDurationSecondsMetric, "status", "fail"), uint64(1),
 					"a duration point must be recorded for the failed run")
@@ -153,7 +153,7 @@ func TestGocronScheduler_MonitorStatus(t *testing.T) {
 
 				require.Eventually(t, func() bool {
 					return sumFor(t, reader, jobRunsTotalMetric, "status", "success") >= 1
-				}, time.Second, 5*time.Millisecond, "job_runs_total{status=success} must reach 1")
+				}, eventuallyBudget, 5*time.Millisecond, "job_runs_total{status=success} must reach 1")
 
 				assert.GreaterOrEqual(t, histogramCountFor(t, reader, jobDurationSecondsMetric, "status", "success"), uint64(1),
 					"a duration point must be recorded for the successful run")
@@ -171,7 +171,7 @@ func TestGocronScheduler_MonitorStatus(t *testing.T) {
 
 				require.Eventually(t, func() bool {
 					return recordsWithLevelAndKey(h, slog.LevelError, "panic")
-				}, time.Second, 5*time.Millisecond, "AfterJobRunsWithPanic must log an ERROR record carrying the panic payload")
+				}, eventuallyBudget, 5*time.Millisecond, "AfterJobRunsWithPanic must log an ERROR record carrying the panic payload")
 
 				// The scheduler must remain usable after a task panic: schedule and
 				// fire another job successfully.
@@ -183,7 +183,7 @@ func TestGocronScheduler_MonitorStatus(t *testing.T) {
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 				clk.Advance(2 * time.Second)
 
-				require.Eventually(t, func() bool { return fired.Load() }, time.Second, 5*time.Millisecond,
+				require.Eventually(t, func() bool { return fired.Load() }, eventuallyBudget, 5*time.Millisecond,
 					"scheduler must still fire jobs after recovering from a prior panic")
 			},
 		},

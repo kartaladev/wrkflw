@@ -139,7 +139,7 @@ func TestGocronScheduler_TimeSkew(t *testing.T) {
 				mu.Lock()
 				defer mu.Unlock()
 				return fired
-			}, 2*time.Second, 5*time.Millisecond, "past-due timer must fire immediately")
+			}, eventuallyBudget, 5*time.Millisecond, "past-due timer must fire immediately")
 
 			mu.Lock()
 			f := fired
@@ -180,7 +180,7 @@ func TestGocronScheduler_TimeSkew_DefaultSilentWithinFiveMinutes(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		return fired
-	}, 2*time.Second, 5*time.Millisecond, "past-due timer within default tolerance must still fire")
+	}, eventuallyBudget, 5*time.Millisecond, "past-due timer within default tolerance must still fire")
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
