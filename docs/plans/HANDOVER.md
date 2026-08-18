@@ -16,10 +16,9 @@ top to bottom; it is meant to stay short enough that you can.
 
 **▶ NOTHING IS IN FLIGHT. `main` is clean and pushed; ADR-0183 has shipped.**
 
-ADR-0183 merged to `main` as a `--no-ff` merge and was pushed; its branch
-`feat/human-task-claim-invariant` is deleted. ⚠ Do not quote main's head; re-derive with
-`git rev-parse --short refs/heads/main`. The merge SHA is recorded in the follow-up docs commit and
-in auto-memory — anchor on **merge** commits, which never move.
+ADR-0183 shipped as merge **`a7575ed5`**, pushed; its branch `feat/human-task-claim-invariant` is
+deleted. ⚠ Do not quote main's head — it moves; re-derive with
+`git rev-parse --short refs/heads/main`. Anchor on the **merge** SHA above, which never moves.
 
 **Both gates passed before merge:**
 
@@ -252,9 +251,9 @@ lock**, not the option setters. 35. ADR-0182's gate cannot judge the legacy flat
 
 | | |
 |---|---|
-| `main` | **ADR-0179 merge `962aeb25`** is the newest shipped code, pushed. ⚠ Never quote main's HEAD; re-derive |
+| `main` | **ADR-0183 merge `a7575ed5`** is the newest shipped code, pushed. ⚠ Never quote main's HEAD; re-derive |
 | bundle C (ADR-0179) | ✅ shipped — its spec/plan/ADR/audits/adjudication are all on `main` under `docs/` |
-| **`feat/human-task-claim-invariant`** | ⚠ **ADR-0183, IMPLEMENTED, NOT merged, NOT pushed** — one folded commit; awaiting `/code-review` + `/security-review`. Exists on this machine ONLY |
+| ADR-0183 | ✅ shipped — merge `a7575ed5`; spec/plan/ADR/audits/adjudication all on `main` under `docs/`; branch deleted |
 | *(merged branches)* | Deleted once pushed. **`origin` carries only `main`** plus dependabot. ⚠ **Every unmerged branch below exists on this machine ONLY** |
 | `backup/terminal-trigger-guard-presquash` | `a3aa889` — ADR-0165 pre-squash, provenance only |
 | **`parked/scope-and-fanout-design`** | ⚠ **SUPERSEDED — do NOT use as an input** |
@@ -262,7 +261,7 @@ lock**, not the option setters. 35. ADR-0182's gate cannot judge the legacy flat
 | `feat/durable-waiters-delivery-correctness` | `434535d` — parked, docs only; holds ADR **0155–0157** |
 | `docs/architecture-audit` | `393e516` — `AUDIT.md`, ⚠ deliberately NOT on `main`, NOT pushed |
 | worktrees | ✅ **CLEAN** — verified after ADR-0183; the two throwaway `main` measurement worktrees were removed |
-| Latest ADR | **0182** shipped; **0183** implemented-not-merged. Next free is **0184** |
+| Latest ADR | **0183** shipped. Next free is **0184** |
 | v0.1.0 | not tagged |
 
 ## Standing constraints
