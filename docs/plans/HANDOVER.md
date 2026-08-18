@@ -12,88 +12,143 @@ top to bottom; it is meant to stay short enough that you can.
 > with the plan. This file carries only: where `main` is, what is unmerged, and
 > what to do next.
 
-## State — updated 2026-08-17
+## State — updated 2026-08-18
 
-**▶ NOTHING IS IN FLIGHT. `main` is clean, pushed, and all three bundles have shipped.**
+**▶ NOTHING IS IN FLIGHT. `main` is clean and pushed; ADR-0183 has shipped.**
 
-Bundle C (ADR-0179) shipped as merge **`962aeb25`**, pushed; its branch is deleted. Both gates
-passed: `/code-review` 6 findings (1 HIGH) all fixed or adjudicated out-of-scope-with-reason;
-`/security-review` **0 findings**. ⚠ Do not quote main's head; re-derive with
-`git rev-parse --short refs/heads/main`.
+ADR-0183 merged to `main` as a `--no-ff` merge and was pushed; its branch
+`feat/human-task-claim-invariant` is deleted. ⚠ Do not quote main's head; re-derive with
+`git rev-parse --short refs/heads/main`. The merge SHA is recorded in the follow-up docs commit and
+in auto-memory — anchor on **merge** commits, which never move.
 
-| bundle | ADRs | state |
-|---|---|---|
-| ~~A~~ | 0177, 0178, 0180 | ✅ SHIPPED — merge `a5b33e4c` |
-| ~~B~~ | 0181, 0182 | ✅ SHIPPED — merge `1ac140f6` |
-| ~~C~~ | **0179** | ✅ **SHIPPED — merge `962aeb25`**, pushed, branch deleted |
+**Both gates passed before merge:**
 
-### ▶ NEXT WORK
+- `/code-review high --fix` — **4 findings, all closed** (2 fixed by the reviewer; 2 it deferred to
+  the owner, which the controller accepted and fixed). Table in the plan's `▶ Progress`.
+- `/security-review` — **0 findings.** Judged net security-**positive**: the new empty-`to` early
+  return is not an oracle and in fact **removes** a pre-existing 404-vs-403 existence oracle; the new
+  422 message carries only `TaskID` + state (no actor IDs, `AuthzSpec`, `Candidates` or `Vars`); the
+  403 authz arm is evaluated **before** it; task visibility only tightens; and the `Upsert` SQL is a
+  compile-time constant with `State` as a **bind parameter**.
 
-Pick from the **Pre-v0.1.0 blockers** below — the queue is empty of in-flight work, so the next
-delivery starts at brainstorming (rule #7), then spec/ADR/plan, then ONE rule-#9 audit of the whole
-bundle before any code.
+**Verification, all executed:** `go test -count=1 ./...` **EXIT=0** · `golangci-lint run ./...`
+**repo-wide EXIT=0, 0 issues** · all container-backed packages `-race` **EXIT=0** (`store` 72.4 s,
+`persistence` 34.3 s, `internal/database` 35.7 s, `runtime` 21.9 s, `scheduler` 23.6 s) · the new
+conformance group proven to run on **all three dialects** (sqlite / postgres 1.83 s / mysql 6.35 s,
+`no tests to run` = 0). Coverage: `humantask` 100 % · `httpcore` 94.6 % · `runtime/task` 94.3 % ·
+`runtime` 93.8 % · `engine` 93.0 % · `processtest` 91.8 % · `store` 87.5 % · `persistence` 84.1 %.
 
-⚠ **The strongest candidates**, because bundle C raised their stakes or measured them:
-- **Blocker 3** (`Upsert` can persist `State: Claimed, Claim: nil`) — the read path upholds the
-  invariant, the write path does not.
-- **Backlog 32** (downgrade drops new state fields) — now materially worse: a dropped
-  `RetryAttempts` **resets the retry budget so a poison compensation retries forever**, and a dropped
-  `IncidentKind` degrades a walk-scoped incident into a *resolvable, deletable* `IncidentAction`.
-- **Blocker 7** (suite speed) — the full `-race` run now takes several minutes of container boots,
-  and this delivery paid that cost repeatedly.
-- **The fail-open `AuthzSpec`** (under blocker 1) — an empty spec, `eligible_roles: []`, a bare key
-  and `null` all parse cleanly and mean allow-all. Wants its own ADR; ADR-0167 did **not** close it.
+⚠ **`/security-review` labelled ITSELF partial** (container-free subset only, SQL guard checked by
+reading). That caveat is **closed by execution** — see the dialect run above. A gate that scopes its
+own evidence must have that scope closed or restated, not inherited as if it were full.
 
-⚠ **What `/code-review` caught, because it generalises.** ADR-0175's operator `retry` verb, used
-during an ADR-0179 backoff, left the cursor naming an already-cancelled timer; the next failure hit
-the new idempotency guard, was read as a redelivery, and the instance sat in `StatusCompensating`
-**forever** with nothing armed to move it. Root cause: the guard was built on `RetryTimerID` without
-enumerating the writers of the field it keys on (`ActiveCmdID`).
-⭐ **`skip` and `abandon` were clean only incidentally** — they own no bespoke cursor logic and
-inherit it from two helpers this ADR revised. `retryStalledCompensation` is the one verb path with
-bespoke handling and the one this ADR never touched.
-**When a feature revises shared helpers, the sites at risk are the ones that BYPASS those helpers.
-Enumerate the bypassers, not the callers.**
+⚠ **`RunTaskStoreConformance`'s signature changed during review** to
+`newStore func(t *testing.T) humantask.TaskStore` — the factory needed the case's own `T`, because
+the README's own pattern captured the **parent** `T` inside a child subtest and a setup failure then
+called `FailNow` cross-goroutine, truncating the run at **1 of 8** shapes. Taken pre-merge
+deliberately: free now, a breaking change to public API after.
 
-### What bundle C is, in one paragraph
+### What ADR-0183 is, in one paragraph
 
-A compensation action replying `ActionFailed` used to be skipped in **total silence** — no retry, no
-incident, and, despite ADR-0034's Consequences claiming otherwise, **no log line**. It now always
-emits a WARN and raises an `IncidentCompensationFailed`, and it is re-dispatched after a backoff when
-the consumer opts in. Closes backlog **16** and **3g**. Also fixes a **pre-existing** defect: the
-cause of death was read positionally from `Incidents[0]`, so a walk-scoped incident already beat the
-real error today.
+`humantask.HumanTask` has always documented *"`Claim` … nil when Unclaimed"* on its own field and the
+read path upheld it; the **write** path upheld nothing. `Upsert` bound state and claim columns
+independently, so `State: Claimed, Claim: nil` round-tripped, and an `Unclaimed` row **carrying** a
+claim was returned by `AssignedTo` *and* `ClaimableBy` — double-listed. Now `humantask.Validate`
+(R1/R2/R3) is the single definition, enforced **pre-commit** in the runtime and in all three bundled
+`Upsert` implementations as defence-in-depth; an empty reassignment target is refused in `Step`
+before `cloneState`; both new sentinels are HTTP-classified; and consumers get an exported
+`processtest.RunTaskStoreConformance`. Closes **blocker 3**.
 
-### ⚠ Things a fresh session must not get wrong about bundle C
+### ⚠ Things a fresh session must not get wrong
 
-- **It is BREAKING in three ways, and all three fail SILENTLY — no compile error.** See
-  `CHANGELOG.md` ▸ Unreleased ▸ Breaking changes, which is the authoritative list.
-- **Two accepted residuals, do NOT present either as fixed**: a retry timer lost at boot still
-  strands the walk (un-prunability closes only the retention route); and a *leaked* retry row is now
-  **permanent**, because no bulk sweep can delete the kind any more.
-- **The ADR was amended BY implementation in six places** — each marked
-  `⚠ AMENDED / ADDED AT IMPLEMENTATION` with the measurement that forced it. The two that matter
-  most: Decision 2's opt-in was **unreachable** through `runtime.ProcessDriver` (fixed in-bundle),
-  and Decision 6's literal wording **deleted the incident at birth** (measured `incidents=0`).
+- **BREAKING three ways** — `CHANGELOG.md` ▸ Unreleased ▸ Breaking changes is authoritative. For a
+  consumer's **own** `TaskStore` the break is **SILENT**: no signature change, so nothing recompiles
+  differently and a non-conforming store keeps accepting bad rows.
+- ⚠⚠ **An empty claimant is LEGAL on every state** — ADR-0148 amendment 1 §4's kiosk shape. Round 2
+  of the audit REVERSED an earlier decision to reject it. Only the empty *reassignment target* is
+  refused; the empty-ID **claim** route is deliberately untouched. Six stale fragments across the
+  plan/spec/ADR still said otherwise and were corrected before implementation — **if you find a
+  seventh, it is stale, not a spec.**
+- **`Completed`/`Cancelled` carry NO claim rule.** The completion axis stays deferred, and it must
+  carve out `ManualImmediate`, which mints `Completed` + nil + nil on purpose.
+- **Existing rows are NOT repaired** — no migration, no backfill.
+- **The ADR was amended BY implementation**: audit finding **B8 is REFUTED**. See below.
 
 ### ⚠ The process lesson this delivery earned
 
-**Two audits, six lenses, and none of them could see the defect that mattered most.** ADR-0179's
-retry opt-in was reachable only through `engine.StepOptions`; `runtime.ProcessDriver` never set it
-and no option existed, so the feature would have shipped promised-but-unusable. Every lens read *one
-design document*; the gap existed only in the **seam between two packages**. A design audit
-structurally cannot find it — it took writing the code and asking "can a consumer actually turn this
-on?"
+**A twice-audited bundle still prescribed a test that could not fail.** Audit finding B8 asserted
+that a post-commit rejection drops a terminal sweep's remaining reconciliations; both rounds accepted
+it and the plan prescribed a regression test. Implementation measured that `cancelOpenTasks`
+normalizes **every** swept task to `Cancelled`, which is unconstrained on the claim axis — so the
+sweep emits no rejectable command and the test could never have gone red. The ADR *already recorded
+this exact normalization* for follow-up emitters; **neither audit round carried it across to B8, one
+paragraph away.**
 
-⚠ **Corollary for the next rule-#9 audit: give one lens the job of tracing each new option end to
-end from the consumer's entry point**, not of reading the decision that introduces it.
+⭐ **When a bundle records a normalization that immunizes a path, re-check every OTHER finding that
+asserts a defect on that same path.** The fact was present and correct; nobody re-applied it.
 
-Second lesson, quantified in the plan's `▶ Progress`: **8 inherited counts were re-derived during
-implementation and 6 were wrong** — and **4 of the 6 were in the controller's own briefs**, not in
-the audited documents. Re-derivation is not an audit-time activity; it is a per-edit activity.
+Second lesson: **the controller's own briefs carried a false quantifier again** (4 of 6 wrong counts
+on ADR-0179 were also the controller's). Here it was "every rejection fixture MUST declare Candidates
++ Eligibility or the inbox assertions cannot fail" — unachievable for `Claimed`+nil, where neither
+inbox can fire regardless of fixture. The agent complied *and* flagged it. **Re-derivation is a
+per-edit activity, not an audit-time one.**
 
-**Latest ADR = 0182 shipped; 0179 is implemented-not-merged. Next free = 0183.** ADR numbers
-0155–0157 remain reserved by the parked `feat/durable-waiters-delivery-correctness`.
+Third: ⚠⚠⚠ **the controller's brief was wrong THREE times in the review round — third delivery
+running.** The worst: "for an out-of-range state only `AssignedTo` fires" was measured in the
+*internal* conformance suite, whose fixture carries a claim — but the **exported** helper's
+out-of-range fixture carried a **nil claim**, so neither inbox query could reach it and the new
+assertion would have been **unfailable for that shape**. ⭐ **A measurement inherited from a SIBLING
+context must be re-derived in the TARGET context; two suites' fixtures are not the same fixtures.**
+
+Fourth: **an agent caught itself pre-commit** about to state that a sibling package validated, while
+that sibling was still in flight. Grepping before writing a comment about another package's present
+state is the cheap version of this repo's most expensive recurring bug.
+
+### Verification — executed, real numbers
+
+`go test -count=1 ./...` **EXIT=0**. `golangci-lint run ./...` **repo-wide EXIT=0, 0 issues**.
+Touched-package coverage: `humantask` 100 % · `httpcore` 94.6 % · `runtime` 93.8 % · `engine` 93.0 % ·
+`processtest` 91.6 % · `store` 87.5 % · `persistence` 84.1 %.
+
+⚠ **Two sub-floor/red results, BOTH proven pre-existing by execution rather than excused:**
+
+1. **`persistence` 84.1 % < the 85 % floor.** Measured on unmodified `main` in a throwaway worktree:
+   **also exactly 84.1 %.** This is backlog **34**.
+2. **`TestGocronScheduleJobTriggers/At_(past-due)_…time-skew_branch` fails under full-suite `-race`
+   contention.** This delivery touches **zero** `scheduler/` files; both trees pass `-race -count=25`
+   isolated; and the identical failure **reproduces on unmodified `main`** under the same full-suite
+   run. New backlog item **42**. ⚠ **Do not silence it.**
+
+**Latest ADR = 0183 (implemented, not merged). Next free = 0184.** ADR numbers 0155–0157 remain
+reserved by the parked `feat/durable-waiters-delivery-correctness`.
+
+### ▶ NEXT WORK
+
+The queue is empty, so the next delivery starts at **brainstorming** (rule #7) → spec/ADR/plan →
+**ONE** rule-#9 audit of the whole bundle → handover (rule #10) → subagent-driven implementation
+(rule #11). ⚠ **Blocker 3 is CLOSED by ADR-0183 — do not re-raise it.**
+
+Strongest candidates, roughly in order:
+
+- **Backlog 32 — downgrade drops new state fields** (whole-state `json.Marshal`, no
+  `DisallowUnknownFields`). Still the highest-stakes item: a dropped `RetryAttempts` **resets the
+  retry budget so a poison compensation retries forever**, and a dropped `IncidentKind` degrades a
+  walk-scoped incident into a *resolvable, deletable* one. ⚠ ADR-0183 raises the stakes again — a
+  decode that drops only `State` now yields an `Unclaimed` task **carrying a claim**, which
+  `Validate` rejects on write, so a downgrade can turn a readable row into an unwritable one.
+- **The fail-open `AuthzSpec`** (under blocker 1) — an empty spec, `eligible_roles: []`, a bare key
+  and `null` all parse cleanly and mean **allow-all**. Wants its own ADR; ADR-0167 did **not** close
+  it, and ADR-0183 deliberately did not touch it either.
+- **Blocker 7 — suite speed.** `internal/dbtest`'s `sync.Once` boot fires per package → 12 Postgres +
+  7 MySQL boots. ADR-0183 paid that cost repeatedly (`store` alone is 72 s under `-race`). Fix:
+  honour `WRKFLW_TEST_POSTGRES_DSN` / `WRKFLW_TEST_MYSQL_DSN` with testcontainers as fallback, plus
+  `scripts/testdb.sh up|down` and CI wiring. Interacts with backlog 42.
+- **Blocker 8** — the `forceTerminate` → `endInstance` boundary sweep is entirely uncovered.
+
+⚠ **Cheap follow-ups opened by ADR-0183**, if you want a small delivery: backlog **42** (the
+load-flaky gocron test — do NOT silence it) and **43** (`RunTaskStoreConformance`'s two untestable
+misuse guards). Also flagged and deliberately not done: the exported conformance helper makes no
+*positive* inbox assertion on its legal leg, while the internal suite does.
 
 ## Pre-v0.1.0 blockers
 
@@ -104,8 +159,8 @@ the audited documents. Re-derivation is not an audit-time activity; it is a per-
    (`compensateAction`, `compensationAction`, `completionAction`, `correlationKey`, `messageName`).
 2. ✅ **A never-due timer arm — CLOSED by ADR-0176, ON `main`.**
 2b. ✅ **The `scheduler.Activate` livelock on `Monthly(12,[31])` — CLOSED by ADR-0176, ON `main`.**
-3. `Upsert` can persist `State: Claimed, Claim: nil` — the read path upholds the invariant, the
-   write path does not.
+3. ✅ **`Upsert` can persist `State: Claimed, Claim: nil` — CLOSED by ADR-0183**, implemented on
+   `feat/human-task-claim-invariant`, ⚠ **not yet merged**.
 4. ✅ **ADR-0159's misnamed symbols — CLOSED.**
 5. **`TestPgxNotifierListenDrainsBeforePollInterval` is load-flaky**
    (`internal/persistence/store/notifier_pgx_test.go`). Interacts with item 7; **do not silence it.**
@@ -183,20 +238,31 @@ lock**, not the option setters. 35. ADR-0182's gate cannot judge the legacy flat
     also documents zero as "no jitter", which is false — zero means zero *delay*.
 41. **No `ReasonCompensation` in `processtest`** — see backlog 19.
 
+**🆕 opened by ADR-0183:**
+
+42. **`TestGocronScheduleJobTriggers/At_(past-due)_fires_immediately_(time-skew_branch)` is
+    load-flaky** under full-suite `-race` contention — a second instance of blocker 5's class.
+    Proven pre-existing (reproduces on unmodified `main`; passes `-count=25` isolated). Interacts
+    with blocker 7 (suite speed). ⚠ **Do not silence it.**
+43. **`RunTaskStoreConformance`'s two `t.Fatal` misuse guards are untestable** through the exported
+    signature — exercising them needs the very recorder the signature forbids. Flagged rather than
+    dropped; the helper sits at 77.8 % for that reason.
+
 ## Where things live
 
 | | |
 |---|---|
 | `main` | **ADR-0179 merge `962aeb25`** is the newest shipped code, pushed. ⚠ Never quote main's HEAD; re-derive |
-| bundle C | ✅ shipped — its spec/plan/ADR/audits/adjudication are all on `main` under `docs/` |
+| bundle C (ADR-0179) | ✅ shipped — its spec/plan/ADR/audits/adjudication are all on `main` under `docs/` |
+| **`feat/human-task-claim-invariant`** | ⚠ **ADR-0183, IMPLEMENTED, NOT merged, NOT pushed** — one folded commit; awaiting `/code-review` + `/security-review`. Exists on this machine ONLY |
 | *(merged branches)* | Deleted once pushed. **`origin` carries only `main`** plus dependabot. ⚠ **Every unmerged branch below exists on this machine ONLY** |
 | `backup/terminal-trigger-guard-presquash` | `a3aa889` — ADR-0165 pre-squash, provenance only |
 | **`parked/scope-and-fanout-design`** | ⚠ **SUPERSEDED — do NOT use as an input** |
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept for its audit tags |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — parked, docs only; holds ADR **0155–0157** |
 | `docs/architecture-audit` | `393e516` — `AUDIT.md`, ⚠ deliberately NOT on `main`, NOT pushed |
-| worktrees | ✅ **CLEAN** — `git worktree list` shows only the primary checkout |
-| Latest ADR | **0182** shipped; **0179** implemented-not-merged. Next free is **0183** |
+| worktrees | ✅ **CLEAN** — verified after ADR-0183; the two throwaway `main` measurement worktrees were removed |
+| Latest ADR | **0182** shipped; **0183** implemented-not-merged. Next free is **0184** |
 | v0.1.0 | not tagged |
 
 ## Standing constraints

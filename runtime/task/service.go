@@ -211,7 +211,15 @@ func (s *TaskService) Claim(ctx context.Context, taskID string, actor authz.Acto
 // deferred. from must equal the current claimant (task.Claim.Actor.ID, empty when
 // the task is unclaimed); if they differ, an error is returned and no trigger is
 // issued, preventing a false From in the journal.
+//
+// An empty to is refused with [engine.ErrEmptyReassignTarget] before anything
+// else happens. [engine.Step] refuses the same shape (ADR-0183), but only after
+// this method has already spent a store read and an authorization round-trip and
+// counted a "reassigned" metric for a reassignment that cannot occur.
 func (s *TaskService) Reassign(ctx context.Context, taskID string, from, to string, by authz.Actor) (engine.Trigger, error) {
+	if to == "" {
+		return nil, fmt.Errorf("%w: TaskService.Reassign to", engine.ErrEmptyReassignTarget)
+	}
 	task, err := s.store.Get(ctx, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("workflow-runtime: taskservice: get task: %w", err)

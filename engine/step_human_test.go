@@ -825,3 +825,77 @@ func TestHumanCandidatesResolvedIsolation(t *testing.T) {
 		assert.Equal(t, "manager", res.State.Tasks[0].Candidates[0].Roles[0])
 	})
 }
+
+// TestStepRejectsAReassignmentWithNoTarget verifies that Step refuses a
+// HumanReassigned whose To names no actor, and does so before it touches any
+// state. Reassignment moves the claim from one actor to another; an empty To
+// would mint a Claimed task with an empty claimant — invisible to AssignedTo
+// (no claimant to match) and to ClaimableBy (not Unclaimed). See ADR-0183.
+//
+// The non-empty control row is what stops the guard passing by refusing
+// everything. Step is deliberately not context-sensitive (its doc: ctx "carries
+// no cancellation semantics"), so the table declares no ctx modifier.
+func TestStepRejectsAReassignmentWithNoTarget(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, 8, 17, 9, 0, 0, 0, time.UTC)
+
+	type testCase struct {
+		name   string
+		to     string
+		assert func(t *testing.T, res engine.StepResult, err error)
+	}
+
+	cases := []testCase{
+		{
+			name: "an empty target is refused before any state is touched",
+			to:   "",
+			assert: func(t *testing.T, res engine.StepResult, err error) {
+				require.ErrorIs(t, err, engine.ErrEmptyReassignTarget)
+				// The discriminating assertion: a zero-value State proves the
+				// guard ran ahead of cloneState, not merely somewhere inside
+				// the handler.
+				require.Zero(t, res.State.InstanceID,
+					"a refused trigger must return no state — validation runs before cloneState")
+				require.Empty(t, res.State.Tasks, "a refused trigger must return no state")
+				require.Empty(t, res.Commands, "a refused trigger must emit no commands")
+			},
+		},
+		{
+			name: "a named target still reassigns",
+			to:   "bob",
+			assert: func(t *testing.T, res engine.StepResult, err error) {
+				require.NoError(t, err)
+				require.Len(t, res.Commands, 1)
+				ut, ok := res.Commands[0].(engine.UpdateTask)
+				require.True(t, ok, "expected UpdateTask, got %T", res.Commands[0])
+				require.NotNil(t, ut.Task.Claim)
+				assert.Equal(t, "bob", ut.Task.Claim.Actor.ID)
+				assert.Equal(t, humantask.Claimed, ut.Task.State)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			def := userTaskDef()
+
+			// Park on the user task, then claim it, so the trigger under test
+			// meets an open, claimed task and reaches the reassign handler.
+			parked := startUserTask(t, def, at)
+			taskID := parked.State.Tasks[0].TaskID
+			alice := authz.Actor{ID: "alice", Roles: []string{"manager"}}
+			claimed, err := engine.Step(ctx, def, parked.State,
+				engine.NewHumanClaimed(at.Add(time.Minute), taskID, alice), engine.StepOptions{})
+			require.NoError(t, err)
+
+			res, err := engine.Step(ctx, def, claimed.State,
+				engine.NewHumanReassigned(at.Add(2*time.Minute), taskID, "alice", tc.to,
+					authz.Actor{ID: "admin"}), engine.StepOptions{})
+			tc.assert(t, res, err)
+		})
+	}
+}

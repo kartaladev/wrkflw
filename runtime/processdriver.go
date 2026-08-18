@@ -655,16 +655,31 @@ func (driver *ProcessDriver) deliverLoop(
 			return st, fmt.Errorf("workflow-runtime: step: %w", err)
 		}
 		st = res.State
+		// Reject a contradictory task projection before this iteration's commit.
+		// Pure and cheap, so it runs ahead of resolveHumanCandidates' resolver I/O:
+		// there is no point paying for a group lookup on a step that cannot be
+		// committed (ADR-0183).
+		if verr := validateTaskCommands(res.Commands); verr != nil {
+			span.RecordError(verr)
+			span.SetStatus(codes.Error, verr.Error())
+			span.End()
+			return st, verr
+		}
 		// Resolve human-task candidates BEFORE the snapshot is captured below, so
 		// the committed state carries the eligible actors the instance view renders
 		// (ADR-0147 amendment #1). The view is a pure projection over the persisted
 		// snapshot, and perform() runs only AFTER the commit, so resolving there
 		// would be invisible to every later reader.
 		//
-		// Failing here aborts the step before anything is committed, which is
-		// strictly better than the post-commit alternative: a resolver outage can no
-		// longer leave a committed instance parked on a task that was never written
-		// to the task store.
+		// Failing here aborts the step before THIS ITERATION's commit — not before
+		// anything is committed: this is a `for len(queue) > 0` loop and perform
+		// appends follow-up triggers, so an abort on a later iteration leaves the
+		// earlier ones durable. Within the iteration that is still strictly better
+		// than the post-commit alternative, whose commit lands first. ⚠ The earlier
+		// wording here claimed a resolver outage "can no longer leave a committed
+		// instance parked on a task that was never written to the task store"; that
+		// is false and was measured false (ADR-0183) — a resolver failure on a later
+		// iteration does exactly that.
 		if rerr := driver.resolveHumanCandidates(stepCtx, &st, res.Commands); rerr != nil {
 			span.RecordError(rerr)
 			span.SetStatus(codes.Error, rerr.Error())

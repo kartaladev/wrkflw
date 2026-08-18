@@ -17,6 +17,60 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **A human task's claim invariant is now enforced before it can be committed (ADR-0183).**
+  `humantask.HumanTask` has always documented *"`Claim` … nil when Unclaimed"* on its own field, and
+  the read path was built to uphold it; the **write** path upheld nothing. `Upsert` bound the state
+  and claim columns independently, so `State: Claimed, Claim: nil` persisted and read back
+  unchanged, and an `Unclaimed` row **carrying** a claim was returned by `AssignedTo("alice")` *and*
+  `ClaimableBy(alice)` — double-listed as both held and offered.
+
+  A new `humantask.Validate(t HumanTask) error` is the single definition of the rule, returning an
+  error wrapping the new **`humantask.ErrInvalidTask`**: a `Claimed` task must carry a `Claim`, an
+  `Unclaimed` task must not, and `State` must be one of the four declared constants. It is enforced
+  **pre-commit** in the runtime (the primary seam) and again in all three bundled `Upsert`
+  implementations (`humantask.MemTaskStore`, the SQL `store.HumanTaskStore`, and
+  `persistence.CachingTaskStore`) as defence-in-depth.
+
+  ⚠ **Three breaking surfaces:**
+
+  1. **`Upsert` rejects contradictory shapes that silently succeeded before**, across all three
+     bundled stores. `TaskStore.Upsert`'s interface doc now states this as a contract implementations
+     MUST uphold, directing them to call `Validate` rather than re-derive it.
+  2. **A reassignment with an empty `to` now fails** with the new
+     **`engine.ErrEmptyReassignTarget`**, classified **400** — in `task.TaskService.Reassign`
+     before it reads the task store, and again in `engine.Step` for a trigger built by hand.
+     `POST /tasks/{token}/reassign
+     {"to":""}` previously succeeded and minted a `Claimed` task nobody holds — invisible to
+     `AssignedTo` (no claimant to match) and to `ClaimableBy` (not `Unclaimed`), reachable only by
+     ID. It is refused before `cloneState`, so a rejected trigger touches no state at all.
+  3. **`humantask.ErrInvalidTask` reaching HTTP is a 422 `conflict_state`, not a 500.** Both
+     sentinels previously fell to the `default:` arm, which returns 500 with an **empty body** —
+     discarding the message that names the task and the contradiction.
+
+  ⚠ **For a consumer's own `TaskStore` implementation the break is SILENT.** The interface signature
+  does not change, so nothing recompiles differently and a non-conforming store keeps accepting bad
+  rows. **Verify yours with the new exported `processtest.RunTaskStoreConformance(t, newStore)`**,
+  which exercises every rule plus "a rejected `Upsert` persists nothing". Consumer fixtures seeded
+  through `processtest`'s `Tasks() *humantask.MemTaskStore` are also affected, since that store is
+  now strict. Churn was measured as **zero**, but over *this repo only*.
+
+  ⚠ **`Unclaimed` is the zero value of `TaskState`**, so the `Unclaimed` rule also rejects a task
+  carrying a `Claim` whose `State` was never set — including a decode that dropped only `State`.
+  Deliberate: such a record is exactly as contradictory as an explicitly `Unclaimed` one. The error
+  message names `unclaimed`, which can read as wrong if you did not set that state yourself.
+
+  ⚠ **An empty claimant remains LEGAL on every state.** `Claimed` + `Claim{Actor{ID: ""}}` is
+  ADR-0148 amendment 1 §4's kiosk shape — anonymous, but carrying roles — and this release does not
+  supersede it. The empty-ID **claim** route is likewise untouched; only the empty *reassignment
+  target* is refused, because reassignment moves a claim *to someone* and mints an actor with no ID
+  **and** no roles. `Completed` and `Cancelled` carry no claim rule at all: a task cancelled while
+  held keeps its claim as audit, and an immediate manual task completes without one.
+
+  **Not fixed, deliberately:** the completion axis (`Completed` ⟹ `Completion != nil`) stays
+  unenforced, and **existing rows are not repaired** — there is no migration or backfill, since a
+  blind one could only guess at claim data it must not invent. Rows written before this guard,
+  including any double-listed one, stay as they are.
+
 - **A failed compensation action is now visible, and retryable (ADR-0179).** A compensation action
   replying `ActionFailed` used to be skipped in **total silence** — no retry, no incident, and (despite
   ADR-0034's Consequences claiming otherwise) **no log line**. It now always emits a

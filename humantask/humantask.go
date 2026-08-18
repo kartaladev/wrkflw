@@ -184,6 +184,14 @@ type ActorResolver interface {
 // / actor ID) so that callers and tests do not observe random ordering.
 type TaskStore interface {
 	// Upsert inserts or replaces the task identified by t.TaskID.
+	//
+	// Implementations MUST reject a task that fails [Validate] — a Claimed task with
+	// no claim, an Unclaimed task carrying one, or an out-of-range State — by
+	// returning an error wrapping [ErrInvalidTask]. Call
+	// [Validate] rather than re-deriving the rule; the read path relies on the
+	// invariant holding, and the runtime refuses to commit a step that would project
+	// a task violating it (ADR-0183). Verify your implementation with
+	// processtest.RunTaskStoreConformance.
 	Upsert(ctx context.Context, t HumanTask) error
 	// Get returns the task for the given token or [ErrTaskNotFound].
 	Get(ctx context.Context, taskID string) (HumanTask, error)

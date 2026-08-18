@@ -672,3 +672,81 @@ func TestTaskServiceRefreshCandidatesBoundsResolver(t *testing.T) {
 		})
 	}
 }
+
+// TestTaskServiceReassignRejectsAnEmptyTarget verifies that Reassign refuses a
+// reassignment naming no actor BEFORE it reads the task store, authorizes, or
+// records the "reassigned" metric. engine.Step refuses the same shape
+// (ADR-0183), but only after the service has already counted a reassignment that
+// never happened and paid for a store read plus an authz round-trip.
+//
+// The unknown-task row is the discriminator: it can only pass if the guard runs
+// ahead of the store lookup, which otherwise answers ErrTaskNotFound. The
+// non-empty control row keeps the guard from passing by refusing everything.
+func TestTaskServiceReassignRejectsAnEmptyTarget(t *testing.T) {
+	t.Parallel()
+
+	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
+	openTask := humantask.HumanTask{
+		TaskID:      "tok-reassign-empty",
+		InstanceID:  "inst-reassign-empty",
+		NodeID:      "approve",
+		State:       humantask.Claimed,
+		Claim:       &humantask.Claim{Actor: manager, At: time.Date(2026, 8, 17, 9, 0, 0, 0, time.UTC)},
+		Eligibility: authz.AuthzSpec{Roles: []string{"manager"}},
+	}
+
+	type testCase struct {
+		name   string
+		taskID string
+		to     string
+		assert func(t *testing.T, trg engine.Trigger, err error)
+	}
+
+	cases := []testCase{
+		{
+			name:   "an empty target is refused",
+			taskID: openTask.TaskID,
+			to:     "",
+			assert: func(t *testing.T, trg engine.Trigger, err error) {
+				require.ErrorIs(t, err, engine.ErrEmptyReassignTarget)
+				assert.Nil(t, trg, "no trigger may be issued for a reassignment naming nobody")
+			},
+		},
+		{
+			name:   "an empty target is refused before the task is even looked up",
+			taskID: "no-such-task",
+			to:     "",
+			assert: func(t *testing.T, trg engine.Trigger, err error) {
+				require.ErrorIs(t, err, engine.ErrEmptyReassignTarget)
+				assert.NotErrorIs(t, err, humantask.ErrTaskNotFound,
+					"the guard must run ahead of the store read")
+				assert.Nil(t, trg)
+			},
+		},
+		{
+			name:   "a named target still yields a trigger",
+			taskID: openTask.TaskID,
+			to:     "bob",
+			assert: func(t *testing.T, trg engine.Trigger, err error) {
+				require.NoError(t, err)
+				reassigned, ok := trg.(engine.HumanReassigned)
+				require.True(t, ok, "expected HumanReassigned, got %T", trg)
+				assert.Equal(t, "bob", reassigned.To)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			store := humantask.NewMemTaskStore()
+			require.NoError(t, store.Upsert(ctx, openTask))
+			svc := runtimetest.MustTaskService(t, store, authz.RoleAuthorizer{})
+
+			trg, err := svc.Reassign(ctx, tc.taskID, manager.ID, tc.to, manager)
+			tc.assert(t, trg, err)
+		})
+	}
+}

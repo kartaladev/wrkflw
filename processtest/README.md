@@ -312,6 +312,46 @@ assert.Equal(t, "ops@example.com", sent[0].From)
 
 ---
 
+## `RunTaskStoreConformance` — verify your own `TaskStore`
+
+`humantask.TaskStore.Upsert` documents a MUST: a task failing `humantask.Validate`
+must be rejected with `humantask.ErrInvalidTask`, and a rejected write must persist
+nothing (ADR-0183). The interface signature did not change when that rule landed, so
+a store written before it keeps compiling **and keeps accepting contradictory rows** —
+a silent break. This helper is how you find out:
+
+```go
+func TestMyStoreConformance(t *testing.T) {
+    processtest.RunTaskStoreConformance(t, func(t *testing.T) humantask.TaskStore {
+        return mystore.New(newTestDB(t)) // fresh and EMPTY on every call
+    })
+}
+```
+
+The `*testing.T` the factory receives is the **case's**, not the one you passed in: a
+provisioning helper that fatals (`newTestDB(t)`) then reports against the case it broke, and
+whatever `t.Cleanup` it registers is released when that case ends. Closing over the outer `T`
+instead calls `FailNow` on it from the case's goroutine, which `testing` does not support — the
+setup error is replaced by `test executed panic(nil) or runtime.Goexit` and the remaining shapes
+never run.
+
+For each invalid shape it asserts three things: the write is rejected with `ErrInvalidTask`,
+`Get` misses, and the row reached **neither** `AssignedTo` nor `ClaimableBy`. The inbox checks
+are not redundant with `Get`: a store that writes first and validates afterwards can hide the
+row from `Get` while its list queries still return it — an `Unclaimed` row carrying a claim is
+then offered to its claimant *and* to everyone eligible to claim it at once, the double listing
+this rule exists to close. What discriminates differs per shape: `Unclaimed`+claim trips **both**
+queries, an out-of-range state trips `AssignedTo` only (`ClaimableBy` returns `Unclaimed` rows),
+and `Claimed`+no claim trips neither — there `Get` is the only witness.
+
+Each shape runs as a named subtest. Beside the three invalid shapes it also asserts the
+shapes a store must **accept** and read back — including ADR-0148's kiosk claim (a
+claimant carrying roles but no ID) and the `Completed`/`Cancelled` shapes that are
+deliberately unconstrained on the claim axis — so a store that rejects everything
+cannot pass either.
+
+---
+
 ## Driving your own driver (free function)
 
 If you already built a `runtime.ProcessDriver` yourself, use the package-level
