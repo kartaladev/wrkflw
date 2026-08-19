@@ -14,7 +14,47 @@ top to bottom; it is meant to stay short enough that you can.
 
 ## State — updated 2026-08-18
 
-**▶ NOTHING IS IN FLIGHT. `main` is clean and pushed; ADR-0183 has shipped.**
+**▶ IN FLIGHT: ADR-0184 (backlog 42 + 43). Tasks 1–4 IMPLEMENTED (Task 4 = docs and backlog, all 5
+steps done) and reviewed clean; the Delivery Gate remains — `/code-review` and `/security-review`
+are OWNER-INVOKED and have NOT run.**
+
+Branch `feat/test-wait-budget-and-conformance-completeness`, cut from ADR-0183's merge `a7575ed5`.
+Every step **amends the one bundle commit** — do not quote its SHA, it moves. **Not pushed.**
+
+Read `docs/plans/2026-08-18-test-wait-budget-and-conformance-completeness.md` — its `▶ Progress`
+block carries the per-task verdicts and the three corrections implementation forced on the plan.
+
+Rule-#9 audit **passed before any code**: 3 Opus lenses, **14 findings, all accepted** —
+`docs/specs/2026-08-18-adr-0184-audit-adjudication.md`. The Critical was the controller's own
+prediction, refuted independently by all three lenses **because they executed it**.
+
+⚠ **Things a fresh session must not get wrong:**
+
+- `RunTaskStoreConformance`'s coverage **stays at 77.8 % and that is CORRECT** — the two misuse
+  guards run in a **child** `go test` spawned without `-coverprofile`, so their counters are
+  discarded. **Do not "fix" it**; the only way to raise it is the interface seam ADR-0184 rejected.
+- The budget is **10 s, not 30 s**, sized against the *binary*: 31 predominantly serial sites (2 of
+  the 31 run under `t.Parallel`) in `scheduler/internal/gocron` × 30 s = 930 s would blow `go test`'s
+  600 s default and replace 31 legible failures with a goroutine dump. Rule: `budget × densest
+  package's site count < 600 s`.
+- `writeOnlyTaskStore`'s pinned count is **1** and must stay 1 — an early return at the read-back
+  guard makes the new inbox check unreachable for it. This is backlog **47**.
+- **13** test files were modified, not 15; the 2 `Never`-only `clock_option_test.go` files are
+  deliberately untouched.
+- ⚠ **Any check over Go call arguments must be paren-balanced.** Three fixed-context-window greps
+  in this delivery's plan were wrong; two shipped into the plan before being caught by execution.
+- ⚠⚠⚠ **Backlog 42 was MISDIAGNOSED and is closed by a RACE FIX, not by the budget change.**
+  `ScheduleJob` returned a zero next-run with a nil error for a past-due one-shot. Measured (fresh
+  re-derivation, 7 runs × 1,000 arms each): **~12 % of arms without `-race`**, **~0.9 % under
+  `-race`** — roughly 13× apart; a single "~20 %" figure once attributed to `-race` alone was
+  wrong. Post-fix the branch cannot return zero by construction, so "0 of N after" is not a
+  comparable rate. The budget change addresses a real but *separate* class at the other 39 sites.
+  ⭐ **A test that fails in 0.00 s is not waiting out a timeout** — that one number refuted a
+  premise that had survived a three-lens audit.
+
+---
+
+**ADR-0183 has shipped and `main` is clean and pushed.**
 
 ADR-0183 shipped as merge **`a7575ed5`**, pushed; its branch `feat/human-task-claim-invariant` is
 deleted. ⚠ Do not quote main's head — it moves; re-derive with
@@ -118,16 +158,32 @@ Touched-package coverage: `humantask` 100 % · `httpcore` 94.6 % · `runtime` 93
    isolated; and the identical failure **reproduces on unmodified `main`** under the same full-suite
    run. New backlog item **42**. ⚠ **Do not silence it.**
 
-**Latest ADR = 0183 (implemented, not merged). Next free = 0184.** ADR numbers 0155–0157 remain
-reserved by the parked `feat/durable-waiters-delivery-correctness`.
+**Latest ADR = 0184 (implemented, not merged). ADR-0183 is shipped and merged.
+Next free = 0185.** ADR numbers 0155–0157 remain reserved by the parked
+`feat/durable-waiters-delivery-correctness`.
 
 ### ▶ NEXT WORK
 
-The queue is empty, so the next delivery starts at **brainstorming** (rule #7) → spec/ADR/plan →
-**ONE** rule-#9 audit of the whole bundle → handover (rule #10) → subagent-driven implementation
-(rule #11). ⚠ **Blocker 3 is CLOSED by ADR-0183 — do not re-raise it.**
+**Finish ADR-0184's Delivery Gate.** Tasks 1–4 are done; what remains is owner-invoked and cannot
+be run by an agent:
 
-Strongest candidates, roughly in order:
+1. `/code-review` on the pending change — fix all findings, fold via `--amend`.
+2. `/security-review` — fix all findings, fold via `--amend`.
+3. Merge `--no-ff` to `main`, push, delete the branch.
+
+⚠ The final whole-branch review flagged four deferred Minors — they are inlined in the plan's
+`▶ Progress` block (`docs/plans/2026-08-18-test-wait-budget-and-conformance-completeness.md`), not
+in the gitignored SDD ledger. The strongest is **Task 2's**: `TestRunTaskStoreConformanceRefusesANilStore`
+never asserts that every case still got its turn. ⚠ Its ORIGINAL justification was FALSE and was
+corrected during the final review-fix wave: `attributedTest`'s existing `strings.HasPrefix(…,
+nilStoreHelper+"/")` assertion already catches a parent-level `FailNow` regression, so the real
+split is **8 normally / 0 under that mutation**, not 8/1 — the gap is real, the reason given for it
+was not.
+
+⚠ **Blocker 3 is CLOSED by ADR-0183 — do not re-raise it.** Backlog **44–48** are opened by this
+bundle and are already recorded in the Backlog section below.
+
+**After ADR-0184**, the strongest candidates, roughly in order:
 
 - **Backlog 32 — downgrade drops new state fields** (whole-state `json.Marshal`, no
   `DisallowUnknownFields`). Still the highest-stakes item: a dropped `RetryAttempts` **resets the
@@ -158,8 +214,7 @@ misuse guards). Also flagged and deliberately not done: the exported conformance
    (`compensateAction`, `compensationAction`, `completionAction`, `correlationKey`, `messageName`).
 2. ✅ **A never-due timer arm — CLOSED by ADR-0176, ON `main`.**
 2b. ✅ **The `scheduler.Activate` livelock on `Monthly(12,[31])` — CLOSED by ADR-0176, ON `main`.**
-3. ✅ **`Upsert` can persist `State: Claimed, Claim: nil` — CLOSED by ADR-0183**, implemented on
-   `feat/human-task-claim-invariant`, ⚠ **not yet merged**.
+3. ✅ **`Upsert` can persist `State: Claimed, Claim: nil` — CLOSED by ADR-0183, MERGED to `main`**
 4. ✅ **ADR-0159's misnamed symbols — CLOSED.**
 5. **`TestPgxNotifierListenDrainsBeforePollInterval` is load-flaky**
    (`internal/persistence/store/notifier_pgx_test.go`). Interacts with item 7; **do not silence it.**
@@ -239,13 +294,72 @@ lock**, not the option setters. 35. ADR-0182's gate cannot judge the legacy flat
 
 **🆕 opened by ADR-0183:**
 
-42. **`TestGocronScheduleJobTriggers/At_(past-due)_fires_immediately_(time-skew_branch)` is
-    load-flaky** under full-suite `-race` contention — a second instance of blocker 5's class.
-    Proven pre-existing (reproduces on unmodified `main`; passes `-count=25` isolated). Interacts
-    with blocker 7 (suite speed). ⚠ **Do not silence it.**
-43. **`RunTaskStoreConformance`'s two `t.Fatal` misuse guards are untestable** through the exported
-    signature — exercising them needs the very recorder the signature forbids. Flagged rather than
-    dropped; the helper sits at 77.8 % for that reason.
+42. ✅ **CLOSED by ADR-0184 — and it was MISDIAGNOSED.** It was filed as "load-flaky under
+    `-race` contention", a second instance of blocker 5's class. It is not. Measured: the test fails
+    at `trigger_test.go:306` (`require.False(next.IsZero())`) in **0.00 s** — the `Eventually` never
+    runs, and the same assertion exists pre-ADR-0184. The real defect was a race in `ScheduleJob`,
+    which returned a zero next-run with a **nil error** for a past-due one-shot (`job.NextRun()`
+    raced the immediate fire). Measured (fresh re-derivation, 7 runs × 1,000 arms each, against
+    reverted code): **~12 % of arms without `-race`**, **~0.9 % under `-race`** — roughly 13× apart,
+    not the single "~20 %" a code-review pass found mislabeled as a `-race`-mode figure. Post-fix
+    the branch cannot return zero by construction (returns the captured clock reading
+    unconditionally), so "0 of N after" is not a comparable rate. ⚠ The misdiagnosis was inherited
+    from ADR-0183's handover, restated as fact in ADR-0184's first draft, and **survived a
+    three-lens audit** — its execution lens ran the test `-count=25` **in isolation**, where it
+    passes. ⭐ **A test that fails in 0.00 s is not waiting out a timeout.**
+43. ✅ **`RunTaskStoreConformance`'s two `t.Fatal` misuse guards — CLOSED by ADR-0184.** Executed via
+    the subprocess harness the package already had; no production change, no interface seam.
+    ⚠ Its coverage still reads **77.8 %** and that is CORRECT — child `go test` counters are not
+    merged. Do not "fix" it.
+
+**🆕 opened by ADR-0184:**
+
+44. **The 16 `Never` sites in `scheduler/` are vacuity-prone under contention** — "did not fire
+    within 150 ms" passes trivially if the goroutine never ran at all. The mirror image of backlog
+    42, and deliberately untouched by it (a `Never` budget is paid on every GREEN run, so it cannot
+    simply be raised). Measured distribution: 100 ms×1, 150 ms×10, 200 ms×4, 300 ms×1.
+45. **Blocker 5 and the `runtime/` `Eventually` sites are the same class, unconverted.** Adopting
+    ADR-0184's pattern there adds a 5th copy of the constant and may justify promoting it to a
+    shared `internal/` package.
+46. **A `testing/synctest` spike for `scheduler/`** — Go 1.25's bubble could remove real-time
+    budgets entirely, if gocron's internals tolerate one. Research, not a flake fix.
+47. **`checkTaskStoreConformance` stops at the first break on the legal leg**, contradicting its own
+    doc comment (*"never stops early: a store gets told about all of its contract breaks in one
+    run"*). Measured: a store that accepts but never persists is told about the read-back miss and
+    **not** about its broken inboxes. Surfaced as the root cause of a wrong prediction in ADR-0184's
+    own bundle. Changing what an exported helper reports is its own decision.
+48. **CI runs `go test` at the 600 s default timeout** — neither `.github/workflows/ci.yml` nor
+    `scripts/coverage.sh` passes `-timeout`. Nothing enforces ADR-0184's
+    `budget × densest-package site count < 600 s` rule, so a future budget raise or a new batch of
+    `Eventually` sites can silently cross it. Wants a `-timeout` flag or a guard test.
+49. **A past-due one-shot expressed as a DURATION (`After(-1m)`, `After(0)`) is NOT fired
+    immediately** — unlike the absolute-time (`At`) form ADR-0184 Decision 6 hardened. gocron
+    refuses it outright and a raw `gocron: OneTimeJob: start must not be in the past` error escapes
+    `ScheduleJob` without a `workflow-scheduler:` sentinel wrap. Reachable via
+    `runtime/timerops.go`'s `KindOneTime` mapping. Pre-existing, separate from backlog 42's race.
+    Reproduction (verified):
+    ```go
+    s.ScheduleJob(ctx, "id", sched.After(-1*time.Minute), task, false)
+    // next=0001-01-01 00:00:00 +0000 UTC
+    // err=gocron: OneTimeJob: start must not be in the past
+    ```
+
+**🆕 opened by /code-review on ADR-0184's bundle (the `closed` guard added late in that delivery):**
+
+50. **`GocronScheduler.Close`/`CloseWithContext`'s `closed` guard has a residual window**
+    (`scheduler/internal/gocron/job_schedule.go`, `ScheduleJob`'s doc and
+    `scheduler/internal/gocron/scheduler.go`, `ErrSchedulerClosed`'s doc). `Close` sets
+    `closed=true` under `s.mu` but calls gocron's `Shutdown()` **outside** `s.mu`. A `ScheduleJob`
+    call that acquires `s.mu` first blocks `Close` for its entire body, observes `closed==false`
+    throughout, registers successfully (including a past-due one-shot's `fireImmediately` branch),
+    and returns a non-zero next-run with a **nil** error — then `Shutdown()` runs immediately after
+    `ScheduleJob` releases `s.mu` and can retire the underlying gocron scheduler before that job's
+    own goroutine has fired, orphaning a call that reported success. `NativeScheduler.Schedule`
+    (`scheduler/scheduler.go`) has already persisted the durable row by the time `activateJob`
+    reaches this call, so the orphan survives as a durable row for a job that never fires.
+    Non-trivial to close: holding `Shutdown()` under `s.mu` risks a deadlock against the
+    `AfterJobRuns` listener (also `s.mu`-guarded); re-checking `closed` after `NewJob` does not help
+    either, since `ScheduleJob` holds `s.mu` for its whole body so `closed` cannot change mid-call.
 
 ## Where things live
 
@@ -261,7 +375,7 @@ lock**, not the option setters. 35. ADR-0182's gate cannot judge the legacy flat
 | `feat/durable-waiters-delivery-correctness` | `434535d` — parked, docs only; holds ADR **0155–0157** |
 | `docs/architecture-audit` | `393e516` — `AUDIT.md`, ⚠ deliberately NOT on `main`, NOT pushed |
 | worktrees | ✅ **CLEAN** — verified after ADR-0183; the two throwaway `main` measurement worktrees were removed |
-| Latest ADR | **0183** shipped. Next free is **0184** |
+| Latest ADR | **0184** implemented, NOT merged. Next free is **0185** |
 | v0.1.0 | not tagged |
 
 ## Standing constraints

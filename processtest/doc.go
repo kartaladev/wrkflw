@@ -44,9 +44,14 @@
 // [RunTaskStoreConformance] checks a [humantask.TaskStore] implementation against
 // the claim invariant its Upsert contract requires (ADR-0183): each invalid shape
 // is rejected, and the rejected row reaches neither Get nor either inbox query.
-// Consumers who supply their own task store should run it from their own test
-// suite: adopting the invariant does not change the interface signature, so a
-// non-conforming store keeps compiling and keeps accepting contradictory rows.
+// Since ADR-0184 it also checks the positive half: every legal shape must be
+// accepted and read back, and two accepted controls (an Unclaimed task and a
+// Claimed task) must reach the inbox their shape belongs in — a store whose list
+// queries always return nothing now fails, where before it passed the whole
+// suite vacuously. Consumers who supply their own task store should run it from
+// their own test suite: adopting the invariant does not change the interface
+// signature, so a non-conforming store keeps compiling and keeps accepting
+// contradictory rows.
 //
 // # Lower-level entry point
 //

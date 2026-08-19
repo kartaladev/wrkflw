@@ -120,7 +120,7 @@ func TestNativeSchedulerCalendarTriggers(t *testing.T) {
 				sj.NextRun(), wantFire)
 
 			fakeClock.Advance(wantFire.Sub(fakeClock.Now()) + time.Millisecond)
-			require.Eventually(t, fired.Load, time.Second, 5*time.Millisecond)
+			require.Eventually(t, fired.Load, eventuallyBudget, 5*time.Millisecond)
 		})
 	}
 }

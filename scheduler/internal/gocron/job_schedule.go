@@ -2,6 +2,7 @@ package gocron
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
@@ -21,9 +22,15 @@ import (
 // UPSERT BY ID: any existing registration under id is removed first
 // (remove-then-add) so repeated calls under the same id (rehydration,
 // re-Activate) always leave exactly one live registration. A past-due
-// one-shot fires immediately (never dropped), with a WARN when its lateness
-// exceeds the timeskew tolerance, and one-shots carry WithLimitedRuns(1) plus
-// self-removal from the tracking map after firing.
+// one-shot expressed as an ABSOLUTE time (At) fires immediately (never
+// dropped), with a WARN when its lateness exceeds the timeskew tolerance,
+// and one-shots carry WithLimitedRuns(1) plus self-removal from the tracking
+// map after firing. ⚠ This "never dropped" guarantee does NOT hold for a
+// past-due one-shot expressed as a DURATION (After(-d) or After(0)):
+// verified, gocron refuses it with a raw
+// "gocron: OneTimeJob: start must not be in the past" error that escapes
+// this API without a workflow-scheduler: sentinel wrap — see backlog 49 in
+// docs/plans/HANDOVER.md (pre-existing, tracked separately, not fixed here).
 //
 // When singleton is true AND the job is recurring (not one-shot),
 // gocron.WithSingletonMode(gocron.LimitModeReschedule) is applied: a fire
@@ -34,11 +41,41 @@ import (
 // most one run, so there is nothing to overlap) — the option is not even
 // appended to gocron in that case.
 //
-// Returns the live first-run time from gocron. A zero time is returned only
-// on error (e.g. an invalid TriggerDef — see jobDefinition/ErrUnsupportedTrigger).
+// Returns the live first-run time from gocron, EXCEPT for a past-due
+// one-shot: that case fires on gocron's own goroutine immediately upon
+// registration and may already have retired by the time gocron is asked, so
+// the fire time is reported deterministically as the clock's current time
+// (the now captured above) rather than raced out of gocron — see the
+// fireImmediately comment below. A zero time is returned only alongside a
+// non-nil error (e.g. an invalid TriggerDef — see
+// jobDefinition/ErrUnsupportedTrigger — or a call that observes closed
+// already true — see ErrSchedulerClosed). Verified: before the closed-state
+// guard was added, this was false — ScheduleJob(Every(time.Hour), …) called
+// after Close returned (zero, nil) for a job gocron silently accepted but
+// will never run.
+//
+// ⚠ closed does NOT close every window, only the one above: Close/
+// CloseWithContext set closed=true under s.mu but call gocron's Shutdown
+// OUTSIDE s.mu (see their doc comments). If a ScheduleJob call acquires
+// s.mu first, Close blocks on s.mu for the whole ScheduleJob body — closed
+// is observed false throughout, the job registers successfully (including
+// taking the fireImmediately branch for a past-due one-shot), and
+// ScheduleJob returns a non-zero next-run with a NIL error. Shutdown then
+// runs immediately after ScheduleJob releases s.mu and can retire the
+// underlying gocron scheduler before that job's own goroutine has actually
+// fired it, orphaning a call this doc comment would otherwise describe as
+// having succeeded. Closing this window is non-trivial: holding Shutdown
+// under s.mu risks a deadlock against the AfterJobRuns listener above (which
+// also takes s.mu), and re-checking closed after NewJob does not help
+// either, since ScheduleJob holds s.mu for its entire body so closed cannot
+// change mid-call. See backlog 50 in docs/plans/HANDOVER.md.
 func (s *GocronScheduler) ScheduleJob(_ context.Context, id string, trig TriggerDef, task func(context.Context) error, singleton bool) (time.Time, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.closed {
+		return time.Time{}, fmt.Errorf("workflow-scheduler: ScheduleJob %q: %w", id, ErrSchedulerClosed)
+	}
 
 	if existing, ok := s.jobs[id]; ok {
 		_ = s.sched.RemoveJob(existing) // ignore ErrJobNotFound: already fired/pruned
@@ -55,8 +92,20 @@ func (s *GocronScheduler) ScheduleJob(_ context.Context, id string, trig Trigger
 	// fire time that has already elapsed. Timers are NEVER dropped — within
 	// tolerance they fire silently; beyond tolerance they still fire and a
 	// WARN is logged.
+	//
+	// fireImmediately mirrors jobDefinition's own past-due branch
+	// (!at.After(now)): gocron.OneTimeJobStartImmediately() starts the job on
+	// its own goroutine as soon as NewJob registers it below, and with
+	// WithLimitedRuns(1) also set, the job can fire and self-retire from
+	// gocron's bookkeeping before this function reaches job.NextRun() — at
+	// which point NextRun() truthfully reports the zero time ("no next run"),
+	// and asking gocron would silently return a zero next-run alongside a nil
+	// error for a timer that fired correctly. next is therefore computed
+	// deterministically for this case instead of raced out of gocron.
+	fireImmediately := false
 	if oneShot {
 		if at, ok := trig.AbsTime(); ok && !at.After(now) {
+			fireImmediately = true
 			lateness := now.Sub(at)
 			if lateness > s.timeSkew {
 				s.tel.Logger.Warn("workflow-scheduler: past-due timer exceeds time-skew tolerance; firing immediately",
@@ -93,6 +142,20 @@ func (s *GocronScheduler) ScheduleJob(_ context.Context, id string, trig Trigger
 		return time.Time{}, err
 	}
 	s.jobs[id] = job.ID()
+
+	// The fire-immediately case is reported deterministically as now — the
+	// same instant captured above when the past-due decision was made —
+	// rather than asked of gocron (see the fireImmediately comment above):
+	// the job fires at ~now, not at the past at — reporting the elapsed at
+	// would claim a fire time that has already passed. This is unconditional
+	// (not a fallback for when NextRun() happens to come back zero) because
+	// the race window exists on every call, just with variable width;
+	// patching around an observed zero would still leave the same race with
+	// a smaller — but nonzero — chance of an incorrect answer.
+	if fireImmediately {
+		return now, nil
+	}
+
 	next, _ := job.NextRun()
 	return next, nil
 }

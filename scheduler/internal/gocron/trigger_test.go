@@ -37,7 +37,7 @@ func TestGocronNativeTriggers(t *testing.T) {
 			next, ok := s.NextRun("cron1")
 			require.True(t, ok)
 			clk.Advance(next.Sub(clk.Now()) + time.Millisecond)
-			require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, time.Second, 5*time.Millisecond)
+			require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, eventuallyBudget, 5*time.Millisecond)
 		}
 	})
 
@@ -58,13 +58,13 @@ func TestGocronNativeTriggers(t *testing.T) {
 		clk.Advance(6 * time.Second)
 
 		// Wait for it to fire.
-		require.Eventually(t, func() bool { return fired.Load() >= 1 }, time.Second, 5*time.Millisecond)
+		require.Eventually(t, func() bool { return fired.Load() >= 1 }, eventuallyBudget, 5*time.Millisecond)
 
 		// After firing, the one-shot should be removed from NextRun.
 		require.Eventually(t, func() bool {
 			_, ok := s.NextRun("oneshot1")
 			return !ok
-		}, time.Second, 5*time.Millisecond, "one-shot must be disarmed after firing")
+		}, eventuallyBudget, 5*time.Millisecond, "one-shot must be disarmed after firing")
 
 		assert.EqualValues(t, 1, fired.Load(), "must fire exactly once")
 	})
@@ -85,7 +85,7 @@ func TestGocronNativeTriggers(t *testing.T) {
 			next, ok := s.NextRun("every1")
 			require.True(t, ok)
 			clk.Advance(next.Sub(clk.Now()) + time.Millisecond)
-			require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, time.Second, 5*time.Millisecond)
+			require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, eventuallyBudget, 5*time.Millisecond)
 		}
 	})
 
@@ -106,7 +106,7 @@ func TestGocronNativeTriggers(t *testing.T) {
 		next, ok := s.NextRun("daily1")
 		require.True(t, ok)
 		clk.Advance(next.Sub(clk.Now()) + time.Millisecond)
-		require.Eventually(t, func() bool { return fired.Load() >= 1 }, time.Second, 5*time.Millisecond)
+		require.Eventually(t, func() bool { return fired.Load() >= 1 }, eventuallyBudget, 5*time.Millisecond)
 	})
 
 	t.Run("Weekly (normal) fires on both weekdays and recurs", func(t *testing.T) {
@@ -127,7 +127,7 @@ func TestGocronNativeTriggers(t *testing.T) {
 			next, ok := s.NextRun("weekly1")
 			require.True(t, ok)
 			clk.Advance(next.Sub(clk.Now()) + time.Millisecond)
-			require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, time.Second, 5*time.Millisecond)
+			require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, eventuallyBudget, 5*time.Millisecond)
 		}
 	})
 
@@ -168,7 +168,7 @@ func TestGocronNativeTriggers(t *testing.T) {
 			next, ok := s.NextRun("monthly1")
 			require.True(t, ok)
 			clk.Advance(next.Sub(clk.Now()) + time.Millisecond)
-			require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, time.Second, 5*time.Millisecond)
+			require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, eventuallyBudget, 5*time.Millisecond)
 		}
 	})
 
@@ -209,7 +209,7 @@ func TestGocronNativeTriggers(t *testing.T) {
 			next, ok := s.NextRun("rand1")
 			require.True(t, ok)
 			clk.Advance(next.Sub(clk.Now()) + time.Millisecond)
-			require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, time.Second, 5*time.Millisecond)
+			require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, eventuallyBudget, 5*time.Millisecond)
 		}
 	})
 }
@@ -280,12 +280,12 @@ func TestGocronScheduleJobTriggers(t *testing.T) {
 
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 				clk.Advance(6 * time.Second)
-				require.Eventually(t, func() bool { return fired.Load() >= 1 }, time.Second, 5*time.Millisecond)
+				require.Eventually(t, func() bool { return fired.Load() >= 1 }, eventuallyBudget, 5*time.Millisecond)
 
 				require.Eventually(t, func() bool {
 					_, ok := s.NextRun("at-future")
 					return !ok
-				}, time.Second, 5*time.Millisecond, "one-shot At must be disarmed after firing")
+				}, eventuallyBudget, 5*time.Millisecond, "one-shot At must be disarmed after firing")
 			},
 		},
 		{
@@ -305,7 +305,7 @@ func TestGocronScheduleJobTriggers(t *testing.T) {
 				require.NoError(t, err)
 				require.False(t, next.IsZero())
 
-				require.Eventually(t, func() bool { return fired.Load() >= 1 }, time.Second, 5*time.Millisecond,
+				require.Eventually(t, func() bool { return fired.Load() >= 1 }, eventuallyBudget, 5*time.Millisecond,
 					"past-due At must fire immediately without a clock advance")
 			},
 		},
@@ -321,7 +321,7 @@ func TestGocronScheduleJobTriggers(t *testing.T) {
 
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 				clk.Advance(6 * time.Second)
-				require.Eventually(t, func() bool { return fired.Load() >= 1 }, time.Second, 5*time.Millisecond)
+				require.Eventually(t, func() bool { return fired.Load() >= 1 }, eventuallyBudget, 5*time.Millisecond)
 			},
 		},
 		{
@@ -338,7 +338,7 @@ func TestGocronScheduleJobTriggers(t *testing.T) {
 					n, ok := s.NextRun("every-job")
 					require.True(t, ok)
 					clk.Advance(n.Sub(clk.Now()) + time.Millisecond)
-					require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, time.Second, 5*time.Millisecond)
+					require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, eventuallyBudget, 5*time.Millisecond)
 				}
 			},
 		},
@@ -356,7 +356,7 @@ func TestGocronScheduleJobTriggers(t *testing.T) {
 					n, ok := s.NextRun("rand-job")
 					require.True(t, ok)
 					clk.Advance(n.Sub(clk.Now()) + time.Millisecond)
-					require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, time.Second, 5*time.Millisecond)
+					require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, eventuallyBudget, 5*time.Millisecond)
 				}
 			},
 		},
@@ -374,7 +374,7 @@ func TestGocronScheduleJobTriggers(t *testing.T) {
 					n, ok := s.NextRun("cron-job")
 					require.True(t, ok)
 					clk.Advance(n.Sub(clk.Now()) + time.Millisecond)
-					require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, time.Second, 5*time.Millisecond)
+					require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, eventuallyBudget, 5*time.Millisecond)
 				}
 			},
 		},
@@ -392,7 +392,7 @@ func TestGocronScheduleJobTriggers(t *testing.T) {
 				n, ok := s.NextRun("daily-job")
 				require.True(t, ok)
 				clk.Advance(n.Sub(clk.Now()) + time.Millisecond)
-				require.Eventually(t, func() bool { return fired.Load() >= 1 }, time.Second, 5*time.Millisecond)
+				require.Eventually(t, func() bool { return fired.Load() >= 1 }, eventuallyBudget, 5*time.Millisecond)
 			},
 		},
 		{
@@ -410,7 +410,7 @@ func TestGocronScheduleJobTriggers(t *testing.T) {
 					n, ok := s.NextRun("weekly-job")
 					require.True(t, ok)
 					clk.Advance(n.Sub(clk.Now()) + time.Millisecond)
-					require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, time.Second, 5*time.Millisecond)
+					require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, eventuallyBudget, 5*time.Millisecond)
 				}
 			},
 		},
@@ -445,7 +445,7 @@ func TestGocronScheduleJobTriggers(t *testing.T) {
 					n, ok := s.NextRun("monthly-job")
 					require.True(t, ok)
 					clk.Advance(n.Sub(clk.Now()) + time.Millisecond)
-					require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, time.Second, 5*time.Millisecond)
+					require.Eventually(t, func() bool { return fired.Load() >= int32(i+1) }, eventuallyBudget, 5*time.Millisecond)
 				}
 			},
 		},

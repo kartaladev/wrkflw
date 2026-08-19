@@ -110,7 +110,7 @@ func TestScheduler_WithTimeSkew(t *testing.T) {
 				mu.Lock()
 				defer mu.Unlock()
 				return fired
-			}, 2*time.Second, 5*time.Millisecond, "past-due timer must fire immediately")
+			}, eventuallyBudget, 5*time.Millisecond, "past-due timer must fire immediately")
 
 			mu.Lock()
 			f := fired

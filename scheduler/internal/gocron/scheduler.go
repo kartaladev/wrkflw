@@ -66,8 +66,9 @@ type GocronScheduler struct {
 	// both is a construction error. nil = no leader election.
 	elector gocron.Elector
 
-	mu   sync.Mutex
-	jobs map[string]uuid.UUID // timerID -> gocron job ID
+	mu     sync.Mutex
+	jobs   map[string]uuid.UUID // timerID -> gocron job ID
+	closed bool                 // set under mu by Close/CloseWithContext; see ErrSchedulerClosed
 }
 
 // ErrLockerElectorConflict is returned by NewGocronScheduler when both a Locker
@@ -75,6 +76,32 @@ type GocronScheduler struct {
 // (load-balanced per-timer exclusion vs. single-leader); pick one.
 var ErrLockerElectorConflict = errors.New(
 	"workflow-scheduler: a distributed locker and elector are mutually exclusive — set only one")
+
+// ErrSchedulerClosed is this package's own sentinel for a ScheduleJob call
+// against a GocronScheduler that has already been Close'd (or
+// CloseWithContext'd): gocron.Scheduler.NewJob succeeds silently on a
+// shut-down scheduler, so ScheduleJob checks its own closed flag rather than
+// relying on gocron to reject the call — without this guard a past-due
+// one-shot scheduled after Close reported a fire time (s.clk.Now(), nil
+// error) for a job that will never run.
+//
+// This is THE canonical value, not a copy: the parent scheduler façade
+// (scheduler/scheduler.go, which already imports this package) declares its
+// own public ErrSchedulerClosed as `= ErrSchedulerClosed` — an alias, not a
+// second errors.New with matching text — precisely so errors.Is works
+// across the package boundary with no translation. This package still does
+// not import the parent scheduler package (see the package doc for the
+// import-direction rule); the alias runs the other way.
+//
+// ⚠ It does NOT close every window: ScheduleJob only checks closed at the
+// top of its own call, under s.mu. If ScheduleJob acquires s.mu first, a
+// concurrent Close blocks on s.mu until ScheduleJob returns — Close's own
+// Shutdown() call happens outside s.mu, strictly after ScheduleJob has
+// already registered the job and returned success. A past-due one-shot
+// registered in that window can still be pruned by Shutdown() before its
+// fireImmediately goroutine runs, orphaning it. See backlog 50 in
+// docs/plans/HANDOVER.md.
+var ErrSchedulerClosed = errors.New("workflow-scheduler: scheduler is closed")
 
 // Option configures a [GocronScheduler].
 type Option func(*GocronScheduler)
@@ -323,16 +350,29 @@ func (s *GocronScheduler) NextRun(timerID string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// Close shuts gocron down gracefully. The scheduler cannot be reused afterward.
+// Close shuts gocron down gracefully. The scheduler cannot be reused
+// afterward: a ScheduleJob call that acquires s.mu after this call has set
+// closed=true returns an error wrapping [ErrSchedulerClosed] rather than
+// silently accepting the registration (see ErrSchedulerClosed's doc). ⚠ A
+// ScheduleJob call already holding s.mu when Close is invoked is NOT covered
+// by that guarantee — see ErrSchedulerClosed's doc for the residual window
+// and backlog 50 in docs/plans/HANDOVER.md.
 func (s *GocronScheduler) Close() error {
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
 	return s.sched.Shutdown()
 }
 
 // CloseWithContext shuts gocron down gracefully, honoring ctx's deadline: it stops
 // dispatch immediately (gocron's shutdownCancel fires first) and waits for running
 // jobs, returning ctx.Err() if ctx expires first. The scheduler cannot be reused
-// afterward. Unlike Close (which uses gocron's internal stop timeout), the caller's
-// ctx bounds the wait.
+// afterward — see Close's ErrSchedulerClosed note (including its residual-window
+// caveat), which applies here too. Unlike Close (which uses gocron's internal stop
+// timeout), the caller's ctx bounds the wait.
 func (s *GocronScheduler) CloseWithContext(ctx context.Context) error {
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
 	return s.sched.ShutdownWithContext(ctx)
 }

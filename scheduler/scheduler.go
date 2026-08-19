@@ -42,7 +42,20 @@ var ErrTimerLockElectorConflict = errors.New(
 // scheduler has been closed (via [NativeScheduler.Close] or cancellation of
 // the context passed to [NativeScheduler.Start]). A closed scheduler cannot be
 // reused.
-var ErrSchedulerClosed = errors.New("workflow-scheduler: scheduler is closed")
+//
+// This is a deliberate ALIAS of gocronsched.ErrSchedulerClosed, not a second
+// errors.New with matching text: activateJob's call into impl.ScheduleJob
+// (scheduler/internal/gocron) can observe the internal scheduler's own
+// closed flag flip true after this façade's own s.closed check already
+// passed (see ensureStarted/Activate's graceful-shutdown race, ADR-0133),
+// and that error is returned to the caller wrapped but otherwise verbatim.
+// Aliasing — rather than translating at the activateJob boundary — makes
+// errors.Is(err, ErrSchedulerClosed) hold for that error without any
+// translation code, and keeps exactly one sentinel value in existence
+// instead of two independently-maintained messages that can drift apart (as
+// they already had: see the internal package's prior doc, which claimed to
+// "mirror" this value while in fact being a distinct one).
+var ErrSchedulerClosed = gocronsched.ErrSchedulerClosed
 
 // NativeScheduler is the production, gocron-backed [Scheduler]. Construct it
 // with [NewScheduler]; supply the same [clockwork.Clock] instance used to build

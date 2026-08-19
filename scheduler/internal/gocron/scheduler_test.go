@@ -328,7 +328,7 @@ func TestSchedulePastFireAtFiresImmediately(t *testing.T) {
 		default:
 			return false
 		}
-	}, 2*time.Second, 10*time.Millisecond, "callback should fire immediately for past fireAt")
+	}, eventuallyBudget, 10*time.Millisecond, "callback should fire immediately for past fireAt")
 }
 
 // TestGocronScheduler_CloseWithContext verifies the context-aware shutdown: it

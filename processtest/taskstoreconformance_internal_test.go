@@ -188,6 +188,20 @@ func (inboxFailingTaskStore) ClaimableBy(context.Context, authz.Actor) ([]humant
 	return nil, errInboxUnavailable
 }
 
+// blindInboxTaskStore is conforming on the write path and answers BOTH inbox
+// queries with nothing. It is the store that motivated ADR-0184: every
+// not-listed assertion on the rejected leg holds vacuously for it, so before the
+// legal leg gained a positive expectation this store passed the whole suite.
+type blindInboxTaskStore struct{ *humantask.MemTaskStore }
+
+func (blindInboxTaskStore) AssignedTo(context.Context, string) ([]humantask.HumanTask, error) {
+	return nil, nil
+}
+
+func (blindInboxTaskStore) ClaimableBy(context.Context, authz.Actor) ([]humantask.HumanTask, error) {
+	return nil, nil
+}
+
 // rejectingTaskStore refuses every write. It is the opposite failure mode: a
 // store that "passes" the invalid-shape cases by rejecting everything must still
 // fail the legal-shape controls.
@@ -297,6 +311,67 @@ func inboxLeaks(t *testing.T, c taskStoreConformanceCase) int {
 	}
 }
 
+// TestInboxExpectationString pins inboxExpectation.String() per value, including
+// an out-of-range value falling through to the same "UNSET" the zero value
+// reports: it is formatted only on assertion failure, so a swapped arm would
+// otherwise surface as nothing worse than a misleading message inside a
+// consumer's own failing suite.
+func TestInboxExpectationString(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		value  inboxExpectation
+		assert func(t *testing.T, got string)
+	}
+
+	cases := []testCase{
+		{
+			name:  "inboxAssigned names AssignedTo",
+			value: inboxAssigned,
+			assert: func(t *testing.T, got string) {
+				assert.Equal(t, "AssignedTo", got)
+			},
+		},
+		{
+			name:  "inboxClaimable names ClaimableBy",
+			value: inboxClaimable,
+			assert: func(t *testing.T, got string) {
+				assert.Equal(t, "ClaimableBy", got)
+			},
+		},
+		{
+			name:  "inboxNone reports none",
+			value: inboxNone,
+			assert: func(t *testing.T, got string) {
+				assert.Equal(t, "none", got)
+			},
+		},
+		{
+			name:  "inboxUnset — the zero value — reports UNSET",
+			value: inboxUnset,
+			assert: func(t *testing.T, got string) {
+				assert.Equal(t, "UNSET", got)
+			},
+		},
+		{
+			name:  "an out-of-range value falls through to UNSET",
+			value: inboxExpectation(99),
+			assert: func(t *testing.T, got string) {
+				assert.Equal(t, "UNSET", got)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tc.assert(t, tc.value.String())
+		})
+	}
+}
+
 func TestTaskStoreConformanceCasesCoverBothSides(t *testing.T) {
 	t.Parallel()
 
@@ -314,6 +389,29 @@ func TestTaskStoreConformanceCasesCoverBothSides(t *testing.T) {
 		names[c.name] = struct{}{}
 		assert.NotEmptyf(t, c.why, "case %q must explain itself: consumers read these", c.name)
 		assert.NotEmptyf(t, c.task.TaskID, "case %q must carry a TaskID", c.name)
+		assert.NotEqualf(t, inboxUnset, c.listedBy,
+			"case %q must DECIDE its inbox expectation; inboxNone is the explicit \"neither query returns it\"", c.name)
+		assert.Truef(t, c.legal || c.listedBy == inboxNone,
+			"case %q is rejected, so listedBy=%v is a silent no-op — the check runs only on the legal leg", c.name, c.listedBy)
+		if c.listedBy == inboxAssigned {
+			if assert.NotNilf(t, c.task.Claim,
+				"case %q declares inboxAssigned, so it MUST carry the Claim naming the claimant", c.name) {
+				assert.NotEmptyf(t, c.task.Claim.Actor.ID,
+					"case %q declares inboxAssigned, but an empty actor id identifies no actor: AssignedTo(\"\") returns nothing", c.name)
+			}
+		}
+		if c.listedBy == inboxClaimable {
+			assert.Equalf(t, humantask.Unclaimed, c.task.State,
+				"case %q declares inboxClaimable, so it MUST be Unclaimed — ClaimableBy only ever returns Unclaimed rows", c.name)
+			candidate := slices.ContainsFunc(c.task.Candidates, func(a authz.Actor) bool {
+				return a.ID != "" && a.ID == taskStoreConformanceProbe.ID
+			})
+			eligible := slices.ContainsFunc(c.task.Eligibility.Roles, func(r string) bool {
+				return slices.Contains(taskStoreConformanceProbe.Roles, r)
+			})
+			assert.Truef(t, candidate || eligible,
+				"case %q declares inboxClaimable, but the probe actor %+v is named by neither its Candidates nor its Eligibility.Roles, so ClaimableBy(probe) could never return it", c.name, taskStoreConformanceProbe)
+		}
 	}
 
 	assert.Len(t, names, len(cases), "case names must be unique: %v", slices.Sorted(maps.Keys(names)))
@@ -425,13 +523,40 @@ func TestCheckTaskStoreConformanceCatchesNonConformingStores(t *testing.T) {
 			newStore: func() humantask.TaskStore { return inboxFailingTaskStore{MemTaskStore: humantask.NewMemTaskStore()} },
 			assert: func(t *testing.T, c taskStoreConformanceCase, failures []string) {
 				if c.legal {
-					// The legal leg asserts Upsert, Get and the round-trip only; it
-					// never asks an inbox, so this store passes it.
-					assert.Emptyf(t, failures, "the legal leg queries no inbox, so %q must pass: %v", c.name, failures)
+					// Since ADR-0184 the legal leg DOES ask an inbox, but only for a
+					// shape declaring one; those report the unanswerable query once.
+					want := 0
+					if c.listedBy == inboxAssigned || c.listedBy == inboxClaimable {
+						want = 1
+					}
+					assert.Lenf(t, failures, want,
+						"%q must FAIL once iff it declares an inbox (%v) this store cannot answer; got %v",
+						c.name, c.listedBy, failures)
 					return
 				}
 				assert.Lenf(t, failures, 2,
 					"%q must FAIL once for each unanswerable inbox query; got %v", c.name, failures)
+			},
+		},
+		{
+			// The vacuity ADR-0184 closes. This store validates correctly, persists
+			// correctly and reads back correctly — it simply never lists anything.
+			// Only the legal shapes carrying a positive inbox expectation can catch
+			// it; the rejected leg cannot, because "not listed" is exactly what a
+			// store that lists nothing does.
+			name: "a store whose inboxes never list anything fails only the legal shapes that must be listed",
+			newStore: func() humantask.TaskStore {
+				return blindInboxTaskStore{MemTaskStore: humantask.NewMemTaskStore()}
+			},
+			assert: func(t *testing.T, c taskStoreConformanceCase, failures []string) {
+				if c.legal && (c.listedBy == inboxAssigned || c.listedBy == inboxClaimable) {
+					assert.Lenf(t, failures, 1,
+						"%q declares listedBy=%v, so a store that lists nothing must FAIL exactly once; got %v",
+						c.name, c.listedBy, failures)
+					return
+				}
+				assert.Emptyf(t, failures,
+					"%q has no positive inbox expectation, so a blind-inbox store must pass it: %v", c.name, failures)
 			},
 		},
 	}

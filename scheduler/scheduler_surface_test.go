@@ -224,7 +224,7 @@ func TestNativeSchedulerActivate(t *testing.T) {
 
 		require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 		clk.Advance(4 * time.Second)
-		require.Eventually(t, func() bool { return fired.Load() >= 1 }, 2*time.Second, 5*time.Millisecond)
+		require.Eventually(t, func() bool { return fired.Load() >= 1 }, eventuallyBudget, 5*time.Millisecond)
 		assert.Never(t, func() bool { return fired.Load() > 1 }, 150*time.Millisecond, 10*time.Millisecond,
 			"double-Activate must leave exactly ONE live registration (one fire per due instant)")
 	})

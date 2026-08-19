@@ -54,7 +54,7 @@ func TestPostgresElectorHeartbeatStepsDownOnConnLoss(t *testing.T) {
 	// After the tick caught the dead connection, IsLeader must step down.
 	require.Eventually(t, func() bool {
 		return elector.IsLeader(ctx) != nil
-	}, 3*time.Second, 10*time.Millisecond,
+	}, eventuallyBudget, 10*time.Millisecond,
 		"heartbeat must detect the severed connection and step the elector down")
 }
 
