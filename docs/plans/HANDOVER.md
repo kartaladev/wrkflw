@@ -137,7 +137,7 @@ Strongest candidates, roughly in order:
   one; and post-ADR-0183 a decode dropping only `State` yields an `Unclaimed` task **carrying a
   claim**, which `Validate` now rejects on write — turning a readable row unwritable. ⚠ The snapshot
   has **no json tags at all**, so the wire format is Go field names; that constrains any fix.
-- **The fail-open `AuthzSpec`** (under blocker 1) — **verified by source**: `authz/authz.go`
+- **The fail-open `AuthzSpec`** (blocker 1's tail; = backlog **53**, one item not two) — **verified by source**: `authz/authz.go`
   documents *"An empty spec means allow-all"*, and `RoleAuthorizer.Authorize` returns `nil` when
   `Roles` is empty and `Attribute` is `""`. An empty spec, `eligible_roles: []`, a bare key and
   `null` all parse cleanly and mean allow-all. ADR-0167's strict decoding does **not** close it — an
@@ -147,6 +147,21 @@ Strongest candidates, roughly in order:
   testcontainers as fallback, plus `scripts/testdb.sh up|down` and CI wiring. Interacts with backlog
   48 (CI passes no `-timeout`, so nothing enforces ADR-0184's `budget × site count < 600 s` rule).
 - **Blocker 8** — the `forceTerminate` → `endInstance` boundary sweep is entirely uncovered.
+
+⚠⚠ **The list above predates the 2026-08-19 audit verification. Weigh it against backlog 51–69**,
+which are newly tracked and several of which are arguably sharper than anything in it:
+
+- **55** — `drive` has no iteration budget: an **engine-core hang**, executed at 1.44 M hops in 2 s,
+  reachable from a definition `model.Validate` accepts. Nothing gates it at authoring time.
+- **56** — incident lifecycle is token-keyed, not command-keyed: an **executed double-invoke** of a
+  service action whose first invocation is still in flight.
+- **51 + 52 + 53** — the transport takes its authorization principal from the request body, the
+  facade defaults to allow-all, and an empty spec means allow-all. These compose; fixing one alone
+  leaves the path open, and **51 is BREAKING** (it breaks tests that currently pin the behaviour).
+- **67** — waiters are process-local with no durable row: an **executed** silent message loss that
+  is a **multi-replica** defect, not merely a restart one.
+- **58** — `examples/production_wiring` silently disables every timer, now including ADR-0179's
+  compensation retry. Cheapest fix on the list; worst first impression for a consumer copying it.
 
 ⚠ **Cheap follow-ups opened by ADR-0184**, for a small delivery: **47** (the conformance helper's
 legal leg stops at the first break while its doc says it never stops early), **49** (a past-due
@@ -209,9 +224,10 @@ arm retirement is uncovered.
 **From ADR-0168–0171:** 17. the event-sub-process hole's remaining direction. 18. ADR-0171's two
 open bounds. 19. ✅ **`processtest.Classify` has no reason for a compensation-walk park — PARTLY
 CLOSED by bundle C**: a compensation-failure park is now drivable, but there is still no
-`ReasonCompensation` of its own. 20. repo-wide coverage (⚠ `service` ~52.6 %). 21. **`AUDIT.md`**
-on `docs/architecture-audit`, ⚠ NOT on `main` and NOT pushed (public repo, unfixed Critical/High
-findings); claims **unverified**.
+`ReasonCompensation` of its own. 20. repo-wide coverage (⚠ `service` **53.9 %**, measured 2026-08-19; was ~52.6 % when filed). 21. ✅ **`AUDIT.md` — VERIFIED 2026-08-19, superseded by backlog 51–69.**
+Still on `docs/architecture-audit`, ⚠ NOT on `main` and NOT pushed (public repo; the branch now also
+carries working exploit chains). Its claims are **no longer unverified**: 3 closed, 1 partial, 18
+open. Do not re-raise this item — track the open defects as 51–69.
 
 **From ADR-0176:** 24. a refused arm leaves an in-memory `timerRecord` with no durable row. 26. the
 calendar scan is still linear in `interval`. 27. the definition store round-trips semantically
@@ -331,7 +347,8 @@ unpushed `docs/architecture-audit` branch, not here.
 52. **`service.NewProcessEngine` defaults to `authz.AllowAll{}`, and `DurableProvider` exposes no
     `Authorizer()`** — so the natural durable wiring has nowhere to supply one and silently lands on
     allow-all. Logged at DEBUG only. **(audit B tail — not in the audit's own B text)**
-53. **`RoleAuthorizer` treats an empty/zero `AuthzSpec` as allow-all** and the `AuthzSpec` godoc
+53. **⚠ SAME ITEM as blocker 1's tail and the NEXT WORK candidate above — not a second finding.**
+    **`RoleAuthorizer` treats an empty/zero `AuthzSpec` as allow-all** and the `AuthzSpec` godoc
     documents it as intended. Executed: a zero spec, an empty role slice and a nil role slice each
     authorize an actor with no ID and no roles. ⚠ This is blocker 1's tail, now measured.
     **(audit G)**
