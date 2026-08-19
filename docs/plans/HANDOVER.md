@@ -117,6 +117,51 @@ because this repo is public.
   close finding C — it is on `main` as a **document only**. ADR-0168–0171 sounds like it closes J
   and does not. Every claimed closure above was source-verified.
 
+### ⚠ THE AUDIT IS NOT FINISHED — what a fresh session still has to run
+
+The section above is easy to misread as "done". It is not: **only the 22 lettered findings were
+checked, and only 5 of the 18 open ones were actually EXECUTED.** Three tiers remain.
+
+**⚠ You need the unpushed `docs/architecture-audit` branch (`f9b4cf34`) to do any of this** — it is
+the only copy of `AUDIT.md` and of the 2026-08-19 verification (`AUDIT-VERIFICATION-2026-08-19.md`).
+`git show docs/architecture-audit:AUDIT.md > /tmp/AUDIT.md` is enough; do **not** merge or push it.
+
+**Tier 1 — ~30 Medium/Low findings, ENTIRELY unverified.** `AUDIT.md` §1 ends with *"~30 further
+Medium/Low findings, listed per seam in §4"*. Nobody has looked at them. Given that two of the 22
+*lettered* findings turned out to have false premises, assume this set mixes real defects with
+phantoms in similar proportion.
+
+**Tier 2 — six OPEN findings that are behavioural but were only SOURCE-verified.** Executed so far:
+**B, C, G, J, K** (5 of 18). Source alone is sufficient proof for the *structural* ones — **E** (one
+`go.mod`), **I** (no version stamp), **Q** (exported fields with unexported types), **R** (no
+`ListTasks` anywhere), **P** (zero propagation hits), **U** (an unwritten contract) — because absence
+is directly observable. These six assert *behaviour* nobody ran:
+
+| backlog | audit | the unrun claim | why it needs a probe |
+|---|---|---|---|
+| **57** | L | one bad outbox row halts the relay **indefinitely** | "indefinitely" is the load-bearing word — traced through 3 call layers by reading only |
+| **63** | S | a non-leader-armed timer is **never** fired | needs a real two-replica probe under STABLE leadership |
+| **58** | N | `production_wiring`'s timers **silently never fire** | cheapest probe here: run the example, arm a timer, watch |
+| **66** | A | post-commit projections have **no** crash recovery | the enumeration is solid; the consequence is not executed |
+| **59** | O | the active-instance metric is **wrong after any crash** | trivially probeable; currently an inference |
+| **65** | V | SSRF is **reachable** from process variables | the guard's absence is proven; reachability is not |
+
+⭐ **Run 57 (L), 63 (S) and 58 (N) first** — all High, and all three assert something *never* or
+*indefinitely* happens. That is exactly the quantifier shape that failed twice in this repo.
+
+**Tier 3 — re-check the citations, not just the claims.** Finding D was reported against
+**already-fixed code** because a comment narrated a dead bug in the past tense. That mechanism is not
+unique to D. Sweep the remaining findings for evidence that is a *comment* rather than a code path.
+
+**Do NOT redo:** B, C, D, J (reproduced), and the D/M/T closures (verified against shipped code, with
+mutation ablation on D).
+
+**Method that worked, and why:** one detached worktree per finding (`git worktree add --detach <p>
+<sha>`) so probes cannot collide; write findings to a file **per finding, before the next probe**;
+**capture the FAILURE TEXT and its duration**, never just pass/fail — a 0.00 s failure is not a
+timeout, which is how backlog 42's misdiagnosis died; and **mutation-ablate any CLEAN result** to
+prove the probe could have failed, which is how D was proven closed rather than untestable.
+
 ### ▶ NEXT WORK
 
 The queue is empty, so the next delivery starts at **brainstorming** (rule #7) → spec/ADR/plan →
