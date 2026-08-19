@@ -96,6 +96,27 @@ packages**: a second `ErrSchedulerClosed` with byte-identical text meant
 `errors.Is(err, scheduler.ErrSchedulerClosed)` was **false** for an error whose message said exactly
 that. A reviewer scoped to either package alone sees a correct sentinel.
 
+### ▶ ARCHITECTURE AUDIT — verified 2026-08-19
+
+`AUDIT.md` (2026-08-10, 22 lettered findings) said outright that **it ran no tests** and that its
+attack chains were "composed from source, not executed". All 22 were re-checked against `main` and
+the four it nominated as highest-value were reproduced. Result: **3 closed** (D by ADR-0171, M by
+ADR-0176, T by ADR-0179) · **1 partial** (F) · **18 open**.
+
+The open ones are now backlog items **51–69**, written as defect statements. The reproductions —
+probe code, attack chains, observed output — stay on the unpushed `docs/architecture-audit` branch,
+because this repo is public.
+
+⭐ **Three lessons worth keeping:**
+- **D was closed, and the audit was reading already-fixed code.** Its base is **two days after**
+  ADR-0171 landed, and the fix's own comment narrates the historical bug **in the past tense**. A
+  comment describing a fixed defect was restated as a live one.
+- **Two of the audit's own premises were false**, both caught only by running them: J's repro sketch
+  is rejected by validation, and U's supporting claim was already wrong at the audit's own base.
+- **Titles are not closures.** ADR-0155 is literally named "durable waiter projection" and does not
+  close finding C — it is on `main` as a **document only**. ADR-0168–0171 sounds like it closes J
+  and does not. Every claimed closure above was source-verified.
+
 ### ▶ NEXT WORK
 
 The queue is empty, so the next delivery starts at **brainstorming** (rule #7) → spec/ADR/plan →
@@ -296,6 +317,114 @@ lock**, not the option setters. 35. ADR-0182's gate cannot judge the legacy flat
     `AfterJobRuns` listener (also `s.mu`-guarded); re-checking `closed` after `NewJob` does not help
     either, since `ScheduleJob` holds `s.mu` for its whole body so `closed` cannot change mid-call.
 
+**🆕 from the 2026-08-19 verification of `AUDIT.md`** (all **executed**, not read — see the
+`▶ ARCHITECTURE AUDIT` note in State). Numbered 51+ so they never collide with the ADR-derived
+items above. Each is a **defect statement**; the reproduction detail deliberately lives on the
+unpushed `docs/architecture-audit` branch, not here.
+
+51. **The bundled HTTP task handlers derive the authorization principal from the request body.**
+    `transport/http/httpcore/endpoints.go` builds `authz.Actor` from `in.Actor.ID`/`in.Actor.Roles`
+    at all three task sites, and `httpcore.CustomizeConfig` exposes no actor seam, so nothing under
+    `transport/` can read an identity established by consumer middleware. ⚠ Any fix is BREAKING and
+    breaks `httpcore/endpoints_test.go:405,422`, which currently pin the present behaviour as the
+    contract. Wants its own ADR. **(audit B; interacts with 52 and 53)**
+52. **`service.NewProcessEngine` defaults to `authz.AllowAll{}`, and `DurableProvider` exposes no
+    `Authorizer()`** — so the natural durable wiring has nowhere to supply one and silently lands on
+    allow-all. Logged at DEBUG only. **(audit B tail — not in the audit's own B text)**
+53. **`RoleAuthorizer` treats an empty/zero `AuthzSpec` as allow-all** and the `AuthzSpec` godoc
+    documents it as intended. Executed: a zero spec, an empty role slice and a nil role slice each
+    authorize an actor with no ID and no roles. ⚠ This is blocker 1's tail, now measured.
+    **(audit G)**
+54. **Instance/task routes carry no auth caveat, IDs default to `xid`, and instance variables are
+    returned unredacted.** The `SECURITY:` comment exists on `AdminRoutes` only; `idgen.UUIDv7()`
+    exists but is opt-in; `httpcore/view.go` returns `st.Variables` verbatim with no redaction hook;
+    no ownership/tenant predicate exists on any instance read. **(audit H)**
+55. **`drive` has no iteration budget.** `engine/step.go`'s loop has no hop cap, no cycle guard, and
+    `openVisit` appends a `NodeVisit` per hop uncapped; `model.Validate` has no cycle detection.
+    Executed: a validation-clean join/split cycle drove **1.44 M hops in 2 s** with `Step` never
+    returning. ⚠ **ADR-0168–0171 does NOT close this** — that bundle stops execution once an
+    instance is no longer normally executable and adds no budget. ⚠ The audit's own repro sketch
+    (`gwA -[true]→ gwB → gwA`, both 2-in/2-out) is REJECTED by validation; use a join/split pair.
+    **(audit J)**
+56. **Incident lifecycle is token-keyed, not command-keyed.** `handleUnhandledError` leaves
+    `AwaitCommand` set on an incident token; `tokenAwaiting` matches on `AwaitCommand` with no state
+    check; `handleResolveIncident` re-invokes the node the token is at **now**, not `inc.NodeID`.
+    Executed: a late `ActionCompleted` resumed a token in `TokenIncident`, the incident went stale
+    naming the old node, and `ResolveIncident` then emitted a **second `InvokeAction` for the wrong
+    node** while the first was still in flight. ⚠ The orphan-incident leg is conditional on the
+    token surviving; the **double-invoke leg is unconditional**. **(audit K)**
+57. **One undecodable outbox row halts the entire relay.** `scanClaimRows` fails the whole batch on a
+    single bad payload/def-ref, and that error propagates through `DrainOnce` → `drainUntilEmpty` →
+    `Run`, which returns rather than backing off; a restart re-claims the same head row. Per-row
+    quarantine covers **publish** failures only, not decode. ⚠ `persistence.Relay`'s public godoc
+    currently blesses this ("only infrastructure errors … terminate the loop"). **(audit L)**
+58. **`examples/production_wiring` constructs a scheduler and never wires it to the driver**, so
+    every timer silently never fires; its doc header also promises a `notifier.Run(ctx)` that is not
+    built. ⚠ **Worse since ADR-0179**: a consumer copying this file now also loses compensation
+    retry. **(audit N)**
+59. **No stuck-instance observability.** `wrkflw_instances_active` is an in-memory UpDownCounter that
+    resets on restart and diverges per replica; the only DB-truth collectors are outbox and timer
+    stats. No oldest-active-instance age, no open-incident gauge (⚠ ADR-0179's
+    `IncidentCompensationFailed` is now the durable evidence a compensation did not run, and nothing
+    counts it), no in-flight-walk gauge. **(audit O)**
+60. **Traces die at every async boundary.** No trace-context propagation exists in `runtime/`,
+    `engine/`, `eventing/`, `scheduler/` or the store (verified: zero `traceparent`/`TraceContext`
+    hits), and no `traceparent` column exists on the outbox or timer tables. A timer fire, a relay
+    publish and a task completion each start a fresh root trace. **(audit P)**
+61. **`engine.InstanceState` exports public fields whose types are unexported** (`[]timerRecord`,
+    `[]armedEvent`, `[]boundaryArm`, `compensationCursor`, …) while also being the custom
+    `InstanceStore` contract, so a third-party store can only round-trip opaque JSON — which per
+    backlog 32 is unversioned. ⚠ **Grew since the audit**: ADR-0171 added a field *inside*
+    `compensationCursor`, ADR-0179 added `Incident.Kind`/`RetryAttempts`, ADR-0177 added
+    `Token.AwaitTimer` — all wire-shape changes invisible in the public signature.
+    ⚠ Window-limited: free to fix before v0.1.0. **(audit Q)**
+62. **The read half of three APIs is missing**: no task inbox (`AssignedTo`/`ClaimableBy` exist on
+    the store only, unpaginated, with no service or HTTP exposure and no `ListTasks` anywhere); no
+    definition lifecycle (`PutDefinition`+`Lookup` only — no list, no retire, no instance
+    migration); and `InstanceFilter` is `Status`+`Limit`+`Cursor`+`IncludeTotal` with no `DefID`,
+    time range or variable filter. ⚠ ADR-0184 hardened the *store conformance contract*, NOT the API
+    surface — do not read it as closing this. **(audit R)**
+63. **A timer armed on a non-leader replica is never fired under stable leadership.** The job is
+    registered in that replica's gocron only, its fire is gated off by `IsLeader`, and the leader
+    has no such job; the only path that re-reads durable rows is boot-time rehydration, so nothing
+    reconciles while leadership is stable. ⚠ `ReclaimNeverDueTimers` (ADR-0181) *deletes* orphan
+    rows — it arms nothing. **(audit S)**
+64. **The `Action` contract is unwritten** — no timeout, panic-recovery or at-least-once semantics
+    are stated, and no `CommandID` or attempt number reaches `Do`. ⚠ **Correction to the audit,
+    which was wrong at its own base**: a stable `_idempotencyKey` (`"<instanceID>:<nodeID>"`) IS
+    passed to primary service-task actions. The real gap is narrower and hotter: compensation,
+    deadline and reminder actions carry **no key at all**, which is exactly the class ADR-0179's new
+    retry re-invokes. **(audit U)**
+65. **`httpcall`'s URL/body may derive from process variables with no SSRF guard.** `WithURLExpr`
+    compiles a raw `expr.Compile` (no `expreval`, so no timeout) and its own godoc names the hazard;
+    the default client has no `CheckRedirect` policy and no address allowlist. Response bodies land
+    in `httpBody`, readable via the unredacted instance read of item 54. **(audit V)**
+66. **Post-commit projections have no crash-recovery path.** Timer activation, `syncWaiters`, human-
+    task `Upsert` and action dispatch all run *after* the commit tx, non-transactionally; the only
+    reconcilers in the repo are `RehydrateTimers`/`RehydrateStartTimers`. There is no waiter, task or
+    command reconciler and no `ReconcileInstance`/`RetryCommand` verb. ⚠ Backlog 37 is one instance
+    of this class; the **class itself** is this item. **(audit A — the audit's dominant theme)**
+67. **Message and signal waiters are process-local, with no durable row and no boot reconciler.**
+    They live in two in-memory maps written only as a side effect of stepping an instance. Executed
+    on a durable store across a driver restart: a correlated message is **dropped** (`err=<nil>`,
+    instance still parked, payload gone) or **misrouted** (a message-start definition consumed it
+    and completed a *different* instance); signals are dropped; and the broker handler returns `nil`
+    either way, so the delivery is **acked** and never redelivered. ⚠ The snapshot **does** carry the
+    waiter — `MessageWaiters()` reports it after reload — nothing rebuilds the index from it.
+    ⚠⚠ **This is a multi-replica defect, not merely a restart one**: the probe's second driver is
+    exactly a second replica, and the repo ships an advisory `Locker` and an elector. ⚠ ADR-0155
+    is on `main` as a **document only** (NOT IMPLEMENTED) — its title is not a closure.
+    **(audit C)**
+68. **The single Go module forces gin, fiber, watermill, redis, memcache and testcontainers on every
+    consumer.** One `go.mod`; `persistence/cache/cachetest/containers.go` is a **non-test file in a
+    public package** importing testcontainers. ⚠ Window-limited — cheap before v0.1.0, expensive
+    after. **(audit E)**
+69. **The general operator escape-hatch contract is missing.** ADR-0175 closed exactly **1 of 6**
+    stuck states (the stalled compensation walk) with a fifth bespoke verb. The other five — lost
+    in-flight action, lost waiter (67), lost human-task projection, dropped timer fire after CAS
+    exhaustion, non-leader-armed timer (63) — have no escape but destructive cancel/reverse.
+    **(audit F — partially closed)**
+
 ## Where things live
 
 | | |
@@ -304,7 +433,7 @@ lock**, not the option setters. 35. ADR-0182's gate cannot judge the legacy flat
 | ADR-0184 | ✅ shipped — merge `be6e6b55`; spec/plan/ADR/3 audit lenses/adjudication all on `main` under `docs/`; branch deleted |
 | ADR-0183 | ✅ shipped — merge `a7575ed5`; spec/plan/ADR/audits/adjudication all on `main` under `docs/`; branch deleted |
 | *(merged branches)* | Deleted once pushed. **`origin` carries only `main`** plus dependabot. ⚠ **ONE unmerged branch remains, and it exists on this machine ONLY.** `backup/terminal-trigger-guard-presquash` and `parked/scope-and-fanout-design` were deleted 2026-08-19 after verifying they held ZERO content absent from `main` |
-| `docs/architecture-audit` | `393e516` — ⚠⚠ **the ONLY copy of `AUDIT.md`** (747 lines). Deliberately NOT on `main` and NOT pushed: the repo is PUBLIC and it details unfixed Critical/High findings. **It cannot be backed up to `origin` for that reason**, so a lost machine loses it. Claims are **unverified** — verify, then close or redact, then merge |
+| `docs/architecture-audit` | `f9b4cf34` — ⚠⚠ **the ONLY copy of `AUDIT.md` + its verification** (2,507 lines). Deliberately NOT on `main` and NOT pushed: the repo is PUBLIC and the reproductions are working exploit chains. **It cannot be backed up to `origin`**, so a lost machine loses it. ✅ Claims are **no longer unverified** — all 22 checked 2026-08-19; the open defects are backlog **51–69** in neutral language |
 | worktrees | ✅ **CLEAN** — verified after ADR-0184; its three detached audit worktrees were removed. ⚠ Create audit worktrees **detached at the bundle commit** so the design docs are present by construction |
 | Latest ADR | **0184** shipped, merge `be6e6b55`. Next free is **0185** |
 | v0.1.0 | not tagged |
