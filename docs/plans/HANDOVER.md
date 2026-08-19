@@ -302,12 +302,10 @@ lock**, not the option setters. 35. ADR-0182's gate cannot judge the legacy flat
 | `main` | **ADR-0184 merge `be6e6b55`** is the newest shipped code, pushed. ⚠ Never quote main's HEAD; re-derive |
 | ADR-0184 | ✅ shipped — merge `be6e6b55`; spec/plan/ADR/3 audit lenses/adjudication all on `main` under `docs/`; branch deleted |
 | ADR-0183 | ✅ shipped — merge `a7575ed5`; spec/plan/ADR/audits/adjudication all on `main` under `docs/`; branch deleted |
-| *(merged branches)* | Deleted once pushed. **`origin` carries only `main`** plus dependabot. ⚠ **Every unmerged branch below exists on this machine ONLY** |
-| `backup/terminal-trigger-guard-presquash` | `a3aa889` — ADR-0165 pre-squash, provenance only |
-| **`parked/scope-and-fanout-design`** | ⚠ **SUPERSEDED — do NOT use as an input** |
-| `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept for its audit tags |
-| `feat/durable-waiters-delivery-correctness` | `434535d` — parked, docs only; holds ADR **0155–0157** |
-| `docs/architecture-audit` | `393e516` — `AUDIT.md`, ⚠ deliberately NOT on `main`, NOT pushed |
+| *(merged branches)* | Deleted once pushed. **`origin` carries only `main`** plus dependabot. ⚠ **Each of the 3 unmerged branches below exists on this machine ONLY.** `backup/terminal-trigger-guard-presquash` and `parked/scope-and-fanout-design` were deleted 2026-08-19 after verifying they held ZERO content absent from `main` |
+| `feat/signal-arm-fanout` | `67cb055` — ⚠ **weakest keeper.** Its only not-on-main files are SUPERSEDED drafts: ADR-0162 under the old slug `0162-interrupt-cancels-descendant-scopes.md` (shipped on `main` as `0162-scope-teardown-cascades-to-descendants.md`, same decision), plus the 2026-07-31 spec/plan for work that shipped as 0158/0161/0162. Kept only for its audit tags — delete freely if provenance is not wanted |
+| `feat/durable-waiters-delivery-correctness` | `434535d` — parked, docs only. ⚠ **Holds the ONLY copy of ADR **0155/0156/0157** and 4 spec/plan files — they exist nowhere on `main`, so `main`'s ADR sequence jumps 0154 → 0158 and the reservation is recorded ONLY here. Losing this machine loses those designs |
+| `docs/architecture-audit` | `393e516` — ⚠⚠ **the ONLY copy of `AUDIT.md`** (747 lines). Deliberately NOT on `main` and NOT pushed: the repo is PUBLIC and it details unfixed Critical/High findings. **It cannot be backed up to `origin` for that reason**, so a lost machine loses it. Claims are **unverified** — verify, then close or redact, then merge |
 | worktrees | ✅ **CLEAN** — verified after ADR-0184; its three detached audit worktrees were removed. ⚠ Create audit worktrees **detached at the bundle commit** so the design docs are present by construction |
 | Latest ADR | **0184** shipped, merge `be6e6b55`. Next free is **0185** |
 | v0.1.0 | not tagged |
