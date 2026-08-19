@@ -146,6 +146,12 @@ the mirror image of backlog 42 and now has a proven precedent for how that class
 4. ✅ **ADR-0159's misnamed symbols — CLOSED.**
 5. **`TestPgxNotifierListenDrainsBeforePollInterval` is load-flaky**
    (`internal/persistence/store/notifier_pgx_test.go`). Interacts with item 7; **do not silence it.**
+   ⚠⚠ **TREAT THAT "load-flaky" LABEL AS UNVERIFIED.** Backlog 42 carried the *identical* diagnosis,
+   inherited across two handovers and restated as fact through a three-lens audit — and it was
+   **wrong**: the test was not waiting on a timing bound at all, it failed in 0.00 s on a different
+   assertion, and the real cause was a race in production code. Before designing anything for this
+   item, **reproduce it under contention and read the failure text and its duration.** A test that
+   fails instantly is not waiting out a timeout. See ADR-0184's Context and Consequences.
 6. ✅ **`processtest` cannot drive an arm-only park — CLOSED by ADR-0166.**
 7. **Suite speed.** `internal/dbtest`'s `sync.Once` boot fires per package → 12 Postgres + 7 MySQL
    boots. Fix: honour `WRKFLW_TEST_POSTGRES_DSN` / `WRKFLW_TEST_MYSQL_DSN` with testcontainers as
@@ -293,7 +299,7 @@ lock**, not the option setters. 35. ADR-0182's gate cannot judge the legacy flat
 
 | | |
 |---|---|
-| `main` | **ADR-0183 merge `a7575ed5`** is the newest shipped code, pushed. ⚠ Never quote main's HEAD; re-derive |
+| `main` | **ADR-0184 merge `be6e6b55`** is the newest shipped code, pushed. ⚠ Never quote main's HEAD; re-derive |
 | ADR-0184 | ✅ shipped — merge `be6e6b55`; spec/plan/ADR/3 audit lenses/adjudication all on `main` under `docs/`; branch deleted |
 | ADR-0183 | ✅ shipped — merge `a7575ed5`; spec/plan/ADR/audits/adjudication all on `main` under `docs/`; branch deleted |
 | *(merged branches)* | Deleted once pushed. **`origin` carries only `main`** plus dependabot. ⚠ **Every unmerged branch below exists on this machine ONLY** |
@@ -302,7 +308,7 @@ lock**, not the option setters. 35. ADR-0182's gate cannot judge the legacy flat
 | `feat/signal-arm-fanout` | `67cb055` — superseded packaging, kept for its audit tags |
 | `feat/durable-waiters-delivery-correctness` | `434535d` — parked, docs only; holds ADR **0155–0157** |
 | `docs/architecture-audit` | `393e516` — `AUDIT.md`, ⚠ deliberately NOT on `main`, NOT pushed |
-| worktrees | ✅ **CLEAN** — verified after ADR-0183; the two throwaway `main` measurement worktrees were removed |
+| worktrees | ✅ **CLEAN** — verified after ADR-0184; its three detached audit worktrees were removed. ⚠ Create audit worktrees **detached at the bundle commit** so the design docs are present by construction |
 | Latest ADR | **0184** shipped, merge `be6e6b55`. Next free is **0185** |
 | v0.1.0 | not tagged |
 
