@@ -32,7 +32,7 @@ this latitude responsibly:
 - `v0.y.z` → `v0.y.(z+1)` is reserved for bug fixes and is intended to be safe to take.
 
 A `v1.0.0` release is the point at which the public root-package API
-(`engine/`, `model/`, `runtime/`, `action/`, `authz/`, the transport adapters, …) is
+(`engine/`, `definition/`, `runtime/`, `action/`, `authz/`, the transport adapters, …) is
 considered stable and the full MAJOR/MINOR/PATCH promise above applies.
 
 ## What "public API" means
@@ -78,10 +78,45 @@ an existing symbol is treated as breaking and follows the same MAJOR/`v0`-MINOR 
 - **Go 1.25** is the minimum supported toolchain (a hard requirement; see the README
   "Locked tech stack").
 - Locked dependencies (PostgreSQL 17, MySQL 8.0+, SQLite (`modernc.org/sqlite`), `expr-lang/expr`,
-  `watermill`, `gocron` pinned to v2.21.2, `clockwork`, `casbin`, `samber/do` v2) are changed only
+  `watermill`, `gocron` pinned to v2.22.0, `clockwork`, `casbin`, `samber/do` v2) are changed only
   via an ADR. A change to the minimum Go version or a locked dependency major is treated as a
   breaking change.
 
 The SQLite backend is test/single-node-oriented — it is not supported for multi-replica deployments
 (`persistence.NewSQLiteAdvisoryLockOwnership` is fail-loud). The `Deduper.Seen` signature change
 (driver-tx param dropped) is one of the pre-1.0 breaking changes flagged in the CHANGELOG (ADR-0081).
+
+## Rolling upgrades are NOT supported
+
+There is no N-1 compatibility promise, and we do not intend to imply one. **Never run two
+different `wrkflw` builds against the same instance store**, not even briefly during a
+deploy.
+
+The mechanism is structural, not a property of any one release. The store persists the
+**whole** `engine.InstanceState` as a single JSON document
+(`internal/persistence/store/store_core.go:78,216` — `json.Marshal(capHistory(step.State,
+s.historyCap))`) and decodes it with a plain `json.Unmarshal` (`:164`) — no
+`DisallowUnknownFields`. An older build therefore reads a newer snapshot **successfully**,
+silently drops every field it does not know, and writes the truncated document back on the
+next commit. Every future field added to `InstanceState` inherits this behaviour.
+
+Two shipped instances of the resulting data loss:
+
+- **ADR-0173** — an old build reading a new compensation cursor drops the three window
+  fields and re-serializes without them, reinstating the double-run the ADR exists to
+  prevent.
+- **ADR-0175** / `engine/state.go` (the `Incident.Kind` field comment) — an old build
+  round-trips a new snapshot with `Kind` dropped, degrading an `IncidentCompensationStall`
+  into a resolvable `IncidentAction` that the shipped resolve-incident endpoint will then
+  delete.
+
+**Upgrade procedure:** stop accepting new work, let in-flight steps drain, stop *all*
+replicas, then start the new version. A blue/green or canary rollout that has old and new
+replicas sharing one instance store is unsafe by construction.
+
+The asymmetry is worth naming: the loss happens when the **older** build reads. ADR-0173 and
+ADR-0175 each state that the forward direction — new code reading a snapshot an older build
+wrote — is safe *for the field that ADR added*, because its zero value is defined to mean
+"pre-ADR record". That is a per-ADR guarantee those two ADRs chose to provide, **not** a
+standing promise of this document; a future state-carrying change owes the same analysis in
+its own ADR.

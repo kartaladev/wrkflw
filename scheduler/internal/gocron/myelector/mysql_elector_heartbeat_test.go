@@ -49,8 +49,29 @@ func TestMySQLElectorHeartbeatKeepsLeadershipAlive(t *testing.T) {
 	// Wait for the heartbeat goroutine to be parked on the ticker, then fire
 	// several ticks. The dedicated connection is healthy, so every
 	// mysqlRevalidate ping succeeds.
-	require.NoError(t, clk.BlockUntilContext(ctx, 1))
+	//
+	// ⚠ THIS SITE HAS NO POSITIVE LIVENESS PRECONDITION (backlog 44, and the
+	// only one of the package family left without one). A heartbeat goroutine
+	// that died on tick 1 also never spuriously steps down, so the
+	// require.Never below passes on a corpse. The obvious barrier does NOT
+	// close that hole and was MEASURED not to: with `return` injected after
+	// the first mysqlRevalidate, a per-tick clk.BlockUntilContext(ctx, 1)
+	// still PASSED, because clockwork's fakeTicker.expire re-arms itself from
+	// inside Advance (clockwork@v0.5.0 ticker.go:60-67) — the waiter count
+	// proves a TICKER exists, never that a goroutine is consuming it.
+	//
+	// The precondition that would work is making the heartbeat ACT: sever the
+	// dedicated connection after this window and require a step-down (what the
+	// pgelector sibling, TestPostgresElectorHeartbeatStepsDownOnConnLoss, does
+	// via pg_terminate_backend). MySQL has no equivalent in this package yet —
+	// killing the elector's connection needs its CONNECTION_ID(), which is not
+	// reachable from outside MySQLElector. Tracked, not faked.
+	//
+	// The loop below is still preferable to three back-to-back Advances: a
+	// fakeTicker drops a tick whose channel is already full, so a burst of
+	// Advances can deliver ONE tick while the comment claims three.
 	for range 3 {
+		requireTickerArmed(t, clk, ctx)
 		clk.Advance(time.Second)
 	}
 
@@ -63,4 +84,23 @@ func TestMySQLElectorHeartbeatKeepsLeadershipAlive(t *testing.T) {
 	// fired the callback again.
 	require.Never(t, func() bool { return acquisitions.Load() > 1 }, 300*time.Millisecond, 10*time.Millisecond,
 		"heartbeat must not spuriously step down (and re-acquire) a healthy leader")
+}
+
+// requireTickerArmed blocks until the heartbeat's fake-clock ticker is
+// registered, and FAILS BY NAME if it never is. The bounded context is the
+// point: a bare clk.BlockUntilContext(t.Context(), 1) that never unblocks
+// waits for the test itself to end, so the run dies as an unnamed "panic: test
+// timed out" carrying no assertion message at all.
+//
+// ⚠ Named for exactly what it proves. It is NOT a liveness check on the
+// heartbeat goroutine — measured, see the ⚠ block in the test above.
+// clockwork's BlockUntilContext(ctx, n) returns as soon as len(waiters) >= n
+// (clockwork@v0.5.0 clockwork.go:255-258, a LOWER bound), and a fakeTicker
+// re-arms itself from inside Advance whether or not anything is listening.
+func requireTickerArmed(t *testing.T, clk *clockwork.FakeClock, ctx context.Context) {
+	t.Helper()
+	bctx, cancel := context.WithTimeout(ctx, eventuallyBudget)
+	defer cancel()
+	require.NoError(t, clk.BlockUntilContext(bctx, 1),
+		"the heartbeat's ticker must be armed before advancing, else the Advance outruns the arm and the tick is never delivered")
 }

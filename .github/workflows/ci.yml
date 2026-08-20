@@ -27,10 +27,40 @@ jobs:
       - name: Build
         run: go build ./...
 
-      # The suite uses testcontainers-go (real Postgres / MySQL / mailpit).
+      # Blocker 7: internal/dbtest boots its containers from a package-level
+      # sync.Once and Go builds one test binary per package, so `go test ./...`
+      # otherwise pays 10 Postgres + 7 MySQL container boots. Starting one server
+      # of each here and exporting the two DSNs collapses that to one each.
+      #
+      # Deliberately the SAME script a developer runs locally, so CI and local
+      # runs share one code path.
+      #
+      # Note what these two steps make this job: the shared-server path is CI's
+      # DEFAULT configuration, taken on every run, not an opt-in. The per-package
+      # testcontainer fallback still exists — unset both variables and it is taken
+      # — but CI never exercises it, so anything the shared path gets wrong is a CI
+      # failure, not a lost optimisation. In particular `go test ./...` runs up to
+      # GOMAXPROCS package binaries CONCURRENTLY and every one of them now creates
+      # its per-test databases in ONE namespace; internal/dbtest/dbname.go is what
+      # keeps them apart (per-PROCESS database names, plus an ownership check on
+      # every DROP). If either step here fails, the job fails — deliberately,
+      # rather than silently falling back to a configuration CI does not test.
+      - name: Start shared test databases
+        run: bash scripts/testdb.sh up > /dev/null
+
+      - name: Export shared test database DSNs
+        run: bash scripts/testdb.sh env >> "$GITHUB_ENV"
+
+      # The suite still uses testcontainers-go for anything not covered above
+      # (e.g. mailpit) and for dbtest's custom-credentials path.
       # ubuntu-latest ships a working Docker daemon, so no extra setup is needed.
+      # -timeout is explicit (backlog 48). Go's implicit default is also 600s, but
+      # an implicit value cannot be checked: nothing enforced ADR-0184's rule that
+      # eventuallyBudget x the densest package's site count must stay under it.
+      # scripts/check-test-timeout.sh now does, reading this literal and the
+      # identical one in scripts/coverage.sh. Change both together.
       - name: Test (race + coverage)
-        run: go test -race -coverprofile=cover.out ./...
+        run: go test -race -timeout=600s -coverprofile=cover.out ./...
 
       - name: Coverage summary (excludes generated files — ADR-0143)
         run: scripts/coverage.sh cover.out
@@ -58,6 +88,21 @@ jobs:
       # any other wrkflw package, so it stays extractable. No Docker needed.
       - name: Check toolkit extraction constraint
         run: bash scripts/check-extraction.sh
+
+  test-timeout-budget:
+    name: Eventually budget vs go test -timeout
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ADR-0184 / backlog 48: eventuallyBudget x the densest package's site count
+      # must stay under the go test binary timeout, or a mass failure is reported
+      # as "panic: test timed out" with no assertion messages. Every number is
+      # derived from source. Pure bash + grep: no Go toolchain, no Docker.
+      # Deliberately its own job so a violation is reported even when the suite
+      # itself is the thing timing out.
+      - name: Check Eventually budget fits the test timeout
+        run: bash scripts/check-test-timeout.sh
 
   lint:
     name: golangci-lint

@@ -11,16 +11,54 @@ import (
 )
 
 // compensationRecordsForScope returns a read-only slice of CompensationRecords for
-// the given scope. scopeID "" means the root scope (s.RootCompensations).
-func compensationRecordsForScope(s *InstanceState, scopeID string) []CompensationRecord {
+// the given scope, and whether the scope was RESOLVABLE. scopeID "" means the
+// root scope (s.RootCompensations), which is implicit and always resolvable.
+//
+// The second result exists because the two answers are otherwise identical at
+// the call site: s.Scopes holds OPEN scopes only — three sites remove an entry
+// (closeScope, closeScopeDescendants, endInstance's terminal nil) — so "this
+// scope is open and holds no records" and "this scope is not open at all" both
+// come back as an empty slice, and a caller keying on len(records) cannot tell
+// them apart.
+//
+// ⚠ ok is ADVISORY. It does not close a defect: all four production callers
+// discard it today, and each is safe to. Do not read the signature as a fix —
+// read it as making the distinction EXPRESSIBLE (and pinned, by
+// step_compensation_closed_scope_test.go) for the caller that one day needs it.
+// The reasons, per caller — measured 2026-08-20 and recorded in
+// docs/plans/sweep-evidence/fix-review-engine-ok-return.md:
+//
+//   - beginCompensation passes the untyped const "" — resolvable by construction.
+//   - the scope-wide compensation throw (step_nodes.go) cannot be REACHED with a
+//     closed scope: drive() resolves defForScope(def, s, tok.ScopeID) for every
+//     active token before dispatching to any strategy, and that returns
+//     `defForScope: unknown scope %q` for a scope absent from s.Scopes, so the
+//     Step fails outright. Executed: the error, not an auto-advance.
+//   - cursorRecords and retainedRecordPrefix are NOT gated by that call — they
+//     take their scope id from the compensation CURSOR, not from a token — but
+//     honouring ok there could not change an OUTCOME. Both answers hand back an
+//     empty slice, and the four consumers of an empty cursorRecords result
+//     (stepCompensationAdvance's bounds disjunct, retryStalledCompensation,
+//     retryFailedCompensation, step_triggers.go's failedNodeID lookup) route to
+//     the walk's FINISH or to an empty node id either way — which is what
+//     ADR-0171 prescribes for a vanished source and is trivially right for an
+//     open empty one. Executed: an unpinned cursor over an open-empty scope and
+//     over an absent scope produce DeepEqual StepResults (state and commands)
+//     through both the advance and the retry entry points.
+//   - retainedRecordPrefix retains nothing for either answer, and setScopeRecords
+//     writing it back is itself a no-op for a scope that is gone.
+//
+// If ok is ever wanted for visibility rather than control flow — a "this walk's
+// record source vanished" signal — that is backlog 133, not this signature.
+func compensationRecordsForScope(s *InstanceState, scopeID string) ([]CompensationRecord, bool) {
 	if scopeID == "" {
-		return s.RootCompensations
+		return s.RootCompensations, true
 	}
 	sc := s.scopeByID(scopeID)
 	if sc == nil {
-		return nil
+		return nil, false
 	}
-	return sc.Compensations
+	return sc.Compensations, true
 }
 
 // cursorRecords returns the CompensationRecord slice for the current compensation
@@ -39,7 +77,10 @@ func cursorRecords(s *InstanceState, cur compensationCursor) []CompensationRecor
 	if cur.ArchiveKey != "" {
 		return s.ArchivedCompensations[cur.ArchiveKey]
 	}
-	return compensationRecordsForScope(s, cur.ScopeID)
+	// The cursor's scope may already have closed under a live walk; the walk
+	// iterates whatever remains, which for a closed scope is nothing.
+	records, _ := compensationRecordsForScope(s, cur.ScopeID)
+	return records
 }
 
 // eligibleRange computes the reverse-order compensation walk's index range over
@@ -330,7 +371,8 @@ func beginCompensation(ctx context.Context, def *model.ProcessDefinition, s *Ins
 	// Compensate the root scope (top-level walk: root + all previously-archived records
 	// are now in RootCompensations after consolidation above).
 	const scopeID = ""
-	records := compensationRecordsForScope(s, scopeID)
+	// scopeID is the const root, which is always resolvable.
+	records, _ := compensationRecordsForScope(s, scopeID)
 
 	toNode := outcome.ToNode
 	finalStatus := outcome.FinalStatus
@@ -569,10 +611,18 @@ func armCompensationRetryTimer(s *InstanceState, pol stepPolicy, nodeID, errMsg 
 	// already spent on this record — so the pre-increment value is the right
 	// argument: the first retry of a record waits InitialInterval.
 	//
-	// ⚠ Deliberately NOT the token path's `JitterFraction * Backoff(attempt)`
-	// formula. ActionFailed.JitterFraction defaults to ZERO, so that expression
-	// yields a zero delay unless the runtime samples a fraction — which would make
-	// the default compensation backoff instantaneous, i.e. not a backoff at all.
+	// ⚠ The compensation path applies NO jitter at all, unlike the token retry
+	// path in handleActionFailed, which scales this same backoff by
+	// ActionFailed.JitterFraction when the caller supplied one. A compensation
+	// walk is serialized one-at-a-time per instance, so there is no retry storm
+	// to spread and nothing to gain from spreading it.
+	//
+	// This comment previously read that the token path's formula was
+	// `JitterFraction * Backoff(attempt)` and therefore collapsed to a zero
+	// delay by default. That WAS true, and was the bug fixed in
+	// handleActionFailed (see TestActionFailedRetryBackoffDefaultsToFullInterval);
+	// the token path now defaults to the full interval too. What still separates
+	// the two paths is the jitter, not the backoff.
 	delay := eff.Backoff(cur.RetryAttempts)
 	// CANCEL THE STALL GUARD FIRST, THEN ARM THE BACKOFF. The stall guard's job is
 	// done: the action REPLIED, it did not go silent. Leaving it armed makes it
@@ -887,7 +937,9 @@ func clearRecordsPrefix(s *InstanceState, scopeID string, n int) {
 // n <= 0 retains nothing; n >= len retains everything. It returns nil rather
 // than an empty slice when nothing is retained, matching clearRecords.
 func retainedRecordPrefix(s *InstanceState, scopeID string, n int) []CompensationRecord {
-	records := compensationRecordsForScope(s, scopeID)
+	// A closed scope retains nothing, which the len(records) == 0 guard below
+	// already yields — the distinction does not change this answer.
+	records, _ := compensationRecordsForScope(s, scopeID)
 	if n <= 0 || len(records) == 0 {
 		return nil
 	}

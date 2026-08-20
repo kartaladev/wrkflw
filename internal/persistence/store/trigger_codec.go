@@ -95,8 +95,16 @@ type triggerEnvelope struct {
 //
 // Every variant of the sealed engine.Trigger set is handled. Passing an unknown
 // (future) variant returns a descriptive error rather than silently producing an
-// empty payload.
+// empty payload, and so does a nil Trigger.
+//
+// The nil guard is load-bearing, not decoration: OccurredAt() is called before
+// the type switch, so without it a nil Trigger panics with a SIGSEGV one line
+// above the default arm that was supposed to report it (audit item 125). No
+// in-repo caller passes nil today — this is defence-in-depth for a future one.
 func MarshalTrigger(t engine.Trigger) ([]byte, string, error) {
+	if t == nil {
+		return nil, "", fmt.Errorf("workflow-store: marshal trigger: nil trigger")
+	}
 	env := triggerEnvelope{At: t.OccurredAt()}
 	var kind string
 	switch v := t.(type) {

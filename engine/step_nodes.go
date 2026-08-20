@@ -1218,7 +1218,16 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 			if tokScope == "" && !cte.ScopeLocal {
 				c.s.consolidateArchiveIntoRoot()
 			}
-			records := compensationRecordsForScope(c.s, tokScope)
+			// The second result is ignored HERE, and that is a measured decision,
+			// not an oversight: tokScope cannot name a closed scope at this point.
+			// drive() resolves defForScope(def, s, tok.ScopeID) before dispatching
+			// to any strategy, and that returns
+			// `workflow-engine: defForScope: unknown scope %q` for a scope absent
+			// from s.Scopes — so a token in a closed scope fails the Step outright
+			// and never reaches this line. Verified by execution: driving a token
+			// with ScopeID "gone" produces that error, not an auto-advance.
+			// A closed scope therefore cannot masquerade as an empty one here.
+			records, _ := compensationRecordsForScope(c.s, tokScope)
 			if len(records) == 0 {
 				// Nothing to compensate even after consolidation — auto-advance
 				// (harmless: nothing was there to merge).

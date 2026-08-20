@@ -138,8 +138,9 @@ func (j *job) Data() DataProvider         { return j.data }
 // (Tasks 5-11) reads back via a private interface assertion
 // (interface{ singleton() bool }) — only code inside package scheduler can
 // spell that assertion, since the method name is unexported. Consumer-
-// implemented Jobs that don't satisfy it are simply treated as non-singleton
-// by the façade.
+// implemented Jobs that don't satisfy it fall back to the safe equivalent:
+// serialized when their Trigger is recurring, unrestricted when one-shot
+// (see jobSingleton in scheduler.go, which is the authority).
 func (j *job) singleton() bool {
 	if j.noOverrun {
 		return false

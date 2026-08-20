@@ -6,7 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
+
+	"github.com/jonboulle/clockwork"
 
 	// kinds registers every node kind so definitions read back from the store
 	// deserialize into their concrete types (see definition/kinds).
@@ -36,6 +37,27 @@ import (
 type DefinitionStore struct {
 	conn    any // *pgxpool.Pool or *sql.DB
 	dialect dialect.Dialect
+	// clk is the time source for the created_at stamp written by
+	// [DefinitionStore.PutDefinition] (ADR-0138).
+	clk clockwork.Clock
+}
+
+// DefinitionOption is a functional option that configures a [DefinitionStore]
+// built by [NewDefinitionStore].
+type DefinitionOption func(*DefinitionStore)
+
+// WithDefinitionClock overrides the clock used for the created_at stamp written
+// by [DefinitionStore.PutDefinition] (ADR-0138). The default is
+// [clockwork.NewRealClock]. A nil clock is ignored (the default is kept).
+//
+// Reachable off-module only through its facade forwarder,
+// persistence.WithDefinitionClock; see the note on [WithStoreClock].
+func WithDefinitionClock(clk clockwork.Clock) DefinitionOption {
+	return func(ds *DefinitionStore) {
+		if clk != nil {
+			ds.clk = clk
+		}
+	}
 }
 
 // Compile-time checks that *DefinitionStore satisfies both ports.
@@ -58,14 +80,18 @@ var (
 //
 //	db := dbtest.RunTestSQLite(t)
 //	ds, err := store.NewDefinitionStore(db, dialect.NewSQLite())
-func NewDefinitionStore(conn any, d dialect.Dialect) (*DefinitionStore, error) {
+func NewDefinitionStore(conn any, d dialect.Dialect, opts ...DefinitionOption) (*DefinitionStore, error) {
 	if isNilDep(conn) {
 		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
 	}
 	if isNilDep(d) {
 		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
 	}
-	return &DefinitionStore{conn: conn, dialect: d}, nil
+	ds := &DefinitionStore{conn: conn, dialect: d, clk: clockwork.NewRealClock()}
+	for _, o := range opts {
+		o(ds)
+	}
+	return ds, nil
 }
 
 // querier returns a pool-backed [database.Querier] over ds.conn. DefinitionStore
@@ -86,16 +112,17 @@ func (ds *DefinitionStore) querier(ctx context.Context) database.Querier {
 // def.ID and def.Version must be non-empty / non-zero; the database schema
 // enforces uniqueness on (def_id, version).
 //
-// created_at is written as time.Now().UTC(). The column is set on first insert
-// only — the conflict-update clause touches only the definition column — so
-// re-inserts preserve the original creation timestamp.
+// created_at is read from the store's [clockwork.Clock] (ADR-0138; override it
+// with [WithDefinitionClock]). The column is set on first insert only — the
+// conflict-update clause touches only the definition column — so re-inserts
+// preserve the original creation timestamp.
 func (ds *DefinitionStore) PutDefinition(ctx context.Context, def *model.ProcessDefinition) error {
 	data, err := json.Marshal(def)
 	if err != nil {
 		return fmt.Errorf("workflow-store: put definition %s:%d: marshal: %w", def.ID, def.Version, err)
 	}
 
-	createdAt := timeArg(ds.dialect, time.Now().UTC())
+	createdAt := timeArg(ds.dialect, ds.clk.Now().UTC())
 
 	q := ds.querier(ctx)
 	_, err = q.Exec(ctx, ds.dialect.Rebind(

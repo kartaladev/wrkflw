@@ -100,38 +100,8 @@ type Relay interface {
 // OutboxPublisher is the broker-agnostic outbox publisher alias (same as kernel.OutboxPublisher).
 type OutboxPublisher = kernel.OutboxPublisher
 
-// Option configures the Store returned by OpenPostgres (alias of the neutral
-// store.Option). The same underlying type also backs OpenMySQL's MySQLOption:
-// the two backends share one option surface.
-type Option = store.Option
-
-// WithHistoryCap bounds the inline instance History persisted in the snapshot
-// to every open visit plus at most n most-recent closed visits (ADR-0021).
-// Unset / n <= 0 keeps full inline history (current behavior). The journal
-// table remains the complete audit source.
-func WithHistoryCap(n int) Option { return store.WithHistoryCap(n) }
-
-// WithOutboxNotify makes the Store emit a transactional NOTIFY wrkflw_outbox
-// when a step inserts outbox rows, so a relay started with WithListenNotify
-// drains with sub-poll-interval latency (ADR-0022). Opt-in; default off.
-// Only Postgres emits a NOTIFY; MySQL silently skips it.
-func WithOutboxNotify() Option { return store.WithOutboxNotify() }
-
-// WithStoreLogger sets the structured logger used by the Store for operation logs.
-// Default: slog.Default().
-func WithStoreLogger(l *slog.Logger) Option { return store.WithStoreLogger(l) }
-
-// WithStoreTracerProvider sets the OTel TracerProvider for Store operation spans
-// (wrkflw.store.load, wrkflw.store.commit). Default: the OTel global provider.
-func WithStoreTracerProvider(tp trace.TracerProvider) Option {
-	return store.WithStoreTracerProvider(tp)
-}
-
-// WithStoreMeterProvider sets the OTel MeterProvider for Store metrics
-// (wrkflw_store_duration_seconds histogram). Default: the OTel global provider.
-func WithStoreMeterProvider(mp metric.MeterProvider) Option {
-	return store.WithStoreMeterProvider(mp)
-}
+// The Option / CallLinkOption / DefinitionOption / DeduperOption /
+// ChainLinkOption families and their With… constructors live in options.go.
 
 // RelayOption configures a Relay returned by NewRelay / NewMySQLRelay.
 //
@@ -220,7 +190,7 @@ func OpenPostgres(ctx context.Context, pool *pgxpool.Pool, opts ...Option) (Inst
 	if err := database.ProbeUTC(ctx, q, database.Postgres); err != nil {
 		return nil, err
 	}
-	s, err := store.New(pool, dialect.NewPostgres(), opts...)
+	s, err := store.New(pool, dialect.NewPostgres(), buildStoreOptions(opts)...)
 	if err != nil {
 		return nil, err
 	}
@@ -240,8 +210,11 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 // It satisfies kernel.DefinitionRegistry via its Lookup method.
 //
 // Use this together with NewCachingDefinitionRegistry to cache hot definitions.
-func NewDefinitionStore(pool *pgxpool.Pool) (DefinitionStore, error) {
-	return store.NewDefinitionStore(pool, dialect.NewPostgres())
+//
+// Pass [WithDefinitionClock] to control the created_at stamp PutDefinition
+// writes (ADR-0138). Zero-option call sites compile unchanged.
+func NewDefinitionStore(pool *pgxpool.Pool, opts ...DefinitionOption) (DefinitionStore, error) {
+	return store.NewDefinitionStore(pool, dialect.NewPostgres(), buildDefinitionOptions(opts)...)
 }
 
 // NewCachingDefinitionRegistry wraps backing with a TTL-bounded, single-flight
@@ -379,27 +352,6 @@ func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (kernel.I
 	return o, o, nil
 }
 
-// CallLinkOption configures a CallLinkStore returned by NewCallLinkStore
-// (alias of the neutral store.CallLinkOption). The same underlying type backs
-// NewMySQLCallLinkStore's MySQLCallLinkOption.
-type CallLinkOption = store.CallLinkOption
-
-// WithCallLinkLease configures opt-in lease-based multi-replica exclusivity on
-// the CallLinkStore (ADR-0031). When ttl > 0, ClaimPending stamps claimed_at /
-// claimed_by on each row, hiding it from concurrent replicas until the lease
-// expires. When ttl <= 0 (the default), the original plain SELECT is used
-// unchanged (backward-compatible).
-func WithCallLinkLease(owner string, ttl time.Duration) CallLinkOption {
-	return store.WithCallLinkLease(owner, ttl)
-}
-
-// WithCallLinkClock sets the clock the CallLinkStore uses for lease timestamps.
-// Default: clockwork.NewRealClock(). Inject a fake clock in tests for deterministic
-// behaviour (ADR-0138, ADR-0031).
-func WithCallLinkClock(clk clockwork.Clock) CallLinkOption {
-	return store.WithCallLinkClock(clk)
-}
-
 // NewCallLinkStore constructs the Postgres-backed kernel.CallLinkStore (read/claim
 // side). It provides ClaimPending, MarkNotified, and LookupChild over the
 // wrkflw_call_links table. The write side is fused into Store.Create /
@@ -420,7 +372,7 @@ func WithCallLinkClock(clk clockwork.Clock) CallLinkOption {
 //	)
 //	pending, err := cls.ClaimPending(ctx, 100)
 func NewCallLinkStore(pool *pgxpool.Pool, opts ...CallLinkOption) (kernel.CallLinkStore, error) {
-	return store.NewCallLinkStore(pool, dialect.NewPostgres(), opts...)
+	return store.NewCallLinkStore(pool, dialect.NewPostgres(), buildCallLinkOptions(opts)...)
 }
 
 // NewTimerStore returns a kernel.TimerStore backed by Postgres. It backs
@@ -465,8 +417,12 @@ func NewTimerStore(pool *pgxpool.Pool) (kernel.TimerStore, error) {
 //	persistence.Migrate(ctx, pool)
 //	links := persistence.NewChainLinkStore(pool)
 //	chainer, err := chain.NewChainer(runner, policy, chain.WithChainLinks(links))
-func NewChainLinkStore(pool *pgxpool.Pool) (kernel.ChainLinkStore, error) {
-	return store.NewChainLinkStore(pool, dialect.NewPostgres())
+//
+// Pass [WithChainLinkClock] to control the created_at fallback Record uses when
+// a link carries a zero CreatedAt (ADR-0138). Zero-option call sites compile
+// unchanged.
+func NewChainLinkStore(pool *pgxpool.Pool, opts ...ChainLinkOption) (kernel.ChainLinkStore, error) {
+	return store.NewChainLinkStore(pool, dialect.NewPostgres(), buildChainLinkOptions(opts)...)
 }
 
 // NewCallNotifier builds a durable call-activity notifier over pool: it claims

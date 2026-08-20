@@ -7,9 +7,11 @@ package persistence
 // MySQL-specific pieces.
 //
 // MySQLOption, MySQLRelayOption, and MySQLCallLinkOption are aliases of the
-// single store.Option / persistence.RelayOption / store.CallLinkOption
-// surfaces; the MySQLWith* constructors each return the corresponding unified
-// option value.
+// facade's own Option / RelayOption / CallLinkOption types (none of which is an
+// alias of an internal store type); the MySQLWith* constructors each return the
+// corresponding unified option value. Every With… constructor in options.go is
+// equally usable here — the MySQLWith* set is a naming mirror, not a separate
+// surface.
 //
 // NewMySQLDeduper (in dedup.go) returns the unified persistence.Deduper, whose
 // Seen joins the ambient transaction in ctx.
@@ -35,30 +37,35 @@ import (
 )
 
 // MySQLOption configures the MySQL Store returned by OpenMySQL. It is an alias
-// of the single store.Option (the same type Option aliases); the two backends
-// share one option surface.
-type MySQLOption = store.Option
+// of the facade [Option]; all three backends share one option surface, so every
+// With… constructor in options.go applies here too.
+type MySQLOption = Option
 
 // MySQLWithHistoryCap bounds the inline instance History persisted in the
 // snapshot to every open visit plus at most n most-recent closed visits
 // (ADR-0021). n <= 0 keeps full inline history. Mirrors WithHistoryCap for Postgres.
-func MySQLWithHistoryCap(n int) MySQLOption { return store.WithHistoryCap(n) }
+func MySQLWithHistoryCap(n int) MySQLOption { return WithHistoryCap(n) }
 
 // MySQLWithStoreLogger sets the structured logger used by the MySQL Store.
 // Default: slog.Default(). Mirrors WithStoreLogger for Postgres.
-func MySQLWithStoreLogger(l *slog.Logger) MySQLOption { return store.WithStoreLogger(l) }
+func MySQLWithStoreLogger(l *slog.Logger) MySQLOption { return WithStoreLogger(l) }
 
 // MySQLWithStoreTracerProvider sets the OTel TracerProvider for MySQL Store
 // operation spans. Default: the OTel global provider. Mirrors WithStoreTracerProvider.
 func MySQLWithStoreTracerProvider(tp trace.TracerProvider) MySQLOption {
-	return store.WithStoreTracerProvider(tp)
+	return WithStoreTracerProvider(tp)
 }
 
 // MySQLWithStoreMeterProvider sets the OTel MeterProvider for MySQL Store
 // metrics. Default: the OTel global provider. Mirrors WithStoreMeterProvider.
 func MySQLWithStoreMeterProvider(mp metric.MeterProvider) MySQLOption {
-	return store.WithStoreMeterProvider(mp)
+	return WithStoreMeterProvider(mp)
 }
+
+// There is deliberately no MySQLWithStoreClock: the MySQLWith* set is a naming
+// mirror over the shared [Option] type, not a separate surface, and it has
+// never been exhaustive ([WithOutboxNotify] has no mirror either). Configure a
+// MySQL store's clock with [WithStoreClock] directly.
 
 // OpenMySQL constructs a MySQL-backed kernel.InstanceStore + JournalReader over db.
 //
@@ -82,7 +89,7 @@ func OpenMySQL(ctx context.Context, db *sql.DB, opts ...MySQLOption) (InstanceSt
 	if err := database.ProbeUTC(ctx, q, database.MySQL); err != nil {
 		return nil, err
 	}
-	s, err := store.New(db, dialect.NewMySQL(), opts...)
+	s, err := store.New(db, dialect.NewMySQL(), buildStoreOptions(opts)...)
 	if err != nil {
 		return nil, err
 	}
@@ -214,8 +221,8 @@ func NewMySQLRelay(db *sql.DB, pub kernel.OutboxPublisher, opts ...MySQLRelayOpt
 }
 
 // MySQLCallLinkOption configures a CallLinkStore returned by NewMySQLCallLinkStore.
-// It aliases the single store.CallLinkOption (same type as CallLinkOption).
-type MySQLCallLinkOption = store.CallLinkOption
+// It is an alias of the facade [CallLinkOption] (same type as SQLiteCallLinkOption).
+type MySQLCallLinkOption = CallLinkOption
 
 // MySQLWithCallLinkLease configures opt-in lease-based multi-replica exclusivity
 // on the MySQL CallLinkStore. When ttl > 0, ClaimPending stamps claimed_at/claimed_by,
@@ -223,7 +230,7 @@ type MySQLCallLinkOption = store.CallLinkOption
 // (the default), a plain SELECT is used (backward-compatible).
 // Mirrors WithCallLinkLease for the Postgres facade.
 func MySQLWithCallLinkLease(owner string, ttl time.Duration) MySQLCallLinkOption {
-	return store.WithCallLinkLease(owner, ttl)
+	return WithCallLinkLease(owner, ttl)
 }
 
 // MySQLWithCallLinkClock sets the clock the MySQL CallLinkStore uses for lease
@@ -231,7 +238,7 @@ func MySQLWithCallLinkLease(owner string, ttl time.Duration) MySQLCallLinkOption
 // deterministic behaviour (ADR-0138).
 // Mirrors WithCallLinkClock for the Postgres facade.
 func MySQLWithCallLinkClock(clk clockwork.Clock) MySQLCallLinkOption {
-	return store.WithCallLinkClock(clk)
+	return WithCallLinkClock(clk)
 }
 
 // NewMySQLCallLinkStore constructs the MySQL-backed kernel.CallLinkStore (read/claim
@@ -246,7 +253,7 @@ func MySQLWithCallLinkClock(clk clockwork.Clock) MySQLCallLinkOption {
 //
 // Mirrors NewCallLinkStore for the Postgres facade.
 func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) (kernel.CallLinkStore, error) {
-	return store.NewCallLinkStore(db, dialect.NewMySQL(), opts...)
+	return store.NewCallLinkStore(db, dialect.NewMySQL(), buildCallLinkOptions(opts)...)
 }
 
 // NewMySQLAdvisoryLockOwnership constructs a multi-process [kernel.InstanceOwnership]
@@ -287,8 +294,12 @@ func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (kernel.Inst
 //	persistence.MigrateMySQL(ctx, db)
 //	links := persistence.NewMySQLChainLinkStore(db)
 //	chainer, err := chain.NewChainer(runner, policy, chain.WithChainLinks(links))
-func NewMySQLChainLinkStore(db *sql.DB) (kernel.ChainLinkStore, error) {
-	return store.NewChainLinkStore(db, dialect.NewMySQL())
+//
+// Pass [WithChainLinkClock] to control the created_at fallback Record uses when
+// a link carries a zero CreatedAt (ADR-0138). Zero-option call sites compile
+// unchanged.
+func NewMySQLChainLinkStore(db *sql.DB, opts ...ChainLinkOption) (kernel.ChainLinkStore, error) {
+	return store.NewChainLinkStore(db, dialect.NewMySQL(), buildChainLinkOptions(opts)...)
 }
 
 // NewMySQLLister constructs the MySQL-backed kernel.InstanceLister for
@@ -349,8 +360,11 @@ func NewMySQLCallNotifier(db *sql.DB, deliver calllink.CallDeliverFunc, reg kern
 //	persistence.MigrateMySQL(ctx, db)
 //	ds := persistence.NewMySQLDefinitionStore(db)
 //	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute)
-func NewMySQLDefinitionStore(db *sql.DB) (DefinitionStore, error) {
-	return store.NewDefinitionStore(db, dialect.NewMySQL())
+//
+// Pass [WithDefinitionClock] to control the created_at stamp PutDefinition
+// writes (ADR-0138). Zero-option call sites compile unchanged.
+func NewMySQLDefinitionStore(db *sql.DB, opts ...DefinitionOption) (DefinitionStore, error) {
+	return store.NewDefinitionStore(db, dialect.NewMySQL(), buildDefinitionOptions(opts)...)
 }
 
 // NewMySQLPruner constructs a Pruner over db (returns the stable Pruner interface).

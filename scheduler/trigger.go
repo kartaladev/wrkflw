@@ -146,6 +146,25 @@ func Daily(interval uint, at ...ClockTime) Trigger {
 // week — the scheduler treats it as a raw offset from the day it is armed on,
 // so time.Weekday(8) fires eight days after a Sunday arm, not the next day.
 // Prefer the named constants.
+//
+// ⚠ An out-of-range weekday does not merely add an extra fire — it can DELAY
+// the whole trigger, and a negative one can make it never-due. This follows
+// gocron v2.22.0's own weeklyJob.next, which [Trigger.Next] transcribes
+// deliberately so the two agree (ADR-0176); it is documented, not fixed.
+// Measured from a Thursday anchor (2026-08-20T12:00Z) at interval 1:
+//
+//	days                          next          ok
+//	[Monday]                      2026-08-24    true
+//	[Weekday(9)]                  2026-08-25    true
+//	[Monday, Weekday(9)]          2026-08-25    true   ← LATER than [Monday] alone
+//	[Weekday(-1)]                 zero          false  ← never-due
+//	[Monday, Weekday(-1)]         2026-08-24    true
+//
+// The third row is the surprise: an out-of-range weekday always matches on
+// gocron's first pass, and the first pass wins outright, so it beats an
+// in-range weekday the anchor has already passed even when that one would
+// fire sooner. The fourth is the other half: a negative weekday matches in
+// neither pass, so a set containing only negatives reports never-due.
 func Weekly(interval uint, days []time.Weekday, at ...ClockTime) Trigger {
 	return Trigger{kind: triggerWeekly, interval: interval, weekdays: days, atTimes: at}
 }
@@ -353,6 +372,27 @@ func (t Trigger) Calendar() (uint, []int, []time.Weekday, []ClockTime, bool) {
 // matching the live scheduler rather than exhausting into ok=false.
 const maxCalendarScanDays = 366 * 5
 
+// maxSchedulableInterval clamps the consumer-supplied calendar interval before
+// it is converted to int. interval is a uint carried unvalidated from a
+// definition, and calendarNext converts it twice — once for the scan bound
+// (maxCalendarScanDays * int(interval)) and once, via weeklyNext, for the
+// interval-week jump (int(interval)*7). Both wrap.
+//
+// Measured on the unclamped code (anchor Thu 2026-08-20T12:00Z, weekdays
+// [Monday]): Weekly(MaxUint64) made int(interval)*7 == -7 and returned
+// 2026-08-10 — ten days in the PAST — with ok=true. A past next-run reported
+// as valid is the class ADR-0176 and ADR-0181 refuse, and backlog 49 records
+// gocron rejecting such an arm with a raw un-wrapped error. Weekly(MaxUint32)
+// did not wrap but armed 80 million years out; Daily(MaxUint64) already failed
+// closed, so only the weekly path produced a false positive.
+//
+// 1<<20 months is ~87,000 years and ~20,000 years of weeks, far past any real
+// schedule, and keeps both products well inside int on a 32-bit platform
+// (1830 * 1<<20 ≈ 1.92e9 < MaxInt32). Exceeding it fails CLOSED — ok=false —
+// matching what the never-due kinds already do rather than arming a job whose
+// fire instant is a wrapped integer.
+const maxSchedulableInterval = 1 << 20
+
 // calendarNext computes the first fire after the given instant for
 // triggerDaily, triggerWeekly, and triggerMonthly, in after's location
 // (ADR-0137), at one of atTimes (sorted ascending; midnight if atTimes is
@@ -378,9 +418,10 @@ const maxCalendarScanDays = 366 * 5
 // match — which is how a day-of-month no qualifying month contains, such as
 // Monthly(12, []int{31}) anchored in February, is reported. That answer is
 // load-bearing: it is what lets the runtime refuse the arm before gocron's
-// own unbounded search spins on it (ADR-0176 §4).
+// own unbounded search spins on it (ADR-0176's Decision — the ADR has no
+// numbered sections; its headings are Context, Decision, Consequences).
 func calendarNext(after time.Time, kind triggerKind, interval uint, days []int, weekdays []time.Weekday, atTimes []ClockTime) (time.Time, bool) {
-	if interval == 0 {
+	if interval == 0 || interval > maxSchedulableInterval {
 		return time.Time{}, false
 	}
 
@@ -428,16 +469,31 @@ func calendarNext(after time.Time, kind triggerKind, interval uint, days []int, 
 			}
 		case triggerMonthly:
 			monthIndex := (day.Year()-after.Year())*12 + (int(day.Month()) - int(after.Month()))
-			if monthIndex%int(interval) != 0 {
-				// Skip the WHOLE month in one step. The grid test is
-				// per-month, so every remaining day here would be rejected
-				// too, and walking them is what made an unsatisfiable
-				// day-of-month cost time linear in a consumer-supplied
-				// interval — measured at 6.3 s for Monthly(120000, {31}), on
-				// the arm path, inside the commit transaction. Advancing to
-				// this month's last day leaves the loop's i++ on the 1st of
-				// the next. The set of days actually TESTED is unchanged.
-				i += daysInMonth(day) - day.Day()
+			if rem := monthIndex % int(interval); rem != 0 {
+				// Jump to the next ON-GRID month, not merely to the next
+				// month. The grid test is per-month — monthIndex is constant
+				// across a calendar month — so every day of every month
+				// strictly between here and the next multiple of interval
+				// would be rejected too. The set of days that can MATCH is
+				// unchanged; only rejected days stop being visited.
+				//
+				// Skipping one month per step left the cost linear in a
+				// consumer-supplied uint: measured for Monthly(N, {31})
+				// anchored in February with N ≡ 0 mod 12 (so no grid month
+				// ever holds a 31st and the scan exhausts) — 0.047 s at
+				// N=12000, 2.746 s at N=786432, 3.568 s at N=1044480, and
+				// 27.159 s for that last one under -race. Jumping whole
+				// strides makes it milliseconds at every N, on the arm path,
+				// inside the commit transaction (ADR-0140 audit F1, backlog
+				// 26; the backlog's own single 404 ms datapoint was one point
+				// on that line, not the whole line).
+				target := day.AddDate(0, int(interval)-rem, 0)
+				// Normalise to the 1st: AddDate keeps the day-of-month, and
+				// carries an overflowing one into the following month.
+				target = time.Date(target.Year(), target.Month(), 1, 0, 0, 0, 0, loc)
+				// -1 because the loop's own i++ lands on target. civilDayIndex
+				// is DST-safe, unlike dividing a Sub by 24h.
+				i = civilDayIndex(target) - civilDayIndex(start) - 1
 				continue
 			}
 			if !monthlyDayMatches(day, positiveDays, negativeDays) {
@@ -553,6 +609,19 @@ func monthlyDayMatches(day time.Time, positiveDays map[int]bool, negativeDays []
 // normalisation of "day 0 of the next month".
 func daysInMonth(t time.Time) int {
 	return time.Date(t.Year(), t.Month()+1, 0, 0, 0, 0, 0, t.Location()).Day()
+}
+
+// civilDayIndex maps t's CIVIL date (year/month/day, its zone's clock reading)
+// to a day number, so two instants' day distance can be differenced exactly.
+//
+// It reinterprets the civil date in UTC before dividing, which is what makes
+// it DST-safe: subtracting two local midnights across a DST boundary yields
+// 23 h or 25 h, and dividing that by 24 h truncates to the wrong day. The
+// returned number is meaningful only as a difference against another
+// civilDayIndex, never as an absolute date.
+func civilDayIndex(t time.Time) int {
+	y, m, d := t.Date()
+	return int(time.Date(y, m, d, 0, 0, 0, 0, time.UTC).Unix() / 86400)
 }
 
 // clockTimesSchedulable reports whether every at-time is one the live

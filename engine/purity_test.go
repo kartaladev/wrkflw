@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -38,22 +39,118 @@ func TestCorePurityNoOTel(t *testing.T) {
 }
 
 // TestPurity_ASTDetectsWallClock proves the wall-clock detector actually fires:
-// it runs wallClockCalls over an in-test source string that reads time.Now() and
-// asserts the read is reported. Without this, the real-file scan below could pass
-// vacuously (a broken detector that never reports anything).
+// it runs wallClockCalls over in-test source strings and asserts what each one
+// reports. Without this, the real-file scan below could pass vacuously (a broken
+// detector that never reports anything).
+//
+// The detector resolves the file's LOCAL name for the "time" import rather than
+// assuming the identifier is spelled "time". Before it did, the guard was
+// evadable by a one-word edit: `import chrono "time"` in any non-test engine
+// file made all three purity tests report EXIT=0 while the unaliased form was
+// RED. The import denylist is NOT a second line of defence here — "time" is not,
+// and never was, an entry in deniedEngineImports.
 func TestPurity_ASTDetectsWallClock(t *testing.T) {
-	const src = `package fixture
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		src    string
+		assert func(t *testing.T, got []string)
+	}
+
+	detected := func(want string) func(*testing.T, []string) {
+		return func(t *testing.T, got []string) {
+			t.Helper()
+			if len(got) == 0 {
+				t.Fatalf("wallClockCalls reported no wall-clock read; want %q", want)
+			}
+			if got[0] != want {
+				t.Fatalf("wallClockCalls reported %v; want [%q]", got, want)
+			}
+		}
+	}
+	clean := func(t *testing.T, got []string) {
+		t.Helper()
+		if len(got) != 0 {
+			t.Fatalf("wallClockCalls reported %v; want no wall-clock read", got)
+		}
+	}
+
+	cases := []testCase{
+		{
+			// Passes before and after: the control that proves the fixture
+			// shape and the detector's happy path.
+			name: "plain time import",
+			src: `package fixture
 
 import "time"
 
 func readsClock() { _ = time.Now() }
-`
-	f, err := parser.ParseFile(token.NewFileSet(), "fixture.go", src, 0)
-	if err != nil {
-		t.Fatalf("parse fixture: %v", err)
+`,
+			assert: detected("Now"),
+		},
+		{
+			// Fails before the fix: the AST identifier is "chrono", so the
+			// old matcher's pkg.Name != "time" short-circuited to "not a
+			// wall-clock read".
+			name: "aliased time import",
+			src: `package fixture
+
+import chrono "time"
+
+func readsClock() { _ = chrono.Now() }
+`,
+			assert: detected("Now"),
+		},
+		{
+			// Fails before the fix: a dot-imported Since() is a bare *ast.Ident
+			// call, which the selector-only matcher never inspected.
+			name: "dot-imported time",
+			src: `package fixture
+
+import . "time"
+
+func readsClock() { _ = Since(Time{}) }
+`,
+			assert: detected("Since"),
+		},
+		{
+			// Fails before the fix: the old matcher keyed on the SPELLING
+			// "time", so an unrelated package aliased to that name was
+			// reported as a wall-clock read.
+			name: "unrelated package aliased to the name time",
+			src: `package fixture
+
+import time "example.com/not/stdlib/time"
+
+func readsClock() { _ = time.Now() }
+`,
+			assert: clean,
+		},
+		{
+			// Fails before the fix, same reason: a local variable named time
+			// is not the time package.
+			name: "local identifier named time with no time import",
+			src: `package fixture
+
+type clock struct{ Now func() int }
+
+func readsClock(time clock) { _ = time.Now() }
+`,
+			assert: clean,
+		},
 	}
-	if got := wallClockCalls(f); len(got) == 0 {
-		t.Fatalf("wallClockCalls did not detect time.Now() in the fixture; got %v", got)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			f, err := parser.ParseFile(token.NewFileSet(), "fixture.go", tc.src, 0)
+			if err != nil {
+				t.Fatalf("parse fixture: %v", err)
+			}
+			tc.assert(t, wallClockCalls(f))
+		})
 	}
 }
 
@@ -127,29 +224,76 @@ func nonTestGoFiles(t *testing.T, dir string) []string {
 	return paths
 }
 
+// timeLocalNames reports the identifiers under which f refers to the standard
+// library "time" package, and whether f dot-imports it.
+//
+// The IMPORT PATH is the authority, never the identifier's spelling: `import
+// chrono "time"` binds the package to "chrono", and `import time "example.com/
+// time"` binds an unrelated package to "time". A blank import (`_`) binds
+// nothing callable and is skipped.
+func timeLocalNames(f *ast.File) (names []string, dot bool) {
+	for _, imp := range f.Imports {
+		path, err := strconv.Unquote(imp.Path.Value)
+		if err != nil || path != "time" {
+			continue
+		}
+		switch {
+		case imp.Name == nil:
+			names = append(names, "time")
+		case imp.Name.Name == ".":
+			dot = true
+		case imp.Name.Name == "_":
+			// Bound to nothing; no call can reach the package through it.
+		default:
+			names = append(names, imp.Name.Name)
+		}
+	}
+	return names, dot
+}
+
+// isWallClockName reports whether name is a time-package function that reads the
+// wall clock.
+func isWallClockName(name string) bool {
+	switch name {
+	case "Now", "Since", "Tick", "After", "Sleep", "Until", "NewTimer", "NewTicker", "AfterFunc":
+		return true
+	}
+	return false
+}
+
 // wallClockCalls reports every wall-clock read in f as the selected identifier
 // name ("Now", "Since", "Tick", "After", "Sleep", "Until", "NewTimer",
-// "NewTicker", or "AfterFunc"). A read is a call whose function is a selector
-// time.<Name> where time is a bare package identifier. Empty result means f
-// never reads the wall clock.
+// "NewTicker", or "AfterFunc"). A read is a call through the file's LOCAL name
+// for the "time" import — resolved from the import path by timeLocalNames, so
+// an alias cannot evade the check and a same-named foreign package cannot
+// trigger it — or, under a dot import, a bare call to one of those names. Empty
+// result means f never reads the wall clock.
 func wallClockCalls(f *ast.File) []string {
+	names, dot := timeLocalNames(f)
+	if len(names) == 0 && !dot {
+		return nil
+	}
+	local := make(map[string]bool, len(names))
+	for _, n := range names {
+		local[n] = true
+	}
+
 	var found []string
 	ast.Inspect(f, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		pkg, ok := sel.X.(*ast.Ident)
-		if !ok || pkg.Name != "time" {
-			return true
-		}
-		switch sel.Sel.Name {
-		case "Now", "Since", "Tick", "After", "Sleep", "Until", "NewTimer", "NewTicker", "AfterFunc":
-			found = append(found, sel.Sel.Name)
+		switch fun := call.Fun.(type) {
+		case *ast.SelectorExpr:
+			pkg, ok := fun.X.(*ast.Ident)
+			if ok && local[pkg.Name] && isWallClockName(fun.Sel.Name) {
+				found = append(found, fun.Sel.Name)
+			}
+		case *ast.Ident:
+			if dot && isWallClockName(fun.Name) {
+				found = append(found, fun.Name)
+			}
 		}
 		return true
 	})

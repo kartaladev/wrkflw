@@ -170,22 +170,41 @@ func (t TriggerDef) Calendar() (uint, []int, []time.Weekday, []ClockTime, bool) 
 	}
 }
 
+// oneShotFireTime resolves the absolute instant a one-shot TriggerDef is due,
+// for BOTH one-shot forms: At carries the instant directly, After carries a
+// duration measured from now. ok is false for every recurring kind and for
+// the zero TriggerDef.
+//
+// It is the single source of truth for that resolution, shared by
+// jobDefinition (which decides which gocron.OneTimeJob option to build) and
+// GocronScheduler.ScheduleJob (which decides whether the job fires
+// immediately, and how late it is). Those two used to derive the past-due
+// question independently, and the duration form was missing from both.
+func oneShotFireTime(t TriggerDef, now time.Time) (time.Time, bool) {
+	if t.kind != triggerDefOneTime {
+		return time.Time{}, false
+	}
+	if at, ok := t.AbsTime(); ok {
+		return at, true
+	}
+	d, _ := t.Duration()
+	return now.Add(d), true
+}
+
 // jobDefinition maps a TriggerDef to a gocron JobDefinition and reports
 // whether it is a one-shot (so the caller adds WithLimitedRuns(1) and
 // removes the job from the tracking map after it fires).
 func jobDefinition(t TriggerDef, now time.Time) (gocron.JobDefinition, bool, error) {
 	switch t.kind {
 	case triggerDefOneTime:
-		if at, ok := t.AbsTime(); ok {
-			// If the absolute time is in the past (or exactly now), gocron would
-			// return ErrOneTimeJobStartDateTimePast — fire immediately instead.
-			if !at.After(now) {
-				return gocron.OneTimeJob(gocron.OneTimeJobStartImmediately()), true, nil
-			}
-			return gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(at)), true, nil
+		// If the fire time is in the past (or exactly now), gocron would
+		// return ErrOneTimeJobStartDateTimePast — fire immediately instead.
+		// This applies to both forms: an elapsed absolute time (At) and a
+		// non-positive duration (After(0), After(-d)).
+		fireAt, _ := oneShotFireTime(t, now)
+		if !fireAt.After(now) {
+			return gocron.OneTimeJob(gocron.OneTimeJobStartImmediately()), true, nil
 		}
-		d, _ := t.Duration()
-		fireAt := now.Add(d)
 		return gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(fireAt)), true, nil
 
 	case triggerDefDuration:

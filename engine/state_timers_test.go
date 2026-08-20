@@ -84,6 +84,23 @@ func TestCancelTimersByTaskID(t *testing.T) {
 				assert.Len(t, s.Timers, 3, "every record must survive an empty-key sweep")
 			},
 		},
+		{
+			// Backlog 3b. cancelTimersWhere assigned a freshly make()d slice
+			// unconditionally, so sweeping the LAST record turned a nil Timers
+			// table into an empty non-nil one — `"timers": null` became
+			// `"timers": []` on the persisted snapshot. cancelCompensationWalkTimers
+			// already states this invariant verbatim; two of the three cancel
+			// helpers did not honour it.
+			name: "sweeping the last record leaves Timers nil, not empty",
+			timers: []timerRecord{
+				{TimerID: "tm1", Kind: TimerDeadline, Token: "tokA", TaskID: "h1"},
+			},
+			taskID: "h1",
+			assert: func(t *testing.T, cancelled []string, s *InstanceState) {
+				assert.Equal(t, []string{"tm1"}, cancelled)
+				assert.Nil(t, s.Timers, "an emptied timer table must be nil so the snapshot keeps persisting null")
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -199,7 +216,11 @@ func TestRemoveTimer(t *testing.T) {
 	type testCase struct {
 		name    string
 		timerID string
-		assert  func(t *testing.T, s *InstanceState)
+		// timers overrides the default three-record fixture when non-nil; a case
+		// that needs the table EMPTIED (or already nil) sets it explicitly.
+		timers    []timerRecord
+		nilTimers bool
+		assert    func(t *testing.T, s *InstanceState)
 	}
 
 	cases := []testCase{
@@ -219,17 +240,44 @@ func TestRemoveTimer(t *testing.T) {
 				assert.Len(t, s.Timers, 3, "an empty timer id names no record")
 			},
 		},
+		{
+			// Backlog 3b, the removal half: removeTimer assigned a freshly
+			// make()d slice unconditionally, so dropping the only record left an
+			// empty non-nil table and flipped the persisted snapshot from
+			// `"timers": null` to `"timers": []`.
+			name:    "removing the last record leaves Timers nil, not empty",
+			timerID: "tm1",
+			timers:  []timerRecord{{TimerID: "tm1", Kind: TimerRetry}},
+			assert: func(t *testing.T, s *InstanceState) {
+				assert.Nil(t, s.Timers, "an emptied timer table must be nil so the snapshot keeps persisting null")
+			},
+		},
+		{
+			// Backlog 3b, the no-op half: a miss against an ALREADY-nil table
+			// still materialised an empty slice, so a removeTimer that removed
+			// nothing at all changed the wire shape.
+			name:      "a miss against a nil table leaves it nil",
+			timerID:   "tm1",
+			nilTimers: true,
+			assert: func(t *testing.T, s *InstanceState) {
+				assert.Nil(t, s.Timers, "removing nothing must not materialise a timer table")
+			},
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			s := &InstanceState{Timers: []timerRecord{
-				{TimerID: "tm1", Kind: TimerRetry},
-				{TimerID: "tm2", Kind: TimerRetry},
-				{TimerID: "", Kind: TimerRetry, Token: "tokGhost"},
-			}}
+			timers := tc.timers
+			if timers == nil && !tc.nilTimers {
+				timers = []timerRecord{
+					{TimerID: "tm1", Kind: TimerRetry},
+					{TimerID: "tm2", Kind: TimerRetry},
+					{TimerID: "", Kind: TimerRetry, Token: "tokGhost"},
+				}
+			}
+			s := &InstanceState{Timers: timers}
 			s.removeTimer(tc.timerID)
 			tc.assert(t, s)
 		})

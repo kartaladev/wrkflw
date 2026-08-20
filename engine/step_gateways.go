@@ -212,8 +212,22 @@ func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node 
 //     winner's timer since it has already fired and no longer exists in the scheduler.
 //   - drive() is called to advance execution beyond the routed target.
 func resolveGatewayWin(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, ae armedEvent, at time.Time, pol stepPolicy) ([]Command, error) {
-	// Find the gateway token.
-	tok := s.tokenAwaiting("evtgw:" + ae.GatewayToken)
+	// Find the gateway token BY IDENTITY, then confirm it is still parked on its
+	// own sentinel.
+	//
+	// Resolving by the sentinel STRING alone (tokenAwaiting) is unsafe: Token.
+	// AwaitCommand also carries consumer-minted ids (a human-task id, a
+	// service-action command id) and [IDGenerator] is a seam the engine delegates
+	// to verbatim — nothing validates the string it returns. A generator that
+	// mints "evtgw:<token id>" would make an unrelated token match first
+	// (tokenAwaiting returns the first hit in s.Tokens), driving that bystander
+	// down the gateway's branch while the real gateway token parks forever.
+	// The AwaitCommand check is still required: a gateway token whose await has
+	// been cleared has already been resolved and must read as gone.
+	tok := s.tokenByID(ae.GatewayToken)
+	if tok != nil && tok.AwaitCommand != "evtgw:"+ae.GatewayToken {
+		tok = nil
+	}
 	if tok == nil {
 		// Gateway token is gone (already resolved by another concurrent path).
 		// This is a late/duplicate trigger: clean no-op.

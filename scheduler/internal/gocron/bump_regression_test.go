@@ -2,7 +2,7 @@ package gocron_test
 
 import (
 	"context"
-	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,31 +24,36 @@ func TestBumpRegression_OneShotFiresExactlyOnce(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	var n int
-	var mu sync.Mutex
+	var n atomic.Int32
 	_, err = s.ScheduleJob(t.Context(), "bump-t1", sched.After(time.Minute), func(context.Context) error {
-		mu.Lock()
-		n++
-		mu.Unlock()
-		wg.Done()
+		n.Add(1)
 		return nil
 	}, false)
 	require.NoError(t, err)
+	// Liveness canary: RECURRING, because the claim under test is "no SECOND
+	// fire" and a scheduler that stopped delivering altogether satisfies that
+	// too. The canary must reach its own second tick inside the same window in
+	// which the one-shot must stay at one. See liveness_test.go (backlog 44).
+	canary := newFireCanary(t, s, "bump-t1-canary", sched.Every(time.Minute))
 
-	// MANDATORY barrier: wait until gocron armed its timer before advancing,
+	// MANDATORY barrier: wait until gocron armed BOTH timers before advancing,
 	// else Advance can outrun the arm and the timer never fires.
-	require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
+	// (BlockUntilContext is a >= bound, so this must name the true count.)
+	require.NoError(t, clk.BlockUntilContext(t.Context(), 2))
 	clk.Advance(time.Minute + time.Second)
-	wg.Wait() // executor goroutine actually ran the task
+	// Eventually, not wg.Wait: a wg.Wait that never returns dies as an unnamed
+	// 600s binary timeout printing no assertion message at all.
+	require.Eventually(t, func() bool { return n.Load() >= 1 }, eventuallyBudget, 5*time.Millisecond,
+		"the one-shot must fire at its due instant")
+	requireCanaryFired(t, canary, 1)
 
-	// Confirm it never fires a second time.
-	require.Never(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return n > 1
-	}, 150*time.Millisecond, 10*time.Millisecond)
+	// Second due instant: the canary fires again, proving the scheduler is
+	// still delivering — the one-shot must not.
+	require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
+	clk.Advance(time.Minute)
+	requireCanaryFired(t, canary, 2)
+	require.Never(t, func() bool { return n.Load() > 1 }, 150*time.Millisecond, 10*time.Millisecond,
+		"WithLimitedRuns(1) must retire the one-shot though the scheduler demonstrably still fires")
 
 	// The consumed one-shot's map-cleanup runs via an async AfterJobRuns
 	// listener — poll rather than asserting immediately.

@@ -420,7 +420,12 @@ func (s *InstanceState) archiveCompensations(scopeID string) {
 // bypasses the partition entirely and its already-dispatched prefix IS re-archived.
 // That row then inherits the double-run ADR-0173 deliberately left it — see
 // scopeWideWalkDraining's own doc — rather than the exactly-once guarantee every pinned
-// cursor gets. Deliberate and documented, not an oversight: ADR-0174 §5.3's bound.
+// cursor gets. Deliberate and documented, not an oversight — it is the accepted bound
+// recorded under "BOUND: a pre-ADR-0171 unpinned cursor keeps ADR-0173's accepted
+// double-run" in docs/specs/2026-08-11-dying-instance-harvests-open-scopes.md, and
+// flagged in ADR-0174's own Consequences correction. (This previously read
+// "ADR-0174 §5.3", which dangled twice over: ADR-0174 has no numbered sections, and
+// the bound lives in the SPEC, not the ADR.)
 //
 // ⚠ Only the drop protects; the teardown WINDOW that archiveCompensations stamps onto
 // s.Compensating is discarded by endInstance's cursor clear on the very next line. That

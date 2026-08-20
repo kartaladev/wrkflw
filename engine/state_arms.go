@@ -171,9 +171,16 @@ func appendCancelTimers(cmds []Command, timerIDs []string) []Command {
 // scopes — and clears the corresponding state.
 //
 // It is the sweep for EVERY terminal transition — normal completion included.
-// Since ADR-0164 all eight terminal sites route through endInstance, which calls
-// it unconditionally, so a completed instance no longer carries live arms,
-// timers or boundaries.
+// Since ADR-0164 every terminal site routes through endInstance, which calls it
+// unconditionally, so a completed instance no longer carries live arms, timers
+// or boundaries.
+//
+// ⚠ Do not restate that as a COUNT. This comment said "all eight terminal sites"
+// and ADR-0164 says it in three places; there were eight when it was written and
+// ten on 2026-08-20, and nothing noticed for eleven ADRs. The checkable property
+// is that endInstance is the ONLY writer of a terminal Status — pinned by
+// TestEndInstanceIsTheSoleTerminalStatusWriter, which re-derives the set from
+// source on every run instead of trusting a number in prose.
 //
 // This deliberately narrows an ADR-0124 corollary. That ADR reasoned a
 // repeatable non-interrupting root event-sub arm surviving into a terminal
@@ -271,9 +278,21 @@ type eventSubArmID struct {
 //     on its interrupting flag, so no flag-based sort is correct in general.
 //     Ordering is outcome-affecting and author-controlled.
 //
-//   - DE-DUPLICATION, FIRST WINS. model.Validate accepts duplicate node ids, two
-//     flows between one pair, and duplicate flow ids, so two arms can collide on
-//     one identity. They are NOT interchangeable — colliding boundary arms have
+//   - DE-DUPLICATION, FIRST WINS. Two arms can collide on one identity, so the
+//     tie-break has to be defined. Do NOT justify this by enumerating what
+//     model.Validate lets through: that list has already gone stale once, and it
+//     is not the load-bearing reason anyway. The reason is that model.Validate is
+//     not on this path — its only non-test caller is definitionCore.build(), so a
+//     definition assembled as a struct literal (every fixture, and any consumer
+//     that builds a ProcessDefinition directly) reaches the arm layer never having
+//     been validated at all. The de-dup must hold for definitions no validator
+//     ever saw.
+//
+//     For the record, the one shape a VALIDATED definition can still present is
+//     two sequence flows between the same node pair (executed 2026-08-20:
+//     model.Validate returns nil for it, and rejects duplicate node ids and
+//     duplicate flow ids — the latter exempting blank ids, which are legal).
+//     They are NOT interchangeable — colliding boundary arms have
 //     been measured differing in NonInterrupting and Action, which decides whether
 //     the delivery interrupts the host — so the tie-break is part of the contract:
 //     the first in slice order wins, matching what the …ByID re-resolvers return.

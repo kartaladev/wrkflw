@@ -22,15 +22,19 @@ import (
 // UPSERT BY ID: any existing registration under id is removed first
 // (remove-then-add) so repeated calls under the same id (rehydration,
 // re-Activate) always leave exactly one live registration. A past-due
-// one-shot expressed as an ABSOLUTE time (At) fires immediately (never
-// dropped), with a WARN when its lateness exceeds the timeskew tolerance,
-// and one-shots carry WithLimitedRuns(1) plus self-removal from the tracking
-// map after firing. ⚠ This "never dropped" guarantee does NOT hold for a
-// past-due one-shot expressed as a DURATION (After(-d) or After(0)):
-// verified, gocron refuses it with a raw
-// "gocron: OneTimeJob: start must not be in the past" error that escapes
-// this API without a workflow-scheduler: sentinel wrap — see backlog 49 in
-// docs/plans/HANDOVER.md (pre-existing, tracked separately, not fixed here).
+// one-shot fires immediately (never dropped), with a WARN when its lateness
+// exceeds the timeskew tolerance, and one-shots carry WithLimitedRuns(1) plus
+// self-removal from the tracking map after firing. "Past-due" covers BOTH
+// one-shot forms — an elapsed absolute time (At) and a non-positive duration
+// (After(0), After(-d)) — because oneShotFireTime resolves the due instant
+// for both (backlog 49; before that, the duration form was refused by gocron
+// with a raw "gocron: OneTimeJob: start must not be in the past" that escaped
+// this API unwrapped).
+//
+// Errors returned from here always carry this engine's "workflow-scheduler:"
+// prefix, including the ones gocron's own NewJob raises for a well-formed
+// trigger kind carrying a nonsense value (Every(0), a malformed cron
+// expression); the vendor cause stays reachable through errors.Is/As.
 //
 // When singleton is true AND the job is recurring (not one-shot),
 // gocron.WithSingletonMode(gocron.LimitModeReschedule) is applied: a fire
@@ -104,7 +108,7 @@ func (s *GocronScheduler) ScheduleJob(_ context.Context, id string, trig Trigger
 	// deterministically for this case instead of raced out of gocron.
 	fireImmediately := false
 	if oneShot {
-		if at, ok := trig.AbsTime(); ok && !at.After(now) {
+		if at, ok := oneShotFireTime(trig, now); ok && !at.After(now) {
 			fireImmediately = true
 			lateness := now.Sub(at)
 			if lateness > s.timeSkew {
@@ -139,7 +143,12 @@ func (s *GocronScheduler) ScheduleJob(_ context.Context, id string, trig Trigger
 
 	job, err := s.sched.NewJob(def, gocron.NewTask(task), opts...)
 	if err != nil {
-		return time.Time{}, err
+		// jobDefinition validates only the trigger KIND; a well-formed kind
+		// carrying a nonsense value (Every(0), a malformed cron expression) is
+		// caught here, by gocron. Wrap so no raw vendor string ever reaches a
+		// caller as if it were this engine's own vocabulary — the cause stays
+		// reachable through errors.Is/As.
+		return time.Time{}, fmt.Errorf("workflow-scheduler: ScheduleJob %q: %w", id, err)
 	}
 	s.jobs[id] = job.ID()
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/jonboulle/clockwork"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
@@ -42,6 +43,15 @@ type Store struct {
 
 	tel           observability.Telemetry
 	storeDuration metric.Float64Histogram
+
+	// clk is the time source for every timestamp this Store PERSISTS
+	// (wrkflw_instances.updated_at and the journal/outbox rows derived from the
+	// same instant). ADR-0138 requires outer stateful layers to depend on
+	// clockwork.Clock directly rather than reading the wall clock. Latency
+	// stopwatches inside Load/Commit deliberately keep using time.Now(): they
+	// measure elapsed real time for a metric and must not be frozen by a fake
+	// clock injected to make persisted values deterministic.
+	clk clockwork.Clock
 }
 
 // Option is a functional option that configures a [Store] built by [New].
@@ -88,6 +98,23 @@ func WithStoreMeterProvider(mp metric.MeterProvider) Option {
 	return func(s *Store) { s.mpOpt = observability.WithMeterProvider(mp) }
 }
 
+// WithStoreClock overrides the clock used for the timestamps the store
+// persists (ADR-0138). The default is [clockwork.NewRealClock]. A nil clock is
+// ignored (the default is kept). Inject a [clockwork.FakeClock] in tests for
+// deterministic persisted timestamps.
+//
+// This package is internal, so an option added here is unreachable until the
+// public facade forwards it: persistence.WithStoreClock is that forwarder.
+// Add the facade counterpart with any new option, or the doc line above is a
+// promise off-module consumers cannot keep.
+func WithStoreClock(clk clockwork.Clock) Option {
+	return func(s *Store) {
+		if clk != nil {
+			s.clk = clk
+		}
+	}
+}
+
 // New constructs a [Store] over conn using dialect d. conn must be either a
 // *pgxpool.Pool (Postgres) or a *sql.DB (MySQL, SQLite); any other type will
 // cause [database.From] to return an error when the first query is issued.
@@ -109,7 +136,7 @@ func New(conn any, d dialect.Dialect, opts ...Option) (*Store, error) {
 	if isNilDep(d) {
 		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
 	}
-	s := &Store{conn: conn, dialect: d}
+	s := &Store{conn: conn, dialect: d, clk: clockwork.NewRealClock()}
 	for _, o := range opts {
 		o(s)
 	}

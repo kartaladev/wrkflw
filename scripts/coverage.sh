@@ -17,10 +17,18 @@
 # bash 3.2 that ships on macOS as well as CI's bash 5.
 set -euo pipefail
 
+# Explicit go test binary timeout (backlog 48). Go's implicit default is also 600s,
+# but leaving it implicit meant nothing could enforce ADR-0184's sizing rule
+# (eventuallyBudget x densest-package site count < timeout) — and nothing did.
+# scripts/check-test-timeout.sh parses this literal and the identical one in
+# .github/workflows/ci.yml, and fails if they disagree or if the rule is violated.
+# Raising it is a deliberate decision: change BOTH, and say why in an ADR.
+GO_TEST_TIMEOUT="${GO_TEST_TIMEOUT:-600s}"
+
 profile="${1:-}"
 if [[ -z "${profile}" ]]; then
   profile="cover.out"
-  go test -race -coverprofile="${profile}" ./...
+  go test -race -timeout="${GO_TEST_TIMEOUT}" -coverprofile="${profile}" ./...
 fi
 
 if [[ ! -f "${profile}" ]]; then

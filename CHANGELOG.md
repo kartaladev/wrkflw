@@ -17,6 +17,92 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **`service.Service` gained `ResolveCompensationStall` (ADR-0175) — SILENT for embedders,
+  a COMPILE BREAK for hand-rolled implementations.** `InstanceOps` — and therefore
+  `Service`, which embeds it — now declares:
+
+  ```go
+  ResolveCompensationStall(ctx context.Context, req ResolveCompensationStallRequest) (ProcessInstance, error)
+  ```
+
+  Any consumer type that satisfies `service.Service` by declaring its own methods — a
+  decorator adding auth/metrics/logging, a test double, a hand-written fake — stops
+  compiling on upgrade with `missing method ResolveCompensationStall`.
+
+  **Migration: embed, do not re-declare.** A decorator holding
+  `service.Service` as an embedded field forwards every method it does not override, so
+  this addition and every future one costs it nothing:
+
+  ```go
+  type auditedService struct {
+      service.Service // embedded: forwards ResolveCompensationStall and everything else
+  }
+
+  func (a auditedService) CancelInstance(ctx context.Context, req service.CancelInstanceRequest) (service.ProcessInstance, error) {
+      // ... override only what you actually decorate
+      return a.Service.CancelInstance(ctx, req)
+  }
+  ```
+
+  A double that must implement the method outright can return
+  `service.ProcessInstance{}, nil` if the scenario never exercises a compensation walk.
+
+  ⚠ The failure is a **compiler** error, not a runtime one, so it cannot reach production
+  unnoticed — it is called out here because nothing in the API's *shape* signals that an
+  interface a consumer implements is allowed to grow. See the "Rolling upgrades are NOT
+  supported" section of `STABILITY.md` for the separate, and much less visible, storage-level
+  version hazard.
+
+- **Rolling upgrades and mixed-version replicas are NOT supported — no N-1 compatibility
+  promise.** This has always been true; it had never been written down. `STABILITY.md` now
+  carries the full statement, summarised here because anyone who assumed otherwise needs to
+  change how they deploy:
+
+  A build persists the **whole** `engine.InstanceState` as one JSON document and decodes it
+  with a plain `json.Unmarshal` — no `DisallowUnknownFields`. An **older** build therefore
+  reads a **newer** snapshot *successfully*, silently drops every field it does not know,
+  and writes the truncated document back on the next commit. This is structural: every
+  future field added to `InstanceState` inherits it. Two shipped instances — ADR-0173's
+  compensation cursor (dropping the three window fields reinstates a double-run) and
+  ADR-0175's `Incident.Kind` (dropping it degrades an `IncidentCompensationStall` into a
+  resolvable `IncidentAction` that the resolve-incident endpoint then deletes).
+
+  **Upgrade by draining and stopping every replica before starting the new version.** A
+  blue/green or canary rollout sharing one instance store is unsafe by construction.
+
+- **The `runtime/monitor` stats collectors now take a `monitor.Option`, not the internal
+  observability option — a signature change on two exported constructors.**
+
+  ```go
+  // before
+  func NewOutboxStatsCollector(r kernel.OutboxStatsReader, opts ...observability.Option) *OutboxStatsCollector
+  func NewTimerStatsCollector(r kernel.TimerStatsReader, opts ...observability.Option) *TimerStatsCollector
+  // after
+  func NewOutboxStatsCollector(r kernel.OutboxStatsReader, opts ...monitor.Option) *OutboxStatsCollector
+  func NewTimerStatsCollector(r kernel.TimerStatsReader, opts ...monitor.Option) *TimerStatsCollector
+  ```
+
+  The old `observability` there was `github.com/kartaladev/wrkflw/internal/observability`, so
+  **no consumer could ever have written the call the signature invited**: naming the type off-module
+  is `use of internal package … not allowed`. The practical cost was
+  `WithMeterProvider` — without it a consumer running a non-global `MeterProvider` got no gauges
+  at all, and no compile error at any call they were able to write. In-module code may import
+  `internal/`, which is why the collectors' own tests compiled and proved nothing.
+
+  ⚠ Listed as breaking because the *signature* changed, but the only call sites it can break are
+  inside this module. `monitor.Option` now carries `WithMeterProvider`, `WithLogger`,
+  `WithTracerProvider` and the new `WithClock` (the time source the overdue-timer age is derived
+  from — use `clockwork.NewFakeClockAt` with an explicit instant in tests, never
+  `clockwork.NewFakeClock()`, which seeds from the wall clock and lets an age assertion pass
+  against a collector that ignores the injected clock).
+
+  The class, not just the instance, is now guarded: a new AST-walking test fails if **any**
+  consumer-reachable exported signature in a non-`internal` package names a type from
+  `internal/`. It carries one tolerated, self-cleaning exemption —
+  `persistence.NewSchedulerLocker`, which takes an internal `dialect.Locker` while its doc comment
+  invites a consumer to "bring your own dialect.Locker" — tracked separately. That third offender
+  was found *by the guard*: the triage note claimed the two collectors were the only ones.
+
 - **`processtest.RunTaskStoreConformance` now verifies that an accepted task reaches its inbox
   (ADR-0184).** ADR-0183 shipped this helper precisely because adopting it is a *silent* break for a
   consumer's own `humantask.TaskStore`. The helper had the same defect: its documentation promised a
@@ -735,6 +821,87 @@ release.
   fired one-shot genuinely has no next run.
 
 ### Added
+
+- **The `ProcessInstance` JSON document gained `incidents[].kind` and a `compensating`
+  object (ADR-0175 / ADR-0179).** Both are additive — no existing member changed type,
+  name or meaning — but a consumer parsing this document should know they exist.
+
+  `incidents[].kind` is a string, one of `"IncidentAction"`,
+  `"IncidentCompensationStall"` or `"IncidentCompensationFailed"`. It matters because the
+  three are resolved by **different operations**: only `IncidentAction` parks a token and
+  is cleared by resolve-incident; the two walk-scoped kinds carry an empty `token_id` and
+  resolve-incident **refuses** them, directing the caller to the retry / skip / abandon
+  verbs instead.
+
+  ⚠ **Do not route on `incidents[0]`.** A walk-scoped record and a token-parked one coexist
+  routinely, so slice position says nothing about which is which. Switch on `kind`. This is
+  the same positional defect ADR-0179 fixed in the runtime's own cause-of-death resolvers.
+
+  `compensating` is present only while a compensation walk is in flight (`omitempty`) and
+  carries `active_command_id` (required by every escape verb), an optional `since`
+  timestamp, and `scope_id` (`""` = root). It is what makes a **wedged** instance findable:
+  a stalled walk never dispatches again, so it raises no incident and would otherwise be
+  invisible. `since` is omitted rather than zero-valued for walks that were already in
+  flight when this build was deployed — precisely the population the projection exists to
+  surface.
+
+- **Database connection-pool metrics: `persistence.PoolStatsCollector`.** Pool saturation was
+  the one operational signal the library could not report, because the consumer owns the handle
+  (`OpenPostgres` / `OpenMySQL` / `OpenSQLite` all take an already-open one). Two constructors
+  cover both shapes — `NewPoolStatsCollector(db *sql.DB, opts ...PoolStatsOption)` for
+  MySQL/SQLite and `NewPostgresPoolStatsCollector(pool *pgxpool.Pool, …)` for pgx — and both
+  register the same four instruments, so a dashboard is backend-independent:
+  `wrkflw_db_pool_in_use`, `wrkflw_db_pool_idle`, `wrkflw_db_pool_max_open` (gauges) and
+  `wrkflw_db_pool_waits_total` (an observable counter). Saturation is `in_use / max_open`; a
+  rising `waits_total` means the ceiling is already being hit. On Postgres that series is pgx's
+  `EmptyAcquireCount`, on `database/sql` it is `WaitCount` — the same signal either way.
+
+  Ownership is unchanged: the collectors only *read* statistics, never open, close or
+  reconfigure a connection, register no background goroutine (all reads happen inside the OTel
+  SDK's collection callback), and accept a nil handle by observing zeroes rather than panicking a
+  scrape. Configure with `WithPoolStatsMeterProvider` / `WithPoolStatsLogger`; omit them for the
+  OTel global provider and `slog.Default()`.
+
+- **New timer health metric `wrkflw_timers_next_fire_age_seconds`**, registered by
+  `monitor.NewTimerStatsCollector` alongside the existing `wrkflw_timers_armed`. Armed alone
+  cannot distinguish a scheduler that is keeping up from one that is 45 minutes behind — both
+  report the same count. The new gauge is how far past due the earliest armed timer is, in whole
+  seconds, and it costs no extra query: `kernel.TimerStats` already carried `NextFireAt`,
+  computed in SQL on every read, and it was being discarded.
+
+  **Zero is the healthy value**, and it is a clamp, not a measurement: zero when no timer is
+  armed, zero when the stored `next_run` is the zero time (which would otherwise report a
+  ~2000-year age — see ADR-0181), and zero whenever the earliest timer is still in the future.
+  Alert on a sustained non-zero value, not on any non-zero sample.
+
+  ⚠ The shipped Grafana dashboard (`docs/dashboards/wrkflw-overview.json`) has **no panel** for
+  this series, nor for `wrkflw_timer_arms_refused_total` or the `wrkflw_db_pool_*` series. Add
+  your own, or query them ad hoc. `docs/observability.md` now carries the full inventory, the
+  label sets, and compiled wiring recipes for every collector.
+
+- **`persistence.NewSQLiteDeduper(db *sql.DB, opts ...DeduperOption) (Deduper, error)`** — the
+  SQLite backend for the message deduplication table, completing the trio alongside `NewDeduper`
+  (Postgres) and `NewMySQLDeduper`. It returns the same `Deduper` interface, so the three
+  backends are interchangeable at the consumer's call site; `MigrateSQLite` must run before the
+  first `Seen`.
+
+- **`persistence.WarnUnsafeSQLite` — an advisory probe for the SQLite footgun that fails
+  silently.** The pinned driver, `modernc.org/sqlite`, uses `_pragma=name(value)` DSN parameters
+  and **ignores** `mattn/go-sqlite3` keys such as `_busy_timeout=5000` without complaint — so a
+  DSN in that form opens successfully with the pragma unset. Combined with a pool wider than one
+  connection, concurrent writes then fail almost immediately with `SQLITE_BUSY`.
+
+  `OpenSQLite` now probes for exactly that combination — a pool that is **not** pinned to a
+  single writer, **and** `PRAGMA busy_timeout` reading `0` — and logs a warning. The
+  single-writer test is `MaxOpenConnections == 1`, so the `database/sql` default of `0`
+  ("unlimited", the widest pool of all) is treated as unsafe rather than skipped. The message is
+  exported as `persistence.WarnMsgSQLiteBusyTimeout` so consumers and tests can match on it, and
+  `WarnUnsafeSQLite(ctx, logger, db)` is exported for consumers wiring a handle themselves. A
+  pragma the probe cannot read is reported and shrugged off — the probe must never fail an open.
+
+  ⚠ **It warns only — a handle is never rejected** (ADR-0082 §1, §2), so an already-deployed
+  consumer keeps opening successfully. Every SQLite DSN in the package's doc examples now
+  includes `_pragma=busy_timeout(5000)`.
 
 - **`service.WithoutEmbeddedDefinition()` — opt out of the `definition` embed (ADR-0144
   follow-up).** The embed stays the default: a marshalled `service.ProcessInstance` is

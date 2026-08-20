@@ -6,7 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
+
+	"github.com/jonboulle/clockwork"
 
 	"github.com/kartaladev/wrkflw/internal/database"
 	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
@@ -29,6 +30,27 @@ import (
 type ChainLinkStore struct {
 	conn    any // *pgxpool.Pool or *sql.DB
 	dialect dialect.Dialect
+	// clk is the fallback time source for [ChainLinkStore.Record] when the
+	// supplied link carries a zero CreatedAt (ADR-0138).
+	clk clockwork.Clock
+}
+
+// ChainLinkOption is a functional option that configures a [ChainLinkStore]
+// built by [NewChainLinkStore].
+type ChainLinkOption func(*ChainLinkStore)
+
+// WithChainLinkClock overrides the clock [ChainLinkStore.Record] falls back to
+// when the link's CreatedAt is zero (ADR-0138). The default is
+// [clockwork.NewRealClock]. A nil clock is ignored (the default is kept).
+//
+// Reachable off-module only through its facade forwarder,
+// persistence.WithChainLinkClock; see the note on [WithStoreClock].
+func WithChainLinkClock(clk clockwork.Clock) ChainLinkOption {
+	return func(c *ChainLinkStore) {
+		if clk != nil {
+			c.clk = clk
+		}
+	}
 }
 
 // Compile-time checks: *ChainLinkStore satisfies [kernel.ChainLinkStore] and
@@ -51,14 +73,18 @@ var _ kernel.ChainLineageReader = (*ChainLinkStore)(nil)
 //
 //	db := dbtest.RunTestSQLite(t)
 //	cls, err := store.NewChainLinkStore(db, dialect.NewSQLite())
-func NewChainLinkStore(conn any, d dialect.Dialect) (*ChainLinkStore, error) {
+func NewChainLinkStore(conn any, d dialect.Dialect, opts ...ChainLinkOption) (*ChainLinkStore, error) {
 	if isNilDep(conn) {
 		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
 	}
 	if isNilDep(d) {
 		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
 	}
-	return &ChainLinkStore{conn: conn, dialect: d}, nil
+	c := &ChainLinkStore{conn: conn, dialect: d, clk: clockwork.NewRealClock()}
+	for _, o := range opts {
+		o(c)
+	}
+	return c, nil
 }
 
 // Record durably stores one predecessor→successor hop. A unique-constraint
@@ -78,7 +104,7 @@ func (c *ChainLinkStore) Record(ctx context.Context, link kernel.ChainLink) erro
 
 	at := link.CreatedAt
 	if at.IsZero() {
-		at = time.Now().UTC()
+		at = c.clk.Now().UTC()
 	}
 
 	q, err := database.From(c.conn)

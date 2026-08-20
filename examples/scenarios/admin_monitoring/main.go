@@ -245,9 +245,23 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.InstanceSt
 		return errors.New("expected an incident but none was raised — check retry policy")
 	}
 
-	incidentID := parked.Incidents[0].ID
-	fmt.Printf("  INCIDENT RAISED on %s  id=%s  error=%q\n",
-		instanceID, incidentID, parked.Incidents[0].Error)
+	// Select the incident by KIND, never by index. ResolveIncident accepts only
+	// engine.IncidentAction and refuses every other kind with
+	// engine.ErrIncidentNotResolvable — and the walk-scoped kinds
+	// (IncidentCompensationStall, IncidentCompensationFailed) coexist with action
+	// incidents in the same slice, so Incidents[0] is not reliably the resolvable
+	// one. This example raises exactly one action incident, but reading it
+	// positionally is the pattern that breaks the moment a compensation walk is
+	// involved (ADR-0179).
+	incident := firstResolvableIncident(parked.Incidents)
+	if incident == nil {
+		return fmt.Errorf("expected a resolvable %s incident; got %d incident(s) of other kinds",
+			engine.IncidentAction, len(parked.Incidents))
+	}
+
+	incidentID := incident.ID
+	fmt.Printf("  INCIDENT RAISED on %s  id=%s  kind=%s  error=%q\n",
+		instanceID, incidentID, incident.Kind, incident.Error)
 	fmt.Printf("  instance status=%s  incident_count=%d\n", parked.Status.String(), len(parked.Incidents))
 
 	// Operator resolves the incident and grants 1 additional attempt.
@@ -266,6 +280,18 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.InstanceSt
 		return fmt.Errorf("expected StatusCompleted after resolve; got %s", resolved.Status.String())
 	}
 
+	return nil
+}
+
+// firstResolvableIncident returns the first incident ResolveIncident will accept,
+// or nil when there is none. Only engine.IncidentAction is resolvable; the
+// walk-scoped kinds are refused with engine.ErrIncidentNotResolvable.
+func firstResolvableIncident(incidents []engine.Incident) *engine.Incident {
+	for i := range incidents {
+		if incidents[i].Kind == engine.IncidentAction {
+			return &incidents[i]
+		}
+	}
 	return nil
 }
 

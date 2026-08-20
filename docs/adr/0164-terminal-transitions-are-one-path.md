@@ -249,6 +249,21 @@ func (s *InstanceState) endInstance(status Status, at time.Time, terminal Comman
 
 All eight sites route through it. Two normalizations are deliberate:
 
+> ⚠ **CORRECTION (2026-08-20).** The count is stale, and was stale for eleven ADRs.
+> Re-derived from source on 2026-08-20 there are **ten** `endInstance` call sites, not
+> eight — and `engine/state_arms.go` carried the same "all eight" sentence in a code
+> comment. **Only the number is wrong; the decision is intact**: every terminal site
+> still routes through `endInstance`, and `endInstance` remains the only writer of a
+> terminal `Status` (every other `s.Status =` in the non-test core writes
+> `StatusRunning` or `StatusCompensating`, neither of which is terminal).
+>
+> The lesson is the one Premise Discipline states: **prefer naming a closed set to
+> counting it.** The invariant is now machine-checked rather than asserted in prose —
+> `TestEndInstanceIsTheSoleTerminalStatusWriter` (`engine/terminal_sites_test.go`)
+> re-derives the set with `go/ast` on every run and fails when a terminal-status
+> assignment appears outside `endInstance`. The counts left in the Context above are
+> historical, correct as of the time of writing, and deliberately not "refreshed".
+
 - The three completion sites gain the task and scheduled-work sweeps they lack.
   The "harmless" argument at `engine/step_eventsubprocess.go:221-228` becomes
   moot: the arm is retired at completion rather than surviving into the snapshot

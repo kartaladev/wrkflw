@@ -128,9 +128,22 @@ func run() error {
 	}
 
 	// DrainOnce publishes every currently-pending outbox row and returns — used here
-	// so the example is a single synchronous pass with no goroutines. In production
-	// the same relay runs continuously in a goroutine via relay.Run(ctx), which loops
-	// DrainOnce with backoff and (on Postgres/MySQL) LISTEN/NOTIFY wakeups.
+	// so the example is a single synchronous pass with no goroutines.
+	//
+	// In production the same relay runs continuously in a goroutine via
+	// relay.Run(ctx). Run paces on a FIXED poll ticker (WithRelayPollInterval,
+	// default 1s) and on each tick calls drainUntilEmpty, which loops DrainOnce
+	// until it returns 0 rows — so a burst is coalesced into one sweep rather than
+	// waiting a tick per row. On Postgres/MySQL an injected Notifier adds
+	// LISTEN/NOTIFY wakeups that trigger the same drain immediately; SQLite
+	// implements no Notifier, so it is poll-only — which is why this example, on
+	// SQLite, would see no wakeups.
+	//
+	// The relay's backoff is NOT a loop-level backoff: the poll interval never
+	// grows. It is PER ROW, inside DrainOnce — a failed publish writes
+	// next_attempt_at = now + RelayBackoff(retryCount, base, max), a capped
+	// exponential (defaults 1s → 1m), and quarantines the row to 'dead' once
+	// MaxDeliveryAttempts is reached.
 	n, err := relay.DrainOnce(ctx)
 	if err != nil {
 		return err

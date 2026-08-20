@@ -5,20 +5,29 @@
 //
 // What it demonstrates end to end:
 //
-//   - construct the engine (ProcessDriver + Service), a gocron Scheduler, and the
+//   - construct the engine (ProcessDriver + Service), a metric provider, and the
 //     transactional-outbox Relay;
-//   - mount the REST handler AND a liveness/readiness health handler
-//     (/healthz, /readyz) on the consumer's own *http.Server;
-//   - start the background workers the consumer owns — relay.Run(ctx),
-//     notifier.Run(ctx) — each stopped by cancelling their context;
+//   - make timers DURABLE: wire a TimerStore so armed timers survive a restart,
+//     start the driver, and re-arm the persisted timers with RehydrateTimers;
+//   - mount the REST handler, a liveness/readiness health handler
+//     (/healthz, /readyz), AND the admin routes behind an auth guard, on the
+//     consumer's own *http.Server;
+//   - start the background worker the consumer owns — relay.Run(ctx) — stopped
+//     by cancelling its context;
 //   - on SIGINT/SIGTERM: cancel the worker context, gracefully Shutdown the
 //     HTTP server with a deadline, then call runtime.ShutdownGroup.Shutdown to
-//     release the resource holders (scheduler, eventing closer, pool) in reverse
-//     order, joining any errors.
+//     release the resource holders in reverse registration order, joining errors.
 //
 // It runs with or without Postgres: set DATABASE_URL to wire the Postgres store,
-// relay, and a DB-ping readiness check; unset, it falls back to in-memory stores
-// and an always-ready probe so the example still builds and runs.
+// durable timer store, relay, and a DB-ping readiness check; unset, it falls back
+// to in-memory stores and an always-ready probe so the example still builds and
+// runs — but with NO timer durability, which is the whole point of the
+// DATABASE_URL branch.
+//
+// On the scheduler: this example deliberately does NOT pass runtime.WithScheduler.
+// NewProcessDriver then creates and OWNS an in-process gocron scheduler, and —
+// only on that owned path — auto-registers the durable timer JobStore that
+// RehydrateTimers reads. driver.Start starts it and driver.Shutdown drains it.
 //
 // This is reference wiring — NOT a shipped binary. The product is the importable
 // library; this file only illustrates how to assemble it.
@@ -26,6 +35,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -47,11 +57,35 @@ import (
 	"github.com/kartaladev/wrkflw/persistence"
 	"github.com/kartaladev/wrkflw/runtime"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
-	"github.com/kartaladev/wrkflw/scheduler"
 	"github.com/kartaladev/wrkflw/service"
 	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 	"github.com/kartaladev/wrkflw/transport/http/stdlib"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
+
+// requireAdminToken is the example's stand-in for real admin authentication. The
+// bundled AdminRoutes have none of their own by design (ADR-0095), so SOMETHING
+// must sit in front of them.
+//
+// It is deliberately minimal, and deliberately fails CLOSED: with ADMIN_TOKEN
+// unset every /admin/ request is refused, so forgetting to configure it cannot
+// silently expose the admin surface. Replace it with your real middleware — a
+// constant-time comparison, a session/JWT check, an mTLS peer check — before
+// running anything like this outside a laptop.
+func requireAdminToken(next http.Handler, token string, logger *slog.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if token == "" {
+			logger.Warn("admin request refused: ADMIN_TOKEN is not set", "path", r.URL.Path)
+			http.Error(w, "admin API disabled", http.StatusServiceUnavailable)
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Admin-Token")), []byte(token)) != 1 {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -68,31 +102,32 @@ func main() {
 // gracefully. It returns the first non-nil error from serving or shutdown.
 func run(logger *slog.Logger) error {
 	// workerCtx is cancelled first on shutdown to stop the Run(ctx) background
-	// workers (relay, notifier). The HTTP server and the resource holders are
+	// worker (the outbox relay). The HTTP server and the resource holders are
 	// drained/closed AFTER, via their own deadline-bounded paths.
 	workerCtx, stopWorkers := context.WithCancel(context.Background())
 	defer stopWorkers()
 
-	// One clock drives both the engine and the scheduler (ADR-0003); a single
-	// fake-clock advance moves both under test. Production uses the real clock.
+	// One clock drives the engine (ADR-0138); a single fake-clock advance moves it
+	// under test. Production uses the real clock.
 	clk := clockwork.NewRealClock()
 
-	// shutdown aggregates every resource holder; Shutdown closes them in reverse
-	// registration order and joins errors (ADR-0054).
+	// shutdown aggregates every resource holder. Shutdown runs them in REVERSE
+	// registration order (ADR-0054), so register lowest-level resources FIRST:
+	// they are then released LAST, after their users have drained.
 	var shutdown runtime.ShutdownGroup
+
+	// --- Metrics: the engine emits through whatever MeterProvider it is given ---
+	// A bare SDK provider has no reader attached, so it records without exporting;
+	// a real consumer adds one (e.g. sdkmetric.WithReader(prometheusExporter)).
+	// The point here is the LIFECYCLE: construct, inject, and flush on shutdown.
+	meterProvider := sdkmetric.NewMeterProvider()
+	shutdown.Add(meterProvider.Shutdown)
 
 	// --- Eventing: in-process publisher (GoChannel; no broker needed) ---
 	publisher, _, evClose := eventing.NewGoChannelPublisher(eventing.WithLogger(logger))
 	shutdown.AddCloser(evClose)
 
-	// --- Scheduler: gocron-backed timer/deadline driver ---
-	sched, err := scheduler.NewScheduler(scheduler.WithClock(clk), scheduler.WithLogger(logger))
-	if err != nil {
-		return err
-	}
-	shutdown.AddCloser(sched) // *Scheduler is an io.Closer
-
-	// --- Store, relay, and readiness probe (Postgres when DATABASE_URL is set) ---
+	// --- Store, timers, relay, readiness probe (Postgres when DATABASE_URL is set) ---
 	memStore, merr := kernel.NewMemInstanceStore()
 	if merr != nil {
 		return merr
@@ -100,6 +135,7 @@ func run(logger *slog.Logger) error {
 	var (
 		store       kernel.InstanceStore = memStore
 		lister                           = memStore
+		timerStore  kernel.TimerStore
 		readyChecks []httpcore.HealthCheck
 	)
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
@@ -107,7 +143,9 @@ func run(logger *slog.Logger) error {
 		if perr != nil {
 			return perr
 		}
-		// The pool is the lowest-level resource: closed LAST (registered first).
+		// The pool is the lowest-level resource, so it is registered BEFORE the
+		// driver and is therefore released AFTER it: the driver's shutdown drains
+		// in-flight steps and timer fires that still need the database.
 		shutdown.Add(func(context.Context) error { pool.Close(); return nil })
 
 		if merr := persistence.Migrate(workerCtx, pool); merr != nil {
@@ -118,6 +156,17 @@ func run(logger *slog.Logger) error {
 			return oerr
 		}
 		store = pgStore
+
+		// THE durability seam. Without a TimerStore the instance state is durable
+		// but every armed timer lives only in the scheduler's memory, so a restart
+		// silently drops it — the process resumes "running" and the timer never
+		// fires. With one, timers are persisted alongside state and re-armed by
+		// RehydrateTimers below.
+		ts, terr := persistence.NewTimerStore(pool)
+		if terr != nil {
+			return terr
+		}
+		timerStore = ts
 
 		// Relay drains the transactional outbox; the consumer owns its goroutine.
 		relay, rerr := persistence.NewRelay(pool, publisher, persistence.WithRelayLogger(logger))
@@ -132,9 +181,9 @@ func run(logger *slog.Logger) error {
 
 		// Readiness is wired to a real Postgres ping.
 		readyChecks = append(readyChecks, persistence.NewPingCheck(pool))
-		logger.Info("wired Postgres store + outbox relay + DB readiness probe")
+		logger.Info("wired Postgres store + durable timer store + outbox relay + DB readiness probe")
 	} else {
-		logger.Info("DATABASE_URL unset — using in-memory store; readiness probe is static")
+		logger.Info("DATABASE_URL unset — in-memory store, static readiness probe, NO timer durability")
 	}
 
 	// --- A demo definition + catalog so the engine can actually run instances ---
@@ -159,14 +208,46 @@ func run(logger *slog.Logger) error {
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
 	az := authz.RoleAuthorizer{}
-	driver, err := runtime.NewProcessDriver(
+	driverOpts := []runtime.Option{
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithHumanTasks(resolver, taskStore, az),
-	)
+		// RehydrateTimers resolves each persisted timer's definition through this
+		// registry; without it, every timer would be skipped as unresolved.
+		runtime.WithDefinitions(reg),
+		runtime.WithClock(clk),
+		runtime.WithLogger(logger),
+		runtime.WithMeterProvider(meterProvider),
+	}
+	// Appended only when durable: passing a nil store would leave the driver
+	// believing it has one.
+	if timerStore != nil {
+		driverOpts = append(driverOpts, runtime.WithTimerStore(timerStore))
+	}
+	driver, err := runtime.NewProcessDriver(driverOpts...)
 	if err != nil {
 		return err
 	}
+
+	// Start the driver-owned scheduler, and register its drain BEFORE anything
+	// that follows so it runs FIRST on shutdown (reverse order) — in-flight timer
+	// fires finish while the pool and publisher are still open.
+	if serr := driver.Start(workerCtx); serr != nil {
+		return serr
+	}
+	shutdown.Add(driver.Shutdown)
+
+	// Re-arm timers that were armed before the last restart. Only meaningful with
+	// a durable timer store; RehydrateTimers refuses without one, so the in-memory
+	// branch correctly skips it rather than logging a spurious error.
+	if timerStore != nil {
+		if rerr := driver.RehydrateTimers(workerCtx); rerr != nil {
+			// Non-fatal by design: unresolved definitions skip their timers and are
+			// reported here rather than preventing startup.
+			logger.Error("rehydrate timers", "err", rerr)
+		}
+	}
+
 	svc, err := service.NewProcessEngine(
 		service.WithProcessDriver(driver),
 		service.WithInstanceStore(store),
@@ -178,10 +259,20 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
-	// --- Mount BOTH the workflow REST routes and the health routes ---
+	// --- Mount the workflow REST routes, the health routes, and admin ---
 	mux := http.NewServeMux()
-	stdlib.Mount(mux, svc)
+	stdlib.Mount(mux, svc, httpcore.WithMeterProvider[*http.ServeMux](meterProvider))
 	stdlib.MountHealth(mux, readyChecks...)
+
+	// AdminRoutes has NO built-in authentication (ADR-0095: admin-by-composition).
+	// It is mounted on its own mux so the whole /admin/ subtree can be wrapped in
+	// one guard; every route it registers is under /admin/, so a single prefix
+	// handler covers them all. The optional dep fields (DeadLetters, Policies,
+	// RelayStats, Timers, Lineage) are left nil here — their routes are simply not
+	// registered — and a consumer wires the ones they expose.
+	adminMux := http.NewServeMux()
+	stdlib.AdminRoutes{Svc: svc}.Customize(adminMux, httpcore.WithMeterProvider[*http.ServeMux](meterProvider))
+	mux.Handle("/admin/", requireAdminToken(adminMux, os.Getenv("ADMIN_TOKEN"), logger))
 
 	srv := &http.Server{
 		Addr:              ":8080",
@@ -213,7 +304,7 @@ func run(logger *slog.Logger) error {
 	}
 
 	// --- Graceful teardown ---
-	// 1. Stop background workers (relay, notifier) by cancelling their context.
+	// 1. Stop the background worker (the relay) by cancelling its context.
 	stopWorkers()
 
 	// 2. Drain in-flight HTTP requests with a bounded deadline.
@@ -221,8 +312,9 @@ func run(logger *slog.Logger) error {
 	defer cancelDrain()
 	httpErr := srv.Shutdown(drainCtx)
 
-	// 3. Release every resource holder (scheduler, eventing, pool) in reverse
-	//    order, joining any errors. Bound this drain too.
+	// 3. Release every resource holder in reverse registration order — driver
+	//    (which drains its owned scheduler), then pool, then eventing, then the
+	//    meter provider — joining any errors. Bound this drain too.
 	releaseCtx, cancelRelease := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancelRelease()
 	releaseErr := shutdown.Shutdown(releaseCtx)

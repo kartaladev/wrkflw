@@ -32,9 +32,8 @@ import (
 type SQLiteRelayOption = RelayOption
 
 // SQLiteCallLinkOption configures a CallLinkStore returned by NewSQLiteCallLinkStore.
-// It aliases the single store.CallLinkOption (same type as CallLinkOption and
-// MySQLCallLinkOption).
-type SQLiteCallLinkOption = store.CallLinkOption
+// It is an alias of the facade [CallLinkOption] (same type as MySQLCallLinkOption).
+type SQLiteCallLinkOption = CallLinkOption
 
 // OpenSQLite constructs a SQLite-backed kernel.InstanceStore + JournalReader over db.
 //
@@ -53,11 +52,20 @@ type SQLiteCallLinkOption = store.CallLinkOption
 // db (import _ "modernc.org/sqlite") and for setting db.SetMaxOpenConns(1) to
 // enforce single-writer serialisation.
 //
+// The DSN must use the pinned driver's parameter form, _pragma=name(value).
+// modernc.org/sqlite ignores mattn/go-sqlite3 keys such as _busy_timeout=5000
+// silently, so a DSN in that form opens successfully with the pragma unset.
+// Always set _pragma=busy_timeout(...): a pool wider than one connection with
+// busy_timeout at 0 fails the great majority of concurrent operations with
+// SQLITE_BUSY within milliseconds. OpenSQLite probes for exactly that
+// combination via [WarnUnsafeSQLite] and logs a warning to [slog.Default] when
+// it finds it. It warns only: a handle is never rejected (ADR-0082 §1, §2).
+//
 // Example:
 //
 //	import _ "modernc.org/sqlite"
 //
-//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
 //	db.SetMaxOpenConns(1)
 //	persistence.MigrateSQLite(ctx, db)
 //	store, _ := persistence.OpenSQLite(ctx, db, persistence.WithHistoryCap(50))
@@ -71,7 +79,11 @@ func OpenSQLite(ctx context.Context, db *sql.DB, opts ...Option) (InstanceStore,
 	if err := database.ProbeUTC(ctx, q, database.SQLite); err != nil {
 		return nil, err
 	}
-	s, err := store.New(db, dialect.NewSQLite(), opts...)
+	// Advisory only — a mis-configured pool is reported, never rejected, so an
+	// already-deployed consumer keeps opening successfully (backlog 109).
+	WarnUnsafeSQLite(ctx, nil, db)
+
+	s, err := store.New(db, dialect.NewSQLite(), buildStoreOptions(opts)...)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +98,7 @@ func OpenSQLite(ctx context.Context, db *sql.DB, opts ...Option) (InstanceStore,
 //
 // Example:
 //
-//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 //	if err := persistence.MigrateSQLite(ctx, db); err != nil { ... }
 //	store, _ := persistence.OpenSQLite(ctx, db)
 func MigrateSQLite(ctx context.Context, db *sql.DB) error {
@@ -144,7 +156,7 @@ func NewSQLiteAdvisoryLockOwnership() (kernel.InstanceOwnership, io.Closer, erro
 //
 // Example:
 //
-//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 //	persistence.MigrateSQLite(ctx, db)
 //	ts, err := persistence.NewSQLiteTimerStore(db)
 //	if err != nil { /* handle */ }
@@ -174,7 +186,7 @@ func NewSQLiteTimerStore(db *sql.DB) (kernel.TimerStore, error) {
 //
 // Example:
 //
-//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 //	db.SetMaxOpenConns(1)
 //	persistence.MigrateSQLite(ctx, db)
 //	relay := persistence.NewSQLiteRelay(db, myPublisher,
@@ -207,12 +219,12 @@ func NewSQLiteRelay(db *sql.DB, pub kernel.OutboxPublisher, opts ...SQLiteRelayO
 //
 // Example:
 //
-//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 //	persistence.MigrateSQLite(ctx, db)
 //	cls := persistence.NewSQLiteCallLinkStore(db)
 //	pending, err := cls.ClaimPending(ctx, 100)
 func NewSQLiteCallLinkStore(db *sql.DB, opts ...SQLiteCallLinkOption) (kernel.CallLinkStore, error) {
-	return store.NewCallLinkStore(db, dialect.NewSQLite(), opts...)
+	return store.NewCallLinkStore(db, dialect.NewSQLite(), buildCallLinkOptions(opts)...)
 }
 
 // NewSQLiteChainLinkStore constructs the SQLite-backed kernel.ChainLinkStore for
@@ -224,12 +236,16 @@ func NewSQLiteCallLinkStore(db *sql.DB, opts ...SQLiteCallLinkOption) (kernel.Ca
 //
 // Example:
 //
-//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 //	persistence.MigrateSQLite(ctx, db)
 //	links := persistence.NewSQLiteChainLinkStore(db)
 //	chainer, err := chain.NewChainer(runner, policy, chain.WithChainLinks(links))
-func NewSQLiteChainLinkStore(db *sql.DB) (kernel.ChainLinkStore, error) {
-	return store.NewChainLinkStore(db, dialect.NewSQLite())
+//
+// Pass [WithChainLinkClock] to control the created_at fallback Record uses when
+// a link carries a zero CreatedAt (ADR-0138). Zero-option call sites compile
+// unchanged.
+func NewSQLiteChainLinkStore(db *sql.DB, opts ...ChainLinkOption) (kernel.ChainLinkStore, error) {
+	return store.NewChainLinkStore(db, dialect.NewSQLite(), buildChainLinkOptions(opts)...)
 }
 
 // NewSQLiteLister constructs the SQLite-backed kernel.InstanceLister for
@@ -243,7 +259,7 @@ func NewSQLiteChainLinkStore(db *sql.DB) (kernel.ChainLinkStore, error) {
 //
 // Example:
 //
-//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 //	persistence.MigrateSQLite(ctx, db)
 //	lister := persistence.NewSQLiteLister(db)
 //	page, err := lister.List(ctx, kernel.InstanceFilter{Limit: 20})
@@ -268,7 +284,7 @@ func NewSQLiteLister(db *sql.DB) (kernel.InstanceLister, error) {
 //
 // Example:
 //
-//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 //	persistence.MigrateSQLite(ctx, db)
 //	notifier := persistence.NewSQLiteCallNotifier(db, deliverFn, reg)
 //	go notifier.Run(ctx)
@@ -293,12 +309,15 @@ func NewSQLiteCallNotifier(db *sql.DB, deliver calllink.CallDeliverFunc, reg ker
 //
 // Example:
 //
-//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 //	persistence.MigrateSQLite(ctx, db)
 //	ds := persistence.NewSQLiteDefinitionStore(db)
 //	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute)
-func NewSQLiteDefinitionStore(db *sql.DB) (DefinitionStore, error) {
-	return store.NewDefinitionStore(db, dialect.NewSQLite())
+//
+// Pass [WithDefinitionClock] to control the created_at stamp PutDefinition
+// writes (ADR-0138). Zero-option call sites compile unchanged.
+func NewSQLiteDefinitionStore(db *sql.DB, opts ...DefinitionOption) (DefinitionStore, error) {
+	return store.NewDefinitionStore(db, dialect.NewSQLite(), buildDefinitionOptions(opts)...)
 }
 
 // NewSQLitePruner constructs a Pruner over db (returns the stable [Pruner] interface).
@@ -309,7 +328,7 @@ func NewSQLiteDefinitionStore(db *sql.DB) (DefinitionStore, error) {
 //
 // Wire it into a scheduled job the consumer owns, e.g.:
 //
-//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 //	persistence.MigrateSQLite(ctx, db)
 //	pruner := persistence.NewSQLitePruner(db)
 //	// every hour, drop outbox events published more than 7 days ago:

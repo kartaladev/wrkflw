@@ -160,9 +160,13 @@ type ActionFailed struct {
 	CommandID string
 	Err       string
 	Retryable bool
-	// JitterFraction is a value in [0,1) sampled by the runtime and applied to
-	// the backoff duration in Step to spread retry storms across multiple workers.
-	// Zero means no jitter (the default when constructed via NewActionFailed).
+	// JitterFraction is a value in [0,1) sampled by the runtime and used to SCALE
+	// the retry backoff in Step, spreading retry storms across multiple workers.
+	//
+	// Zero — the value NewActionFailed leaves unless [WithJitter] is passed —
+	// means NO JITTER: the retry is armed at the policy's full backoff interval.
+	// It does not mean a zero delay. (It once did, which made an unjittered
+	// retry immediate; see the retry-backoff regression test.)
 	JitterFraction float64
 	// Cause is the original Go error from the live action invocation. It is
 	// intentionally NOT persisted (json:"-") so that serialised/replayed

@@ -132,12 +132,19 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 				fire, count := counter()
 				_, err := s.ScheduleJob(t.Context(), "c1", sched.At(clk.Now().Add(5*time.Second)), fire, false)
 				require.NoError(t, err)
-				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
+				// Liveness canary at the SAME due instant, not cancelled — see
+				// liveness_test.go. Without it "c1 never fired" is equally true
+				// of a scheduler that never delivered anything at all: measured,
+				// this case PASSED under exactly that mutation.
+				canary := newFireCanary(t, s, "c1-canary", sched.At(clk.Now().Add(5*time.Second)))
+				// Barrier on 2 — BlockUntilContext is a >= bound, so 1 would be
+				// satisfied by whichever job armed first.
+				require.NoError(t, clk.BlockUntilContext(t.Context(), 2))
 				s.Cancel(t.Context(), "c1")
-				// drain: confirm gocron released its fake-clock waiter before advancing
-				require.NoError(t, clk.BlockUntilContext(t.Context(), 0))
 				clk.Advance(10 * time.Second)
-				// Assert it never fires after cancel.
+				// The canary fired, so the Advance reached the executor.
+				requireCanaryFired(t, canary, 1)
+				// Assert the cancelled job never fires.
 				require.Never(t, func() bool { return count() > 0 },
 					200*time.Millisecond, 10*time.Millisecond)
 			},
@@ -145,23 +152,30 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 		{
 			name: "replace reschedules and fires once",
 			assert: func(t *testing.T, s *sched.GocronScheduler, clk *clockwork.FakeClock) {
-				var wg sync.WaitGroup
-				wg.Add(1)
 				var n atomic.Int64
-				fire := func(context.Context) error { n.Add(1); wg.Done(); return nil }
+				fire := func(context.Context) error { n.Add(1); return nil }
 
 				_, err := s.ScheduleJob(t.Context(), "r1", sched.At(clk.Now().Add(5*time.Second)), func(context.Context) error { t.Error("stale timer fired"); return nil }, false)
 				require.NoError(t, err)
-				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
+				// Liveness canary at the OLD due instant (T+5): it must fire
+				// there, which is precisely when the replaced registration must
+				// not. Without it the Never below is satisfied by a scheduler
+				// that delivered nothing at T+5 at all.
+				canary := newFireCanary(t, s, "r1-canary", sched.At(clk.Now().Add(5*time.Second)))
+				require.NoError(t, clk.BlockUntilContext(t.Context(), 2))
 				_, err = s.ScheduleJob(t.Context(), "r1", sched.At(clk.Now().Add(10*time.Second)), fire, false) // replace
 				require.NoError(t, err)
-				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
+				require.NoError(t, clk.BlockUntilContext(t.Context(), 2))
 
 				clk.Advance(5 * time.Second)
+				requireCanaryFired(t, canary, 1)
 				require.Never(t, func() bool { return n.Load() > 0 },
 					150*time.Millisecond, 10*time.Millisecond) // old T+5 must not fire
 				clk.Advance(5 * time.Second) // now at T+10
-				wg.Wait()
+				// Eventually, not wg.Wait: a wg.Wait that never returns dies as
+				// an unnamed 600s binary timeout with no assertion message.
+				require.Eventually(t, func() bool { return n.Load() >= 1 }, eventuallyBudget, 5*time.Millisecond,
+					"the replacement registration must fire at its own due instant")
 				require.Equal(t, int64(1), n.Load())
 			},
 		},
@@ -177,26 +191,34 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 			// not delete the new job's map entry, guarded by job UUID comparison.
 			name: "replace then fire new; cancel still live after new fires",
 			assert: func(t *testing.T, s *sched.GocronScheduler, clk *clockwork.FakeClock) {
-				var wgNew sync.WaitGroup
-				wgNew.Add(1)
+				var oldFired, newFired atomic.Int64
 
 				// Arm the first (old) job at T+5; it will be replaced before firing.
-				_, err := s.ScheduleJob(t.Context(), "uuid1", sched.At(clk.Now().Add(5*time.Second)), func(context.Context) error { t.Error("old job must not fire"); return nil }, false)
+				_, err := s.ScheduleJob(t.Context(), "uuid1", sched.At(clk.Now().Add(5*time.Second)), func(context.Context) error { oldFired.Add(1); return nil }, false)
 				require.NoError(t, err)
-				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
+				// Liveness canary at the old T+5 instant.
+				canary := newFireCanary(t, s, "uuid1-canary", sched.At(clk.Now().Add(5*time.Second)))
+				require.NoError(t, clk.BlockUntilContext(t.Context(), 2))
 
 				// Replace with a new job at T+10.
-				_, err = s.ScheduleJob(t.Context(), "uuid1", sched.At(clk.Now().Add(10*time.Second)), func(context.Context) error { wgNew.Done(); return nil }, false)
+				_, err = s.ScheduleJob(t.Context(), "uuid1", sched.At(clk.Now().Add(10*time.Second)), func(context.Context) error { newFired.Add(1); return nil }, false)
 				require.NoError(t, err)
-				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
+				require.NoError(t, clk.BlockUntilContext(t.Context(), 2))
 
 				// Advance past the old T+5 — old job must NOT fire (replace removed it).
+				// This Never used to read `func() bool { return false }` — a
+				// condition that cannot become true, i.e. a 100 ms sleep
+				// asserting nothing whatsoever. It now names the actual subject,
+				// licensed by the canary that DID fire at the same instant.
 				clk.Advance(5 * time.Second)
-				require.Never(t, func() bool { return false }, 100*time.Millisecond, 10*time.Millisecond)
+				requireCanaryFired(t, canary, 1)
+				require.Never(t, func() bool { return oldFired.Load() > 0 }, 100*time.Millisecond, 10*time.Millisecond,
+					"the replaced registration must not fire at its old due instant")
 
 				// Advance to T+10 — new job fires.
 				clk.Advance(5 * time.Second)
-				wgNew.Wait()
+				require.Eventually(t, func() bool { return newFired.Load() >= 1 }, eventuallyBudget, 5*time.Millisecond,
+					"the replacement registration must fire at its own due instant")
 
 				// After new job fired, AfterJobRuns from the new job deletes the map
 				// entry (UUID match). A subsequent Cancel must be a clean no-op and
@@ -209,16 +231,29 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 		{
 			name: "callback runs exactly once",
 			assert: func(t *testing.T, s *sched.GocronScheduler, clk *clockwork.FakeClock) {
-				var wg sync.WaitGroup
-				wg.Add(1)
 				var n atomic.Int64
-				_, err := s.ScheduleJob(t.Context(), "o1", sched.At(clk.Now().Add(time.Second)), func(context.Context) error { n.Add(1); wg.Done(); return nil }, false)
+				_, err := s.ScheduleJob(t.Context(), "o1", sched.At(clk.Now().Add(time.Second)), func(context.Context) error { n.Add(1); return nil }, false)
 				require.NoError(t, err)
+				// A RECURRING canary, because the claim here is "no SECOND
+				// fire". Proving the first fire happened is not enough: a
+				// scheduler that stopped delivering entirely also never fires a
+				// second time. The canary must reach its own second tick INSIDE
+				// the window in which the one-shot must stay at one.
+				canary := newFireCanary(t, s, "o1-canary", sched.Every(time.Second))
+				require.NoError(t, clk.BlockUntilContext(t.Context(), 2))
+
+				clk.Advance(time.Second) // both due: one-shot fires, canary tick 1
+				require.Eventually(t, func() bool { return n.Load() >= 1 }, eventuallyBudget, 5*time.Millisecond,
+					"the one-shot must fire at its due instant")
+				requireCanaryFired(t, canary, 1)
+
+				// Second due instant: the canary fires again, the one-shot must not.
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 				clk.Advance(time.Second)
-				wg.Wait()
+				requireCanaryFired(t, canary, 2)
 				require.Never(t, func() bool { return n.Load() > 1 },
-					150*time.Millisecond, 10*time.Millisecond)
+					150*time.Millisecond, 10*time.Millisecond,
+					"a one-shot must not fire again at a later due instant, though the scheduler demonstrably still delivers")
 			},
 		},
 	}

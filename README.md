@@ -438,9 +438,9 @@ Configure timers on nodes:
 // expressions evaluated to a Go duration via time.ParseDuration, so they are
 // backtick-wrapped quoted duration literals ("72h", "24h" — not ISO-8601).
 activity.NewUserTask("approve", activity.WithEligibleRoles("manager"),
-    activity.WithWaitDeadline(`"72h"`, "escalate-flow"),
+    activity.WithWaitDeadline(schedule.AfterDuration(72*time.Hour), "escalate-flow"),
     activity.WithDeadlineAction("notify-manager"),
-    activity.WithWaitAction(`"24h"`, "send-reminder"),
+    activity.WithWaitAction(schedule.Every(24*time.Hour), "send-reminder"),
 )
 ```
 
@@ -630,7 +630,17 @@ A process definition is a graph of **nodes** connected by **sequence flows**. Ev
 node is a value built with a constructor from `definition/{event,gateway,activity}`
 and implements the `model.Node` interface (`Kind() NodeKind`, `ID() string`,
 `Name() string`). Never construct the struct types directly — use the constructors.
-There are 19 node kinds, grouped below.
+
+The authorable kinds are exactly the `NodeKind` constants declared in
+`definition/model/definition.go`, minus the `KindUnspecified` iota-zero sentinel:
+**StartEvent, EndEvent, ServiceTask, UserTask, ReceiveTask, SendTask, BusinessRuleTask,
+SubProcess, CallActivity, IntermediateCatchEvent, IntermediateThrowEvent, BoundaryEvent,
+ExclusiveGateway, ParallelGateway, InclusiveGateway, EventBasedGateway** and
+**CompensationThrowEvent** — grouped into tables below. Every one of them except
+`BoundaryEvent` is entered by a token and dispatched through the `nodeStrategies` registry
+in `engine/step_dispatch.go`; `BoundaryEvent` deliberately has no strategy (it is armed on
+the activity it is attached to, and fires from there), which `intentionallyUnhandledKinds`
+in `engine/step_nodes_test.go` asserts.
 
 All examples in this section are excerpts; the full, compiling programs they are
 drawn from live under [`examples/scenarios/`](examples/scenarios).
@@ -648,9 +658,9 @@ same set of functional options:
 | `activity.WithRecoveryFlow(flowID string)` | Sequence flow taken when retries are exhausted. |
 | `activity.WithCompensateAction(actionName string)` | Service action invoked on rollback (reverse order). |
 | `activity.WithCancelAction(actionName string)` | Service action run when the node is interrupted. |
-| `activity.WithWaitDeadline(duration, flowID string)` | On deadline breach: take `flowID`. |
+| `activity.WithWaitDeadline(t schedule.TriggerSpec, flowID string)` | On deadline breach: take `flowID`. |
 | `activity.WithDeadlineAction(actionName string)` | Run `actionName` on deadline breach (optional; pairs with `WithWaitDeadline`). |
-| `activity.WithWaitAction(every, actionName string)` | Run `actionName` repeatedly *during* the wait. |
+| `activity.WithWaitAction(t schedule.TriggerSpec, actionName string)` | Run `actionName` repeatedly *during* the wait. |
 
 Two options are **compile-enforced** to a single constructor:
 
@@ -660,10 +670,16 @@ Two options are **compile-enforced** to a single constructor:
 - `activity.WithCorrelationKey(key string)` — **`NewReceiveTask` only**. Correlation-key
   expression. Passing it elsewhere is a compile error.
 
-> **Durations are expr-lang expressions parsed by Go's `time.ParseDuration`.** Write
-> them as **quoted Go-duration strings** — `` `"1h"` ``, `` `"30m"` ``, `` `"45s"` `` —
-> not ISO-8601. This applies to `WithBoundaryTimer`, `WithCatchTimer`, `WithWaitDeadline`
-> (activity and event), `WithWaitAction` (activity and event), and `WithStartTimer`.
+> **Every timer option takes a `schedule.TriggerSpec`, never a bare string.** Build one
+> with a constructor from `definition/schedule`: `schedule.AfterDuration(d)` (one-shot
+> after a fixed delay), `schedule.At(t)` (one-shot at an absolute time),
+> `schedule.Every(d)` (recurring fixed interval), `schedule.EveryRandom(min, max)`,
+> `schedule.Cron(expr)`, `schedule.Daily/Weekly/Monthly(...)`, and the two dynamic forms
+> `schedule.AfterExpr(code)` / `schedule.EveryExpr(code)` whose expr-lang expression is
+> resolved by the engine at runtime and must evaluate to a Go-duration string such as
+> `"2h"` — not ISO-8601. This applies to `WithBoundaryTimer`, `WithCatchTimer`,
+> `WithWaitDeadline` (activity and event), `WithWaitAction` (activity and event), and
+> `WithStartTimer`.
 
 `RetryPolicy` fields:
 
@@ -683,20 +699,23 @@ model.RetryPolicy{
 | Node | What it does | Constructor |
 |---|---|---|
 | **StartEvent** | Entry point of a process (or the event-triggered inner start of a SubProcess acting as an event sub-process). | `event.NewStart(id string, opts ...) Node` |
-| **EndEvent** | Normal completion of one branch; `WithForceTermination(reason, outcome)` upgrades it to terminate the whole instance (all parallel branches), abort or complete. | `event.NewEnd(id string, opts ...event.EndOption) Node` |
-| **ErrorEndEvent** | Throws an error code, caught by a boundary error event. | `event.NewErrorEnd(id, errorCode string, name ...string) Node` |
+| **EndEvent** | Normal completion of one branch. Two options change that: `WithForceTermination(reason, outcome)` terminates the whole instance (all parallel branches), aborting or completing; `WithErrorCode(code)` throws a workflow error caught by an enclosing boundary error event. | `event.NewEnd(id string, opts ...event.EndOption) Node` |
+
+There is **no separate error-end kind and no `NewErrorEnd` constructor** — a BPMN error end
+event is an `EndEvent` carrying `event.WithErrorCode`. `WithErrorCode` and
+`WithForceTermination` are mutually exclusive; if both are applied the last one wins.
+An empty `code` throws an anonymous (catch-all) error.
 
 `NewStart` options (the trigger + `WithNonInterrupting` are only meaningful when the
 start is the event-triggered inner start of a SubProcess acting as an event sub-process):
 `WithName(string)`, `WithSignalName(name)`, `WithMessageCorrelator(msg, key)`,
-`WithStartTimer(dur)`, `WithNonInterrupting()`. An empty `errorCode` on `NewErrorEnd`
-throws an anonymous (catch-all) error.
+`WithStartTimer(schedule.TriggerSpec)`, `WithNonInterrupting()`.
 
 ```go
 event.NewStart("start")
 event.NewEnd("end", event.WithName("Order complete"))
 event.NewEnd("kill-all", event.WithForceTermination("abort", event.OutcomeAbort))
-event.NewErrorEnd("insufficient-funds", "FUNDS_ERROR")
+event.NewEnd("insufficient-funds", event.WithErrorCode("FUNDS_ERROR"))
 ```
 
 ### Activities
@@ -709,7 +728,7 @@ event.NewErrorEnd("insufficient-funds", "FUNDS_ERROR")
 | **SendTask** | Sends an outbound message. | `activity.NewSendTask(id, messageName string, opts ...) Node` |
 | **BusinessRuleTask** | Runs a named business-rule action. | `activity.NewBusinessRuleTask(id string, opts ...) Node` |
 | **SubProcess** | Runs a nested definition as a scope — *embedded* (none start, entered by a token) or an *event sub-process* (event-triggered inner start, no incoming flow, latent until its trigger fires). | `activity.NewSubProcess(id string, sub *model.ProcessDefinition, opts ...) Node` |
-| **CallActivity** | Calls a *separate* top-level definition by name. | `activity.NewCallActivity(id, defRef string, opts ...) Node` |
+| **CallActivity** | Calls a *separate* top-level definition by reference. | `activity.NewCallActivity(id string, ref model.Qualifier, opts ...ActivityOption) Node` |
 
 All activity constructors take the shared activity options above. `NewUserTask` also
 takes `WithEligibleExpr`; `NewReceiveTask` also takes `WithCorrelationKey`. An **event
@@ -725,7 +744,7 @@ activity.NewServiceTask("charge",
     activity.WithRetryPolicy(&retry),
 )
 activity.NewUserTask("approve", activity.WithEligibleRoles("manager"),
-    activity.WithWaitDeadline(`"3h"`, "escalate-flow"),
+    activity.WithWaitDeadline(schedule.AfterDuration(3*time.Hour), "escalate-flow"),
     activity.WithDeadlineAction("notify-manager"),
     activity.WithEligibleExpr(`vars["region"] == "EU"`),
 )
@@ -733,7 +752,8 @@ activity.NewReceiveTask("await-payment", "payment-received",
     activity.WithCorrelationKey("orderId"),
 )
 activity.NewSubProcess("reserve-hotel", hotelDef)               // embedded (none start, token-driven)
-activity.NewCallActivity("credit-check", "credit-check")        // resolved via a DefinitionRegistry
+activity.NewCallActivity("credit-check", model.Latest("credit-check")) // resolved via a DefinitionRegistry
+// model.Version("credit-check", 3) pins an exact version; model.Latest leaves Version zero.
 // event sub-process (ADR-0122): a SubProcess whose inner start is event-triggered;
 // cancelDef's start = event.NewStart("on-cancel", WithMessageCorrelator("cancel","orderId"), WithNonInterrupting())
 activity.NewSubProcess("on-cancel", cancelDef)                  // no incoming flow — latent until "cancel" fires
@@ -768,14 +788,14 @@ within one process; for cross-process correlation, subscribe `message.*` in your
 | **CompensationThrowEvent** | Runs completed compensable activities' compensation, then resumes past the throw (never terminates). Targeted or scope-wide. | `event.NewCompensateThrow(id string, opts ...) Node` |
 | **BoundaryEvent** | Event attached to an activity; fires on timer/signal/error. | `event.NewBoundary(id, attachedTo string, opts ...) Node` |
 
-`NewIntermediateCatchEvent` options: `WithCatchTimer(dur)`, `WithSignalName(name)`,
-`WithMessageCorrelator(msg, key)`, `WithWaitDeadline(dur, flow)`, `WithDeadlineAction(action)`,
-`WithWaitAction(every, action)`, `WithName(string)`.
-`NewIntermediateThrowEvent` options: `WithThrowSignalName(name)`, `WithThrowName(name)`.
+`NewIntermediateCatch` options: `WithCatchTimer(schedule.TriggerSpec)`, `WithSignalName(name)`,
+`WithMessageCorrelator(msg, key)`, `WithWaitDeadline(schedule.TriggerSpec, flow)`, `WithDeadlineAction(action)`,
+`WithWaitAction(schedule.TriggerSpec, action)`, `WithName(string)`.
+`NewIntermediateThrow` options: `WithThrowSignalName(name)`, `WithThrowName(name)`.
 `NewCompensateThrow` options (ADR-0120): `WithCompensateRef(nodeID)` (empty = scope-wide),
 `WithScopeLocalCompensation()` (root scope only — narrows to root-direct records instead of
 whole-instance), `WithCompensateThrowName(name)`.
-`NewBoundaryEvent` options: `WithBoundaryTimer(dur)`, `WithSignalName(name)`,
+`NewBoundary` options: `WithBoundaryTimer(schedule.TriggerSpec)`, `WithSignalName(name)`,
 `WithMessageCorrelator(msg, key)`, `WithBoundaryErrorCode(code)` (empty = catch-all),
 `WithBoundaryNonInterrupting()` (default interrupting), `WithName(string)`.
 
@@ -783,23 +803,26 @@ whole-instance), `WithCompensateThrowName(name)`.
 > fired by the engine (message boundaries since ADR-0053).
 
 ```go
-event.NewIntermediateCatch("wait-1h", event.WithCatchTimer(`"1h"`))
+event.NewIntermediateCatch("wait-1h", event.WithCatchTimer(schedule.AfterDuration(time.Hour)))
 event.NewCompensateThrow("compensate", event.WithCompensateRef("reserve-hotel"))
-event.NewBoundary("review-timeout", "review", event.WithBoundaryTimer(`"1h"`))
+event.NewBoundary("review-timeout", "review", event.WithBoundaryTimer(schedule.AfterDuration(time.Hour)))
 ```
 
 ### Gateways
 
-Gateways take no options beyond an optional name — their behaviour is determined by
-the number of incoming and outgoing flows and (for conditional gateways) the flow
+Gateways take no options beyond a name and a display label — their behaviour is determined
+by the number of incoming and outgoing flows and (for conditional gateways) the flow
 conditions.
 
 | Node | What it does | Constructor |
 |---|---|---|
-| **ExclusiveGateway** | XOR. Split: first matching flow (or the default). Merge: pass-through. | `gateway.NewExclusive(id string, name ...string) Node` |
-| **ParallelGateway** | AND. Split: activate all outgoing. Join: wait for all incoming. | `gateway.NewParallel(id string, name ...string) Node` |
-| **InclusiveGateway** | OR. Split: every matching flow. Join: wait for the active matching branches. | `gateway.NewInclusive(id string, name ...string) Node` |
-| **EventBasedGateway** | Race: routes to whichever following catch event fires first. | `gateway.NewEventBased(id string, name ...string) Node` |
+| **ExclusiveGateway** | XOR. Split: first matching flow (or the default). Merge: pass-through. | `gateway.NewExclusive(id string, opts ...gateway.Option) Node` |
+| **ParallelGateway** | AND. Split: activate all outgoing. Join: wait for all incoming. | `gateway.NewParallel(id string, opts ...gateway.Option) Node` |
+| **InclusiveGateway** | OR. Split: every matching flow. Join: wait for the active matching branches. | `gateway.NewInclusive(id string, opts ...gateway.Option) Node` |
+| **EventBasedGateway** | Race: routes to whichever following catch event fires first. | `gateway.NewEventBased(id string, opts ...gateway.Option) Node` |
+
+The only gateway options are `gateway.WithName(string)` (semantic/reference name) and
+`gateway.WithLabel(string)` (human display label).
 
 ```go
 gateway.NewExclusive("route")
@@ -970,7 +993,7 @@ start → review[UserTask, deadline "1h" → flow "review-overdue", action "noti
 
 ```go
 Add(activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"),
-    activity.WithWaitDeadline(`"1h"`, "review-overdue"),
+    activity.WithWaitDeadline(schedule.AfterDuration(time.Hour), "review-overdue"),
     activity.WithDeadlineAction("notify-overdue"))). // fire-once breach action
 Add(activity.NewServiceTask("escalate", activity.WithTaskAction("reassign"))).
 // ...
@@ -1250,7 +1273,7 @@ reaches `StatusCompleted` with no incident raised.
 
 ### 12. In-wait reminders
 
-`WithWaitAction(every, action)` schedules a recurring in-wait action that fires once per
+`WithWaitAction(schedule.TriggerSpec, action)` schedules a recurring in-wait action that fires once per
 interval **while** a task is open, re-arming itself each time. It stops automatically once
 the task is completed, cancelled, or breached — distinct from the one-shot `WithWaitDeadline`
 escalation in scenario 3.
@@ -1261,7 +1284,7 @@ start → review[UserTask, reminder every "30m" → "nudge-reviewer"] → end
 
 ```go
 Add(activity.NewUserTask("review", activity.WithEligibleRoles("reviewer"),
-    activity.WithWaitAction(`"30m"`, "nudge-reviewer")))
+    activity.WithWaitAction(schedule.Every(30*time.Minute), "nudge-reviewer")))
 // driver wired with WithClock(fc), WithScheduler(sched), WithHumanTasks(...)
 driver.Drive(ctx, def, "review-77", nil)                            // parks; first reminder armed
 for range 3 { fc.Advance(30 * time.Minute); sched.Tick(ctx) } // 3 nudges fire
@@ -1301,7 +1324,7 @@ decided by whichever event happened first.
 
 ### 14. Catch-event in-wait reminder
 
-`WithWaitAction(every, action)` attaches a recurring in-wait reminder to an
+`WithWaitAction(schedule.TriggerSpec, action)` attaches a recurring in-wait reminder to an
 **intermediate catch event** — the same reminder mechanism as scenario 12, now generalized
 beyond `UserTask`. The reminder fires once per interval **while** the instance is parked
 awaiting the catch, re-arming itself each time, and is cancelled automatically the moment the
