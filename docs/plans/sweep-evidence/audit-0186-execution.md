@@ -687,3 +687,105 @@ fiber/v3@v3.4.0/middleware/` — 31 middlewares, none of them body-limit), so th
 reasoning that a mounted group cannot set it is correct. **Discharge the assumption for
 the uncompressed case only** — E8 shows the compressed case defeats it.
 
+
+---
+
+## ⚠ UNVERIFIED LEADS — probe written, NOT run (this lens was cut off mid-execution)
+
+Recorded as `ASSUMPTION (unverified)` per Premise Discipline. These came from **source
+reading only**; the probe (`zzprobe/views_test.go`) was written but never executed, so
+**none of this may enter the bundle until someone runs it.** They are listed because
+each, if executed, looks like it lands on D4.
+
+1. **D4's covered set may name 8 of 11 variable-bearing responses.** ADR-0186 D4 /
+   Consequences enumerate *"the two mapper-less non-admin read endpoints
+   (`GetInstanceSnapshot`, `GetActionableView`) as well as the six that go through
+   `mapInstance`"*. Reading `transport/http/httpcore/admin_endpoints.go`, **three
+   further sites call `NewInstanceView(pi.State())` directly**, bypassing `mapInstance`:
+   `ResolveIncident` (`:111`), `CancelInstance` (`:121`), `ResolveCompensationStall`
+   (`:514`). `InstanceView` carries `Variables map[string]any` (`view.go:20`). The ADR
+   checked `AdminListInstances` and declared it clean — it appears to have checked one
+   admin endpoint of four.
+2. **D4's stated reason for including `GetActionableView` may be false.**
+   `runtime/view/instance_actionable.go` builds `ActionableTask{TaskID, NodeID, State,
+   Claim, Candidates, AllowedActions}` — **`Vars` is not among the projected fields**,
+   though `humantask.HumanTask.Vars` exists on the model. If so, the ADR's *"whose
+   `HumanTask.Vars` is the per-task variable snapshot"* is false, and plan phase-4 test
+   `TestActionableViewRedactsTaskVars` is **vacuous by construction** — a fixture that
+   cannot produce the thing it asserts about (the ADR-0181/0182 lesson).
+3. **…while the disclosure that endpoint *does* carry may be out of reach of D4's hook
+   signature.** `ActionableTask.Candidates` is `[]authz.Actor`, and `authz.Actor`
+   carries `Attributes map[string]any` (`authz/authz.go:38`);
+   `NextAction.Condition` is the definition's **expression source** — the same class of
+   text ADR-0186 Context §5 calls a leak in the 403 arm. Neither is a
+   `map[string]any` of process variables, so
+   `RedactVariables func(map[string]any) map[string]any` cannot redact either. Both on a
+   **non-admin** route.
+
+**To discharge:** `zzprobe/views_test.go` (in this worktree, deleted before hand-back —
+recreate it) builds a state with a task carrying `Vars`, a candidate with
+`Attributes: {"salaryBand": "L7-CONFIDENTIAL"}`, and a flow whose `Condition` names
+`internalApprovalLimit`, then marshals `httpcore.NewInstanceView` and
+`view.NewActionableView` and greps the JSON. Ten minutes of work.
+
+---
+
+## Ranked index
+
+Most severe first; within a severity, by how much of the bundle the finding invalidates.
+
+| # | sev | the finding, in one line |
+|---|---|---|
+| **E1** | **Critical** | D2's *"the bound is computed ONCE PER ENV"* is **unreachable at the seam it is put behind** — `ConditionEvaluator`'s three methods take `(string, map[string]any)` and nothing else, the plan freezes those signatures, and a `map` cannot key a memo table; phase 1 has no implementable content and phases 3/4/6 block on it |
+| **E2** | **Critical** | the only remaining identity handle, `reflect.ValueOf(env).Pointer()`, is **unsound**: 200 000 distinct maps produced 82 473 addresses (59 % collided), and a memoized `count=2` was observed backing a map of real count 50 001 — the bound fails **open**, admitting exactly the env it exists to refuse |
+| **E4** | **Critical** | the allow-listed *"value-free"* 400 rendering **is not value-free**: `InstanceLocation` is instance-derived, so a card number submitted as an object key renders verbatim as `at '/4111-1111-1111-1111': violates type` — the leak survives inside the fix, and phase-2 test 1's closed-`properties` fixture is green against it |
+| **E8** | **Critical** | fiber's `c.Body()` **decompresses** (vendor godoc `req.go:146`), so the prescribed `len(c.Body())` pre-check returns **400, not 413**, on the one case it exists for — a 63.7 KiB gzip expanding to 64 MiB yields `len == 33` (the string `"body size exceeds the given limit"`), and 2 081 wire bytes still materialise a 2 MiB allocation |
+| **E3** | Major | D2's *"20–60× worse than the cost the decision refused"* is a **worst-case number stated as the general one**: measured crossover is ~500 elements, a typical env costs +74 ns/0 allocs (~12× **cheaper** than the 866 ns ctx), and the 16.5 µs worst case *replaces* a 2.458 s evaluation — so the unimplementable once-per-env mandate is also **unnecessary**, and removing it dissolves E1 and E2 at no cost |
+| **E9** | Major | the three adapters **disagree on a compressed body** — fiber 413 (decompressed bytes) vs stdlib/gin 400 (wire bytes, `'\x1f'`) — so `MaxBodyBytes` does not mean the same thing in all three and phase 8's *"all three agree on 413"* cannot hold as written |
+| **E5** | Major | the prescribed rendering applied to the error `errors.As` returns emits `at '/': violates ` — an **empty keyword on the root**; the usable leaves are in `.Causes`, a recursion the plan never states, and every prescribed assertion is satisfied by that useless message |
+| **E6** | Major | `avro` **echoes the submitted value verbatim** (`"4111-1111-1111-1111"` on the enum path) and a length on the `fixed` path; the bundle routes avro to static text for the right outcome but the **wrong stated reason** (absence of structure), never records the leak, and phase-2 test 3 is `callback`-only |
+| **E7** | Minor | `ErrorKind.LocalizedString(nil)` **panics** — the obvious implementer call turns a malformed client request into a server panic inside the 400 path — and rendering messages properly promotes `golang.org/x/text` from indirect to a new direct dependency the bundle never lists |
+
+### What HELD (do not re-litigate)
+
+| # | what survived execution |
+|---|---|
+| **H1** | the O(n²) ladder reproduces (25/98/394 ms, 1.57 s) **and the n = 10 000 extrapolation is right** — predicted 2.442 s, measured **2.458 s**, 0.65 % error; the predicate is confirmed 80 bytes. **Discharge the `ASSUMPTION (unverified)`; the 10 000 default is derived, not asserted** |
+| **H2** | phase 2's reason for existing is sound: `errors.As(*jsonschema.ValidationError)` is **`true` before `Gate`, `false` after**, and the submitted value `123-45-6789` is confirmed in the 400 body, `maxLength` sibling included |
+| **H3** | the 413/400 ordering defect is real — an error wrapping both sentinels classifies **400** — and the 400 arm carries exactly **8** sentinels, matching D5's body and plan §4. ⚠ ADR-0186's **banner says "nine"**, inherited from the re-audit; fix it |
+| **H4** | `errors.As(*http.MaxBytesError)` works through both `json.Decoder.Decode` and `ShouldBindJSON`, so the fix is right — but *"gin wraps it again"* is **false**; both return the bare type. Two shapes, not three |
+| **H5** | fiber's `BodyLimit` really is unreachable from a mounted group (v3 ships 31 middlewares, none body-limit; `Mount` takes `fiber.Router` = `*fiber.Group`) and `len(c.Body())` really is reachable. **Discharge the assumption for uncompressed bodies only** — E8 defeats the compressed case |
+
+---
+
+## Meta note — the shape across these findings
+
+**Every Critical this lens found is a claim that was true one layer above where the
+decision acts, and false at the layer the code actually runs.** D2's count is a property
+of the env *conceptually*, and there is no parameter for it at the seam (E1); map
+identity is a stable notion *in the abstract*, and the allocator recycles addresses (E2);
+`InstanceLocation` is a schema path *by name*, and it is instance-derived in the source
+(E4); `len(c.Body())` is the body's length *by name*, and `Body()` decompresses and
+returns an error string (E8). This is precisely the failure the re-audit named as its
+sharpest observation — *"a load-bearing claim evidenced against the vendor or a stand-in,
+where the decision acts on the repo's wrapper one layer down"* — recurring in the
+revision written to stop it, now four more times. The tell is uniform and cheap to
+screen for: **every one of these claims is about a name, and none of them had been
+executed.** Where the bundle *did* execute (the ladder, the ctx benchmark, the gate
+flattening, the ordering switch, the fiber reachability), it was right every single time,
+often to within 1 % — the arithmetic and the reasoning in this bundle are not the
+problem. The problem is that the four load-bearing sentences nobody ran are the four
+that are wrong, and three of them sit inside the *fixes* the previous two audits
+prescribed. A useful cheap gate for the next revision: for each decision, name the
+single expression that must be true for the mechanism to work (`env carries a count`,
+`InstanceLocation is schema-derived`, `len(c.Body()) is the wire size`) and require a
+pasted transcript beside it.
+
+⚠ **And one non-finding worth stating: E3 means three of these four Criticals are
+cheaper to fix than to argue.** Deleting D2's once-per-env mandate — which the
+measurements show buys nothing below ~500 elements and *costs* nothing to drop —
+removes E1 and E2 outright. E4 needs a one-line change of which field is rendered
+(`KeywordLocation`, already observed as `/properties/ssn/pattern`, is schema-derived).
+E8 needs `BodyRaw()` instead of `Body()`. None of the four requires a design increment
+the bundle does not already have — which is a different situation from the B3 lineage's
+D4 and D5, and the re-cut decision looks vindicated by it.

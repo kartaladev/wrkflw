@@ -11,7 +11,7 @@
 >
 > **Folded from re-audit #2** (`docs/plans/sweep-evidence/reaudit-b3-adjudication.md`):
 > D5's value-free 400 was **not implementable where prescribed** and moves into
-> `runtime/validation.Gate`; the 400 arm turns out to carry **nine sentinels and four validation
+> `runtime/validation.Gate`; the 400 arm turns out to carry **eight sentinels and four validation
 > strategies**, one of which leaks a predicate source, so D5 becomes **allow-list** rendering with a
 > static default; **413 would have shipped as 400** because every adapter decode site already wraps
 > in `ErrBadInput` and `ClassifyError`'s arms are ordered; redaction in `mapInstance` **misses two
