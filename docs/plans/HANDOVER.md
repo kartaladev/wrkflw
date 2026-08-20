@@ -9,7 +9,7 @@ top to bottom; it is meant to stay short enough that you can.
 > see `docs/plans/HANDOVER-archive.md`. Per-delivery detail belongs in that delivery's plan under
 > a `▶ Progress` block. This file carries only: where `main` is, what is unmerged, and what next.
 
-## State — updated 2026-08-21 (B3: two failed audits, scope decision pending)
+## State — updated 2026-08-21 (ADR-0186: audit #1 FOLDED; re-audit is the next action)
 
 **`main` is PUSHED and clean.** ⚠ Re-derive it (`git rev-parse --short refs/heads/main`); anchor on
 **merge** SHAs, which never move: the backlog sweep **`020af37b`** (latest shipped code; everything
@@ -20,63 +20,46 @@ after it on `main` is docs-only), 0184 `be6e6b55`, 0183 `a7575ed5`, 0179 `962aeb
 7 findings all fixed, `/security-review` 0). Its detail is in the memory topic file — do not
 re-inline it here.
 
-**▶ ONE DELIVERY IN FLIGHT: `design/authz-security-b3` — ⛔ its RE-AUDIT ALSO FAILED. A SCOPE
-DECISION IS PENDING and no further revision should start until it is made.**
+**▶ ONE DELIVERY IN FLIGHT: `design/authz-security-b3` — local only, unmerged, unpushed,
+docs-only. ADR-0186's audit #1 is FOLDED; the RE-AUDIT is the next action.** ⚠ Do not quote the
+branch's SHA — it is amended on every revision. ⚠ **Ask the owner before pushing**: a roadmap of
+*unfixed* authz/SSRF holes in a **public** repo.
 
-⚠ **Second failed audit.** The 2026-08-20 draft failed on individual decisions (58 findings, 12
-Critical); the 2026-08-21 revision fixed those and **failed on the interactions between the decisions
-it rewrote** — **38 findings, ~13 distinct Criticals**, two found independently by two lenses each,
-and **five are holes the revision's own fixes opened in each other**. Adjudication:
-`docs/plans/sweep-evidence/reaudit-b3-adjudication.md`, with three lens reports beside it (2,631
-lines). **Read it before touching this bundle.**
+**Chronology — THREE failed audits, and what each one was about.** ⚠ The adjudication records are
+the authoritative account; the ADR banners are a chronology, not a spec.
+1. B3 drafted 2026-08-20 → **audit #1 failed** (58 findings, 12 Critical) on *individual decisions*.
+   `sweep-evidence/audit-b3-adjudication.md`.
+2. Revised → **audit #2 failed** (38 findings, ~13 Critical) on the **interactions** between the
+   four decisions the revision rewrote; **five were holes the revision's own fixes opened in each
+   other**. `sweep-evidence/reaudit-b3-adjudication.md`.
+3. Owner re-cut into three deliveries → ADR-0186 alone → **audit #1 of 0186 failed** (63 findings,
+   33 Critical, four lenses, 4,020 lines) on the **PLAN**, not the mechanisms.
+   `sweep-evidence/audit-0186-adjudication.md`. **Folded 2026-08-21 — see below.**
 
-⚠⚠ **Three findings are in the bundle's OWN evidence file** — the one written to stop unexecuted
-claims. Most sharply: the `274/128/5` triple was **inherited verbatim** from the previous audit under
-a caption claiming nothing was inherited. `274` was re-run and matched, so the other two were never
-checked; all three are wrong (**273 / 121+6 / ≥13**), because `grep NewUserTask(` is **one of three
-authoring forms** — `build.Builder.AddUserTask` and YAML `kind: userTask` are invisible to it.
-**This is the `"by"`-grep failure repeating one round later.** ⭐ **Re-running a command is not
-re-deriving a claim when the command is the wrong net.**
+**⭐ The three repeated failure shapes, which is the useful output of all three rounds:**
+- **The net, not the arithmetic.** Every sum in three audits was right. Every enumeration failure
+  was a **grep that could not see the case**: `grep NewUserTask(` blind to two other authoring
+  forms; `grep '%w: %w'` blind to `_ = decode(...)`; `grep mapInstance` blind to `NewInstanceView`;
+  two migration tables of seven. ⭐ **Re-running a command is not re-deriving a claim when the
+  command is the wrong net.**
+- **Evidence against a stand-in.** A load-bearing claim evidenced against **the vendor**, where the
+  decision acts on **the repo's wrapper one layer down**. Four instances: the jsonschema probe
+  calling the library instead of `runtime/validation.Gate`; the tri-state against the wrong durable
+  column; `InstanceLocation` believed schema-derived; `len(c.Body())` believed to be the wire size.
+- **Bundle size is the multiplier.** Two of the three failures were interaction failures.
 
-⭐ **The other repeated shape:** a load-bearing claim evidenced against **the vendor or a stand-in**
-where the decision acts on **the repo's wrapper one layer down**. It happened twice — the jsonschema
-probe called the library instead of `runtime/validation.Gate` (which flattens the typed error with
-`%s`, so `errors.As` is false at `ClassifyError`), and the tri-state was evidenced against
-`store_core.go`'s instance snapshot instead of `humantask_store.go`'s `eligibility` column, **which is
-the copy all four `Authorize` sites actually read.**
-
-**Root causes (the useful output of this round):**
-1. **D4 is a syntax problem that cannot be solved with syntax.** Three rounds, three disjoint hole
-   sets — dominance admits `not ("k" in vars) and …`, `== false`, and the ternary *alternate* (which
-   matches D4's own wording verbatim); it also **denies** a correct predicate because `and` is
-   left-associative; the zero-reference rule is **disarmed by any one ordinary reference**; and the
-   `actor` axis gets **zero** protection because `Attributes` is a struct field that always exists.
-2. **D5 needs a per-verb authorization model that does not exist.** One `Eligibility` spec serves
-   four verbs and casbin applies `Privileges` unconditionally, so a `reassign` token bricks Claim,
-   Complete and RefreshCandidates too.
-3. **D3's mechanism is sound, its surface was under-modelled** — two durable locations, and
+**⚠ What carries into the DEFERRED deliveries (backlog 103 and 124) — do not re-derive:**
+1. **Backlog 103 (deny-list ABAC predicates allow when the variable is missing) is a syntax problem
+   that cannot be solved with syntax.** Three rounds produced three *disjoint* hole sets. The
+   replacement shape is decided: **declare required/optional keys ON THE SPEC**, no inference.
+   ⚠ The `actor.Attributes` depth-2 case still needs its own rule — `Attributes` is a struct field
+   that always exists, so reference-presence checking is vacuous there.
+2. **Backlog 124 (completion never checks the claimant) needs a per-verb authorization model that
+   does not exist.** One `Eligibility` spec serves four verbs and casbin applies `Privileges`
+   unconditionally, so any per-verb token gates all four.
+3. **ADR-0185-core's D3** still needs its two confirmed defects fixed: `AuthzSpec` is durable in
+   **two** places (`wrkflw_human_task.eligibility` is the one all four `Authorize` sites read), and
    `Open *bool` makes the zero value of the **public** `authz.AuthzSpec` fail-**open**.
-4. **Bundle size is the multiplier.** Both failures were interaction failures.
-
-⭐ **What HELD — do not re-litigate:** the revision fixed **both** structural defects the first audit
-found (every citation resolves at the bundle commit; the pin net is closed *by construction*), and
-**all four of its corrections against the previous audit are confirmed right** (`has()` absent, `??`
-unparenthesised, `get()` zero-ref, the ~15× bound error — the counting lens adjudicated the last
-formally: 5 000 = 610 ms, 10 000 = 2.442 s). `WithMaxEvalElements`'s plumbing is real, not a zombie.
-The ctx-propagation `ASSUMPTION` is **true in all four legs and can be discharged**.
-
-Local only, unmerged, unpushed. Docs-only. Carries the B3 bundle for backlog
-51/52/53/54/65/98/99/100/101/103/104/124 (+ parked 102): spec + **ADR-0185** + **ADR-0186** + plan +
-**`docs/specs/2026-08-21-adr-0185-0186-premise-evidence.md`** (the executed evidence for the
-revision). ⚠ Do not quote its SHA — it is amended on every revision.
-
-**Chronology.** Drafted 2026-08-20 → audit #1 failed (58 findings, 12 Critical) → revised
-2026-08-21 with four Decisions changed and every new claim executed → audit #2 failed (38 findings,
-~13 Critical). Both audits used three Opus lenses in three detached worktrees at the bundle commit,
-with the step-0 presence check passing in all six. ⚠ **The two adjudication records are the
-authoritative account** — `audit-b3-adjudication.md` then `reaudit-b3-adjudication.md`. Do **not**
-reconstruct the decision history from the ADR banners, and do **not** treat the revision's own
-evidence file as settled: three of audit #2's findings are in it.
 
 ### ▶ OWNER DECISIONS TAKEN 2026-08-21 — B3 is re-cut into THREE deliveries
 
@@ -84,47 +67,63 @@ evidence file as settled: three of audit #2's findings are in it.
    path, 65 SSRF via expression-derived URLs, 98 no body cap, 99 expression cost unbounded in input,
    104 4xx bodies echoing internals, + posture for 100/101): body caps, an SSRF-safe default for
    `httpcall`, variable redaction, and what a 4xx body may say. **Ships FIRST.**
-   ⛔ **STATUS: its first standalone audit FAILED — 63 findings, 33 Critical, four lenses, 4,020
-   lines.** Adjudication: `docs/plans/sweep-evidence/audit-0186-adjudication.md`.
-   ⚠⚠ **But read the adjudication before despairing: the failure is a PLAN defect, not a mechanism
-   defect.** Three of the four lenses independently said so — *"six Criticals share one root cause:
-   a decision stated in the ADR whose realisation lands in a package no phase assigns it to"*
-   (failure-modes); *"all four Criticals are one-line fixes, not design increments"* (execution);
-   *"five of seven Criticals are a decision assuming a channel another decision owns and does not
-   provide"* (interaction). **Nothing here needs a design increment**, unlike the deferred
-   backlog-103/124 work.
-   ⭐ **NEXT ACTION — one change closes ~7 findings: move the element bound from EVALUATION to
-   ADMISSION** (bound the variable map when it enters the instance, not when a predicate reads it).
-   Then delete D2's "count once per env" mandate — it is **both unimplementable and unnecessary**.
-   Then rework the phase table so every decision's realisation has a package. Then re-derive three
-   enumerations: decode sites (**36 of 39**, not 39 — three *discard* the decode error and return
-   2xx), read paths (**11**, not 8), plaintext columns (**six**, not two).
-   ⚠ **`WithAllowedHosts` is unimplementable as designed** — a `net.Dialer.Control` hook only ever
-   sees the resolved `IP:port`, never a hostname. And **D3 collides with the existing
-   `WithHTTPClient`** — the same collision class the bundle flags for `runtime` and missed here.
-2. **ADR-0185-core** — D1 (the actor travels in `context.Context`, not the request body),
-   D2 (constructing a `ProcessEngine` without an authorizer is an error) and D3 (an eligibility spec
-   that states nothing denies). Backlog 51/52/53 — the chain the spec says *"must ship as a set"*.
-   D3 still needs its two confirmed defects fixed: `AuthzSpec` is durable in **two** places
-   (`wrkflw_human_task.eligibility` is the one all four `Authorize` sites read), and `Open *bool`
-   makes the zero value of the **public** `authz.AuthzSpec` fail-**open**.
-3. **DEFERRED to their own bundles** — D4 (backlog 103: deny-list ABAC predicates allow when the
-   variable is missing) and D5 (backlog 124: completion never checks who claimed). Each needs a
-   design increment that does not exist yet.
-   ⚠ **D4's replacement shape is decided: declare required/optional keys ON THE SPEC.** No syntax
-   inference — `AuthzSpec` gains an explicit key declaration and evaluation denies when a
-   declared-required key is absent. Chosen because syntactic guard inference produced **three
-   disjoint hole sets in three rounds**. ⚠ The `actor.Attributes` depth-2 case still needs its own
-   rule: `Attributes` is a struct field that always exists, so reference-presence checking is
-   vacuous there.
-   ⚠ **D5 needs a per-verb authorization model.** One `Eligibility` spec serves four verbs and
-   casbin applies `Privileges` unconditionally, so any per-verb token gates all four.
+   ✅ **STATUS: audit #1's 63 findings are FOLDED (2026-08-21). RE-AUDIT IS THE NEXT ACTION.**
+   The failure was a **PLAN defect, not a mechanism defect** — three of four lenses said so
+   independently (*"six Criticals share one root cause: a decision stated in the ADR whose
+   realisation lands in a package no phase assigns it to"*). Adjudication:
+   `docs/plans/sweep-evidence/audit-0186-adjudication.md`.
 
-**▶ NEXT ACTION: fold ADR-0186's audit — start with the admission-boundary move, which collapses the largest cluster — then re-audit.** A bundle whose decisions changed has not been audited.
-three detached worktrees at the bundle commit, step-0 presence check).** Do not carry ADR-0185
-material into it. The two adjudication records —
-`docs/plans/sweep-evidence/{audit,reaudit}-b3-adjudication.md` — are the authoritative account of
-what was decided and why; the ADR banners are a chronology, not a spec.
+   **What the fold changed** (detail in the plan's `▶ Progress` and the ADR banner — do not
+   re-derive it here):
+   - ⭐⭐ **The element bound moved from EVALUATION to ADMISSION.** It is now
+     `service.WithMaxVariableElements`, enforced beside `WithMaxVariableBytes` at the **four**
+     caller-supplied request fields. **One change closed seven findings** and deleted two whole
+     phases: `internal/expreval`, `runtime` and `engine` are **untouched** by this delivery.
+   - D2's "count once per env" mandate **deleted** — unimplementable *and* unnecessary (the cost
+     figure that forced it compared a worst case against a typical case; like-for-like, counting
+     is ~12–13× *cheaper* than the ctx it refused).
+   - D5's "value-free" 400 rendering **was itself not value-free** → now **`keywordLocation`
+     only**, executed. And its blanket blanking is replaced by an **executed exception list**:
+     `httpcore.Validate`'s message is value-free even for a length constraint, so ADR-0146/0152/0183's
+     actionable messages survive.
+   - D3's `WithAllowedHosts` **was unimplementable** (a `Dialer.Control` hook only ever sees the
+     resolved `IP:port`) → IP rule in `Control`, host rule on the URL + each hop, **`WithAllowedCIDRs`
+     added as the escape hatch that actually works**, and `WithURLExpr` + `WithHTTPClient` **refused**.
+   - D4's copy made **deep (only when a hook is configured)**; covered set widened to **11** paths
+     and **named** rather than claimed closed; `TestActionableViewRedactsTaskVars` **deleted** — it
+     could not fail.
+   - Four enumerations re-derived: decode sites **36 propagate / 3 discard** (not 39/39), read paths
+     **11** (not 8), plaintext columns **12 across 7 tables in 3 dialects** (not 2 — ⚠ **and not the
+     audit's "six" either**), 400-arm sentinels **8** (not 9).
+   - ⭐ **Three interactions the controller found in its OWN fold**, before dispatch, per rule #9's
+     corollary — all three were holes the fixes opened in each other: bounding the *merged* map
+     would have wedged instances (→ bound the *incoming* map, and withdraw the stronger claim);
+     the deep copy would have taxed the read hot path (→ only when a hook is set); D3's two opt-in
+     gates needed an explicit both-must-pass rule. They are in plan §0 item 13 for the re-audit to
+     attack.
+
+   ⭐ **NEXT ACTION: dispatch the re-audit** — four Opus lenses (execution / failure-modes /
+   **counting** / **interaction**), four **detached worktrees at the bundle commit**, step-0
+   presence check over **FOUR** files (the bundle now includes
+   `docs/specs/2026-08-21-adr-0186-premise-evidence.md`, which is an **input** to the audit).
+   Plan §0 is the author's attack list; items 1–7 of the *previous* list are answered and
+   re-deriving them is wasted budget (spec §7 has the discharged list).
+2. **ADR-0185-core** — the actor travels in `context.Context` rather than the request body
+   (backlog 51); constructing a `ProcessEngine` without an authorizer is an error (52); an
+   eligibility spec that states nothing denies (53). The chain the B3 spec says *"must ship as a
+   set"*. Its carried-forward defects are in **"What carries into the DEFERRED deliveries"** above —
+   do not re-derive them.
+3. **DEFERRED to their own bundles** — backlog 103 (deny-list ABAC predicates allow when the
+   process variable is missing) and 124 (task completion never checks who claimed). Each needs a
+   design increment that does not exist yet; the decided replacement shapes are in that same block
+   above.
+
+**▶ NEXT ACTION: DISPATCH ADR-0186's RE-AUDIT.** The fold is done (2026-08-21); a bundle whose
+decisions changed has not been audited. Four Opus lenses, four detached worktrees at the bundle
+commit, step-0 presence check over **four** files. Do not carry ADR-0185 material into it.
+The adjudication records — `docs/plans/sweep-evidence/{audit-b3,reaudit-b3,audit-0186}-adjudication.md`
+— are the authoritative account of what was decided and why; the ADR banners are a chronology,
+not a spec.
 
 ### ⚠ What `/code-review` found, and why it matters procedurally
 
@@ -208,17 +207,19 @@ and than `AUDIT.md`.
 The remaining **~65 Design-tier items** are grouped into five bundles. Each needs a spec + ADR + plan
 and **ONE** rule-#9 adversarial audit before implementation. **Next free ADR = 0187.**
 
-- **B3 authz/security** — 51, 52, 53, 54, 65, 98, 99, 100, 101, 103, 104, 124 (+ parked 102). ⛔ **TWO failed audits; a scope decision is pending — see State above.**
-  Its next action is an **owner scope decision**, not another revision.
-  See the State section above for what changed and why — do not re-derive it, and do **not** read the
-  four documents as if the 2026-08-20 draft's decisions still stand.
-  ⚠ **Dispatch the re-audit exactly as the first one was dispatched** — it worked: three Opus lenses
-  (execution / failure-modes / **counting**), three **detached worktrees at the bundle commit**, and
-  a **step-0 bundle-presence check that every brief states explicitly**. The counting lens again
-  found what the others could not (the wrong-net grep, the stale anchor), for the second bundle
-  running. Brief it that the failure mode is **the net and the anchor, not the arithmetic**.
-  ⚠ The re-audit is over the **revised** bundle, so `docs/specs/2026-08-21-adr-0185-0186-premise-evidence.md`
-  is an input to it, not a conclusion of it — attack the evidence file too.
+- **B3 authz/security** — re-cut into three deliveries (see State above). **ADR-0186** (54 partially,
+  65, 98, 99, 104 + posture 100/101) is folded and **awaiting its re-audit**; **ADR-0185-core**
+  (51/52/53) and the **deferred** 103/124 follow.
+  ⚠ **Dispatch the re-audit exactly as the first one was dispatched** — it worked: Opus lenses
+  (execution / failure-modes / **counting** / **interaction**), **detached worktrees at the bundle
+  commit**, and a **step-0 bundle-presence check that every brief states explicitly**. The counting
+  lens again found what the others could not (the wrong-net grep, the stale anchor) for the third
+  bundle running, and the **interaction lens found 8 Criticals on its first use**. Brief the counting
+  lens that the failure mode is **the net and the anchor, not the arithmetic** — every sum in three
+  audit rounds has been right.
+  ⚠ The re-audit is over the **revised** bundle: `docs/specs/2026-08-21-adr-0186-premise-evidence.md`
+  is an **input** to it, not a conclusion of it — attack the evidence file too. Three of the previous
+  round's findings were inside the bundle's own evidence file.
 - **B4 durability/reconciliation** — 66 (the class), 67, 24, 29, 37, 39, 57, 63, 76, 77, 81.
 - **B5 engine core** — 55, 56, 70, 71, 72, **73** (⚠ its guard, 114, is now shipped — do not delete the
   `cloneState` deep-copy without reading the comment now on that line), 11, 12, 13, 17.
