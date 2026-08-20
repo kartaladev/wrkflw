@@ -1,7 +1,20 @@
 # Spec — untrusted input and disclosure posture (backlog 54, 65, 98, 99, 104; posture for 100, 101)
 
-> ⚠ **NOT YET AUDITED as a standalone bundle.** Per CLAUDE.md rule #9 this is not an
-> input to implementation. The next action is the audit, not phase 1.
+> ## ⛔ AUDIT FAILED — 2026-08-21. NOT an input to implementation.
+>
+> Four lenses (execution / failure-modes / counting / **interaction**): **63 findings, 33
+> Critical**. ⚠ **But the failure is different in kind from B3's**: three of the four lenses
+> independently concluded the *decisions* are largely sound and the **plan** is where this
+> breaks — *"six Criticals share one root cause: a decision stated in the ADR whose
+> realisation lands in a package no phase assigns it to"*. Nothing here needs a design
+> increment, unlike the deferred backlog-103/124 work.
+>
+> ⭐ **One change closes ~7 findings**: move the element bound from **evaluation** to
+> **admission**. And D2's "count once per env" mandate is both unimplementable **and
+> unnecessary** — the cost figure that forced it compared a worst case against a typical
+> case; measured like-for-like, counting is ~12–13× *cheaper* than the `ctx` D2 refused.
+>
+> See `docs/plans/sweep-evidence/audit-0186-adjudication.md`.
 
 - Date: 2026-08-21
 - **Anchor:** this bundle's own commit on `design/authz-security-b3`. Every citation

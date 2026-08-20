@@ -1015,3 +1015,204 @@ a fail-closed default is cheap; after it, it never gets one."* and Consequences 
   (`STABILITY.md`), not an assumption.
 
 ---
+## F22, CRITICAL (discharges the plan's OPEN item 1) — above fiber's 4 MiB app limit the adapter is never reached: the 413 body is fasthttp plain text, with no `ErrorBody`, no correlation id and no log record; and `MaxBodyBytes` > 4 MiB is silently ineffective on fiber
+
+**Claims attacked** (verbatim):
+
+- Spec §7 / plan §0 item 1: *"`ASSUMPTION (unverified)`: the **fiber body-cap mechanism** — a
+  `len(c.Body())` pre-check, reasoned from source … **Execute it before phase 5 edits 13 call
+  sites.**"*
+- ADR-0186 D1: *"a `len(c.Body())` pre-check for fiber … ⚠ Conceded plainly: fiber's pre-check
+  is a **rejection, not a prevention** … and `fiber.DefaultBodyLimit` is what actually prevents
+  the amplification there."*
+- ADR-0186 D5: *"**Every error body gains a correlation id**, echoed in the log line."*
+- Plan phase 8: *"Add parity cases asserting all three adapters agree on **413** for an
+  oversize body."*
+
+**Evidence — EXECUTED**, two probes in a throwaway package `transport/http/fiber/probe`
+(deleted after), fiber v3.4.0, `fiberlib.New()` — exactly the construction a consumer writes:
+
+Probe A (`app.Test`, mounted handler logs what it observes):
+```
+HANDLER REACHED: len(c.Body())=1048576     size=1048576  status=200
+HANDLER REACHED: len(c.Body())=2097152     size=2097152  status=200
+size=5242880 TEST ERROR: body size exceeds the given limit   (handler NOT reached)
+size=8388608 TEST ERROR: body size exceeds the given limit   (handler NOT reached)
+```
+
+Probe B (real socket, `app.Listener` + `http.Client`):
+```
+size=2097152  status=200 content-type="application/json; charset=utf-8" body="{\"seen\":2097152}"
+size=8388608  status=413 content-type="text/plain; charset=utf-8"       body="Request Entity Too Large"
+```
+
+**What this establishes:**
+
+1. **The pre-check mechanism is viable — but only in the 0…4 MiB band.** For bodies up to
+   `fiber.DefaultBodyLimit` the handler is reached and `c.Body()` returns the complete body, so
+   `len(c.Body())` can enforce a 1 MiB cap. The spec's `ASSUMPTION (unverified)` is
+   **discharged for that band** (see "What HELD").
+2. **Above 4 MiB the route group is bypassed entirely.** The handler is never invoked, so no
+   `len(c.Body())` check runs, `writeErr` never runs, `ClassifyError` never runs,
+   `cfg.Logger` is never called.
+3. **D5's quantifier is false.** The 413 that a fiber consumer's client actually receives above
+   4 MiB is fasthttp's own `text/plain` `Request Entity Too Large` — **not** `httpcore.ErrorBody`
+   JSON, no `error` field, no `message`, **no correlation id**, and **no log line to join it
+   to**. "Every error body gains a correlation id" is untrue for the single largest class of
+   oversize request on one of the three shipped adapters.
+4. **Phase 8's parity assertion is fixture-dependent.** A parity test whose body is < 4 MiB sees
+   413 from all three and passes; the same test at 8 MiB sees three-way agreement on the
+   *status* and disagreement on the *content type and body shape*. If phase 8 asserts on
+   `ErrorBody` (as every other parity case must), it **fails on fiber** at any size above
+   4 MiB — and the plan gives the fixture size nowhere.
+5. **`MaxBodyBytes` above 4 MiB is silently ineffective on fiber.** A consumer who raises the
+   cap to 8 MiB gets it honoured on stdlib and gin and overridden by fiber's app-level limit —
+   a knob accepted and ignored, with no error and no warning. The ADR notes
+   `fiber.DefaultBodyLimit` as the thing that "actually prevents the amplification" and never
+   notices that it also **caps the consumer's own configuration from above**.
+
+**Verdict: CONFIRMED** (and the author-flagged assumption is now executed, partly holding).
+
+**Proposed fix:**
+1. Record the two probe transcripts in the spec's evidence section; replace the
+   `ASSUMPTION (unverified)` with *"viable for bodies ≤ `fiber.DefaultBodyLimit`; above it the
+   handler is not reached (executed)."*
+2. **Fiber's mount must reconcile the two limits.** Either (a) `Customize` refuses at mount
+   time when `MaxBodyBytes > fiber.DefaultBodyLimit` unless the consumer also configured
+   `fiber.Config.BodyLimit` (we cannot set it — it belongs to `fiber.New`), or (b) the fiber
+   package documents loudly that `MaxBodyBytes` is capped from above by the app's `BodyLimit`
+   and that the consumer must raise both. (a) is preferable: a silently-ignored security knob
+   is worse than a refusal.
+3. **Pin phase 8's parity fixture below 4 MiB and say why**, and add a separate,
+   explicitly-labelled fiber-only case documenting the plain-text 413 above `DefaultBodyLimit`
+   as known-divergent — so the divergence is a recorded decision rather than a gap the fixture
+   happens to avoid.
+4. Scope D5's correlation-id sentence: *"every error body **the library writes**"* — and state
+   in `SECURITY.md` (phase 9) that a fiber consumer's >4 MiB rejections are emitted by the
+   framework and are neither logged nor correlated by `wrkflw`.
+
+---
+
+## F23, MINOR — phase 8's verify command re-runs phases 4–7's packages but the plan calls it "test fallout"; phase 3's `./runtime` caveat is right and phase 8's is not stated
+
+**Claim attacked** (plan phase 8): *"**Verify:** `go test -race -count=1 ./transport/http/...`"*,
+and phase 3's *"**Verify:** `go test -race -count=1 ./runtime` ⚠ **not** `./runtime/...`, which
+is not container-free."*
+
+**Evidence:** phase 3's caveat is correct and well-placed. Phase 8's command is the only one in
+the plan that spans **four** packages (`httpcore`, `stdlib`, `gin`, `fiber`, `parity`) — which
+is the right scope for a parity phase, but it means phase 8's agent will see failures owned by
+phases 4–7 and cannot tell them apart from its own. The plan labels phase 8 "test fallout"
+without saying whose. Separately, the checklist's `go build ./examples/...` is the only
+consumer-facing compile check and it is not attached to any phase that changes a public
+signature (`ClassifyError`, `CustomizeConfig`) — so an `examples/` break surfaces only at the
+very end.
+
+**Verdict: CONFIRMED (Minor).**
+
+**Proposed fix:** give phase 8 the two-step verify — `go test -race -count=1 ./transport/http/parity/...`
+first (its own scope), then the repo-wide `./transport/http/...` as the regression sweep — and
+add `go build ./examples/...` to phase 4's verify, since phase 4 is where the public
+`httpcore` surface changes.
+
+---
+
+## What HELD — do not re-litigate
+
+These were attacked and survived. Several are corrections the revision made against earlier
+rounds; all reproduce.
+
+1. **`gate.go:45` really is `%w: %s`.** `runtime/validation/gate.go:44-46` —
+   `return fmt.Errorf("%w: %s", ErrInvalidInput, err.Error())`. The typed strategy error is
+   flattened to a string before the transport, so `errors.As` at `ClassifyError` is false and
+   the rendering genuinely must move into `runtime/validation`. The re-audit's finding 9 and
+   this bundle's phase 2 are correct.
+2. **`ClassifyError` is an ordered switch and the 413-before-400 ordering requirement is real.**
+   `transport/http/httpcore/errors.go:26-59`: six arms — 404 `:28`, 403 `:32`, 409 `:34`,
+   400 `:36-50`, 422 `:51`, default 500 `:57`. Five echo `err.Error()`; 500 blanks. An error
+   wrapping both `ErrBadInput` and a new sentinel *would* match 400 first. D1's mandate for a
+   **bare** sentinel plus arm ordering is the right fix.
+3. **The 400 arm's sentinel count is 8 across 5 `errors.Is` groups** — re-counted from source
+   (`:36` ×2, `:37` ×2, `:42` ×2, `:46` ×1, `:49` ×1). ADR D5's body, its "other seven" phrasing,
+   Consequences' "seven non-validation sentinels" and plan §4's table are all **consistent at 8**.
+   ⚠ Only the ADR's top banner says *"nine sentinels"* — one stale number inherited from the
+   re-audit; correct it, but the decision text is right.
+4. **`mapInstance` has exactly 6 call sites**, and two further read endpoints take no mapper.
+   `endpoints.go:42, 52, 94, 124, 140, 155` = 6; `GetInstanceSnapshot` `:60-66` and
+   `GetActionableView` `:72-78` bypass it. Plan §4's row is correct.
+5. **`view.go:31` really aliases.** `NewInstanceView` assigns `Variables: st.Variables`
+   verbatim. The convention-violation framing (rather than the withdrawn "mutates instance
+   state" claim) is the right one, and the fix is one line.
+6. **Two evaluator surfaces, correctly identified.** `engine/conditions.go:43` is
+   `expreval.New(expreval.WithTimeout(0))`; `authz/authz.go:23` and
+   `internal/authz/casbin/authorizer.go:30` are `expreval.New()` with `DefaultTimeout = 5s`.
+   The Context §2 correction against the earlier draft is right. (What it then omits is F15.)
+7. **`ConditionEvaluator` keeps its signature — and dropping the ctx is right.**
+   `internal/expreval/expreval.go:74-76`: `run` is synchronous when `timeout <= 0`, so a ctx
+   could not interrupt it. The ADR-0003/0049/0056 determinism argument at
+   `engine/conditions.go:29-43` is quoted accurately.
+8. **The ctx-path benchmark reproduces.** Measured here: 97.50 ns/op / 3 allocs →
+   917.1 ns/op / 9 allocs (ADR: 99.43 → 965.20; re-audit lens: 97.62 → 976.7). Three
+   independent reproductions.
+9. **The O(n²) ladder reproduces** — 19.8 / 77.7 / 308.5 ms / 1.230 s at n = 1 000 / 2 000 /
+   4 000 / 8 000, ratios 3.92 / 3.97 / 3.99. The predicate is 81 bytes (`len(code)`), matching
+   the corrected "80" rather than the draft's "44".
+10. **`expr.MaxNodes` is inverted and must not be implemented** — `expr@v1.17.8/expr.go:221`
+    states it; the ADR's ⚠ is correct.
+11. **`AdminListInstances` is clean.** `admin_endpoints.go:57-` projects no variables; the ADR's
+    check holds.
+12. **`WithBaseURL` must stay unrestricted, and `urlExpr` takes precedence.**
+    `httpcall.go:229-244`: `requestURL := h.baseURL`, overwritten when `urlExprProg != nil`. So
+    "expression-derived" is decidable at construction (`urlExprProg != nil`), which is what makes
+    D3's per-client transport split coherent at all. Plan phase 6 test 3
+    (`TestBaseURLIsUnrestricted`) is a genuine, non-vacuous control.
+13. **The fiber `len(c.Body())` pre-check works below `DefaultBodyLimit`** — executed, handler
+    reached with the full body at 1 MiB and 2 MiB. The mechanism is sound in the band it can
+    reach (F22 is about the band it cannot).
+14. **`NewProcessDriver` returns an error**, so "refuse at construction" is available without a
+    signature change (`runtime/processdriver.go:198-202`).
+15. **Every decision in scope is genuinely independent of ADR-0185.** No symbol ADR-0185
+    introduces is referenced by any in-scope decision; the 401/503 arms really were removed.
+    The re-cut is clean on that axis.
+16. **The arithmetic is right everywhere, again.** As in both prior rounds, no computed value
+    was wrong; the failures are premises, quantifiers, mechanisms and missing decisions.
+
+---
+
+## Ranked index — most severe first
+
+| # | sev | what it actually claims |
+|---|---|---|
+| **F6** | **Critical** | **`TestActionableViewRedactsTaskVars` — a test the bundle's own author prescribes as "the control that decides D4's placement" — CANNOT FAIL. Executed: `ActionableView` has no `Vars` field (`instance_actionable.go:25-41`) and never reads `t.Vars`; a fixture setting `Vars={"ssn":"123-45-6789"}` produces JSON containing no such string. The ADR premise it rests on ("`GetActionableView` renders … `HumanTask.Vars`") is false.** |
+| **F9** | **Critical** | **`WithAllowedHosts` is not implementable where D3 puts the check. Executed: `net.Dialer.Control` receives only the resolved `IP:port` — `http://localhost:…` arrives as `[::1]:…`/`127.0.0.1:…`, the hostname is gone. A host allowlist cannot be evaluated there, so the fine-grained escape hatch does not work and a consumer needing one internal host is left with `WithUnrestrictedTransport()` — turning SSRF protection off wholesale.** |
+| F14 | Critical | "The count is supplied with the env, computed once per env" has no carrier: `ConditionEvaluator` (which D2 refuses to change) passes a bare `map[string]any`; the engine calls `eval.EvalBool(f.Condition, s.Variables)` through that interface. And the "20–60× worse, self-defeating" measurement that forces the requirement compares a 10 000-element count (17.4 µs measured) against a 3-scalar ctx cost (820 ns measured) — like-for-like, counting is ~13× *cheaper* (64 ns vs 820 ns) and is 0.0009 % of a 1.92 s evaluation. |
+| F18 | Critical | The default-ON caps can wedge a running instance permanently. First-party `action/httpcall` writes the response body into `vars["httpBody"]` with a default 10 MiB cap — 40× the proposed 256 KiB variable cap — and a JSON array response blows D2's 10 000-element bound too. `service.Service` exposes no verb to shrink variables, and a persist-boundary refusal blocks even `CancelInstance`. |
+| F3 | Critical | The 400 allow-list's deny half is built by no phase: `errors.go:36-50` renders all 8 sentinels through one `Message: err.Error()`, and no document tells anyone to split the arm. Phase 2 covers only the three `ErrInvalidInput` strategies; phase 4's six tests assert nothing about the seven non-validation sentinels; `avro` has no test at all. |
+| F4 | Critical | The static-400 default refuses the useful case. Four of the seven blanked sentinels echo no caller value at all, and the in-code rationale for three of them — written in the very switch being edited (`errors.go:38-49`, ADR-0146/0152/0183) — says the message must stay actionable. `ErrBadInput`, the highest-volume 400 (36 decode sites + the whole `httpcore.Validate` DTO layer), becomes `"invalid input"` on all 26 routes. ADR-0186 neither cites nor amends the three ADRs it contradicts. |
+| F22 | Critical | Above fiber's 4 MiB app limit the route group is never reached (executed): the client gets fasthttp's `text/plain` `Request Entity Too Large` — no `ErrorBody`, no correlation id, no log record — falsifying D5's "every error body gains a correlation id". `MaxBodyBytes` > 4 MiB is silently ignored on fiber, and phase 8's parity claim only holds if its fixture happens to be under 4 MiB. |
+| F5 | Critical | "All 39 decode sites already wrap in `ErrBadInput`" is false in all three documents: 36 wrap, **3 discard** (`stdlib:238`, `gin:265`, `fiber:255` — the optional-body admin resolve-incident route). With a body cap installed, an oversize body there is silently swallowed and the incident resolves with zero-value input, returning 2xx instead of 413. |
+| F1 | Critical | The correlation id cannot be produced where the plan puts it: `ClassifyError(err error)` takes no context and no config, and the OTel span id is reachable only from the request `ctx` (not from `cfg.TracerProvider`, as the ADR argues). Making it work changes the signature of an exported function `doc.go:66` advertises as a consumer seam — a source break absent from every breaking-change list. |
+| F2 | Critical | No phase builds the log half of the join that justifies blanking 403. `ClassifyError`'s only non-test callers are the three adapters' `writeErr`, all gated on `status >= 500`, so 400/403 produce **no log record today**; `httpcore` never logs at all. `TestCorrelationIDInBodyMatchesTheLogRecord` is prescribed in the one package that cannot emit a log line. |
+| F7 | Critical | The redaction hook covers `variables` and nothing else. `GetInstanceSnapshot`'s wire projection also carries `tokens[].payload`, `incidents[].error` (which embeds the httpcall target URL), `tasks[].candidates/claim/completion` (actor attribute maps) and the entire embedded `definition`. `instanceJSON` is unexported, there is no common type across the three read shapes, and `func(map[string]any) map[string]any` cannot express per-instance, per-definition or per-scope policy. |
+| F10 | Critical | D3 collides with the existing `WithHTTPClient` option — one `h.client` field, options applied in registration order — so the restricted transport either silently loses to a consumer-supplied client or silently discards their otel-instrumented one. The bundle applies its "compose or refuse, never overwrite" rule to `runtime` and not here, where the casualty is a security control. |
+| F13 | Critical | Two of phase 6's four tests cannot discriminate. `TestURLExprRefusesRedirectToLoopback` is refused at the *first* hop (httptest binds 127.0.0.1) and never reaches `CheckRedirect` — it is green against an implementation with no `CheckRedirect` at all. `TestAllowedHostsOptsBackIn` uses a fixture where host and IP are the same token, so it cannot reveal F9. |
+| F15 | Critical | D2 bounds one of the two evaluator surfaces its own Context enumerates. `authz/authz.go:23` and `internal/authz/casbin/authorizer.go:30` construct `expreval.New()` as a package global / hard-coded field with **no options seam**, so `runtime.WithMaxEvalElements` cannot reach the ABAC path — the one evaluating caller-influenced `vars` on every claim/complete/reassign. Its 5 s timeout abandons the goroutine, converting a bounded CPU burn into unbounded goroutine accumulation. |
+| F19 | Critical | Phase 7's *"sentinel classified 413"* is built by no phase: the only 413 arm maps `ErrBodyTooLarge`, so a `service` variable-size sentinel falls to `default:` and ships as an empty-bodied 500. The phase table makes it unschedulable — phase 7 depends on nothing and runs in parallel with phase 4, which writes the classifier. |
+| F20 | Major | Adjudicates the plan's OPEN item 3. "Silently" is false — both godocs document last-writer-wins (`processdriver_options.go:196-197, 215-216`) — and "refuse at construction" is available since `NewProcessDriver` already returns an error. The real hole: `conditionEval` is nil by default, so a post-loop default means `WithExpressionTimeout(d)` yields an evaluator with **no element bound**, silently exempting exactly the consumer who asked for DoS protection. Recommended resolution stated. |
+| F21 | Major | Two default-ON caps ship with no observe-only mode, no near-miss metric and no way to discover you are about to break; the variable cap surfaces as a wedged instance rather than a 413. `ErrorBody`'s break is under-enumerated — six distinct breaks, not two (new field vs `DisallowUnknownFields`, a new 413 status on routes that never returned it, the possible `ClassifyError` signature change, and a log-volume change). |
+| F17 | Major | Settles the plan's OPEN item 2 against the bundle's guess: the env bound does **not** reach `action/httpcall`'s URL evaluation and cannot, because the action is consumer-constructed by name and holds no reference to the driver's evaluator. A separate `httpcall.WithMaxURLExprElements(n)` is required. |
+| F8 | Major | A non-admin 200 route publishes the predicate source D5 spends two sections removing from the 403 body: executed, `GET …/actionable` emits `"condition":"vars.internalApprovalLimit > 5000"`, and `GET …/snapshot` embeds the whole definition. Not necessarily wrong — but undecided and unwritten, which makes the 403 change close to cosmetic for an authenticated caller. |
+| F11 | Major | `CheckRedirect`'s default behaviour is undefined: with no `AllowedHosts` configured (the default) the rule as written refuses *every* redirect, breaking http→https and trailing-slash normalisation. No prescribed test covers a legitimate redirect, so either reading ships green. |
+| F12 | Major | `action/httpcall.ErrBodyTooLarge` already exists (`httpcall.go:94`, 10 MiB response cap); D1 introduces a second exported sentinel with the same name in the same commit, and phase 9's CHANGELOG/`SECURITY.md` will name it unqualified. The existing 10 MiB default is also unacknowledged prior art for D1's 1 MiB judgement call. |
+| F16 | Minor | Executes the plan's own item 7: n = 10 000 measured at **1.92 s**, not the extrapolated ~2.4 s (ladder reproduces cleanly). The default stands; Premise Discipline says the measured number replaces the extrapolation, with the machine and `-race` mode named. |
+| F23 | Minor | Phase 8's verify command spans four packages it does not own, so its agent cannot separate its own failures from phases 4–7's; and `go build ./examples/...` — the only consumer-compile check — is attached to no phase, though phase 4 changes the public `httpcore` surface. |
+
+**Totals: 23 findings — 15 Critical, 6 Major, 2 Minor.**
+
+⚠ One cross-cutting observation for the adjudicator. Six of the fifteen Criticals (F1, F2, F3,
+F19, F22, and the placement half of F7) are the same failure: **a decision stated in the ADR
+whose realisation lands in a package no phase assigns it to**. The bundle guards hard against
+zombie scope in the one place it already burned (D2's plumbing, flagged twice), and the pattern
+recurs five more times unflagged. A mechanical check would catch all six: for every sentence in
+the Decision section, name the phase and the package that builds it — and reject any that has
+none.

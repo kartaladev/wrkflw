@@ -1,6 +1,20 @@
 # 186. The library's untrusted-input and disclosure posture
 
-> ## ⚠ RE-CUT 2026-08-21 into its own delivery. Awaiting its FIRST audit as a standalone bundle.
+> ## ⛔ AUDIT FAILED — 2026-08-21. NOT an input to implementation.
+>
+> Four lenses (execution / failure-modes / counting / **interaction**): **63 findings, 33
+> Critical**. ⚠ **But the failure is different in kind from B3's**: three of the four lenses
+> independently concluded the *decisions* are largely sound and the **plan** is where this
+> breaks — *"six Criticals share one root cause: a decision stated in the ADR whose
+> realisation lands in a package no phase assigns it to"*. Nothing here needs a design
+> increment, unlike the deferred backlog-103/124 work.
+>
+> ⭐ **One change closes ~7 findings**: move the element bound from **evaluation** to
+> **admission**. And D2's "count once per env" mandate is both unimplementable **and
+> unnecessary** — the cost figure that forced it compared a worst case against a typical
+> case; measured like-for-like, counting is ~12–13× *cheaper* than the `ctx` D2 refused.
+>
+> See `docs/plans/sweep-evidence/audit-0186-adjudication.md`.
 >
 > This record was half of the B3 bundle, which **failed two rule-#9 audits** — the second on the
 > interactions between the four decisions its revision rewrote. Owner decision, 2026-08-21: B3 is

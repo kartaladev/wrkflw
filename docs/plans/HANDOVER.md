@@ -80,11 +80,28 @@ evidence file as settled: three of audit #2's findings are in it.
 
 ### ▶ OWNER DECISIONS TAKEN 2026-08-21 — B3 is re-cut into THREE deliveries
 
-1. **ADR-0186 — untrusted input & disclosure** (backlog 54/65/98/99/104 + the 100/101 posture):
-   body-size caps, the `httpcall` SSRF default, variable redaction on the read path, and what a 4xx
-   error body may say. **Ships FIRST**, because the spec's own §5 says *"0186's decisions hold
-   whether or not 0185 ships"* and its remaining findings are narrow and local.
-   **STATUS: ADR revised, all six of its re-audit findings folded. Spec + plan NOT yet written.**
+1. **ADR-0186 — untrusted input & disclosure** (backlog 54 variables disclosed/aliased on the read
+   path, 65 SSRF via expression-derived URLs, 98 no body cap, 99 expression cost unbounded in input,
+   104 4xx bodies echoing internals, + posture for 100/101): body caps, an SSRF-safe default for
+   `httpcall`, variable redaction, and what a 4xx body may say. **Ships FIRST.**
+   ⛔ **STATUS: its first standalone audit FAILED — 63 findings, 33 Critical, four lenses, 4,020
+   lines.** Adjudication: `docs/plans/sweep-evidence/audit-0186-adjudication.md`.
+   ⚠⚠ **But read the adjudication before despairing: the failure is a PLAN defect, not a mechanism
+   defect.** Three of the four lenses independently said so — *"six Criticals share one root cause:
+   a decision stated in the ADR whose realisation lands in a package no phase assigns it to"*
+   (failure-modes); *"all four Criticals are one-line fixes, not design increments"* (execution);
+   *"five of seven Criticals are a decision assuming a channel another decision owns and does not
+   provide"* (interaction). **Nothing here needs a design increment**, unlike the deferred
+   backlog-103/124 work.
+   ⭐ **NEXT ACTION — one change closes ~7 findings: move the element bound from EVALUATION to
+   ADMISSION** (bound the variable map when it enters the instance, not when a predicate reads it).
+   Then delete D2's "count once per env" mandate — it is **both unimplementable and unnecessary**.
+   Then rework the phase table so every decision's realisation has a package. Then re-derive three
+   enumerations: decode sites (**36 of 39**, not 39 — three *discard* the decode error and return
+   2xx), read paths (**11**, not 8), plaintext columns (**six**, not two).
+   ⚠ **`WithAllowedHosts` is unimplementable as designed** — a `net.Dialer.Control` hook only ever
+   sees the resolved `IP:port`, never a hostname. And **D3 collides with the existing
+   `WithHTTPClient`** — the same collision class the bundle flags for `runtime` and missed here.
 2. **ADR-0185-core** — D1 (the actor travels in `context.Context`, not the request body),
    D2 (constructing a `ProcessEngine` without an authorizer is an error) and D3 (an eligibility spec
    that states nothing denies). Backlog 51/52/53 — the chain the spec says *"must ship as a set"*.
@@ -103,7 +120,7 @@ evidence file as settled: three of audit #2's findings are in it.
    ⚠ **D5 needs a per-verb authorization model.** One `Eligibility` spec serves four verbs and
    casbin applies `Privileges` unconditionally, so any per-verb token gates all four.
 
-**▶ NEXT ACTION: write ADR-0186's standalone spec + plan, then audit THAT bundle (three lenses,
+**▶ NEXT ACTION: fold ADR-0186's audit — start with the admission-boundary move, which collapses the largest cluster — then re-audit.** A bundle whose decisions changed has not been audited.
 three detached worktrees at the bundle commit, step-0 presence check).** Do not carry ADR-0185
 material into it. The two adjudication records —
 `docs/plans/sweep-evidence/{audit,reaudit}-b3-adjudication.md` — are the authoritative account of
