@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jonboulle/clockwork"
+
 	"github.com/kartaladev/wrkflw/internal/database"
 	"github.com/kartaladev/wrkflw/internal/database/transaction"
 	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
@@ -22,6 +24,28 @@ import (
 type Deduper struct {
 	conn    any // *pgxpool.Pool or *sql.DB
 	dialect dialect.Dialect
+	// clk is the time source for the processed_at stamp written by
+	// [Deduper.Seen] (ADR-0138).
+	clk clockwork.Clock
+}
+
+// DeduperOption is a functional option that configures a [Deduper] built by
+// [NewDeduper].
+type DeduperOption func(*Deduper)
+
+// WithDeduperClock overrides the clock used for the processed_at stamp written
+// by [Deduper.Seen] (ADR-0138). The default is [clockwork.NewRealClock]. A nil
+// clock is ignored (the default is kept). [Deduper.Prune] is unaffected: its
+// cutoff is supplied by the caller.
+//
+// Reachable off-module only through its facade forwarder,
+// persistence.WithDeduperClock; see the note on [WithStoreClock].
+func WithDeduperClock(clk clockwork.Clock) DeduperOption {
+	return func(d *Deduper) {
+		if clk != nil {
+			d.clk = clk
+		}
+	}
 }
 
 // NewDeduper constructs a Deduper backed by conn and using the supplied dialect
@@ -29,14 +53,18 @@ type Deduper struct {
 //
 // conn must be either a *pgxpool.Pool (Postgres) or a *sql.DB (MySQL, SQLite).
 // Returns [ErrNilDependency] when conn is nil or d is nil.
-func NewDeduper(conn any, d dialect.Dialect) (*Deduper, error) {
+func NewDeduper(conn any, d dialect.Dialect, opts ...DeduperOption) (*Deduper, error) {
 	if isNilDep(conn) {
 		return nil, fmt.Errorf("%w: conn", ErrNilDependency)
 	}
 	if isNilDep(d) {
 		return nil, fmt.Errorf("%w: dialect", ErrNilDependency)
 	}
-	return &Deduper{conn: conn, dialect: d}, nil
+	dp := &Deduper{conn: conn, dialect: d, clk: clockwork.NewRealClock()}
+	for _, o := range opts {
+		o(dp)
+	}
+	return dp, nil
 }
 
 // Seen records (subscriber, messageID) and reports whether this is the FIRST
@@ -83,7 +111,7 @@ func (d *Deduper) Seen(ctx context.Context, subscriber, messageID string) (first
 			 VALUES (?, ?, ?)` +
 			d.dialect.InsertIgnoreDedup(),
 	)
-	res, err := q.Exec(ctx, stmt, subscriber, messageID, timeArg(d.dialect, time.Now().UTC()))
+	res, err := q.Exec(ctx, stmt, subscriber, messageID, timeArg(d.dialect, d.clk.Now().UTC()))
 	if err != nil {
 		return false, fmt.Errorf("workflow-store: deduper: seen: exec: %w", err)
 	}

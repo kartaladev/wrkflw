@@ -47,7 +47,7 @@ func NewMySQLTaskStore(db *sql.DB) (humantask.TaskStore, error) {
 //
 // Example:
 //
-//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)")
+//	db, _ := sql.Open("sqlite", "file:app.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 //	db.SetMaxOpenConns(1)
 //	persistence.MigrateSQLite(ctx, db)
 //	ts, err := persistence.NewSQLiteTaskStore(db)

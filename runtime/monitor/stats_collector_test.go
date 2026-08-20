@@ -11,7 +11,6 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
-	"github.com/kartaladev/wrkflw/internal/observability"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/kartaladev/wrkflw/runtime/monitor"
 )
@@ -141,7 +140,7 @@ func TestOutboxStatsCollector(t *testing.T) {
 			rdr := sdkmetric.NewManualReader()
 			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(rdr))
 
-			_ = monitor.NewOutboxStatsCollector(tc.reader, observability.WithMeterProvider(mp))
+			_ = monitor.NewOutboxStatsCollector(tc.reader, monitor.WithMeterProvider(mp))
 
 			var rm metricdata.ResourceMetrics
 			require.NoError(t, rdr.Collect(context.Background(), &rm))
@@ -209,7 +208,7 @@ func TestTimerStatsCollector(t *testing.T) {
 			rdr := sdkmetric.NewManualReader()
 			mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(rdr))
 
-			_ = monitor.NewTimerStatsCollector(tc.reader, observability.WithMeterProvider(mp))
+			_ = monitor.NewTimerStatsCollector(tc.reader, monitor.WithMeterProvider(mp))
 
 			var rm metricdata.ResourceMetrics
 			require.NoError(t, rdr.Collect(context.Background(), &rm))

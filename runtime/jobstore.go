@@ -92,7 +92,7 @@ func (j *jobStore) Load(ctx context.Context) ([]scheduler.ScheduledJob, error) {
 					slog.String("instance_id", a.InstanceID))...)
 			continue
 		}
-		sj, err := j.driver.buildTimerJob(def, a.InstanceID, a.TimerID, rehydrateTrigger(a), a.NextRun, a.Kind)
+		sj, err := j.driver.buildTimerJob(ctx, def, a.InstanceID, a.TimerID, rehydrateTrigger(a), a.NextRun, a.Kind)
 		if err != nil {
 			// A persisted trigger is always a concrete, convertible kind; an
 			// unconvertible row is corrupt — skip it, never abort the batch.

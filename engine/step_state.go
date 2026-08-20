@@ -371,6 +371,19 @@ func cloneState(st InstanceState) InstanceState {
 	for i := range s.Tokens {
 		s.Tokens[i].Payload = copyVars(s.Tokens[i].Payload)
 	}
+	// Do NOT simplify this to `s.History = st.History`. The copy is load-bearing
+	// twice over: Step CLOSES a pre-existing visit in place (LeftAt/CloseKind), and
+	// it APPENDS the visits the step opens. Sharing the array leaks both writes
+	// back into the caller's own state and across any two Steps driven from one
+	// base — the exact hazard in making this cheaper (see the O(entire state)
+	// backlog item, for which this line is the obvious deletion).
+	//
+	// ⚠ A `len == cap` fixture is NOT enough to guard it: append on a full slice
+	// reallocates, so two Steps never collide in the spare capacity and the
+	// cross-Step corruption goes unobserved. Only a base History with cap > len
+	// exposes it. TestCloneStateHistoryIsIndependentlyAllocated covers both
+	// profiles for exactly that reason; under a shallow assignment the cap > len
+	// case fails all four of its assertions and the cap == len case only one.
 	s.History = append([]NodeVisit(nil), st.History...)
 	if st.EndedAt != nil {
 		e := *st.EndedAt

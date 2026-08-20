@@ -3,7 +3,9 @@ package monitor
 import (
 	"context"
 	"log/slog"
+	"time"
 
+	"github.com/jonboulle/clockwork"
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/kartaladev/wrkflw/internal/observability"
@@ -28,19 +30,15 @@ type OutboxStatsCollector struct {
 //   - wrkflw_outbox_dead
 //   - wrkflw_outbox_oldest_pending_age_seconds
 //
-// The supplied opts are passed directly to [observability.New] (e.g.
-// [observability.WithMeterProvider]). A nil opt is silently ignored.
+// Configure it with this package's own options — [WithMeterProvider],
+// [WithLogger], [WithTracerProvider] — or omit them to use the OTel globals. A
+// nil opt is silently ignored.
 //
 // The collector adds no background goroutines — all data is read inside the OTel
 // SDK's collection callback.
-func NewOutboxStatsCollector(r kernel.OutboxStatsReader, opts ...observability.Option) *OutboxStatsCollector {
-	var real []observability.Option
-	for _, o := range opts {
-		if o != nil {
-			real = append(real, o)
-		}
-	}
-	tel := observability.New(statsInstrumentationName, real...)
+func NewOutboxStatsCollector(r kernel.OutboxStatsReader, opts ...Option) *OutboxStatsCollector {
+	var cfg collectorConfig
+	tel := cfg.telemetry(statsInstrumentationName, opts)
 
 	c := &OutboxStatsCollector{tel: tel, reader: r}
 
@@ -95,34 +93,57 @@ func NewOutboxStatsCollector(r kernel.OutboxStatsReader, opts ...observability.O
 }
 
 // TimerStatsCollector is an OTel observable-gauge collector for the wrkflw_timers
-// table. It registers one int64 gauge and reads from the underlying
+// table. It registers two int64 gauges and reads from the underlying
 // TimerStatsReader at each OTel collection cycle (no background goroutine).
 //
 // Construct it with [NewTimerStatsCollector]; the zero value is not useful.
 type TimerStatsCollector struct {
 	tel    observability.Telemetry
 	reader kernel.TimerStatsReader
+	clk    clockwork.Clock
 }
 
-// NewTimerStatsCollector creates a TimerStatsCollector that registers one
-// observable gauge:
-//   - wrkflw_timers_armed
+// overdueSeconds is how far past due the earliest armed timer's next_run is at
+// now, in whole seconds, clamped at zero.
 //
-// The supplied opts are passed directly to [observability.New] (e.g.
-// [observability.WithMeterProvider]). A nil opt is silently ignored.
+// Three inputs must all clamp rather than subtract. nextFireAt is nil when no
+// timer is armed at all; a stored row can carry the zero time (ADR-0181), which
+// would otherwise report a ~2000-year age; and a HEALTHY timer is in the future,
+// which would otherwise report a negative age. Zero therefore means "nothing is
+// late", and is the value a well-behaved scheduler emits continuously.
+func overdueSeconds(now time.Time, nextFireAt *time.Time) int64 {
+	if nextFireAt == nil || nextFireAt.IsZero() {
+		return 0
+	}
+	overdue := now.Sub(*nextFireAt)
+	if overdue <= 0 {
+		return 0
+	}
+	return int64(overdue.Seconds())
+}
+
+// NewTimerStatsCollector creates a TimerStatsCollector that registers two
+// observable gauges:
+//   - wrkflw_timers_armed
+//   - wrkflw_timers_next_fire_age_seconds
+//
+// The second one is the health signal: armed alone cannot distinguish a
+// scheduler that is keeping up from one that is 45 minutes behind, because both
+// report the same count. It costs no extra query — [kernel.TimerStats] already
+// carries NextFireAt, computed in SQL on every read, and it was being discarded.
+// Zero means nothing is overdue; see [overdueSeconds] for the clamped cases.
+//
+// Configure it with this package's own options — [WithMeterProvider],
+// [WithLogger], [WithTracerProvider], [WithClock] — or omit them to use the OTel
+// globals and the real clock. A nil opt is silently ignored.
 //
 // The collector adds no background goroutines — all data is read inside the OTel
 // SDK's collection callback.
-func NewTimerStatsCollector(r kernel.TimerStatsReader, opts ...observability.Option) *TimerStatsCollector {
-	var real []observability.Option
-	for _, o := range opts {
-		if o != nil {
-			real = append(real, o)
-		}
-	}
-	tel := observability.New(statsInstrumentationName, real...)
+func NewTimerStatsCollector(r kernel.TimerStatsReader, opts ...Option) *TimerStatsCollector {
+	var cfg collectorConfig
+	tel := cfg.telemetry(statsInstrumentationName, opts)
 
-	c := &TimerStatsCollector{tel: tel, reader: r}
+	c := &TimerStatsCollector{tel: tel, reader: r, clk: cfg.clk}
 
 	g, err := tel.Meter.Int64ObservableGauge(
 		"wrkflw_timers_armed",
@@ -130,6 +151,17 @@ func NewTimerStatsCollector(r kernel.TimerStatsReader, opts ...observability.Opt
 	)
 	if err != nil {
 		tel.Logger.Error("failed to register wrkflw_timers_armed gauge", slog.String("err", err.Error()))
+		return c
+	}
+
+	gAge, err := tel.Meter.Int64ObservableGauge(
+		"wrkflw_timers_next_fire_age_seconds",
+		metric.WithDescription("Age in seconds of the earliest armed timer's next run, i.e. how far past due it is. "+
+			"Zero when no armed timer is overdue."),
+	)
+	if err != nil {
+		tel.Logger.Error("failed to register wrkflw_timers_next_fire_age_seconds gauge",
+			slog.String("err", err.Error()))
 		return c
 	}
 
@@ -141,8 +173,9 @@ func NewTimerStatsCollector(r kernel.TimerStatsReader, opts ...observability.Opt
 			return nil //nolint:nilerr // log and swallow; never panic
 		}
 		o.ObserveInt64(g, stats.Armed)
+		o.ObserveInt64(gAge, overdueSeconds(c.clk.Now(), stats.NextFireAt))
 		return nil
-	}, g)
+	}, g, gAge)
 	if regErr != nil {
 		tel.Logger.Error("TimerStatsCollector: failed to register callback",
 			slog.String("err", regErr.Error()))

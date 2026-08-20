@@ -208,6 +208,142 @@ func TestGocronScheduleJob_AfterClose_ReturnsSentinelNotFalseFire(t *testing.T) 
 	assert.True(t, next.IsZero(), "a closed scheduler must not report a fire time for a job it will never run")
 }
 
+// TestGocronScheduleJob_PastDueDurationOneShot is the regression test for
+// backlog 49: a past-due one-shot expressed as a DURATION (After(-d),
+// After(0)) used to be refused outright. jobDefinition's duration branch
+// mapped it to gocron.OneTimeJobStartDateTime(now.Add(d)) with no past-due
+// guard — unlike the absolute-time (At) branch ADR-0184 Decision 6 hardened —
+// so gocron rejected it and the raw string
+// "gocron: OneTimeJob: start must not be in the past" escaped ScheduleJob
+// with no workflow-scheduler: sentinel wrap, alongside a zero next-run.
+//
+// What made these cases fail before the fix (observed, not reasoned):
+// require.NoError failed on the first line with exactly that gocron string.
+// Deliberately asserts on the error being absent and on next's VALUE, never
+// on gocron's message text.
+func TestGocronScheduleJob_PastDueDurationOneShot(t *testing.T) {
+	type tc struct {
+		name   string
+		trig   sched.TriggerDef
+		assert func(t *testing.T, clk *clockwork.FakeClock, fired func() int32, next time.Time, err error)
+	}
+
+	cases := []tc{
+		{
+			name: "After(-1m) fires immediately instead of being refused",
+			trig: sched.After(-1 * time.Minute),
+			assert: func(t *testing.T, clk *clockwork.FakeClock, fired func() int32, next time.Time, err error) {
+				require.NoError(t, err, "a past-due one-shot expressed as a duration must not be refused")
+				require.False(t, next.IsZero(), "a job that will fire must not report a zero next-run")
+				// The fake clock is never advanced in this case, so the
+				// fire-immediately branch must report exactly clk.Now() —
+				// "not zero" alone would not distinguish a correct answer
+				// from now.Add(-1m), which is what the unguarded branch
+				// handed to gocron.
+				assert.True(t, next.Equal(clk.Now()),
+					"want exactly the fake clock's current time %v, got %v", clk.Now(), next)
+				require.Eventually(t, func() bool { return fired() >= 1 }, eventuallyBudget, 5*time.Millisecond,
+					"a past-due one-shot must fire without any clock advance")
+				// Refutes the re-arm livelock this guard could plausibly have
+				// introduced (the ADR-0176 class: an arm whose next-run is
+				// still past-due, re-firing forever). WithLimitedRuns(1) must
+				// retire it after one fire. The Eventually above is this
+				// Never's liveness precondition — the job demonstrably fired.
+				require.Never(t, func() bool { return fired() > 1 }, 150*time.Millisecond, 10*time.Millisecond,
+					"a past-due one-shot must fire ONCE, not re-arm itself into a loop")
+			},
+		},
+		{
+			name: "After(0) fires immediately instead of being refused",
+			trig: sched.After(0),
+			assert: func(t *testing.T, clk *clockwork.FakeClock, fired func() int32, next time.Time, err error) {
+				require.NoError(t, err, "a zero-duration one-shot must not be refused")
+				require.False(t, next.IsZero())
+				assert.True(t, next.Equal(clk.Now()),
+					"want exactly the fake clock's current time %v, got %v", clk.Now(), next)
+				require.Eventually(t, func() bool { return fired() >= 1 }, eventuallyBudget, 5*time.Millisecond,
+					"a zero-duration one-shot must fire without any clock advance")
+				require.Never(t, func() bool { return fired() > 1 }, 150*time.Millisecond, 10*time.Millisecond,
+					"a past-due one-shot must fire ONCE, not re-arm itself into a loop")
+			},
+		},
+		{
+			// Control: the future duration form must keep its ordinary
+			// behaviour — armed, not fired, until the clock reaches it. Without
+			// this row a fix that made EVERY duration one-shot fire immediately
+			// would pass the two rows above.
+			name: "After(+5s) still waits for the clock",
+			trig: sched.After(5 * time.Second),
+			assert: func(t *testing.T, clk *clockwork.FakeClock, fired func() int32, next time.Time, err error) {
+				require.NoError(t, err)
+				require.False(t, next.IsZero())
+				assert.True(t, next.After(clk.Now()), "a future one-shot must report a future next-run, got %v", next)
+				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
+				assert.Zero(t, fired(), "a future one-shot must not have fired before its due instant")
+				clk.Advance(6 * time.Second)
+				require.Eventually(t, func() bool { return fired() >= 1 }, eventuallyBudget, 5*time.Millisecond)
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			clk := clockwork.NewFakeClock()
+			s, err := sched.NewGocronScheduler(sched.WithClock(clk))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = s.Close() })
+
+			var fired atomic.Int32
+			task := func(context.Context) error { fired.Add(1); return nil }
+
+			next, scheduleErr := s.ScheduleJob(t.Context(), "job-pastdue-duration", c.trig, task, false)
+			c.assert(t, clk, fired.Load, next, scheduleErr)
+		})
+	}
+}
+
+// TestGocronScheduleJob_NewJobErrorIsWrapped is the second half of backlog
+// 49: every error ScheduleJob returns must carry this engine's
+// "workflow-scheduler:" prefix, so a raw vendor string never reaches a
+// consumer as if it were our own vocabulary. jobDefinition validates only the
+// trigger KIND — a well-formed kind carrying a nonsense value (Every(0), a
+// malformed cron expression) is rejected later, by gocron's own NewJob, and
+// that error used to be returned verbatim.
+//
+// What made these cases fail before the fix (observed, not reasoned): the
+// returned errors were exactly "gocron: DurationJob: time interval is 0" and
+// "gocron: CronJob: crontab parse failure…", neither of which contains
+// "workflow-scheduler:". The underlying cause must still be reachable, so
+// each case also asserts the vendor text survives the wrap.
+func TestGocronScheduleJob_NewJobErrorIsWrapped(t *testing.T) {
+	type tc struct {
+		name  string
+		trig  sched.TriggerDef
+		cause string // vendor text that must survive the wrap
+	}
+
+	cases := []tc{
+		{name: "zero recurring interval", trig: sched.Every(0), cause: "DurationJob"},
+		{name: "malformed cron expression", trig: sched.Cron("not a cron"), cause: "CronJob"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			clk := clockwork.NewFakeClock()
+			s, err := sched.NewGocronScheduler(sched.WithClock(clk))
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = s.Close() })
+
+			next, scheduleErr := s.ScheduleJob(t.Context(), "job-newjob-error", c.trig, func(context.Context) error { return nil }, false)
+			require.Error(t, scheduleErr)
+			assert.True(t, next.IsZero(), "a job that was never registered must not report a fire time")
+			assert.ErrorContains(t, scheduleErr, "workflow-scheduler: ScheduleJob \"job-newjob-error\"",
+				"a vendor error must not escape without this engine's own vocabulary")
+			assert.ErrorContains(t, scheduleErr, c.cause, "the wrap must preserve the underlying cause")
+		})
+	}
+}
+
 // TestGocronScheduleJob_PastDueOneShot_NextRunNeverZero is a regression test
 // for a race between ScheduleJob's own return value and gocron's internal
 // firing of a past-due one-shot job. jobDefinition maps a past-due At trigger

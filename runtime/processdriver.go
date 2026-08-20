@@ -117,6 +117,12 @@ type ProcessDriver struct {
 	// Always non-nil after NewProcessDriver (defaults to noop providers + slog.Default()).
 	obs *driverObs
 
+	// schedLocWarnOnce guards the one-per-driver WARN that schedulingNow emits
+	// when the configured scheduler does not report a Location and NextRun is
+	// therefore computed in the UTC fallback. The fallback is a standing
+	// configuration fact, so it is announced once, not once per armed timer.
+	schedLocWarnOnce sync.Once
+
 	// msgMu guards msgWaiters.
 	msgMu sync.Mutex
 	// msgWaiters maps a (messageName, correlationKey) pair to the instance ID
@@ -580,6 +586,39 @@ func (driver *ProcessDriver) applyTrigger(ctx context.Context, def *model.Proces
 	return out, err
 }
 
+// casRetryAttempts bounds how many times an internal continuation re-delivers a
+// trigger that lost an optimistic-concurrency race. Every attempt re-Loads, so a
+// retry is applied to the WINNER's state, never to the stale snapshot.
+const casRetryAttempts = 5
+
+// applyTriggerRetryingCAS is [ProcessDriver.applyTrigger] plus a bounded
+// optimistic-concurrency retry: on [kernel.ErrConcurrentUpdate] the whole
+// load→deliverLoop→commit cycle is re-run, up to casRetryAttempts times. Any
+// other error is returned from the first attempt that produced it.
+//
+// It is safe to re-deliver because deliverLoop performs side effects only AFTER
+// the commit it lost: a conflicting attempt persisted nothing and dispatched
+// nothing.
+//
+// On exhaustion the last ErrConcurrentUpdate is returned, so a caller can tell
+// "gave up on conflicts" from "failed for another reason" with errors.Is. Used
+// by every internal continuation whose trigger has no other delivery path — the
+// timer fire and the cancel cascade — because for those a surfaced CAS conflict
+// is a PERMANENT loss: nothing revisits the instance.
+func (driver *ProcessDriver) applyTriggerRetryingCAS(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) (engine.InstanceState, error) {
+	var (
+		st  engine.InstanceState
+		err error
+	)
+	for range casRetryAttempts {
+		st, err = driver.applyTrigger(ctx, def, instanceID, trg)
+		if err == nil || !errors.Is(err, kernel.ErrConcurrentUpdate) {
+			return st, err
+		}
+	}
+	return st, err
+}
+
 // deliverLoop applies triggers from queue and then any follow-up triggers emitted
 // by perform (action results, etc.) until all commands are resolved or the engine
 // parks. It encapsulates the Step→terminalOutboxEvent→Create/Commit→perform cycle
@@ -776,7 +815,7 @@ func (driver *ProcessDriver) deliverLoop(
 				// The ScheduledJob wrapper is built in-tx; its descriptor carries
 				// the authoritative spec.NextRun computed by timerJobsFor, which is
 				// what jobStore.Save persists (JoinOrBegin joins this same tx).
-				sj := newScheduledTimerJob(j, driver.clk.Now().In(driver.schedulingLocation()))
+				sj := newScheduledTimerJob(j, driver.schedulingNow(txCtx))
 				if serr := driver.jobStore.Save(txCtx, sj); serr != nil {
 					return serr
 				}

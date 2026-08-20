@@ -16,6 +16,12 @@ import (
 // cancelled recursively (best-effort: errors are logged, never returned). Returns
 // the terminated parent InstanceState. See ADR-0028, ADR-0032.
 //
+// Every cancel delivery in the cascade — the parent's and each descendant's —
+// goes through applyTriggerRetryingCAS. A cancel has no other delivery path, so
+// a surfaced [kernel.ErrConcurrentUpdate] used to be a permanent loss: it left
+// the losing child running AND skipped the recursion, orphaning that child's
+// whole subtree while this call still returned nil.
+//
 // Returns [engine.ErrCancelNotApplicable] when the engine DROPPED this
 // instance's cancel — an admin partial rollback owns it, so the cancel did
 // nothing and never will (ADR-0180). That answer is a report, not an abort: the
@@ -30,7 +36,7 @@ func (driver *ProcessDriver) CancelInstance(ctx context.Context, def *model.Proc
 
 	// Parent-first: terminate the parent before propagating to children so that
 	// no CallNotifier can resume a child-completed parent during propagation.
-	st, err := driver.applyTrigger(ctx, def, instanceID, engine.NewCancelRequested(driver.clk.Now()))
+	st, err := driver.applyTriggerRetryingCAS(ctx, def, instanceID, engine.NewCancelRequested(driver.clk.Now()))
 	// engine.ErrCancelNotApplicable REPORTS that this instance's own cancel was
 	// dropped; it is not a reason to abandon its children (ADR-0180). Returning
 	// here on it was measured leaving a subtree permanently running — strictly
@@ -89,10 +95,12 @@ func (driver *ProcessDriver) propagateCancel(ctx context.Context, parentID strin
 			continue
 		}
 
-		// ApplyTrigger CancelRequested directly (parent-first) then recurse into
+		// Deliver CancelRequested directly (parent-first) then recurse into
 		// propagateCancel with the SAME shared visited map. Re-entering CancelInstance
 		// would allocate a fresh visited map per child, breaking the diamond guard.
-		if _, cancelErr := driver.applyTrigger(ctx, childDef, child.ChildInstanceID, engine.NewCancelRequested(driver.clk.Now())); cancelErr != nil {
+		// The delivery retries a lost CAS race rather than surfacing it: nothing
+		// else revisits a child once ListRunningChildren has returned it.
+		if _, cancelErr := driver.applyTriggerRetryingCAS(ctx, childDef, child.ChildInstanceID, engine.NewCancelRequested(driver.clk.Now())); cancelErr != nil {
 			// A child whose own cancel is DROPPED (engine.ErrCancelNotApplicable,
 			// ADR-0180) keeps running by design — but its own children have no walk
 			// in flight and must still be cancelled. Skipping the recursion here was

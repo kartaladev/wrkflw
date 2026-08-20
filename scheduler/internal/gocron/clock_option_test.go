@@ -3,6 +3,7 @@ package gocron_test
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,14 +77,25 @@ func TestGocronScheduler_WithClock_NotFiredWithoutAdvance(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
-	var fired bool
-	_, err = s.ScheduleJob(t.Context(), "clk-opt-t2", sched.At(clk.Now().Add(5*time.Second)), func(context.Context) error { fired = true; return nil }, false)
+	var fired atomic.Bool
+	_, err = s.ScheduleJob(t.Context(), "clk-opt-t2", sched.At(clk.Now().Add(5*time.Second)), func(context.Context) error { fired.Store(true); return nil }, false)
 	require.NoError(t, err)
 
 	// Wait until gocron armed its waiter, then assert the job hasn't fired.
 	require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 
 	// Do NOT advance the clock — the job must not fire within a short window.
-	assert.Never(t, func() bool { return fired }, 200*time.Millisecond, 10*time.Millisecond,
+	assert.Never(t, fired.Load, 200*time.Millisecond, 10*time.Millisecond,
 		"job must not fire before the fake clock is advanced")
+
+	// Liveness precondition for the Never above — deliberately AFTER it, since
+	// the whole point is that nothing may happen until the clock moves. The
+	// SAME registration must fire the moment it does; that is what proves the
+	// silence above was the fake clock holding the job back rather than a job
+	// that was never going to fire at all. Measured: with the task swapped for
+	// one that ignores the caller's callback, the Never alone still PASSED
+	// (backlog 44) — this Eventually is what turns that mutation RED.
+	clk.Advance(5 * time.Second)
+	require.Eventually(t, fired.Load, eventuallyBudget, 5*time.Millisecond,
+		"the same job must fire as soon as the fake clock is advanced")
 }

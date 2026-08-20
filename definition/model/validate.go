@@ -267,6 +267,31 @@ var (
 	// node reachable (escaping ErrUnreachableNode). Rejected at authoring time
 	// rather than silently picking one interpretation (ADR-0122).
 	ErrEventSubprocessOnFlow = errors.New("workflow-definition: event-triggered subprocess has incoming or outgoing sequence flow")
+	// ErrDuplicateNodeID is returned when two nodes of the same process
+	// definition share an ID. A node ID is the definition's lookup key:
+	// ProcessDefinition.Node is a first-wins linear scan, so the second node
+	// sharing an ID is permanently unreachable, while Outgoing and Incoming
+	// filter the flows by that same string and therefore return the union of
+	// both nodes' flows. The result is silent misrouting rather than a failure,
+	// so the duplicate is rejected at authoring time.
+	//
+	// Uniqueness is scoped to a single definition: every lookup is per
+	// ProcessDefinition, so a nested sub-process definition may legitimately
+	// reuse an ID from its parent. Blank IDs are keys like any other and two
+	// blank-ID nodes shadow each other in exactly the same way, so they are
+	// reported too.
+	ErrDuplicateNodeID = errors.New("workflow-definition: duplicate node id")
+	// ErrDuplicateFlowID is returned when two sequence flows of the same process
+	// definition share a non-blank ID. Flow IDs identify a flow in diagnostics
+	// and in the RecoveryFlow / DeadlineFlow references, so a reused ID makes
+	// those references ambiguous.
+	//
+	// A blank flow ID is legal — flow.SequenceFlow literals may omit it and
+	// nothing resolves a flow by ID on the execution path — so any number of
+	// blank-ID flows is accepted. Flow IDs live in their own namespace: a flow
+	// may share its ID with a node. Like ErrDuplicateNodeID, uniqueness is
+	// scoped to a single definition.
+	ErrDuplicateFlowID = errors.New("workflow-definition: duplicate flow id")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -297,6 +322,36 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	seen[d] = true
 
 	var errs []error
+
+	// Identity, checked before anything reads an ID: a node ID is this
+	// definition's lookup key (d.Node is a first-wins linear scan, and
+	// d.Outgoing/d.Incoming filter the flows by the same string), so a duplicate
+	// shadows a node instead of failing. A flow ID identifies a flow in
+	// diagnostics and in the RecoveryFlow/DeadlineFlow references. Uniqueness is
+	// per definition — a nested sub-process has its own lookups and is checked
+	// by the recursive call below. A blank flow ID is legal (see
+	// ErrDuplicateFlowID) and never counts as a duplicate; a blank node ID is a
+	// key like any other, so blank duplicates are reported.
+	nodeIDs := make(map[string]bool, len(d.Nodes))
+	for _, n := range d.Nodes {
+		id := n.ID()
+		if nodeIDs[id] {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrDuplicateNodeID, id))
+			continue
+		}
+		nodeIDs[id] = true
+	}
+	flowIDs := make(map[string]bool, len(d.Flows))
+	for _, f := range d.Flows {
+		if f.ID == "" {
+			continue
+		}
+		if flowIDs[f.ID] {
+			errs = append(errs, fmt.Errorf("%w: flow %q", ErrDuplicateFlowID, f.ID))
+			continue
+		}
+		flowIDs[f.ID] = true
+	}
 
 	// Start events (ADR-0121): a definition may have any number of start
 	// events. At most one may be a trigger-less "none" start

@@ -64,6 +64,14 @@ func (s *InstanceState) removeTimer(timerID string) {
 			out = append(out, tr)
 		}
 	}
+	// nil, not an empty slice, when nothing survives — matching cancelAllTimers
+	// and cancelCompensationWalkTimers. Assigning the freshly make()d slice
+	// unconditionally flips the persisted snapshot from `"timers": null` to
+	// `"timers": []`, including on a call that removed nothing at all.
+	if len(out) == 0 {
+		s.Timers = nil
+		return
+	}
 	s.Timers = out
 }
 
@@ -83,6 +91,11 @@ func (s *InstanceState) cancelTimersWhere(key, excludeTimerID string, keyOf func
 			continue
 		}
 		out = append(out, tr)
+	}
+	// nil, not an empty slice, when nothing survives — see removeTimer.
+	if len(out) == 0 {
+		s.Timers = nil
+		return toCancel
 	}
 	s.Timers = out
 	return toCancel

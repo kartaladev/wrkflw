@@ -164,8 +164,15 @@ func TestNativeSchedulerSchedule(t *testing.T) {
 		require.ErrorIs(t, err, scheduler.ErrJobNotFound)
 		assert.Empty(t, listIDs(t.Context(), s))
 
-		// Not armed: advancing past the due instant must not fire.
+		// Not armed: advancing past the due instant must not fire. The canary
+		// is an AUTO job at the same due instant — it must fire there, which is
+		// what makes the manual job's silence evidence about ActivationManual
+		// rather than about a scheduler that delivered nothing (measured: this
+		// subtest passed under exactly that mutation — see liveness_test.go).
+		canary := scheduleFireCanary(t, s, "manual-1-canary", scheduler.At(clk.Now().Add(3*time.Second)))
+		require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 		clk.Advance(5 * time.Second)
+		requireCanaryFired(t, canary, 1)
 		assert.Never(t, func() bool { return fired.Load() > 0 }, 150*time.Millisecond, 10*time.Millisecond,
 			"a manual job must not fire before Activate")
 	})
@@ -252,7 +259,14 @@ func TestNativeSchedulerDeactivateCancel(t *testing.T) {
 		_, err = s.Scheduled(t.Context(), "deact-1")
 		require.ErrorIs(t, err, scheduler.ErrJobNotFound, "a deactivated job has no scheduler record")
 
+		// Canary at the same due instant: it must fire, so "deact-1 stayed
+		// silent" is evidence about Deactivate and not about a scheduler that
+		// delivered nothing at all (measured: this subtest passed under exactly
+		// that mutation — see liveness_test.go).
+		canary := scheduleFireCanary(t, s, "deact-1-canary", scheduler.At(clk.Now().Add(3*time.Second)))
+		require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 		clk.Advance(5 * time.Second)
+		requireCanaryFired(t, canary, 1)
 		assert.Never(t, func() bool { return fired.Load() > 0 }, 150*time.Millisecond, 10*time.Millisecond,
 			"a deactivated job must not fire")
 	})
@@ -285,7 +299,13 @@ func TestNativeSchedulerDeactivateCancel(t *testing.T) {
 		_, err = s.Scheduled(t.Context(), "cancel-1")
 		require.ErrorIs(t, err, scheduler.ErrJobNotFound)
 
+		// Canary at the same due instant — see the Deactivate case above and
+		// liveness_test.go: without it this subtest passes on a scheduler that
+		// fires nothing whatsoever (measured).
+		canary := scheduleFireCanary(t, s, "cancel-1-canary", scheduler.At(clk.Now().Add(3*time.Second)))
+		require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 		clk.Advance(5 * time.Second)
+		requireCanaryFired(t, canary, 1)
 		assert.Never(t, func() bool { return fired.Load() > 0 }, 150*time.Millisecond, 10*time.Millisecond,
 			"a cancelled job must not fire")
 	})

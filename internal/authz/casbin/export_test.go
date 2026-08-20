@@ -1,10 +1,19 @@
 package casbin
 
 import (
+	"context"
+
 	"github.com/casbin/casbin/v2/persist"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jonboulle/clockwork"
 )
+
+// NewPolicyReloadCallback exposes the unexported newPolicyReloadCallback for
+// black-box tests, so the watcher-callback error handling can be exercised with
+// a stub reload function instead of a real failing database.
+func NewPolicyReloadCallback(ctx context.Context, cfg DBConfig, reload func() error) func(string) {
+	return newPolicyReloadCallback(ctx, cfg, reload)
+}
 
 // NewPGAdapter exposes the unexported pgAdapter constructor for black-box tests.
 func NewPGAdapter(pool *pgxpool.Pool) persist.Adapter { return newPGAdapter(pool) }

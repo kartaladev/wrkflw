@@ -21,6 +21,7 @@ import (
 	"github.com/kartaladev/wrkflw/definition/flow"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/internal/database/transaction"
 	"github.com/kartaladev/wrkflw/internal/dbtest"
 	"github.com/kartaladev/wrkflw/persistence"
 	"github.com/kartaladev/wrkflw/runtime"
@@ -452,4 +453,56 @@ func TestNewSQLitePruner_PruneProcessedMessages(t *testing.T) {
 	require.NoError(t, db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM wrkflw_processed_message WHERE message_id = 'sqlite-facade-msg-new'`).Scan(&count))
 	assert.Equal(t, 1, count, "new processed_message row must survive")
+}
+
+// TestNewSQLiteDeduperSeenIsIdempotent verifies that NewSQLiteDeduper returns a
+// Deduper whose Seen reports true on first observation and false on a repeat,
+// that a distinct message id is still reported as new (so a Seen that always
+// answered "already seen" would fail), and that Seen honours the ambient
+// transaction contract documented on persistence.Deduper: a rolled-back business
+// transaction also rolls back the dedup mark.
+func TestNewSQLiteDeduperSeenIsIdempotent(t *testing.T) {
+	t.Parallel()
+	db := dbtest.RunTestSQLite(t)
+
+	d, err := persistence.NewSQLiteDeduper(db)
+	require.NoError(t, err)
+	require.NotNil(t, d)
+
+	// Seen joins the ambient transaction stashed in ctx by transaction.Begin,
+	// so the dedup record commits atomically with the caller's business unit.
+	callSeen := func(subscriber, msgID string, commit bool) (bool, error) {
+		q, ctx, err := transaction.Begin(t.Context(), db)
+		require.NoError(t, err)
+		first, err := d.Seen(ctx, subscriber, msgID)
+		if err != nil || !commit {
+			_ = q.Rollback(ctx)
+			return first, err
+		}
+		return first, q.Commit(ctx)
+	}
+
+	first, err := callSeen("sqlite-sub", "sqlite-msg-1", true)
+	require.NoError(t, err)
+	assert.True(t, first, "first observation must report the message as new")
+
+	dup, err := callSeen("sqlite-sub", "sqlite-msg-1", true)
+	require.NoError(t, err)
+	assert.False(t, dup, "second observation of the same id must report a duplicate")
+
+	// Control: a Seen that always reported "already seen" would pass the
+	// assertion above; a distinct id must still be new.
+	other, err := callSeen("sqlite-sub", "sqlite-msg-2", true)
+	require.NoError(t, err)
+	assert.True(t, other, "a distinct message id must still be reported as new")
+
+	// Ambient-transaction contract: the mark must not survive a rollback.
+	rolled, err := callSeen("sqlite-sub", "sqlite-msg-3", false)
+	require.NoError(t, err)
+	require.True(t, rolled, "control: the rolled-back Seen must itself have reported new")
+
+	again, err := callSeen("sqlite-sub", "sqlite-msg-3", true)
+	require.NoError(t, err)
+	assert.True(t, again,
+		"Seen did not join the ambient transaction — the mark survived a rolled-back business tx")
 }

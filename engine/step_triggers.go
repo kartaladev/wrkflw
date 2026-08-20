@@ -469,7 +469,17 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 			(eff.MaxElapsed > 0 && !tok.RetryStartedAt.IsZero() &&
 				t.OccurredAt().Sub(tok.RetryStartedAt) > eff.MaxElapsed)
 		if !terminal {
-			delay := time.Duration(t.JitterFraction * float64(eff.Backoff(attempt)))
+			// The backoff is the policy's; jitter only SCALES it, and only when
+			// the caller supplied a fraction. Multiplying unconditionally made
+			// the zero value — what NewActionFailed leaves behind for every
+			// consumer that does not opt into WithJitter — collapse the delay to
+			// zero, i.e. an immediate retry with no backoff at all. The runtime
+			// always passes a sampled fraction, so only direct library callers
+			// were exposed.
+			delay := eff.Backoff(attempt)
+			if t.JitterFraction > 0 {
+				delay = time.Duration(t.JitterFraction * float64(delay))
+			}
 			timerID := s.nextTimerID()
 			// Retry backoff is a concrete one-shot delay: carry it as an
 			// AfterDuration trigger so the scheduler fires once after `delay`.

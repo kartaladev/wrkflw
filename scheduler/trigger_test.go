@@ -1,8 +1,13 @@
 package scheduler_test
 
 import (
+	"math"
+	"slices"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/kartaladev/wrkflw/scheduler"
 )
@@ -551,7 +556,7 @@ func TestTrigger_NextAgreesWithLiveScheduler(t *testing.T) {
 		},
 		// REGRESSION PIN, not new behaviour: this shape must KEEP reporting
 		// never-due. It is what lets the runtime refuse the arm before
-		// gocron's monthlyJob.next spins forever on it (ADR-0176 §4).
+		// gocron's monthlyJob.next spins forever on it (ADR-0176's Decision).
 		{
 			name:   "monthly every 12 months on the 31st stays never-due from a February anchor",
 			after:  tueFeb10,
@@ -744,6 +749,264 @@ func TestTrigger_NextMonthlyScanSkipsOffGridMonths(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Next did not return within 2s: the scan is walking off-grid months day by day")
+	}
+}
+
+// bruteMonthlyNext is an independent reference for calendarNext's monthly
+// answer: it walks GRID months one interval-stride at a time and checks each
+// day of each, with no jump arithmetic to get wrong. Positive day-of-month
+// sets only — negative days are recomputed per month by monthlyDayMatches and
+// are covered by TestTrigger_Next's own cases.
+func bruteMonthlyNext(after time.Time, interval uint, days []int, bound int) (time.Time, bool) {
+	loc := after.Location()
+	civil := func(t time.Time) int {
+		y, m, d := t.Date()
+		return int(time.Date(y, m, d, 0, 0, 0, 0, time.UTC).Unix() / 86400)
+	}
+	startIdx := civil(after)
+	for k := 0; ; k++ {
+		gm := time.Date(after.Year(), after.Month()+time.Month(uint(k)*interval), 1, 0, 0, 0, 0, loc)
+		off := civil(gm) - startIdx
+		if off > bound {
+			return time.Time{}, false
+		}
+		daysIn := time.Date(gm.Year(), gm.Month()+1, 0, 0, 0, 0, 0, loc).Day()
+		for d := 1; d <= daysIn; d++ {
+			if off+d-1 > bound {
+				return time.Time{}, false
+			}
+			if !slices.Contains(days, d) {
+				continue
+			}
+			if candidate := time.Date(gm.Year(), gm.Month(), d, 0, 0, 0, 0, loc); candidate.After(after) {
+				return candidate, true
+			}
+		}
+	}
+}
+
+// TestTrigger_NextMonthlyGridJumpMatchesBruteForce guards the CORRECTNESS of
+// the interval-stride jump that TestTrigger_NextMonthlyScanJumpsWholeGridStrides
+// guards the COST of. A jump is arithmetic on a loop index, and the way it goes
+// wrong is silent: it lands one day late and every grid month's 1st stops being
+// tested.
+//
+// ⚠ This test exists because that exact failure was MEASURED to be invisible.
+// Dropping the `- 1` from the jump's index arithmetic left the ENTIRE
+// TestTrigger_* suite — including both new backlog-26/30 tests and
+// TestTrigger_NextAgreesWithLiveScheduler — green, while this comparison found
+// mismatches immediately:
+//
+//	anchor=2026-02-04 days=[1] interval=2: got (zero,false) want (2026-04-01,true)
+//	anchor=2026-02-04 days=[1] interval=3: got (zero,false) want (2026-05-01,true)
+//
+// i.e. Monthly(2, {1}) silently reporting "never due". That is what makes this
+// test fail; a cost bound cannot catch it, because the broken version is fast.
+func TestTrigger_NextMonthlyGridJumpMatchesBruteForce(t *testing.T) {
+	t.Parallel()
+
+	anchors := []time.Time{
+		time.Date(2026, 2, 4, 12, 0, 0, 0, time.UTC),     // short month
+		time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC),     // last day of a 31-day month
+		time.Date(2024, 12, 15, 23, 59, 59, 0, time.UTC), // year boundary, leap year
+		time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC),
+		time.Date(2027, 3, 1, 0, 0, 0, 0, time.UTC), // first day of a month
+	}
+	daySets := [][]int{{1}, {31}, {15}, {29}, {30}, {1, 15, 31}, {28, 29}}
+	intervals := []uint{1, 2, 3, 4, 5, 6, 7, 11, 12, 13, 24, 25, 60, 100, 120, 1000, 1200, 5000}
+
+	for _, anchor := range anchors {
+		for _, days := range daySets {
+			for _, interval := range intervals {
+				gotNext, gotOK := scheduler.Monthly(interval, days).Next(anchor)
+				wantNext, wantOK := bruteMonthlyNext(anchor, interval, days, maxCalendarScanDaysForTest*int(interval))
+
+				require.Equalf(t, wantOK, gotOK,
+					"anchor=%s days=%v interval=%d: ok mismatch (got next=%v, want next=%v)",
+					anchor.Format(time.RFC3339), days, interval, gotNext, wantNext)
+				if wantOK {
+					assert.Truef(t, gotNext.Equal(wantNext),
+						"anchor=%s days=%v interval=%d: got %v, want %v",
+						anchor.Format(time.RFC3339), days, interval, gotNext, wantNext)
+				}
+			}
+		}
+	}
+}
+
+// maxCalendarScanDaysForTest mirrors the unexported maxCalendarScanDays in
+// trigger.go (366*5). It is duplicated rather than exported because these are
+// black-box tests; TestTrigger_NextMonthlyScanJumpsWholeGridStrides fails if
+// the production constant ever shrinks below it in a way that matters.
+const maxCalendarScanDaysForTest = 366 * 5
+
+// TestTrigger_NextMonthlyScanJumpsWholeGridStrides is the regression test for
+// backlog 26: calendarNext's monthly scan skipped ONE month per step when a
+// month was off the interval grid, so an unsatisfiable day-of-month re-tested
+// and discarded interval-1 whole months and stayed linear in a
+// consumer-supplied uint — on the arm path, inside the commit transaction.
+//
+// ⚠ Backlog 26 filed this as effectively a non-issue on the strength of a
+// single measurement, Monthly(120000,{31}) at ~404 ms. That number is real but
+// it is one point on a straight line. Measured across the range (anchor
+// 2026-02-04, day 31, intervals ≡ 0 mod 12 so every grid month is a February
+// and the scan must exhaust):
+//
+//	interval    plain     -race
+//	12000       0.047s    0.316s
+//	120000      0.407s    —
+//	300000      1.011s    —
+//	786432      2.746s   20.677s
+//	1044480     3.568s   27.159s   ← just under maxSchedulableInterval
+//
+// So the clamp added for backlog 30 bounds this at ~3.6 s / ~27 s rather than
+// removing it. This test pins the fix that does remove it: jumping straight to
+// the next ON-GRID month, which makes the iteration count depend on the scan
+// bound's 5-year-per-interval-unit shape rather than on interval itself.
+//
+// What makes it fail without the jump: 3.568 s plain / 27.159 s under -race,
+// both far above the 2 s bound. What makes the bound safe once fixed: the
+// jump completes in milliseconds in both modes. -race is ~7.6x slower here
+// (measured above), so a bound that discriminates must be checked in both —
+// 2 s is ~1.8x below the plain failing time and ~13x below the -race one.
+func TestTrigger_NextMonthlyScanJumpsWholeGridStrides(t *testing.T) {
+	t.Parallel()
+
+	// February anchor with day-of-month 31, and an interval divisible by 12 so
+	// every grid month is also a February — no grid month can ever hold a 31st
+	// and the scan is forced to exhaustion. 1044480 == 12 * 87040, just under
+	// maxSchedulableInterval so the backlog-30 clamp does not short-circuit it.
+	after := time.Date(2026, 2, 4, 12, 0, 0, 0, time.UTC)
+
+	type result struct {
+		next time.Time
+		ok   bool
+	}
+	done := make(chan result, 1)
+	go func() {
+		next, ok := scheduler.Monthly(1044480, []int{31}).Next(after)
+		done <- result{next: next, ok: ok}
+	}()
+
+	select {
+	case got := <-done:
+		assert.False(t, got.ok, "no grid month holds a 31st, so this must fail closed")
+		assert.True(t, got.next.IsZero(), "a refused trigger must report the zero time, got %v", got.next)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Next did not return within 2s: the scan is stepping one month at a time instead of jumping whole interval strides")
+	}
+}
+
+// TestTrigger_NextCalendarIntervalCannotOverflow is the regression test for
+// backlog 30. weeklyNext computed its interval-week jump as
+// `after.Day() - int(after.Weekday()) + int(interval)*7` with interval an
+// unvalidated uint carried from a consumer definition, and calendarNext its
+// scan bound as `maxCalendarScanDays * int(interval)`. Both conversions wrap.
+//
+// What makes each row fail without the clamp (measured against the unclamped
+// code, anchor Thu 2026-08-20T12:00Z, weekday set [Monday] so the first pass
+// finds nothing and the interval-week pass runs):
+//
+//	interval        int(interval)*7   next                  ok
+//	1               7                 2026-08-24            true
+//	2               14                2026-08-31            true
+//	MaxUint32       30064771065       82316573-12-27        true
+//	MaxUint64/7     -2                zero                  false
+//	MaxUint64       -7                2026-08-10            TRUE   ← 10 days in the PAST
+//
+// The MaxUint64 row is the defect: a next fire strictly BEFORE `after`,
+// reported ok=true. A past next-run accepted as valid is the never-due /
+// past-due-arm class ADR-0176 and ADR-0181 exist to refuse, and backlog 49
+// records what gocron does when handed one.
+//
+// ⚠ Asserting only `ok` would pass today on the MaxUint64 row — it IS true.
+// Every ok=true row therefore also asserts `!next.Before(after)`.
+func TestTrigger_NextCalendarIntervalCannotOverflow(t *testing.T) {
+	t.Parallel()
+
+	// A Thursday. The weekday set is [Monday], which is < Thursday, so
+	// weekdayAtTime's first pass finds nothing and the interval-week jump —
+	// the overflowing expression — is what produces the answer.
+	after := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+
+	type testCase struct {
+		name   string
+		trig   scheduler.Trigger
+		assert func(t *testing.T, next time.Time, ok bool)
+	}
+
+	// inFutureWhenOK is the invariant every calendar Next owes its caller: if
+	// it reports a fire, that fire may not already have happened.
+	inFutureWhenOK := func(t *testing.T, next time.Time, ok bool) {
+		t.Helper()
+		if ok {
+			assert.Falsef(t, next.Before(after),
+				"Next reported ok=true with a next-run BEFORE the reference instant: next=%v after=%v", next, after)
+		}
+	}
+
+	refused := func(t *testing.T, next time.Time, ok bool) {
+		t.Helper()
+		assert.False(t, ok, "an interval this large must fail closed, not arm")
+		assert.True(t, next.IsZero(), "a refused trigger must report the zero time, got %v", next)
+	}
+
+	cases := []testCase{
+		{
+			name: "weekly interval 1 is unaffected",
+			trig: scheduler.Weekly(1, []time.Weekday{time.Monday}),
+			assert: func(t *testing.T, next time.Time, ok bool) {
+				require.True(t, ok)
+				inFutureWhenOK(t, next, ok)
+				assert.Equal(t, time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC), next)
+			},
+		},
+		{
+			name: "weekly interval 2 is unaffected",
+			trig: scheduler.Weekly(2, []time.Weekday{time.Monday}),
+			assert: func(t *testing.T, next time.Time, ok bool) {
+				require.True(t, ok)
+				inFutureWhenOK(t, next, ok)
+				assert.Equal(t, time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC), next)
+			},
+		},
+		{
+			name:   "weekly MaxUint32 is refused rather than arming 80 million years out",
+			trig:   scheduler.Weekly(math.MaxUint32, []time.Weekday{time.Monday}),
+			assert: refused,
+		},
+		{
+			name:   "weekly MaxUint64/7 is refused",
+			trig:   scheduler.Weekly(math.MaxUint64/7, []time.Weekday{time.Monday}),
+			assert: refused,
+		},
+		{
+			// THE defect row: unclamped this returns 2026-08-10 (ten days
+			// before `after`) with ok=true.
+			name:   "weekly MaxUint64 is refused, never a PAST next-run with ok=true",
+			trig:   scheduler.Weekly(math.MaxUint64, []time.Weekday{time.Monday}),
+			assert: refused,
+		},
+		{
+			name:   "daily MaxUint64 is refused (the scan bound overflows too)",
+			trig:   scheduler.Daily(math.MaxUint64),
+			assert: refused,
+		},
+		{
+			name:   "monthly MaxUint64 is refused",
+			trig:   scheduler.Monthly(math.MaxUint64, []int{1}),
+			assert: refused,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			next, ok := tc.trig.Next(after)
+			inFutureWhenOK(t, next, ok)
+			tc.assert(t, next, ok)
+		})
 	}
 }
 

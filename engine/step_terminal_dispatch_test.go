@@ -1,7 +1,13 @@
 package engine
 
-// step_terminal_dispatch_test.go — ADR-0165 §5.2: the BEHAVIOURAL
-// exhaustiveness table for the single terminal guard in dispatch.
+// step_terminal_dispatch_test.go — ADR-0165, Decision 2 ("Enforcement is a
+// single check in `dispatch`") read against Decision 4 ("The classification"):
+// the BEHAVIOURAL exhaustiveness table for that single terminal guard.
+//
+// (This previously cited "ADR-0165 §5.2". ADR-0165 numbers its Decision
+// subsections 1–6 and has no §5.2; its §5 is the payload-dependent carve-out,
+// which is not what this table covers. Heading names, not section numbers —
+// numbers rot exactly like line numbers do.)
 //
 // Relationship to its sibling tables — three properties, deliberately not fused:
 //

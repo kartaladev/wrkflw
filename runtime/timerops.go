@@ -28,12 +28,48 @@ type locatedScheduler interface {
 // in: the scheduler's reported location, or time.UTC when the scheduler does
 // not report one.
 func (driver *ProcessDriver) schedulingLocation() *time.Location {
+	loc, _ := driver.reportedSchedulingLocation()
+	return loc
+}
+
+// reportedSchedulingLocation is schedulingLocation plus the bit that tells the
+// two outcomes apart: reported is false when the answer is the time.UTC
+// FALLBACK rather than a location the scheduler actually named. Both a
+// scheduler that omits the capability and one whose Location() returns nil land
+// on the fallback — they are the same silent-UTC outcome and are reported alike.
+func (driver *ProcessDriver) reportedSchedulingLocation() (*time.Location, bool) {
 	if ls, ok := driver.sched.(locatedScheduler); ok {
 		if loc := ls.Location(); loc != nil {
-			return loc
+			return loc, true
 		}
 	}
-	return time.UTC
+	return time.UTC, false
+}
+
+// schedulingNow is the clock read every timer arm and re-arm makes: now,
+// rendered in the location NextRun is computed in.
+//
+// It also announces the UTC fallback ONCE per driver. A scheduler that resolves
+// at-times in a non-UTC zone but does not report it was measured persisting
+// NextRun values 7 hours from the instant they actually fire, with no log line
+// at any level — the fallback is the only safe default, but a silent one leaves
+// an operator no way to discover the skew (ADR-0137). It is deliberately warned
+// HERE rather than at construction: a driver that never arms a timer never
+// relies on the fallback and has nothing to be told. sync.Once keeps a
+// standing configuration fact from being restated once per armed timer.
+func (driver *ProcessDriver) schedulingNow(ctx context.Context) time.Time {
+	loc, reported := driver.reportedSchedulingLocation()
+	if !reported {
+		driver.schedLocWarnOnce.Do(func() {
+			driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn,
+				"runtime: scheduler does not report a scheduling location; NextRun computed in UTC",
+				append(driver.obs.tel.LogAttrs(ctx),
+					slog.String("scheduler_type", fmt.Sprintf("%T", driver.sched)),
+					slog.String("capability", "Location() *time.Location"),
+					slog.String("assumed_location", loc.String()))...)
+		})
+	}
+	return driver.clk.Now().In(loc)
 }
 
 // convertTrigger maps a resolved [schedule.TriggerSpec] to the scheduler's own
@@ -159,7 +195,22 @@ type cancelKey struct {
 func (driver *ProcessDriver) timerJobsFor(ctx context.Context, def *model.ProcessDefinition, cmds []engine.Command, trg engine.Trigger, instanceID string, armedRecurring func(timerID string) (recurring, determinable bool)) ([]*timerJob, []cancelKey) {
 	var arms []*timerJob
 	var cancels []cancelKey
-	now := driver.clk.Now().In(driver.schedulingLocation())
+	// The scheduling clock is read LAZILY, and at most once for the whole step:
+	// once so that two timers armed by the same step share one now (as they
+	// always have), lazily so that a step carrying no ScheduleTimer at all —
+	// the overwhelming majority — never consults the scheduling location and so
+	// never triggers schedulingNow's missing-capability warning about a fallback
+	// it did not rely on.
+	var (
+		now     time.Time
+		nowRead bool
+	)
+	schedulingNow := func() time.Time {
+		if !nowRead {
+			now, nowRead = driver.schedulingNow(ctx), true
+		}
+		return now
+	}
 	for _, c := range cmds {
 		switch cmd := c.(type) {
 		case engine.ScheduleTimer:
@@ -177,7 +228,7 @@ func (driver *ProcessDriver) timerJobsFor(ctx context.Context, def *model.Proces
 						slog.Any("error", err))...)
 				continue
 			}
-			next, ok := strig.Next(now)
+			next, ok := strig.Next(schedulingNow())
 			if neverDueNextRun(next, ok) {
 				// ADR-0176. Refusing HERE is what keeps the whole defect out of
 				// reach: this one site feeds both the in-tx jobStore.Save and
@@ -282,13 +333,13 @@ func (driver *ProcessDriver) armedTimerRecurring(ctx context.Context, instanceID
 // context.Background() usage: gocron cancels a one-shot's injected per-run ctx
 // shortly after the task returns, and the fire is a self-contained
 // continuation by design.
-func (driver *ProcessDriver) buildTimerJob(def *model.ProcessDefinition, instanceID, timerID string, trig schedule.TriggerSpec, nextRun time.Time, kind engine.TimerKind) (*scheduledTimerJob, error) {
+func (driver *ProcessDriver) buildTimerJob(ctx context.Context, def *model.ProcessDefinition, instanceID, timerID string, trig schedule.TriggerSpec, nextRun time.Time, kind engine.TimerKind) (*scheduledTimerJob, error) {
 	strig, err := convertTrigger(trig)
 	if err != nil {
 		return nil, err
 	}
 	j := driver.newTimerJob(def, instanceID, timerID, trig, strig, nextRun, kind)
-	return newScheduledTimerJob(j, driver.clk.Now().In(driver.schedulingLocation())), nil
+	return newScheduledTimerJob(j, driver.schedulingNow(ctx)), nil
 }
 
 // newTimerJob assembles the runtime's Manual [timerJob] from its parts: the
@@ -338,26 +389,23 @@ func (driver *ProcessDriver) timerFireFunc(def *model.ProcessDefinition, instanc
 		fireCtx := context.Background()
 		trg := engine.NewTimerFired(driver.clk.Now(), timerID)
 		driver.obs.timerFired.Add(fireCtx, 1)
-		const maxAttempts = 5
-		var err error
-		for range maxAttempts {
-			if _, err = driver.applyTrigger(fireCtx, def, instanceID, trg); err == nil {
-				return
-			}
-			if !errors.Is(err, kernel.ErrConcurrentUpdate) {
-				driver.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: ApplyTrigger failed",
-					append(driver.obs.tel.LogAttrs(fireCtx),
-						slog.String("timer_id", timerID),
-						slog.String("instance_id", instanceID),
-						slog.Any("error", err))...)
-				return
-			}
+		_, err := driver.applyTriggerRetryingCAS(fireCtx, def, instanceID, trg)
+		if err == nil {
+			return
+		}
+		if !errors.Is(err, kernel.ErrConcurrentUpdate) {
+			driver.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: ApplyTrigger failed",
+				append(driver.obs.tel.LogAttrs(fireCtx),
+					slog.String("timer_id", timerID),
+					slog.String("instance_id", instanceID),
+					slog.Any("error", err))...)
+			return
 		}
 		driver.obs.tel.Logger.LogAttrs(fireCtx, slog.LevelError, "runtime: timer fire: ApplyTrigger permanently dropped after CAS conflicts",
 			append(driver.obs.tel.LogAttrs(fireCtx),
 				slog.String("timer_id", timerID),
 				slog.String("instance_id", instanceID),
-				slog.Int("attempts", maxAttempts),
+				slog.Int("attempts", casRetryAttempts),
 				slog.Any("error", err))...)
 	}
 }
@@ -511,7 +559,7 @@ func (driver *ProcessDriver) scheduleStartTimerJob(ctx context.Context, def *mod
 	// with a zero next run and a nil error. No new sentinel: this is the same
 	// condition, and the same wrapped error, that NativeScheduler.Schedule
 	// reports for it.
-	if next, ok := strig.Next(driver.clk.Now().In(driver.schedulingLocation())); neverDueNextRun(next, ok) {
+	if next, ok := strig.Next(driver.schedulingNow(ctx)); neverDueNextRun(next, ok) {
 		driver.obs.timerArmsRefused.Add(ctx, 1)
 		return nil, fmt.Errorf("workflow-runtime: timer-start %q trigger can never fire: %w",
 			timerID, scheduler.ErrUnsupportedTrigger)

@@ -45,8 +45,11 @@ var _ Deduper = (*store.Deduper)(nil)
 // NewDeduper constructs a Deduper over pool (returns the stable Deduper interface).
 // The consumer must call persistence.Migrate before the first Seen call so the
 // wrkflw_processed_message table exists.
-func NewDeduper(pool *pgxpool.Pool) (Deduper, error) {
-	return store.NewDeduper(pool, dialect.NewPostgres())
+//
+// Pass [WithDeduperClock] to control the processed_at stamp Seen writes
+// (ADR-0138). Zero-option call sites compile unchanged.
+func NewDeduper(pool *pgxpool.Pool, opts ...DeduperOption) (Deduper, error) {
+	return store.NewDeduper(pool, dialect.NewPostgres(), buildDeduperOptions(opts)...)
 }
 
 // NewMySQLDeduper constructs a Deduper backed by a MySQL database (ADR-0018),
@@ -56,6 +59,24 @@ func NewDeduper(pool *pgxpool.Pool) (Deduper, error) {
 // It returns the same unified Deduper interface as NewDeduper (the Postgres
 // analog) so the two backends are interchangeable at the consumer site. See the
 // Deduper doc for how Seen participates in the ambient transaction.
-func NewMySQLDeduper(db *sql.DB) (Deduper, error) {
-	return store.NewDeduper(db, dialect.NewMySQL())
+//
+// Pass [WithDeduperClock] to control the processed_at stamp Seen writes
+// (ADR-0138). Zero-option call sites compile unchanged.
+func NewMySQLDeduper(db *sql.DB, opts ...DeduperOption) (Deduper, error) {
+	return store.NewDeduper(db, dialect.NewMySQL(), buildDeduperOptions(opts)...)
+}
+
+// NewSQLiteDeduper constructs a Deduper backed by a SQLite database (ADR-0018),
+// using INSERT ... ON CONFLICT DO NOTHING into wrkflw_processed_message.
+// MigrateSQLite must be called before the first Seen call so the table exists.
+//
+// It returns the same unified Deduper interface as NewDeduper (the Postgres
+// analog) and NewMySQLDeduper, so the three backends are interchangeable at the
+// consumer site. See the Deduper doc for how Seen participates in the ambient
+// transaction.
+//
+// Pass [WithDeduperClock] to control the processed_at stamp Seen writes
+// (ADR-0138). Zero-option call sites compile unchanged.
+func NewSQLiteDeduper(db *sql.DB, opts ...DeduperOption) (Deduper, error) {
+	return store.NewDeduper(db, dialect.NewSQLite(), buildDeduperOptions(opts)...)
 }

@@ -870,6 +870,143 @@ func TestValidate(t *testing.T) {
 				require.ErrorIs(t, err, model.ErrCompensateRefNotFound)
 			},
 		},
+		"duplicate node ID is rejected": {
+			// Node lookup is a first-wins linear scan (ProcessDefinition.Node), so a
+			// second node sharing an ID is permanently unreachable while Outgoing /
+			// Incoming still return the union of both nodes' flows — silent
+			// misrouting rather than an error.
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewServiceTask("charge", activity.WithTaskAction("charge-card")),
+					activity.NewServiceTask("charge", activity.WithTaskAction("charge-wallet")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "charge"},
+					{ID: "f2", Source: "charge", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrDuplicateNodeID)
+				assert.Contains(t, err.Error(), `"charge"`)
+			},
+		},
+		"duplicate node ID inside a sub-process is rejected (recursion)": {
+			def: &model.ProcessDefinition{
+				ID: "outer", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewSubProcess("sp", &model.ProcessDefinition{
+						ID: "inner", Version: 1,
+						Nodes: []model.Node{
+							event.NewStart("ns"),
+							activity.NewServiceTask("dup", activity.WithTaskAction("a")),
+							activity.NewServiceTask("dup", activity.WithTaskAction("b")),
+							event.NewEnd("ne"),
+						},
+						Flows: []flow.SequenceFlow{
+							{ID: "nf1", Source: "ns", Target: "dup"},
+							{ID: "nf2", Source: "dup", Target: "ne"},
+						},
+					}),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "sp"},
+					{ID: "f2", Source: "sp", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrDuplicateNodeID)
+			},
+		},
+		"an ID reused across the outer and a nested definition is accepted": {
+			// IDs are unique per definition, not globally: every lookup
+			// (Node/Outgoing/Incoming) is scoped to one ProcessDefinition, so a
+			// nested definition legitimately reuses the outer definition's IDs.
+			def: &model.ProcessDefinition{
+				ID: "outer", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewSubProcess("sp", &model.ProcessDefinition{
+						ID: "inner", Version: 1,
+						Nodes: []model.Node{
+							event.NewStart("start"),
+							activity.NewServiceTask("task", activity.WithTaskAction("a")),
+							event.NewEnd("end"),
+						},
+						Flows: []flow.SequenceFlow{
+							{ID: "f1", Source: "start", Target: "task"},
+							{ID: "f2", Source: "task", Target: "end"},
+						},
+					}),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "sp"},
+					{ID: "f2", Source: "sp", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		"duplicate flow ID is rejected": {
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewServiceTask("task", activity.WithTaskAction("a")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "task"},
+					{ID: "f1", Source: "task", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrDuplicateFlowID)
+				assert.Contains(t, err.Error(), `"f1"`)
+			},
+		},
+		"blank flow IDs are not duplicates of each other": {
+			// Flow IDs are optional — flow.SequenceFlow literals routinely omit
+			// ID, and nothing looks a flow up by ID on the execution path. N blank
+			// IDs must therefore not be reported as N-1 duplicates.
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewServiceTask("task", activity.WithTaskAction("a")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{Source: "start", Target: "task"},
+					{Source: "task", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		"a node and a flow sharing an ID are accepted": {
+			// Node IDs and flow IDs are separate namespaces.
+			def: &model.ProcessDefinition{
+				ID: "p", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "start", Source: "start", Target: "end"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
 	}
 
 	for name, tc := range tests {

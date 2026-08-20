@@ -140,6 +140,19 @@ func TimersAreNil(s *InstanceState) bool { return s.Timers == nil }
 // test can ASSERT that its fixture is a dying instance rather than assume it.
 func SpawnsNewWork(s *InstanceState) bool { return s.spawnsNewWork() }
 
+// SetActiveCompensationCmdID plants a live compensation-walk command id on the
+// cursor, for engine_test.
+//
+// It exists because compensationCursor is unexported, so a black-box test cannot
+// express "a walk is outstanding" without also driving a whole walk — and the
+// branches gated on that condition are guards ABOUT the walk being outstanding,
+// not about how it got there. Driving a real walk to reach them would couple the
+// guard's test to the walk's mechanics and, at the nested event-sub-process exit,
+// is not reachable at all.
+func SetActiveCompensationCmdID(s *InstanceState, cmdID string) {
+	s.Compensating.ActiveCmdID = cmdID
+}
+
 // AppendStallTimerRecord appends a TimerCompensationStall record directly, for
 // engine_test.
 //

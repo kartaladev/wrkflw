@@ -66,7 +66,10 @@ func (s *Store) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Ver
 
 	q, err := transaction.JoinOrBegin(ctx, s.conn)
 	if err != nil {
-		return 0, fmt.Errorf("workflow-store: create: begin: %w", err)
+		// Mapped for the same reason as Commit's begin: a transient driver
+		// conflict here must reach the caller as ErrConcurrentUpdate, not as
+		// unclassifiable driver text (audit item 118).
+		return 0, s.mapConflict(fmt.Errorf("workflow-store: create: begin: %w", err))
 	}
 	committed := false
 	defer func() {
@@ -80,7 +83,7 @@ func (s *Store) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Ver
 		return 0, fmt.Errorf("workflow-store: create: marshal snapshot: %w", err)
 	}
 
-	now := time.Now().UTC()
+	now := s.clk.Now().UTC()
 	if _, err := q.Exec(ctx, s.dialect.Rebind(
 		`INSERT INTO wrkflw_instances
 		   (instance_id, def_id, def_version, status, snapshot, version, started_at, ended_at, updated_at)
@@ -95,10 +98,14 @@ func (s *Store) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Ver
 		s.timeArgP(step.State.EndedAt),
 		timeArg(s.dialect, now),
 	); err != nil {
+		// IsUniqueViolation MUST stay checked first: a genuine duplicate instance
+		// is a permanent error, and reclassifying it as retryable contention
+		// would make a caller retry forever. Only the fallthrough is mapped
+		// (audit item 118).
 		if s.dialect.IsUniqueViolation(err) {
 			return 0, kernel.ErrInstanceExists
 		}
-		return 0, fmt.Errorf("workflow-store: create: insert instance: %w", err)
+		return 0, s.mapConflict(fmt.Errorf("workflow-store: create: insert instance: %w", err))
 	}
 
 	if err := s.writeJournal(ctx, q, step, version, now); err != nil {
@@ -108,7 +115,10 @@ func (s *Store) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Ver
 		return 0, s.mapConflict(err)
 	}
 	if err := s.maybeNotify(ctx, q, step.Events); err != nil {
-		return 0, err
+		// maybeNotify issues a real statement on the transaction, so it can fail
+		// with a transient conflict like any other. Commit's equivalent branch
+		// already mapped; Create's did not (audit item 118).
+		return 0, s.mapConflict(err)
 	}
 
 	if step.NewCallLink != nil {
@@ -202,9 +212,14 @@ func (s *Store) Commit(ctx context.Context, expected kernel.Version, step kernel
 
 	q, err := transaction.JoinOrBegin(ctx, s.conn)
 	if err != nil {
-		wrapped := fmt.Errorf("workflow-store: commit: begin: %w", err)
-		spanErr(wrapped)
-		return 0, wrapped
+		// Beginning a transaction is a driver call, so it can fail with the same
+		// transient conflicts as the statements inside it (a Postgres 40001, a
+		// MySQL 1213 deadlock, SQLITE_BUSY). Route it through mapConflict so the
+		// caller sees ErrConcurrentUpdate and retries, rather than raw driver
+		// text it cannot classify (audit item 118).
+		mapped := s.mapConflict(fmt.Errorf("workflow-store: commit: begin: %w", err))
+		spanErr(mapped)
+		return 0, mapped
 	}
 	committed := false
 	defer func() {
@@ -220,7 +235,7 @@ func (s *Store) Commit(ctx context.Context, expected kernel.Version, step kernel
 		return 0, wrapped
 	}
 
-	now := time.Now().UTC()
+	now := s.clk.Now().UTC()
 	res, err := q.Exec(ctx, s.dialect.Rebind(
 		`UPDATE wrkflw_instances
 		    SET snapshot = ?, version = version + 1, status = ?, ended_at = ?, updated_at = ?
@@ -239,9 +254,10 @@ func (s *Store) Commit(ctx context.Context, expected kernel.Version, step kernel
 	}
 	rows, err := res.RowsAffected()
 	if err != nil {
-		wrapped := fmt.Errorf("workflow-store: commit: rows affected: %w", err)
-		spanErr(wrapped)
-		return 0, wrapped
+		// Also a driver call, and also mapped (audit item 118).
+		mapped := s.mapConflict(fmt.Errorf("workflow-store: commit: rows affected: %w", err))
+		spanErr(mapped)
+		return 0, mapped
 	}
 	if rows == 0 {
 		// Version mismatch: another writer advanced the token first. This is

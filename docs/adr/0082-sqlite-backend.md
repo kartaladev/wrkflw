@@ -34,11 +34,32 @@ We add SQLite as a first-class third dialect, accessible via `persistence.OpenSQ
 ### 1. Driver and DSN
 
 `modernc.org/sqlite` (pure-Go, no cgo) is registered under the `"sqlite"` driver name via
-`database/sql`. The DSN passed to `sql.Open` enables:
+`database/sql`. This driver's DSN parameter form is `_pragma=<name>(<value>)`; it does **not**
+understand mattn/go-sqlite3's `_<pragma>=<value>` keys and ignores unrecognised `_`-prefixed
+keys **silently**, so a DSN in the wrong form opens successfully with the pragma unset. The DSN
+passed to `sql.Open` enables:
 
-- `_journal_mode=WAL` — write-ahead log for concurrent read access while a write is in progress.
-- `_busy_timeout=5000` — 5-second busy-wait on locked pages before returning `SQLITE_BUSY`.
-- `_foreign_keys=on` — referential-integrity enforcement.
+- `_pragma=journal_mode(WAL)` — write-ahead log for concurrent read access while a write is in progress.
+- `_pragma=busy_timeout(5000)` — 5-second busy-wait on locked pages before returning `SQLITE_BUSY`.
+- `_pragma=foreign_keys(1)` — referential-integrity enforcement.
+
+Giving the full DSN:
+
+```
+file:app.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)
+```
+
+> **Amended 2026-08-20 (backlog 117).** This section originally listed `_journal_mode=WAL`,
+> `_busy_timeout=5000` and `_foreign_keys=on` — mattn/go-sqlite3 syntax, inert on the pinned
+> driver. Measured on `modernc.org/sqlite` by opening a database with each form and reading
+> `PRAGMA busy_timeout` back: the mattn form yields **0**, `_pragma=busy_timeout(5000)` yields
+> **5000**, and omitting the parameter yields **0**. The busy timeout is not cosmetic: with a
+> pool wider than one connection and `busy_timeout` at 0, 174–195 of 200 concurrent operations
+> fail with `SQLITE_BUSY` within 4–17 ms, whereas the same pool with the timeout set had zero
+> failures across four runs — see §2 for the check `OpenSQLite` performs.
+> The regression guard is `TestSQLiteDSNSyntaxOnPinnedDriver` /
+> `TestADR0082UsesPinnedDriverPragmaSyntax` in `persistence/sqlite_dsn_test.go`, which derives
+> the DSNs from this document and from the package's godoc examples.
 
 ### 2. Single-writer constraint
 
@@ -49,6 +70,24 @@ paths safe without row-level locking. `OpenSQLite` documents this requirement in
 `dbtest.RunTestSQLite` applies it automatically for tests. This is appropriate for the
 single-node / test-oriented use-cases; multi-node production deployments must use Postgres
 (advisory locks, NOTIFY) or MySQL (GET_LOCK).
+
+**`OpenSQLite` probes this contract and warns (2026-08-20, backlog 109).** The requirement was
+documented but never checked: `OpenSQLite` accepted `SetMaxOpenConns(8)` in silence.
+`persistence.WarnUnsafeSQLite` — called automatically by `OpenSQLite`, and exported so a consumer
+can run it against a handle they already hold — reads `db.Stats().MaxOpenConnections` and
+`PRAGMA busy_timeout` and logs `persistence.WarnMsgSQLiteBusyTimeout` when the pool admits more
+than one connection **and** the timeout is 0.
+
+The check is on the **combination**, not on pool width, and that is a measured distinction rather
+than a stylistic one: a wide pool **with** the timeout set produced 0 failures across four runs,
+while the same pool **without** it failed 174–195 of 200 concurrent operations in 4–17 ms. A check
+on pool width alone would fire on a configuration measured to be safe, and a warning that fires on
+correct deployments is one consumers learn to ignore. §1's inert DSN is what made the timeout
+default to 0 for anyone following this ADR, which is why the two were fixed together.
+
+**It warns; it does not reject.** `OpenSQLite` still returns `(store, nil)` for a wide pool, so no
+existing consumer breaks. Upgrading the warning to a rejection is a breaking change to
+`OpenSQLite`'s contract and is **deliberately not decided here** — it needs its own ADR.
 
 ### 3. RETURNING and the leased-claim path
 
