@@ -25,9 +25,49 @@ anchor on **merge** SHAs, which never move: 0184 `be6e6b55`, 0183 `a7575ed5`, 01
 | `/security-review` | **0 findings.** Confidence 0.85 in the empty result. Checked and cleared: the new `requireAdminToken` guard in `examples/production_wiring` (**probed, not read** — fails **closed** at 503 when `ADMIN_TOKEN` is unset, 403 on wrong/short header, `subtle.ConstantTimeCompare`, guard runs before the inner mux, and path-normalisation tricks `//admin`, `/foo/../admin`, `/admin%2f` cannot bypass it); `internal/dbtest/dbname.go`'s identifier splice (derived only from PID + `crypto/rand` + counter, `[a-z0-9_]` only, no external input); and the casbin reload change (fail-open **preserved exactly, not worsened**; nothing sensitive newly logged). Two changes were assessed as **security improvements**: `engine/step_gateways.go`'s identity resolution closes a token-confusion route open to a consumer `IDGenerator` minting `evtgw:<id>`, and the example now mounts `AdminRoutes` behind a guard where it previously mounted nothing. Sub-threshold, not a finding: `internal/dbtest/dsn.go:78` echoes a full DSN incl. password in its "no host" error (test-only, malformed-config path). |
 | coverage | touched packages: `engine` 93.1 · `runtime` 93.7 · `runtime/monitor` 87.9 · `scheduler` 93.4 · `scheduler/internal/gocron` 86.2 · `persistence` **87.5** · `definition/model` 95.1 · `internal/persistence/store` 88.1 · `internal/authz/casbin` 87.1. ⚠ **`internal/dbtest` is 42.2 % — BELOW the 85 % floor and it WAS touched.** It rose from 39.8 %; it is test scaffolding whose container-boot branches run only in the fallback path. **This is a known, deliberate exception, not a pass.** Repo total 75.0 %; `definition` 33.3, `service` 53.9, `cachetest` 73.1 are untouched and pre-existing |
 
-**▶ A SECOND BRANCH:** `design/authz-security-b3` carries the B3 design bundle (spec + ADR-0185 +
-ADR-0186 + plan). It is cut from the sweep branch and was **rebased** after the review fixes were
-folded. ⛔ **NOT AUDITED — not an input to implementation.**
+**▶ A SECOND BRANCH — ⛔ ITS AUDIT FAILED.** `design/authz-security-b3` (`ebc34861`, local only,
+unmerged, unpushed) carries the B3 design bundle: spec + **ADR-0185** + **ADR-0186** + plan, for
+backlog 51/52/53/54/65/98/99/100/101/103/104/124 (+ parked 102).
+
+Its rule-#9 audit ran 2026-08-20 — **three Opus lenses (execution / failure-modes / counting), three
+detached worktrees at the bundle commit, step-0 presence check passed in all three**. Result:
+**58 findings, 12 Critical.** All four documents now carry an `AUDIT FAILED` banner. Adjudication:
+`docs/plans/sweep-evidence/audit-b3-adjudication.md` (all 12 Criticals ACCEPTED, none rejected),
+with the three lens reports beside it (2,291 lines).
+
+⚠ **FOUR DECISIONS MUST CHANGE — this is not a fold-the-fixes outcome:**
+1. **D4's escape hatch does not exist.** `has(vars,"k")` is not a function in **expr v1.17.8**;
+   `AllowUndefinedVariables` resolves it to nil so it **compiles and fails at run time**, and
+   `RoleAuthorizer` wraps run errors as `ErrNotAuthorized` ⇒ **a predicate written to the ADR's own
+   prescription denies EVERYONE, permanently.** Working forms, executed: `"k" in vars`, `vars?.k`,
+   `vars.k ?? d`, `get(vars,"k")`.
+2. **`Reassign`→`Complete` bypasses D5's claimant guard** (found INDEPENDENTLY by two lenses).
+   ⚠ **ADR-0185's Consequences sentence "can no longer complete a task somebody else holds" is
+   FALSE.** The ADR names `Reassign` as the mitigation; it is the escalation — and the id it needs is
+   disclosed by item 54 in the same bundle.
+3. **The upgrade strands every in-flight human task** (also found by two lenses). Eligibility is a
+   **stored** field; `AuthzSpec` has **no json tags**, so a new binary reads pre-upgrade rows as
+   `Open:false` ⇒ unclaimable, uncompletable AND unreassignable, no repair verb. The plan's gate
+   guards the **opposite** direction and **there is no persistence phase at all.**
+4. **The fix ships everywhere except where the ADR sends people.** `internal/authz/casbin` has its
+   own `expreval.New()` and stays fail-open; D4 reasons over **two** evaluator instances, **four**
+   exist — and **D3 tells consumers to wire casbin**, which CLAUDE.md makes the baseline.
+
+Also accepted: ADR-0186 D2 checks the wrong invariant and costs **99.43 → 965.2 ns/op** (~10×); the
+**400 arm echoes submitted values** (resolving the spec's own unverified assumption AGAINST it, and
+phase 7's test would have pinned the leak in); `WithActorResolver` **collides** with an existing
+symbol meaning the opposite; no decision for **"nothing put an actor in the context"**;
+`RedactVariables` is **bypassed wholesale by `CustomizeConfig.InstanceMapper`**; phases 3/4 circular.
+
+⚠ **Counting failures were the NET and the ANCHOR, not the arithmetic** — every sum in the bundle was
+correct. Pins are **29, not 23** (`ReassignInput.By` is tagged `"by"`, not `"actor"`, hiding six; and
+two missed pins assert 403 and would **still pass after D1 from the zero actor, testing nothing**).
+**Every `step_triggers.go` citation is 10 lines stale at the bundle's own commit** — it anchored to
+`70a631e9` while `3f317b63` edits that file. D3's blast radius: **274** `NewUserTask` sites, **128**
+without eligibility, only **5** reach `model.Validate` — the other 128 have **no phase**.
+
+**▶ NEXT ACTION for B3: revise → re-anchor citations to the revised commit → RE-AUDIT → then
+implement.** A bundle whose Decisions changed has not been audited.
 
 ### ⚠ What `/code-review` found, and why it matters procedurally
 
