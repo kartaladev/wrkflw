@@ -81,59 +81,6 @@ down is still a defect you shipped.**
 **Seven adjudications + 28 lens reports** are on `main` in `docs/plans/sweep-evidence/`: `audit-b3`,
 `reaudit-b3`, `audit-0186`, `reaudit-0186`, `audit3-0186`, `audit4-0186`, `audit5-0186`.
 
-## ▶ NEXT WORK — five deferred deliveries, in this order
-
-All five are held with **every finding their audits established** and the design increment each must
-resolve, in **`docs/specs/2026-08-21-untrusted-input-deferred-slices.md`**. **Read that file before
-starting any of them.** ⚠ **Next free ADR is 0187**; the 0187–0191 numbering in that file is a
-*reservation*, not a record.
-
-1. **§AT-REST** (backlog 100/101) — **the readiest**: two pure scope corrections with stated fixes
-   (discover migration directories rather than hardcoding three — a **fourth** exists holding the
-   casbin policy; classify per-dialect — "48 columns" is a postgres number, SQLite has 67). Its
-   deliverable is a **generator + machine-checked invariant**, not prose.
-2. **ADR-0185-core** (51/52/53) — actor in `context.Context`; engine without an authorizer is an
-   error; unstated eligibility denies. ⚠ Its D3 carries two confirmed defects: `AuthzSpec` is
-   durable in **two** places (`wrkflw_human_task.eligibility` is the one all four `Authorize` sites
-   read), and `Open *bool` makes the zero value of the **public** `authz.AuthzSpec` fail-**OPEN**.
-3. **§4XX** (104) — the largest and least settled; needs real design.
-4. **§READ-PATH** (54) · 5. **§SSRF** (65) · 6. **§BOUND** (99).
-
-**Also carried:** backlog **103** (deny-list ABAC predicates allow on a missing variable) is a
-**syntax problem that cannot be solved with syntax** — decided shape is *declare required/optional
-keys ON THE SPEC*, no inference, and `actor.Attributes` needs its own rule because it is a struct
-field that always exists. Backlog **124** (completion never checks the claimant) needs a **per-verb
-authorization model that does not exist**. **New from this delivery:** on `fiber`, a compressed body
-under the cap is decompressed **twice**.
-
-### ⚠ What `/code-review` found, and why it matters procedurally
-
-**7 findings, all fixed: 3 HIGH, 2 MEDIUM, 2 LOW.** All three HIGHs were in **blocker 7** — the
-shared-test-database change, which had no design bundle and no audit *because triage tiered it
-"Small"*. It was small in lines and large in blast radius. **Triage graded effort and was read as
-grading risk; nothing in the process distinguished the two.** Fix that before the next sweep.
-
-- **1/2/3 (HIGH)** — the per-test DB name came from a **package-level** counter, so every
-  concurrently-running `go test` binary started at 1 and collided on one shared server. Postgres
-  failed loudly; **MySQL corrupted silently** (`CREATE … IF NOT EXISTS` succeeded, two packages
-  shared one DB, then one dropped it under the other). CI exported both DSNs unconditionally, so
-  this was **CI's default path**. Fixed: `wrkflw_test_p<pid>_<12 hex>_<counter>`, `IF NOT EXISTS`
-  removed so a residual collision fails loudly, and cleanup refuses to drop a database not carrying
-  this process's tag.
-- **4 (MEDIUM)** — understated: the `persistence.Option` **type alias itself** published an
-  `internal/` type as the public contract. Aliases replaced with package-owned types.
-- **5 (MEDIUM)** — understated: **four** `docs/observability.md` recipes did not compile, one
-  importing `wrkflw/rest` which has never existed. Now all four compile **verbatim from the
-  markdown** in an external module. ⇒ **backlog 108 closed for the document.**
-- **6 (LOW)** — resolved doc-only, by measurement: honouring the new `ok` return is
-  `reflect.DeepEqual`-identical in state and commands at both consumers, so wiring it up would be
-  theatre. ⇒ **backlog 133 SHARPENED — re-file it as a *visibility* question** (should a walk whose
-  record source vanished raise a WARN/incident?), which is reachable and testable.
-- **7 (LOW)** — CHANGELOG now covers this commit's own new public surface.
-
-⚠ **`docs/architecture-audit` (`9769a8e5`) still exists on this machine ONLY** and cannot be pushed
-(public repo, working exploit chains). The *defect statements* are safe — they are in the backlog below.
-
 ## What the sweep actually established
 
 The **triage evidence is now in-repo** at `docs/plans/sweep-evidence/` — four `triage-*.md` files
@@ -183,30 +130,56 @@ and than `AUDIT.md`.
 
 ## ▶ NEXT WORK
 
-**Order: (1) finish ADR-0186 slice 1 (audit → fold → implement). (2) ADR-0185-core. (3) slices 2–4.
-(4) B4–B7. (5) blocker 5.**
+**Order: (1) the five deferred B3 deliveries, §AT-REST first. (2) B4–B7. (3) blocker 5.**
 
-The remaining **~65 Design-tier items** are grouped into five bundles. Each needs a spec + ADR + plan
-and **ONE** rule-#9 adversarial audit before implementation. **Next free ADR = 0187.**
+The remaining **~65 Design-tier items** are grouped into bundles. Each needs a spec + ADR + plan and
+**ONE** rule-#9 adversarial audit before implementation. **Next free ADR = 0187.**
 
-- **B3 authz/security** — re-cut into **four** deliveries plus ADR-0185-core and the deferred
-  103/124 (see State above). ⏳ **ADR-0186 slice 1** (backlog 98, 104 + posture 100/101) has its
-  bundle written and its audit **in flight**; **slices 2–4** (backlog 54, 65, 99) are held in
-  `docs/specs/2026-08-21-untrusted-input-deferred-slices.md`; **ADR-0185-core** (51/52/53) and the
-  deferred 103/124 follow.
-  ⚠ **Dispatch every future audit exactly as these were** — it works: four Opus lenses
-  (execution / failure-modes / **counting** / **interaction**), **detached worktrees at the bundle
-  commit**, a **step-0 bundle-presence check every brief states explicitly**, and **"append per
-  finding, before the next probe"** (a mid-run kill cost three lenses their work once; the second
-  time, 2,418 of 3,717 lines were already on disk).
-  ⚠ Brief the **counting** lens that the failure mode is **the net and the anchor, not the
-  arithmetic** — every sum in four rounds has been right, and that lens found the decisive Critical
-  in four consecutive bundles. Brief the **interaction** lens with the **explicit list of what
-  changed**; its question is *"what does this decision assume someone else will hand it, and who
-  agreed to that?"*, and it found 8 Criticals on its first use.
-  ⚠ **The evidence file is an INPUT to the audit, not a conclusion of it** — attack it too. Findings
-  have landed inside the bundle's own evidence file in two separate rounds, and in this one the
-  author's own probe refuted a real audit finding and was itself wrong (§6.3a).
+### B3 authz/security — five deliveries left, all held in one file
+
+⚠ **Read `docs/specs/2026-08-21-untrusted-input-deferred-slices.md` before starting any of them.**
+It carries **every finding their audits established** and the design increment each still owes.
+⚠ The 0187–0191 numbering in that file is a **reservation, not a record** — next free ADR is 0187.
+⚠⚠ **That file is now PUBLIC on `main`** (owner-authorised) and is a roadmap of five *unfixed*
+holes. **Treat them as time-sensitive.**
+
+1. **§AT-REST** (backlog 100/101) — ⭐ **the readiest.** Two pure scope corrections with stated
+   fixes: discover migration directories rather than hardcoding three (a **fourth** exists, holding
+   the casbin policy), and classify **per dialect** ("48 columns" is a postgres number; SQLite has
+   67). Its deliverable is a **generator + machine-checked invariant**, not prose — the enumeration
+   has rotted four times.
+2. **ADR-0185-core** (51/52/53) — actor in `context.Context`; constructing a `ProcessEngine` without
+   an authorizer is an error; an eligibility spec that states nothing denies. ⚠ Its D3 carries two
+   confirmed defects: `AuthzSpec` is durable in **two** places (`wrkflw_human_task.eligibility` is
+   the one all four `Authorize` sites read), and `Open *bool` makes the zero value of the **public**
+   `authz.AuthzSpec` fail-**OPEN**.
+3. **§4XX** (104) — the largest and least settled; needs real design, not a fold.
+4. **§READ-PATH** (54) · 5. **§SSRF** (65) · 6. **§BOUND** (99).
+
+**Also carried, not yet scheduled:** backlog **103** (deny-list ABAC predicates allow on a missing
+variable) is a **syntax problem that cannot be solved with syntax** — decided shape is *declare
+required/optional keys ON THE SPEC*, no inference; ⚠ `actor.Attributes` needs its own rule because
+it is a struct field that always exists, so reference-presence checking is vacuous there. Backlog
+**124** (completion never checks the claimant) needs a **per-verb authorization model that does not
+exist** — one `Eligibility` spec serves four verbs and casbin applies `Privileges` unconditionally.
+
+### ⭐ How to run the audit — this dispatch works, reuse it verbatim
+
+Four Opus lenses (**execution / failure-modes / counting / interaction**), **detached worktrees at
+the bundle commit**, a **step-0 bundle-presence check stated explicitly in every brief**, and
+**"append findings per finding, before the next probe"** (a mid-run kill cost three lenses their
+work once; the second time 2,418 of 3,717 lines were already on disk).
+⚠ Brief the **counting** lens that the failure mode is **the net, the anchor, and the SCOPE — not
+the arithmetic**: every sum across seven rounds was right, and that lens found the decisive Critical
+in six consecutive bundles.
+⚠ Brief the **interaction** lens with the **explicit list of what changed**; its question is *"what
+does this decision assume someone else will hand it, and who agreed to that?"*
+⚠⚠ **A REMOVAL is a change and generates its own grid** — when you cut N decisions out, derive the
+survivor×removed pairs explicitly; it is not smaller than the grid you deleted.
+⚠ **The evidence file is an INPUT to the audit, not a conclusion of it** — attack it too. Findings
+landed inside the bundle's own evidence file in two separate rounds, and in one the author's own
+probe refuted a real audit finding and was itself wrong.
+
 - **B4 durability/reconciliation** — 66 (the class), 67, 24, 29, 37, 39, 57, 63, 76, 77, 81.
 - **B5 engine core** — 55, 56, 70, 71, 72, **73** (⚠ its guard, 114, is now shipped — do not delete the
   `cloneState` deep-copy without reading the comment now on that line), 11, 12, 13, 17.
@@ -232,11 +205,12 @@ and **ONE** rule-#9 adversarial audit before implementation. **Next free ADR = 0
 **Closed by the sweep (merged as `020af37b`):** 3b, 3d, 3e, 9, 10, 15, 26, 28, 30, 31 (engine+scheduler
 halves), 34, 38, 40, 44, 48, 49, 58, 74, 75, 84, 87, 89, 95, 102, 107, 112, 113, 114, 115, 116, 117,
 118, 119, 121, 122, 123, 125, 127, blockers 7 and 8.
+**Closed by ADR-0186 (merged as `13b3bfb0`):** **98** (no request body cap).
 **Adjudicated, not defects:** 8, 18, 20, 97, 126, 3f, 6, 35, 36, 37, 45, 46.
 
 **Still open — Design tier:** 4, 5, 7, 11, 12, 13, 17, 19/41, 24, 27, 29, 32, 33, 39, 47, 50, 51, 52,
 53, 54, 55, 56, 57, 59, 60, 61, 62, 63, 64, 65, 66, 67, 69, 70, 71, 72, 73, 76, 77, 78, 79, 80, 81,
-82, 83, 85, 86, 88, 90, 91, 92, 93, 94, 96, 98, 99, 100, 101, 103, 104, 105, 106, 109 (reject leg),
+82, 83, 85, 86, 88, 90, 91, 92, 93, 94, 96, 99, 100, 101, 103, 104, 105, 106, 109 (reject leg),
 110, 111, 124. **68 deferred.**
 
 ⭐ **90 (silent claim theft)** remains the sharpest small-ish item and is Design tier only because it
@@ -261,6 +235,10 @@ bypassing the guard `Reassign` has twelve lines below it.
   cannot observe whether the lock is session-scoped). Third instance of this class.
 - **137** — trap: `SetMaxOpenConns(0)` means **unlimited** and is the default, so a `maxOpen > 1`
   pool-safety predicate misses the widest pool. The shipped check uses `maxOpen != 1`.
+- **139** — 🆕 **from ADR-0186**: on `fiber`, a compressed body **under** the cap is decompressed
+  **twice** — once by the size pre-check, once by `c.Bind().JSON`. Bounded, but measurable. Removing
+  it means feeding the decoded bytes to the binder across all 13 decode sites and would change bind
+  error text, so it was deliberately not attempted in that delivery.
 - **138** — 1 of 16 `Never` sites (myelector heartbeat) is **deliberately unhardened**: the natural
   barrier still PASSED when ablated, because clockwork's `fakeTicker` re-arms from inside `Advance`.
   Needs a connection-sever like the pgelector sibling.
@@ -287,15 +265,31 @@ bypassing the guard `Reassign` has twelve lines below it.
   `dbtest.RunTestSQLite` is pure Go and starts nothing.**
 - **Judge a test run by its exit code, never a pipeline tail**; use `-count=1`.
 - **Fan out subagents BY GO PACKAGE.** Concurrent agents in one package break each other's compile.
-- ⚠⚠ **A mutation ablation CANNOT run in a shared working tree.** This session lost ~40 minutes to a
-  "hang" that was one agent's live ablation observed by another. Give the ablating agent a worktree.
+- ⚠⚠ **A mutation ablation CANNOT run in a shared working tree.** A previous session lost ~40 minutes
+  to a "hang" that was one agent's live ablation observed by another. Give the ablating agent a
+  worktree. ⚠ **ADR-0186 violated this and got away with it only because the agents were careful** —
+  three implementation agents ran mutations in the shared tree; one observed another's transient
+  uncompilable `seam.go` for ~24 s and correctly waited it out instead of reporting a failure. **That
+  was their discipline, not the briefing's.** Brief the worktree next time.
+- ⭐⭐ **A REVIEW FINDING IS A CLAIM AND NEEDS EXECUTION.** On ADR-0186 a `/code-review` finding's
+  stated **mechanism was refuted** while its conclusion held, and it **missed the fact that made a
+  clean fix possible** (fiber already sets 413 itself). Brief fix agents to **reproduce before
+  fixing**, and to say so with the measurement if a finding is a false positive rather than silently
+  skipping it.
+- ⭐⭐ **A residual you wrote down is still a defect you shipped.** ADR-0186 *documented* two hazards
+  it introduced instead of mitigating them; `/code-review` refused that distinction and both became
+  MEDIUM findings. If a change introduces a hazard, the change mitigates it.
 - ⚠ **`clockwork.NewFakeClock()` seeds from WALL TIME** — use `NewFakeClockAt(<fixed instant>)` or a
   clock-injection test cannot fail.
 - ⚠ **Restore a mutation from a `cp` backup, never `git checkout <path>`.**
 - `/code-review` and `/security-review` are **owner-invoked only**.
 - Push on merge (standing preference).
 
-## Process lessons this sweep earned
+## Process lessons — the 2026-08-20 backlog sweep
+
+⚠ **ADR-0186's lessons are NOT here** — they are in the State section above, because they are the
+more transferable set (the finding-rate trend, the narrow-fixture bias, the boundary-asserted-one-
+level-up shape, and the four conventions the repo already had).
 
 - ⭐⭐ **An enumeration rots faster than anyone re-counts it.** Item 118's site list was wrong three
   times *in one session* — filed, re-counted by triage, and *still* short when the fix agent found a
