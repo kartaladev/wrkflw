@@ -30,6 +30,9 @@ func (g InstanceRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeO
 	rt.Post(cfg.BasePath+"/instances", observed(inst, "POST", cfg.BasePath+"/instances",
 		func(c fiberlib.Ctx) error {
 			var in httpcore.StartInput
+			if oversizeBody(cfg, c) {
+				return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
+			}
 			if err := c.Bind().JSON(&in); err != nil {
 				return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			}
@@ -74,6 +77,9 @@ func (g InstanceRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeO
 		func(c fiberlib.Ctx) error {
 			id := c.Params("id")
 			var in httpcore.SignalInput
+			if oversizeBody(cfg, c) {
+				return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
+			}
 			if err := c.Bind().JSON(&in); err != nil {
 				return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			}
@@ -101,6 +107,9 @@ func (g MessageRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOp
 	rt.Post(cfg.BasePath+"/messages", observed(inst, "POST", cfg.BasePath+"/messages",
 		func(c fiberlib.Ctx) error {
 			var in httpcore.MessageInput
+			if oversizeBody(cfg, c) {
+				return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
+			}
 			if err := c.Bind().JSON(&in); err != nil {
 				return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			}
@@ -133,6 +142,9 @@ func (g TaskRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOptio
 		func(c fiberlib.Ctx) error {
 			token := c.Params("token")
 			var in httpcore.ClaimInput
+			if oversizeBody(cfg, c) {
+				return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
+			}
 			if err := c.Bind().JSON(&in); err != nil {
 				return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			}
@@ -147,6 +159,9 @@ func (g TaskRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOptio
 		func(c fiberlib.Ctx) error {
 			token := c.Params("token")
 			var in httpcore.CompleteInput
+			if oversizeBody(cfg, c) {
+				return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
+			}
 			if err := c.Bind().JSON(&in); err != nil {
 				return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			}
@@ -161,6 +176,9 @@ func (g TaskRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOptio
 		func(c fiberlib.Ctx) error {
 			token := c.Params("token")
 			var in httpcore.ReassignInput
+			if oversizeBody(cfg, c) {
+				return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
+			}
 			if err := c.Bind().JSON(&in); err != nil {
 				return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			}
@@ -251,6 +269,12 @@ func (g AdminRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOpti
 				id := c.Params("id")
 				incidentID := c.Params("incidentID")
 				var in httpcore.ResolveIncidentInput
+				// Optional does NOT mean unbounded: an oversize body is refused
+				// here exactly as at the propagating sites. Only the DECODE
+				// error stays ignored below.
+				if oversizeBody(cfg, c) {
+					return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
+				}
 				// Body is optional — ignore decode errors (defaults to zero AddAttempts).
 				_ = c.Bind().JSON(&in)
 				status, body, err := httpcore.ResolveIncident(c.Context(), g.Svc, id, incidentID, in)
@@ -268,6 +292,9 @@ func (g AdminRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOpti
 				var in httpcore.ResolveCompensationStallInput
 				// Body is REQUIRED: command_id and disposition are both mandatory
 				// and neither may default (ADR-0175).
+				if oversizeBody(cfg, c) {
+					return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
+				}
 				if err := c.Bind().JSON(&in); err != nil {
 					return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 				}
@@ -313,6 +340,9 @@ func (g AdminRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOpti
 			observed(inst, "POST", cfg.BasePath+"/admin/dead-letters/redrive",
 				func(c fiberlib.Ctx) error {
 					var in httpcore.RedriveInput
+					if oversizeBody(cfg, c) {
+						return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
+					}
 					if err := c.Bind().JSON(&in); err != nil {
 						return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 					}
@@ -342,6 +372,9 @@ func (g AdminRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOpti
 			observed(inst, "POST", cfg.BasePath+"/admin/policies",
 				func(c fiberlib.Ctx) error {
 					var in httpcore.PolicyRuleInput
+					if oversizeBody(cfg, c) {
+						return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
+					}
 					if err := c.Bind().JSON(&in); err != nil {
 						return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 					}
@@ -356,6 +389,9 @@ func (g AdminRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOpti
 			observed(inst, "DELETE", cfg.BasePath+"/admin/policies",
 				func(c fiberlib.Ctx) error {
 					var in httpcore.PolicyRuleInput
+					if oversizeBody(cfg, c) {
+						return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
+					}
 					if err := c.Bind().JSON(&in); err != nil {
 						return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 					}
@@ -380,6 +416,9 @@ func (g AdminRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOpti
 			observed(inst, "POST", cfg.BasePath+"/admin/role-bindings",
 				func(c fiberlib.Ctx) error {
 					var in httpcore.RoleBindingInput
+					if oversizeBody(cfg, c) {
+						return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
+					}
 					if err := c.Bind().JSON(&in); err != nil {
 						return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 					}
@@ -394,6 +433,9 @@ func (g AdminRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOpti
 			observed(inst, "DELETE", cfg.BasePath+"/admin/role-bindings",
 				func(c fiberlib.Ctx) error {
 					var in httpcore.RoleBindingInput
+					if oversizeBody(cfg, c) {
+						return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
+					}
 					if err := c.Bind().JSON(&in); err != nil {
 						return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 					}

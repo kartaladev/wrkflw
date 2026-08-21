@@ -275,9 +275,28 @@ func run(logger *slog.Logger) error {
 	mux.Handle("/admin/", requireAdminToken(adminMux, os.Getenv("ADMIN_TOKEN"), logger))
 
 	srv := &http.Server{
-		Addr:              ":8080",
-		Handler:           mux,
+		Addr:    ":8080",
+		Handler: mux,
+		// ReadHeaderTimeout bounds the HEADERS only. ⚠ It does NOT bound the
+		// body, so on its own it leaves a client free to send headers promptly
+		// and then dribble — or simply never finish — the body it declared.
 		ReadHeaderTimeout: 5 * time.Second,
+		// ReadTimeout bounds the WHOLE request, headers plus body, and is the
+		// backstop that makes that hold finite. It matters more since the
+		// transport gained its inbound body cap: capping means reading the body
+		// to completion before parsing, where the uncapped path let json.Decoder
+		// stop at the first complete value and return.
+		//
+		// The adapters carry their own bound for that read — 30s by default, see
+		// stdlib.WithBodyReadTimeout / gin.WithBodyReadTimeout — but it covers
+		// only routes that decode a body, and only while the cap is enabled.
+		// ReadTimeout covers every route unconditionally, so set both.
+		//
+		// ⚠ Keep this NO SHORTER than the adapters' BodyReadTimeout. The adapter
+		// arms its deadline as now+d when the body read begins, overwriting the
+		// whole-request deadline net/http set from this field; a smaller value
+		// here would be silently extended for the duration of that read.
+		ReadTimeout: 30 * time.Second,
 	}
 
 	// --- Serve until a termination signal arrives ---

@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/kartaladev/wrkflw/action/httpcall"
 	"github.com/kartaladev/wrkflw/authz"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/humantask"
@@ -262,6 +263,102 @@ func TestClassifyErrorClaimInvariantSentinels(t *testing.T) {
 				assert.Equal(t, http.StatusInternalServerError, status)
 				assert.Equal(t, "internal_error", body.Error)
 				assert.Empty(t, body.Message, "a 5xx must not leak the raw error")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			status, body := httpcore.ClassifyError(tc.err)
+			tc.assert(t, status, body)
+		})
+	}
+}
+
+// TestOversizedBodyClassifiesAs413NotBadRequest pins ADR-0186's 413 arm and,
+// crucially, its POSITION in the ordered switch. ClassifyError's switch resolves
+// an error matching two arms to whichever arm comes first, so the arm order is
+// itself behaviour: the "both sentinels" row below is the only thing that can
+// fail if the 413 arm is added AFTER the 400 arm.
+//
+// Falsifier for the "both sentinels" row: move the 413 arm below the 400 arm in
+// errors.go and it answers 400/bad_request. Measured before the arm existed —
+// the row's error already classified 400 then, for exactly that reason.
+func TestOversizedBodyClassifiesAs413NotBadRequest(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		err    error
+		assert func(t *testing.T, status int, body httpcore.ErrorBody)
+	}
+
+	cases := []testCase{
+		{
+			name: "the bare sentinel is a 413 with a static, limit-free body",
+			err:  httpcore.ErrRequestBodyTooLarge,
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusRequestEntityTooLarge, status)
+				assert.Equal(t, httpcore.ErrorBody{
+					Error:   "request_too_large",
+					Message: "request body exceeds the configured limit",
+				}, body)
+			},
+		},
+		{
+			// ⚠ NOT a shape any adapter produces today, and the comment that
+			// claimed it was is gone. VERIFIED 2026-08-21 by grep over
+			// transport/**/*.go excluding tests: all 15 production sites pass the
+			// sentinel BARE — 1 in stdlib/body.go (requestBodyReader), 1 in
+			// gin/bodycap.go (capBody), 13 writeErr calls in fiber/groups.go — and
+			// zero wrap it. gin/bodycap.go documents bare as the deliberate choice,
+			// precisely so classification does not depend on arm ordering.
+			//
+			// The row is a shape a FUTURE wrapping decode site could produce, and
+			// that is exactly why it is worth pinning: it is the only row here that
+			// can fail if the 413 arm is moved below the 400 arm, so it holds the
+			// arm-ordering invariant STABILITY.md declares against a change no
+			// current-behaviour test would notice.
+			name: "an error carrying BOTH ErrBadInput and the oversize sentinel is a 413",
+			err: fmt.Errorf("%w: decode body: %w", httpcore.ErrBadInput,
+				httpcore.ErrRequestBodyTooLarge),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusRequestEntityTooLarge, status,
+					"the 413 arm must precede the 400 arm in the ordered switch")
+				assert.Equal(t, "request_too_large", body.Error)
+			},
+		},
+		{
+			// The 413 body is deliberately static: it must not echo err.Error(),
+			// and it must not name the configured limit — that is deployment
+			// configuration, and telling an attacker the ceiling tells them what
+			// to stay under. Every OTHER 4xx arm renders err.Error(); this one
+			// must not inherit that by accident.
+			name: "a wrapped oversize error leaks neither the wrapper text nor the limit",
+			err: fmt.Errorf("%w: POST /instances body capped at 1048576 bytes: %w",
+				httpcore.ErrBadInput, httpcore.ErrRequestBodyTooLarge),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusRequestEntityTooLarge, status)
+				assert.Equal(t, "request body exceeds the configured limit", body.Message)
+				assert.NotContains(t, body.Message, "1048576",
+					"the response must not disclose the configured limit")
+				assert.NotContains(t, body.Message, "POST /instances")
+			},
+		},
+		{
+			// The near-miss neighbour. action/httpcall.ErrBodyTooLarge is a
+			// DIFFERENT sentinel meaning an OUTBOUND response exceeded httpcall's
+			// 10 MiB cap — a server-side fault the caller cannot fix — so it must
+			// stay an opaque 500. Naming the new sentinel ErrBodyTooLarge would
+			// have made these two collide.
+			name: "the outbound-response sentinel from action/httpcall is still a 500",
+			err:  fmt.Errorf("workflow-action: call service: %w", httpcall.ErrBodyTooLarge),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusInternalServerError, status)
+				assert.Equal(t, "internal_error", body.Error)
+				assert.Empty(t, body.Message)
 			},
 		},
 	}

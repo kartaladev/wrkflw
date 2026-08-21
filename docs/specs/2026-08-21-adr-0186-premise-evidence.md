@@ -188,7 +188,21 @@ What the route *does* disclose, on a **non-admin** path:
 `candidates[]` — actor id/roles/attributes. Neither is reachable by a
 `func(map[string]any) map[string]any` hook.
 
-### 4.4 Plaintext columns at rest — **twelve columns across seven tables**, in three dialects
+### 4.4 Plaintext columns at rest — ⛔ **SUPERSEDED BY §6.1. THIS SECTION IS WRONG.**
+
+⛔⛔ **Do not cite this section.** Its "twelve columns across seven tables" is the **third**
+consecutive rot of this enumeration (2 → "at least six" → 12 → the real figure), and it was
+written inside a paragraph warning that the enumeration rots. Two defects, both confirmed:
+
+1. **The sentence counted its own markdown ROWS, not columns.** The table below has 12 rows but
+   two of them brace-collapse multiple columns (`{claim_actor, completion_actor, note}` is three,
+   `{output, error}` is two), so the table itself already lists **15** columns.
+2. **It names the actor *remainder* and omits the actor *identifier*** — `claimed_by` /
+   `completed_by` hold the id, split out for indexing — plus `outcome`.
+
+⇒ **§6.1 replaces this with a machine derivation over all three dialect files**, and the
+delivery's deliverable becomes the *generator + invariant*, not a number in prose. The table
+below is retained only so the diff between the hand count and the machine count is legible.
 
 ⚠ **The audit said "at least six"; re-derived from the migrations it is twelve.** The counting
 lens read `wrkflw_instances`, `wrkflw_journal`, `wrkflw_outbox`, `wrkflw_human_task` and
@@ -277,3 +291,435 @@ instead of the rejected input.
 - **Not executed:** the mysql and postgres migration column types were read, not exercised. §4.4's
   claim is "plaintext in all three dialects" from the DDL, which is sufficient for a `SECURITY.md`
   statement but is not a round-trip test.
+
+---
+
+# 6. THE RE-CUT'S OWN EVIDENCE (2026-08-21, after the fold's re-audit failed)
+
+**Why this section exists.** The owner re-cut ADR-0186 into four single-decision deliveries after
+its second failed audit. This slice keeps **D1** (body caps), **D5** (what a 4xx body may say) and
+**D6** (at-rest posture). Every claim the re-cut *changes* is executed here, by the author, before
+the audit. ⚠ **Two of the three results below correct the RE-AUDIT, not the bundle** — an audit
+finding is a claim like any other and Premise Discipline's "re-verify claims you inherit" applies
+to it.
+
+## 6.1 The at-rest enumeration, derived BY MACHINE — and a per-dialect divergence no lens found
+
+**Why load-bearing.** D6's *deliverable is the enumeration*. It has now rotted three times, the
+third time inside the paragraph warning that it rots. The re-audit's prescription was to derive it
+from the migration files by machine rather than by hand; that is what this is.
+
+**Probe** (throwaway `python3` walk over
+`internal/persistence/store/migrations/{postgres,mysql,sqlite}/0001_init.sql`, parsing every
+`CREATE TABLE` and classifying each column by declared type; deleted after, output kept):
+
+```
+TABLES per dialect: {'postgres': 9, 'mysql': 9, 'sqlite': 9}
+  table set identical across all three: True
+  !! COLUMN DIVERGENCE in wrkflw_journal
+     postgres: [applied_at, instance_id, kind, occurred_at, seq, trigger]
+     mysql:    [applied_at, instance_id, kind, occurred_at, seq, trigger_]
+     sqlite:   [applied_at, instance_id, kind, occurred_at, seq, trigger]
+
+PAYLOAD-TYPED COLUMNS (postgres types shown):
+  wrkflw_call_links (8): child_instance_id, parent_instance_id, parent_command_id,
+                         parent_def_id, status, output:JSONB, error, claimed_by
+  wrkflw_chain_links (6): predecessor_instance_id, outcome, successor_instance_id,
+                          predecessor_definition_ref, successor_definition_ref, start_vars:JSONB
+  wrkflw_definitions (2): def_id, definition:JSONB
+  wrkflw_human_task (13): task_id, instance_id, node_id, state, claimed_by, claim_actor:JSONB,
+                          completed_by, outcome, note, completion_actor:JSONB,
+                          eligibility:JSONB, candidates:JSONB, vars:JSONB
+  wrkflw_instances (3): instance_id, def_id, snapshot:JSONB
+  wrkflw_journal (3): instance_id, kind, trigger:JSONB
+  wrkflw_outbox (7): instance_id, topic, payload:JSONB, dedup_key, status, last_error,
+                     definition_ref
+  wrkflw_processed_message (2): subscriber, message_id
+  wrkflw_timers (4): instance_id, timer_id, def_id, trigger_payload:JSONB
+
+TOTAL payload-typed columns: 48 across 9 tables
+TOTAL tables in schema: 9
+```
+
+**Result 1 — the schema is 9 tables, and the table set is identical across all three dialects.**
+Every prior count in this lineage (7, then 8) was short because it was a hand list.
+
+**Result 2 — ⭐ `wrkflw_journal.trigger` is named `trigger_` in MySQL ONLY.** Confirmed by reading
+the DDL directly (`mysql/0001_init.sql:31` vs `postgres/0001_init.sql:30`): `TRIGGER` is a MySQL
+reserved word. **Four Opus lenses across two audit rounds did not report this**, because every
+round enumerated *columns* from one dialect file and assumed the other two matched.
+
+⚠⚠ **This is a defect in D6's deliverable, not a curiosity.** D6 ships a list a consumer applies
+column-level encryption or grants from. A consumer following a single-dialect list encrypts
+`wrkflw_journal.trigger` and, on MySQL, **encrypts nothing** — the column does not exist under that
+name. The failure is silent: the `ALTER`/grant targets a name that is absent, and the operator's
+own audit reports success against the wrong schema.
+
+**Result 3 — a raw count of "payload-typed columns" is the wrong deliverable.** 48 of them are
+`TEXT`/`JSON`, but most are identifiers (`instance_id`, `def_id`, `task_id`, `topic`, `dedup_key`).
+The security-relevant set is *columns carrying caller-, actor- or process-supplied data*, and that
+classification is a judgement no regex makes.
+
+⇒ **The decision this forces:** D6's deliverable is **not a number and not a prose list**. It is a
+**generator plus an invariant** — a test that parses all three migration files and asserts every
+column of every table is classified either `discloses` (and therefore appears in `SECURITY.md`) or
+`structural` (with a stated reason). A new column, or a new per-dialect name divergence, **fails
+the test**. This is the `engine/terminal_sites_test.go` pattern the repo already uses for exactly
+this class, and it is the only thing that has ever stopped an enumeration in this repo from
+rotting. See §6.4 on why the prose warning did not.
+
+## 6.2 `ErrBadCursor` DOES echo caller values — through TWO channels, not one
+
+**Why load-bearing.** D5's exception list keeps `err.Error()` for
+`kernel.ErrBadCursor` / `kernel.ErrBadArmedTimerCursor` on the stated ground that their messages are
+`": not an instance cursor"` / `": cursor carries no start time"` — *"no caller value"*. The
+re-audit (C5) reported one echo channel. **Both the bundle and the re-audit are wrong about the
+count.**
+
+**Probe** (throwaway `runtime/kernel/zz_probe_test.go`, deleted after — a caller-supplied base64
+cursor fed to the real exported `DecodeCursor`):
+
+```
+payload={"ssn-123-45-6789":1}
+  -> workflow-runtime: malformed instance cursor: json: unknown field "ssn-123-45-6789"
+
+payload={"kind":"instance","instance_id":"x","started_at":"4111-1111-1111-1111"}
+  -> workflow-runtime: malformed instance cursor: parsing time "4111-1111-1111-1111" as
+     "2006-01-02T15:04:05Z07:00": cannot parse "11-1111-1111" as "-"
+
+payload={"kind":"instance"} trailing-4111111111111111
+  -> workflow-runtime: malformed instance cursor: trailing data after cursor payload:
+     invalid character 'a' in literal true (expecting 'u')
+```
+
+**Result: two distinct echo channels.**
+1. **The caller-supplied field NAME, verbatim** — `decodeCursorInto` sets `DisallowUnknownFields()`
+   (`cursorcodec.go:44`), and `encoding/json` renders the unknown key in the error.
+2. **The caller-supplied VALUE, verbatim** — a malformed `started_at` reaches `time.Parse`, which
+   quotes the input.
+
+**Why the bundle missed it:** `ErrBadCursor` has **four** wrap forms (`lister.go:66,69,77,90`). The
+ADR's exception-list row quoted **two of the four** — the two static ones — and generalised. The
+echoing form is `lister.go:66`, `fmt.Errorf("%w: %w", ErrBadCursor, err)`, which wraps a decoder
+error computed over **caller-controlled bytes**. `armed_timer_paging.go:89` is the identical shape.
+
+## 6.3 The `ErrBadInput` decode wraps DO echo caller values — the re-audit's Critical #4 is CORRECT, and my first attempt to refute it was itself a stand-in probe
+
+> ⚠⚠⚠ **READ THIS SECTION'S HISTORY, IT IS THE POINT.** My first pass at §6.3 concluded the
+> opposite — *"value-free in all three adapters, the re-audit's Critical #4 is half wrong"* — and
+> that conclusion was **false**. It was produced by probing **type-mismatch** bodies, which
+> `encoding/json` rejects *before* any custom unmarshaller runs, and then generalising to the
+> decode path as a whole. **That is the exact stand-in failure this repo keeps committing, and I
+> committed it in the paragraph congratulating myself for catching it in someone else.** The
+> corrected result is below. The wrong version is preserved as §6.3a because the *shape* of the
+> mistake is more valuable than the transcript.
+
+**Why load-bearing.** The re-audit's fourth accepted Critical states that *"`ErrBadCursor` **and the
+36 `ErrBadInput` decode wraps** do echo caller values"*. §6.2 confirms the first half. This section
+confirms the **second half too**.
+
+**The channel: `StartInput.DefRef` is a `model.Qualifier`, which declares a custom
+`UnmarshalJSON`.** `POST /instances` — the highest-traffic route — therefore decodes through
+hand-written parsing code, and `ParseQualifier` (`definition/model/qualifier.go:42-57`) formats the
+caller's string with **`%q`** in **all three** of its error forms.
+
+**Probe** (throwaway `transport/http/httpcore/zz_probe2_test.go`, deleted after — real
+`httpcore.StartInput`, real `encoding/json`):
+
+```
+body={"def_ref": "4111-1111-1111-1111:0"}
+  -> workflow-model: invalid qualifier: version must be >= 1 in "4111-1111-1111-1111:0"
+
+body={"def_ref": ":123-45-6789"}
+  -> workflow-model: invalid qualifier: empty id in ":123-45-6789"
+
+body={"def_ref": "kyc:ssn-123-45-6789"}
+  -> workflow-model: invalid qualifier: bad version in "kyc:ssn-123-45-6789":
+     strconv.Atoi: parsing "ssn-123-45-6789": invalid syntax
+```
+
+**Result: the caller's `def_ref` is echoed verbatim, and the third form echoes it TWICE** — once
+from `%q` on `s`, once inside the wrapped `strconv.Atoi` error. This is the re-audit's *"echo the
+whole `def_ref` twice"*, reproduced exactly.
+
+⇒ **`ErrBadInput` must NOT opt in as a sentinel.** `httpcore.Validate`'s DTO message opts in (§1,
+executed value-free even for a length constraint); the **decode wrap does not**. Two producers of
+one sentinel, with opposite disclosure properties — which is unanswerable by any list keyed on the
+sentinel, and is the strongest possible argument for the producer opt-in.
+
+### 6.3a ⚠ The refuted first attempt, preserved for its shape
+
+The original probe fed three bodies whose failures occur inside `encoding/json`'s reflection layer,
+never reaching `Qualifier.UnmarshalJSON`:
+
+| body | result (all three adapters) |
+|---|---|
+| `{"def_ref": 4111111111111111}` | `json: cannot unmarshal number into Go struct field StartInput.def_ref of type string` |
+| `{"vars": "123-45-6789"}` | `json: cannot unmarshal string into Go struct field StartInput.vars of type map[string]interface {}` |
+| `{"def_ref": "ok" xx` | `invalid character 'x' after object key:value pair` |
+
+Those messages **are** value-free, and they are also **irrelevant to the claim they were offered
+for**: they exercise the one decode branch that never reaches caller-authored parsing. The tell was
+visible in the output and I read past it — *"of type **string**"* is `encoding/json` describing the
+target's *underlying* kind, which is what a `Qualifier` is; a body that actually reached
+`UnmarshalJSON` would have produced a `workflow-model:` error, and none of the three did.
+
+**Two lessons, and the second is the one worth keeping:**
+
+1. **A probe that exercises the wrong branch is worse than no probe**, because it produces a
+   transcript that looks like evidence.
+2. ⭐⭐ **I inherited an audit finding, disbelieved it, and "refuted" it without checking what my
+   own inputs actually exercised.** Premise Discipline's *"re-verify claims you inherit"* is
+   symmetric: it applies to **refutations** as much as to restatements. A refutation is a claim.
+
+**What did NOT change:** the design conclusion. §6.4 was written from the wrong §6.3 and is
+**strengthened, not weakened**, by the correction — see the note there.
+
+**Probe** (throwaway `zz_probe_test.go` in each of `httpcore`, `gin`, `fiber`, all deleted after —
+the same four hostile bodies through each adapter's real decode idiom, decoding into the real
+`httpcore.StartInput`):
+
+| body | `stdlib` (`encoding/json`) | `gin` (`ShouldBindJSON`) | `fiber` (`c.Bind().JSON`) |
+|---|---|---|---|
+| `{"def_ref": 4111111111111111}` | `json: cannot unmarshal number into Go struct field StartInput.def_ref of type string` | identical | `bind "def_ref" from body: ` + identical |
+| `{"vars": "123-45-6789"}` | `…cannot unmarshal string into Go struct field StartInput.vars of type map[string]interface {}` | identical | `bind "vars" from body: ` + identical |
+| `{"def_ref": "ok" xx` | `invalid character 'x' after object key:value pair` | identical | `bind from body: ` + identical |
+
+**Result: no submitted value appears in any of the nine messages.** `encoding/json` renders the
+**field path** and the **Go types**; fiber prefixes the **field name** again. `4111111111111111` and
+`123-45-6789` are absent throughout.
+
+⚠⚠ **But the RIGHT conclusion is not "the bundle was correct".** The messages are value-free
+because of a property of the **DTO field types**, not of the sentinel:
+
+- No DTO in `transport/http/httpcore/dto.go` declares a `time.Time` field (`grep` → 0 hits), and no
+  type in `transport/http/` or `service/` declares a custom `UnmarshalJSON` (`grep` → 0 hits).
+- §6.2 shows exactly what happens when one does: `time.Parse` **quotes the caller's input**.
+
+⇒ **Adding one `time.Time` field to any request DTO — an ordinary, unrelated change — silently
+converts 36 value-free 400s into value-echoing ones, and no test in the repo fails.**
+
+## 6.4 ⭐ What §6.1–6.3 jointly decide, stated as the design increment
+
+The three probes agree on one thing, and it is the increment D5 needs:
+
+> **Value-freedom is a property of the PRODUCING SITE and the TYPES it renders — never of the
+> sentinel.**
+
+The evidence is now stronger than when this section was first written, because the correction to
+§6.3 supplied the decisive case:
+
+| sentinel | producer | discloses? |
+|---|---|---|
+| `ErrBadInput` | `httpcore.Validate` (the DTO validator) | **no** — executed, §1, value-free even for a length |
+| `ErrBadInput` | the 36 decode wraps, via `Qualifier.UnmarshalJSON` | **YES** — executed, §6.3, echoes `def_ref` **twice** |
+| `ErrBadCursor` | `lister.go:69,77,90` (static forms) | **no** |
+| `ErrBadCursor` | `lister.go:66` (`%w: %w` over caller bytes) | **YES** — executed, §6.2, two channels |
+
+⭐ **Two sentinels, four producers, and within EACH sentinel the producers disagree.** A list keyed
+on the sentinel cannot express this table — it has one row per sentinel and the answer is
+per-producer. That is not a defect in how the list was populated; it is a defect in what the list
+is keyed on, and no amount of re-auditing the entries fixes it.
+
+⇒ **The rendering must be opted into by the producing site.** Deny by default; a producer that
+knows its message is safe says so. This is the same shape as §6.1 — a hand list standing in for a
+machine-checkable property.
+
+⚠⚠ **And note the epistemics, because they cost me an hour.** The first version of §6.3 ran a probe
+that **passed**, and the pass was an artefact of the inputs. An execution lens would have
+reproduced it and confirmed the bundle. What caught it was not another probe but a **structural
+question** — *"which types does this decode path actually run?"* — which surfaced
+`model.Qualifier`'s custom unmarshaller and made the original probe obviously off-target.
+**Execution answers "what happened"; it does not answer "did I exercise the thing I am claiming
+about."** That second question has to be asked separately, and nothing in the current process
+forces it.
+
+## 6.6 The concrete error TYPE discriminates the two decode producers exactly
+
+**Why load-bearing.** §6.3 shows one sentinel with two producers of opposite disclosure properties.
+D2's opt-in is only implementable at the 36 decode sites if a site can *tell which producer it got*
+without knowing the DTO's field types.
+
+**Probe** (throwaway `transport/http/httpcore/zz_probe3_test.go`, deleted after):
+
+```
+body={"def_ref": 4111111111111111}      UnmarshalTypeError=true  SyntaxError=false  concrete=*json.UnmarshalTypeError
+body={"def_ref": "ok" xx                UnmarshalTypeError=false SyntaxError=true   concrete=*json.SyntaxError
+body={"def_ref": "kyc:ssn-123-45-6789"} UnmarshalTypeError=false SyntaxError=false  concrete=*fmt.wrapErrors
+```
+
+**Result: a clean three-way split.** `encoding/json` returns a custom unmarshaller's error
+**as-is** — it does **not** wrap it in `UnmarshalTypeError` — so `errors.As` against the two
+`encoding/json` types is exactly the test for *"was this produced by the standard library's own
+reflection layer, whose messages are value-free by construction, or by caller-authored parsing
+code, whose messages are not?"*
+
+⚠ **One honest caveat.** `*json.SyntaxError`'s message names the **offending character** — one byte
+of caller input. It is included in the vouched set as a diagnostic rather than a disclosure, and
+that judgement is flagged in the ADR for the audit to attack. `*json.UnmarshalTypeError` names only
+the field path and Go type names and has no such caveat.
+
+⚠ `ASSUMPTION (unverified)`: that gin's `ShouldBindJSON` and fiber's `c.Bind().JSON` preserve these
+concrete types through `errors.As`. §6.3a shows both surface `encoding/json`'s messages verbatim,
+which is strong circumstantial evidence, but **the `errors.As` behaviour through those two wrappers
+was probed only for `encoding/json` directly.** The per-adapter tests must assert it.
+
+## 6.5 What §6 does NOT establish
+
+- `ASSUMPTION (unverified)`: that the nine `encoding/json` messages above are the **complete** set
+  of decode-error shapes. They are the shapes reachable from a malformed body against today's DTO
+  field types. A DTO gaining a `time.Time`, a custom unmarshaller, or a `json.Number` changes this,
+  which is precisely §6.4's point.
+- `ASSUMPTION (unverified)`: the classification of the 48 payload-typed columns into
+  `discloses` / `structural`. §6.1 derives the **column set** by machine; the classification is a
+  judgement, and the invariant test exists to force it to be *stated* rather than to compute it.
+- **Not executed:** whether the MySQL `trigger_` divergence has siblings in a future migration.
+  There is exactly one migration file per dialect today (`0001_init.sql`), so the invariant test is
+  the only thing that will catch the second occurrence.
+
+---
+
+# 7. THE ONE-DECISION RE-CUT'S OWN EVIDENCE (2026-08-21, after the three-decision audit failed)
+
+**Why this section exists.** The owner split slice 1 into one decision each after its audit
+(65 findings, 20 Critical). This record is now **request body caps only**. Its central change —
+*check the cap BEFORE parsing* — is executed here, by the author, before the audit.
+
+## 7.1 ⭐⭐ Capping DURING the parse does not cap the request. Executed.
+
+**Why load-bearing.** The ADR's headline is *"39 sites, one policy, one status"*. The interaction
+lens (I4) reported that stdlib and gin can return **2xx** for an oversize body. This is the
+controller's independent reproduction, and it also validates the proposed fix.
+
+**Probe** (throwaway `transport/http/httpcore/zz_rbp_test.go`, deleted after; a 64-byte cap standing
+in for 1 MiB, real `httpcore.StartInput`, real `http.MaxBytesReader`):
+
+```
+DURING  wellformed-oversize  err=http: request body too large
+DURING  oversize-syntaxerr   err=invalid character '@' looking for beginning of object key string
+DURING  value+trailing       err=<nil>
+
+BEFORE  wellformed-oversize  READ-REJECT err=http: request body too large
+BEFORE  oversize-syntaxerr   READ-REJECT err=http: request body too large
+BEFORE  value+trailing       READ-REJECT err=http: request body too large
+
+GIN-RESET decode err=<nil>
+```
+
+**Result 1 — the defect is confirmed and is worse than "inconsistent".** Capping during the parse
+produces **three different outcomes for three oversize bodies**: 413, 400, and **`err == nil`**.
+The third is a **complete JSON value followed by excess bytes**: `json.Decoder.Decode` reads only
+the first JSON value, never reads the excess, so `MaxBytesReader` never trips. **The cap applies to
+the prefix the decoder consumed, not to the request.**
+
+**Result 2 — read-before-parse fixes all three**, with one code path and one error.
+
+**Result 3 — the gin buffer-and-reset works.** Reading through `MaxBytesReader` into a buffer and
+reassigning `r.Body = io.NopCloser(bytes.NewReader(buf))` decodes cleanly, so gin's
+`ShouldBindJSON` and its validation are preserved rather than bypassed.
+
+⚠ **Prior art in this repo, missed by four revisions and two audits.**
+`runtime/kernel/cursorcodec.go:50-58` carries a trailing-data guard whose comment says
+`Decode` *"reads only the FIRST JSON value and silently ignores whatever follows"* — added by
+ADR-0160 for this exact behaviour, one package over. **The knowledge was in the repo the whole
+time; no document in this lineage cited it until round 5.**
+
+## 7.2 What §7 does NOT establish
+
+- `ASSUMPTION (unverified)`: the memory profile of buffering at a 1 MiB cap under concurrency.
+  Reasoned from fiber and fasthttp already buffering; **not measured**.
+- `ASSUMPTION (unverified)`: that no handler in the three adapters relies on a streaming `Body`.
+  The probe used one route's DTO.
+- `ASSUMPTION (unverified)`: that `fiber.Config.BodyLimit` is unreachable from a `fiber.Router`.
+  The mount-time WARN's fallback depends on it.
+- **Not probed here:** the `*int64` tri-state through the real `ResolveConfig`. The `MaxBytesReader`
+  half is executed (§Context of the ADR: limits `0` and `-1` both reject every non-empty body); the
+  **defaulting** half is a prescription, and phase 1 test 2 is what discharges it.
+
+---
+
+# 8. THE STRIPPED RE-CUT'S EVIDENCE (2026-08-21, after round 6 failed at ONE decision)
+
+**Why this section exists.** Round 6 produced 61 findings / 24 Critical against a one-decision
+bundle, and every Critical was a **scope-boundary** failure. The owner stripped the delivery to the
+cap alone. The two claims the stripped design rests on are executed here.
+
+⚠⚠ **Read §6.3a first, and then read this section against the execution lens's verdict on the whole
+file:** *"the bundle's probes are narrow in a consistent direction — toward the fixture that
+demonstrates the fix."* The fixtures below were therefore chosen to include the cases that would
+**embarrass** the design (under-cap trailing bytes; today's behaviour as the control), not only the
+ones that vindicate it.
+
+## 8.1 ⭐⭐ Cap the READ, keep the PARSE: over-cap is caught in every shape, under-cap is unchanged
+
+**Why load-bearing.** The previous revision prescribed *"unmarshal from the resulting buffer"*,
+which three lenses showed silently swaps the adapters' lenient `json.Decoder` for a strict
+`json.Unmarshal` and makes stdlib and gin disagree on under-cap trailing bytes. The stripped design
+feeds the buffer to **today's** decoder instead. That must be shown to (a) still catch every
+over-cap shape and (b) change nothing under the cap.
+
+**Probe** (throwaway `transport/http/httpcore/zz_min_test.go`, deleted after; 64-byte cap standing
+in for 1 MiB, real `httpcore.StartInput`, real `http.MaxBytesReader`; `MINIMAL` =
+`io.ReadAll(MaxBytesReader(...))` then `json.NewDecoder(bytes.NewReader(buf))` — the *same* decoder
+idiom the stdlib site uses today):
+
+```
+overcap-trailing     TODAY=parsed/<nil>   MINIMAL=READ-REJECT/http: request body too large
+overcap-wellformed   TODAY=parsed/<nil>   MINIMAL=READ-REJECT/http: request body too large
+undercap-trailing    TODAY=parsed/<nil>   MINIMAL=parsed/<nil>
+clean                TODAY=parsed/<nil>   MINIMAL=parsed/<nil>
+```
+
+**Result 1 — every over-cap shape is rejected**, including `{"def_ref":"a:1"}` followed by 200
+bytes of trailing garbage, which is the shape that returns **2xx** today.
+
+**Result 2 — under-cap behaviour is byte-for-byte unchanged**, trailing bytes included. This is the
+finding that matters: it means **the strict/lenient question does not arise**, because no decoder is
+replaced. Three lenses' worth of findings (E2, C4, F3) are removed by construction rather than
+resolved by argument.
+
+⚠ `ASSUMPTION (unverified)`: that gin's `ShouldBindJSON` behaves identically when its
+`gc.Request.Body` is reassigned to the buffer. §7.1 executed the *decoder* half of this; the
+**binder + validator** half is what the per-adapter test must discharge. Do not infer it from here.
+
+## 8.2 A plain `int64` default survives an explicit `0` — no tri-state is needed
+
+**Why load-bearing.** The previous revision introduced `MaxBodyBytes *int64` because
+`ResolveConfig` was believed to clobber an explicit `0`. One lens then showed the prescribed
+falsifier for that was **vacuous**, and another found `action/httpcall` already solving the same
+problem without a pointer.
+
+**Read from source** (`transport/http/httpcore/seam.go:39-58`): `ResolveConfig` sets its defaults
+**in the struct literal**, then applies opts, then applies post-loop guards **only to nil-able
+fields** (`Wrap`, `InstanceMapper`, `Logger`). An `int64` has no nil, so nothing overwrites it.
+
+⇒ `MaxBodyBytes int64` with the default in the literal and `n <= 0` disabling is correct, and it
+matches `action/httpcall`: `io.ReadAll(io.LimitReader(r, max+1))` at `httpcall.go:194`, `max <= 0`
+disables at `:191`, default applied in the constructor at `:214`, documented in six places.
+
+⚠ **Not executed:** the end-to-end path from `WithMaxBodyBytes(0)` through a real adapter to a
+decode site. Phase 2's opt-out test is what discharges it.
+
+## 8.3 Derived boundaries — the class of defect that failed round 6
+
+Every Critical in round 6 was a boundary asserted and never derived. These were derived from source
+before the stripped design was written:
+
+| boundary | derived value |
+|---|---|
+| `ResolveConfig` call sites | **15** — exactly **5 per adapter** (`grep`, non-test). A per-mount diagnostic would fire 3–4× per documented mount |
+| what can carry an error out of mounting | **nothing** — `ResolveConfig`, `CustomizeOption`, `RouteCustomizer.Customize`, `MountGroups` and all `Mount`/`MountHealth` return nothing |
+| how a `MountGroups` consumer configures a group | `MountGroups(r, groups...)` calls `Customize(r)` with **no opts** (`seam.go:108`), so defaults apply. ⭐ Its **own godoc already names the escape**: *"Groups needing distinct base paths or middleware call Customize directly with the relevant options."* |
+| who can build an instrument | **only `httpcore`** — `Instrumentation`'s fields are unexported and the three adapters import no otel |
+| existing convention for bounding a body | **`action/httpcall`** — plain `int64`, `<= 0` disables, default in the constructor |
+| existing handling of trailing data after a JSON value | **`runtime/kernel/cursorcodec.go:50-58`** (ADR-0160) |
+| is `fiber.Config.BodyLimit` reachable? | `(*fiber.App).Config()` **is exported** (`app.go:1233`) — the earlier `ASSUMPTION (unverified)` is **REFUTED** — but a mounted `*fiber.Group` is not an `*App` |
+
+## 8.4 What §8 does NOT establish
+
+- `ASSUMPTION (unverified)`: gin's binder+validator through a reassigned body (see §8.1).
+- `ASSUMPTION (unverified)`: the **1 MiB** default. A judgement call.
+- **Not executed here, but executed by a lens and accepted:** a chunked request with no terminating
+  chunk holds the handler indefinitely under read-to-EOF; buffering is ~2 % *faster* and allocates
+  ~37 % fewer bytes than streaming at 1 MiB; over-declared `Content-Length` yields `unexpected EOF`
+  with `errors.As(*MaxBytesError) == false`.
