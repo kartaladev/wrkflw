@@ -1,8 +1,6 @@
 package stdlib
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -39,8 +37,7 @@ func (c InstanceRoutes) Customize(mux *http.ServeMux, opts ...httpcore.Customize
 
 	handle(r, inst, cfg, http.MethodPost, "/instances", func(w http.ResponseWriter, req *http.Request) {
 		var in httpcore.StartInput
-		if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-			writeErr(cfg, w, req, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
+		if !decodeRequestBody(cfg, w, req, &in) {
 			return
 		}
 		status, body, err := httpcore.StartInstance(req.Context(), c.Svc, in, cfg.InstanceMapper)
@@ -84,8 +81,7 @@ func (c InstanceRoutes) Customize(mux *http.ServeMux, opts ...httpcore.Customize
 	handle(r, inst, cfg, http.MethodPost, "/instances/{id}/signals", func(w http.ResponseWriter, req *http.Request) {
 		id := req.PathValue("id")
 		var in httpcore.SignalInput
-		if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-			writeErr(cfg, w, req, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
+		if !decodeRequestBody(cfg, w, req, &in) {
 			return
 		}
 		status, body, err := httpcore.DeliverSignal(req.Context(), c.Svc, id, in, cfg.InstanceMapper)
@@ -111,8 +107,7 @@ func (c MessageRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeO
 
 	handle(r, inst, cfg, http.MethodPost, "/messages", func(w http.ResponseWriter, req *http.Request) {
 		var in httpcore.MessageInput
-		if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-			writeErr(cfg, w, req, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
+		if !decodeRequestBody(cfg, w, req, &in) {
 			return
 		}
 		status, body, err := httpcore.DeliverMessage(req.Context(), c.Svc, in)
@@ -139,8 +134,7 @@ func (c TaskRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpti
 	handle(r, inst, cfg, http.MethodPost, "/tasks/{token}/claim", func(w http.ResponseWriter, req *http.Request) {
 		token := req.PathValue("token")
 		var in httpcore.ClaimInput
-		if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-			writeErr(cfg, w, req, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
+		if !decodeRequestBody(cfg, w, req, &in) {
 			return
 		}
 		status, body, err := httpcore.ClaimTask(req.Context(), c.Svc, token, in, cfg.InstanceMapper)
@@ -154,8 +148,7 @@ func (c TaskRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpti
 	handle(r, inst, cfg, http.MethodPost, "/tasks/{token}/complete", func(w http.ResponseWriter, req *http.Request) {
 		token := req.PathValue("token")
 		var in httpcore.CompleteInput
-		if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-			writeErr(cfg, w, req, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
+		if !decodeRequestBody(cfg, w, req, &in) {
 			return
 		}
 		status, body, err := httpcore.CompleteTask(req.Context(), c.Svc, token, in, cfg.InstanceMapper)
@@ -169,8 +162,7 @@ func (c TaskRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpti
 	handle(r, inst, cfg, http.MethodPost, "/tasks/{token}/reassign", func(w http.ResponseWriter, req *http.Request) {
 		token := req.PathValue("token")
 		var in httpcore.ReassignInput
-		if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-			writeErr(cfg, w, req, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
+		if !decodeRequestBody(cfg, w, req, &in) {
 			return
 		}
 		status, body, err := httpcore.ReassignTask(req.Context(), c.Svc, token, in, cfg.InstanceMapper)
@@ -235,7 +227,13 @@ func (c AdminRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpt
 			instanceID := req.PathValue("id")
 			incidentID := req.PathValue("incidentID")
 			var in httpcore.ResolveIncidentInput
-			_ = json.NewDecoder(req.Body).Decode(&in) // body is optional
+			// Body is OPTIONAL here: a decode failure leaves in at its zero
+			// value and the request proceeds. An OVERSIZE body does not — this
+			// is the one site whose discarded decode error would otherwise let
+			// an unbounded body be read into memory.
+			if !decodeOptionalRequestBody(cfg, w, req, &in) {
+				return
+			}
 			status, body, err := httpcore.ResolveIncident(req.Context(), c.Svc, instanceID, incidentID, in)
 			if err != nil {
 				writeErr(cfg, w, req, err)
@@ -250,8 +248,7 @@ func (c AdminRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpt
 			var in httpcore.ResolveCompensationStallInput
 			// Body is REQUIRED here, unlike resolve-incident: command_id and
 			// disposition are both mandatory and neither may default (ADR-0175).
-			if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-				writeErr(cfg, w, req, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
+			if !decodeRequestBody(cfg, w, req, &in) {
 				return
 			}
 			status, body, err := httpcore.ResolveCompensationStall(req.Context(), c.Svc, instanceID, in)
@@ -297,8 +294,7 @@ func (c AdminRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpt
 		handle(r, inst, cfg, http.MethodPost, "/admin/dead-letters/redrive",
 			func(w http.ResponseWriter, req *http.Request) {
 				var in httpcore.RedriveInput
-				if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-					writeErr(cfg, w, req, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
+				if !decodeRequestBody(cfg, w, req, &in) {
 					return
 				}
 				status, body, err := httpcore.RedriveDeadLetters(req.Context(), dl, in)
@@ -328,8 +324,7 @@ func (c AdminRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpt
 		handle(r, inst, cfg, http.MethodPost, "/admin/policies",
 			func(w http.ResponseWriter, req *http.Request) {
 				var in httpcore.PolicyRuleInput
-				if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-					writeErr(cfg, w, req, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
+				if !decodeRequestBody(cfg, w, req, &in) {
 					return
 				}
 				status, body, err := httpcore.AddPolicy(req.Context(), pa, in)
@@ -343,8 +338,7 @@ func (c AdminRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpt
 		handle(r, inst, cfg, http.MethodDelete, "/admin/policies",
 			func(w http.ResponseWriter, req *http.Request) {
 				var in httpcore.PolicyRuleInput
-				if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-					writeErr(cfg, w, req, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
+				if !decodeRequestBody(cfg, w, req, &in) {
 					return
 				}
 				status, body, err := httpcore.RemovePolicy(req.Context(), pa, in)
@@ -368,8 +362,7 @@ func (c AdminRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpt
 		handle(r, inst, cfg, http.MethodPost, "/admin/role-bindings",
 			func(w http.ResponseWriter, req *http.Request) {
 				var in httpcore.RoleBindingInput
-				if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-					writeErr(cfg, w, req, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
+				if !decodeRequestBody(cfg, w, req, &in) {
 					return
 				}
 				status, body, err := httpcore.AddRoleBinding(req.Context(), pa, in)
@@ -383,8 +376,7 @@ func (c AdminRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpt
 		handle(r, inst, cfg, http.MethodDelete, "/admin/role-bindings",
 			func(w http.ResponseWriter, req *http.Request) {
 				var in httpcore.RoleBindingInput
-				if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-					writeErr(cfg, w, req, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
+				if !decodeRequestBody(cfg, w, req, &in) {
 					return
 				}
 				status, body, err := httpcore.RemoveRoleBinding(req.Context(), pa, in)

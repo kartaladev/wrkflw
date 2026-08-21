@@ -9,65 +9,123 @@ top to bottom; it is meant to stay short enough that you can.
 > see `docs/plans/HANDOVER-archive.md`. Per-delivery detail belongs in that delivery's plan under
 > a `▶ Progress` block. This file carries only: where `main` is, what is unmerged, and what next.
 
-## State — updated 2026-08-20 (backlog sweep)
+## State — updated 2026-08-21 (ADR-0186 CODE-COMPLETE, both gates passed, ⛔ NOT merged, NOT pushed)
 
-**`main` is `70a631e9`, PUSHED and clean.** ⚠ Re-derive it (`git rev-parse --short refs/heads/main`);
-anchor on **merge** SHAs, which never move: 0184 `be6e6b55`, 0183 `a7575ed5`, 0179 `962aeb25`,
-0181/0182 `1ac140f6`, 0177/0178/0180 `a5b33e4c`, 0176 `52bf0f80`, 0175 `6e4addc8`.
+**`main` is PUSHED and clean at `a41dca1c`.** ⚠ Re-derive it (`git rev-parse --short refs/heads/main`);
+anchor on **merge** SHAs, which never move: the backlog sweep **`020af37b`** (latest shipped code),
+0184 `be6e6b55`, 0183 `a7575ed5`, 0179 `962aeb25`, 0181/0182 `1ac140f6`, 0177/0178/0180 `a5b33e4c`,
+0176 `52bf0f80`, 0175 `6e4addc8`.
 
-**▶ ONE DELIVERY IS IN FLIGHT, UNMERGED AND UNPUSHED.**
+### ⛔⛔ ONE DELIVERY IN FLIGHT AND IT IS BLOCKED ON AN OWNER DECISION
 
-| | |
+**`design/authz-security-b3`** — ADR-0186 request body caps. **6 commits ahead of `main`**: five
+audit-record docs commits plus one feature commit.
+⚠⚠ **Do NOT quote the feature commit's SHA — it has been amended on every fold and this file has
+already gone stale on it once.** Re-derive: `git log --oneline main..HEAD`.
+
+| gate | state |
 |---|---|
-| branch | **`feat/backlog-sweep-small-tier`** — ⚠ re-derive the SHA, it has been amended twice |
-| what | closes **43** Small-tier backlog defects + **12** adjudications, in one bundle |
-| gates passed | `go build ./...` **0** · `go vet ./...` **0** · `golangci-lint run ./...` **repo-wide 0 issues** · `go test -race -coverprofile ./...` **EXIT=0, zero `--- FAIL`** · **`/code-review` — 7 findings, ALL 7 FIXED and folded** |
-| `/security-review` | **0 findings.** Confidence 0.85 in the empty result. Checked and cleared: the new `requireAdminToken` guard in `examples/production_wiring` (**probed, not read** — fails **closed** at 503 when `ADMIN_TOKEN` is unset, 403 on wrong/short header, `subtle.ConstantTimeCompare`, guard runs before the inner mux, and path-normalisation tricks `//admin`, `/foo/../admin`, `/admin%2f` cannot bypass it); `internal/dbtest/dbname.go`'s identifier splice (derived only from PID + `crypto/rand` + counter, `[a-z0-9_]` only, no external input); and the casbin reload change (fail-open **preserved exactly, not worsened**; nothing sensitive newly logged). Two changes were assessed as **security improvements**: `engine/step_gateways.go`'s identity resolution closes a token-confusion route open to a consumer `IDGenerator` minting `evtgw:<id>`, and the example now mounts `AdminRoutes` behind a guard where it previously mounted nothing. Sub-threshold, not a finding: `internal/dbtest/dsn.go:78` echoes a full DSN incl. password in its "no host" error (test-only, malformed-config path). |
-| coverage | touched packages: `engine` 93.1 · `runtime` 93.7 · `runtime/monitor` 87.9 · `scheduler` 93.4 · `scheduler/internal/gocron` 86.2 · `persistence` **87.5** · `definition/model` 95.1 · `internal/persistence/store` 88.1 · `internal/authz/casbin` 87.1. ⚠ **`internal/dbtest` is 42.2 % — BELOW the 85 % floor and it WAS touched.** It rose from 39.8 %; it is test scaffolding whose container-boot branches run only in the fallback path. **This is a known, deliberate exception, not a pass.** Repo total 75.0 %; `definition` 33.3, `service` 53.9, `cachetest` 73.1 are untouched and pre-existing |
+| Implementation + tests (phases 1–4) | ✅ complete |
+| `go test -race ./...` | ✅ EXIT=0 (Docker was up, so this is the full run) |
+| `golangci-lint run ./...` repo-wide | ✅ **0 issues** (v2.12.2) |
+| `go vet ./...` · `go build ./examples/...` | ✅ EXIT=0 |
+| Touched-package coverage | ✅ httpcore 94.7 · stdlib 94.8 · gin 87.8 · fiber 86.6 (floor 85) |
+| `/code-review` | ✅ 4 findings (2 MED, 2 LOW) — **all fixed, folded via `--amend`** |
+| `/security-review` | ✅ **0 findings** |
+| **merge to `main` (`--no-ff`)** | ❌ **NOT DONE** |
+| **push** | ❌ **NOT DONE — needs the owner** |
 
-**▶ A SECOND BRANCH — ⛔ ITS AUDIT FAILED.** `design/authz-security-b3` (`ebc34861`, local only,
-unmerged, unpushed) carries the B3 design bundle: spec + **ADR-0185** + **ADR-0186** + plan, for
-backlog 51/52/53/54/65/98/99/100/101/103/104/124 (+ parked 102).
+⚠ Repo-wide coverage is **75.1 %**, which is **pre-existing** — `main` measures 75.1 % too
+(verified by checking out `main` and re-running). Not a regression.
 
-Its rule-#9 audit ran 2026-08-20 — **three Opus lenses (execution / failure-modes / counting), three
-detached worktrees at the bundle commit, step-0 presence check passed in all three**. Result:
-**58 findings, 12 Critical.** All four documents now carry an `AUDIT FAILED` banner. Adjudication:
-`docs/plans/sweep-evidence/audit-b3-adjudication.md` (all 12 Criticals ACCEPTED, none rejected),
-with the three lens reports beside it (2,291 lines).
+**⚠⚠ WHY THE PUSH IS BLOCKED, and it is not process pedantry.** The branch carries
+`docs/specs/2026-08-21-untrusted-input-deferred-slices.md` — a **roadmap of FIVE UNFIXED authz/SSRF
+holes** (read-path disclosure 54, `httpcall` SSRF 65, variable-map bound 99, at-rest posture
+100/101, 4xx disclosure 104) **with executed reproduction detail**, in a **PUBLIC** repo.
+**Merging to local `main` is safe. Pushing publishes an attacker's to-do list.** The owner must
+decide: push as-is · push with that file held back · or keep the branch local until the five land.
 
-⚠ **FOUR DECISIONS MUST CHANGE — this is not a fold-the-fixes outcome:**
-1. **D4's escape hatch does not exist.** `has(vars,"k")` is not a function in **expr v1.17.8**;
-   `AllowUndefinedVariables` resolves it to nil so it **compiles and fails at run time**, and
-   `RoleAuthorizer` wraps run errors as `ErrNotAuthorized` ⇒ **a predicate written to the ADR's own
-   prescription denies EVERYONE, permanently.** Working forms, executed: `"k" in vars`, `vars?.k`,
-   `vars.k ?? d`, `get(vars,"k")`.
-2. **`Reassign`→`Complete` bypasses D5's claimant guard** (found INDEPENDENTLY by two lenses).
-   ⚠ **ADR-0185's Consequences sentence "can no longer complete a task somebody else holds" is
-   FALSE.** The ADR names `Reassign` as the mitigation; it is the escalation — and the id it needs is
-   disclosed by item 54 in the same bundle.
-3. **The upgrade strands every in-flight human task** (also found by two lenses). Eligibility is a
-   **stored** field; `AuthzSpec` has **no json tags**, so a new binary reads pre-upgrade rows as
-   `Open:false` ⇒ unclaimable, uncompletable AND unreassignable, no repair verb. The plan's gate
-   guards the **opposite** direction and **there is no persistence phase at all.**
-4. **The fix ships everywhere except where the ADR sends people.** `internal/authz/casbin` has its
-   own `expreval.New()` and stays fail-open; D4 reasons over **two** evaluator instances, **four**
-   exist — and **D3 tells consumers to wire casbin**, which CLAUDE.md makes the baseline.
+### ▶ NEXT ACTIONS, in order
 
-Also accepted: ADR-0186 D2 checks the wrong invariant and costs **99.43 → 965.2 ns/op** (~10×); the
-**400 arm echoes submitted values** (resolving the spec's own unverified assumption AGAINST it, and
-phase 7's test would have pinned the leak in); `WithActorResolver` **collides** with an existing
-symbol meaning the opposite; no decision for **"nothing put an actor in the context"**;
-`RedactVariables` is **bypassed wholesale by `CustomizeConfig.InstanceMapper`**; phases 3/4 circular.
+1. **Owner decides the disclosure question above.**
+2. **Merge `--no-ff` to `main`**, delete the branch (standing convention), push **only if** step 1 says so.
+   ⚠ Optional judgement call: the branch is **6 commits** (5 audit-record docs commits + 1 feature
+   commit) where "fold, don't stack" would suggest one. They were left separate because `--no-ff`
+   preserves the audit chronology in the merge; squashing is defensible too. **Owner's call.**
+3. **Then: the at-rest posture (§AT-REST)** — the readiest of the five, two pure scope corrections
+   with stated fixes. Then ADR-0185-core (51/52/53), then §4XX, §READ-PATH, §SSRF, §BOUND.
+   ⚠ ADR numbers 0187–0191 are **reservations**; **next free ADR is still 0187**.
 
-⚠ **Counting failures were the NET and the ANCHOR, not the arithmetic** — every sum in the bundle was
-correct. Pins are **29, not 23** (`ReassignInput.By` is tagged `"by"`, not `"actor"`, hiding six; and
-two missed pins assert 403 and would **still pass after D1 from the zero actor, testing nothing**).
-**Every `step_triggers.go` citation is 10 lines stale at the bundle's own commit** — it anchored to
-`70a631e9` while `3f317b63` edits that file. D3's blast radius: **274** `NewUserTask` sites, **128**
-without eligibility, only **5** reach `model.Validate` — the other 128 have **no phase**.
+### ⭐⭐⭐ READ THIS BEFORE DESIGNING ANYTHING — the trend was the finding
 
-**▶ NEXT ACTION for B3: revise → re-anchor citations to the revised commit → RE-AUDIT → then
-implement.** A bundle whose Decisions changed has not been audited.
+ADR-0186 was **audited SEVEN times and never passed**. Scope was cut ~12× and the finding count
+**never moved**:
+
+| round | scope | findings | Critical |
+|---|---|---|---|
+| 1–2 | B3, 12 items | 58, 38 | 12, ~13 |
+| 3–4 | 6 decisions | 63, 56 | 33, 28 |
+| 5 | 3 decisions | 65 | 20 |
+| 6 | **1 decision** | 61 | 24 |
+| 7 | **1 decision, stripped** | 57 | 14 |
+
+**Round 6 is the control experiment: it failed at a bundle size of ONE decision.** Splitting is
+exhausted; stripping was exhausted at round 7. ⇒ **the finding rate is a property of the PROCESS,
+not the bundle.** Owner shipped it under **rule #11 as a deliberate, recorded exception to rule #9**
+— ADR-0186's `Status` line says so, and so does its banner. **That precedent is available for future
+bundles that stop converging; it is not a licence to skip audits.**
+
+**Two characterisations to carry into every future bundle:**
+1. ⭐⭐⭐ *"The bundle's probes are narrow in a consistent direction: **toward the fixture that
+   demonstrates the fix**."* ⚠⚠ **Execution catches a false PREMISE, not a NARROW FIXTURE** — the
+   probe passes. ⚠ Round 7's bundle **quoted this diagnosis in its own banner and then reproduced it
+   in its central evidence section.** Naming a bias does not remove it.
+2. ⭐⭐⭐ *"A boundary derived correctly at one level, then **asserted one level up without
+   re-derivation**."*
+
+⭐⭐⭐ **FOUR times this lineage claimed a gap the repo had ALREADY FILLED** —
+`runtime/kernel/cursorcodec.go:27-28` (trailing data, ADR-0160) · `action/httpcall.go:186-194` (the
+cap convention: `int64`, `<= 0` disables, constructor default) ·
+`wrkflw_rest_requests_total{http.status_code}` (already counts every 413) · `httpcall.go:209`
+(`30 * time.Second`). ⇒ **"Search the repo for an existing convention BEFORE writing a new symbol"
+is now a step in the plan's fan-out rules.**
+
+⭐⭐ **18 design corrections came from IMPLEMENTATION, not from seven audits** — all folded into
+ADR-0186's "Implementation notes" per rule #11. Including: a mutation that **refuted the stated
+reason** for the bare sentinel (phase 1's own arm hoist had falsified it); a prescribed falsifier
+that **did not falsify what it claimed**; prescribed tests that left **11 of 13 sites unverified**;
+and an implementer who **deleted a vacuous test of their own** — the seventh test-that-cannot-fail in
+this repo, avoided unprompted.
+
+⚠⚠ **Both `/code-review` MEDIUMs were regressions this delivery INTRODUCED and had DOCUMENTED rather
+than MITIGATED.** The review refused that distinction, correctly. **A residual you wrote down is
+still a defect you shipped.**
+
+### What shipped (so nobody re-derives it)
+
+Cap the **READ**, leave each adapter's **PARSE** untouched. `MaxBodyBytes int64`, default 1 MiB in
+`ResolveConfig`'s **struct literal** (not the post-loop guard, which would erase an explicit `0`);
+**`n <= 0` disables**. Bare `httpcore.ErrRequestBodyTooLarge` → **413**, arm **before** the ordered
+400 arm, **static body naming no limit**. `BodyReadTimeout` 30 s, armed only when the cap is active.
+**Non-generic per-adapter aliases** for both options — the generic form **cannot infer `R`**.
+⚠ **The cap is PER ROUTE GROUP**: `Mount` covers **6 of 13** sites; **21 of 39 repo-wide sit behind
+`AdminRoutes`**; `MountHealth` forwards no options. All five residuals are in `SECURITY.md`.
+
+**Seven adjudications + 28 lens reports** are in `docs/plans/sweep-evidence/`: `audit-b3`,
+`reaudit-b3`, `audit-0186`, `reaudit-0186`, `audit3-0186`, `audit4-0186`, `audit5-0186`.
+
+**⚠ What carries into the five deferred deliveries — do not re-derive:**
+1. **Backlog 103** (deny-list ABAC predicates allow on a missing variable) is a **syntax problem
+   that cannot be solved with syntax** — three rounds produced three *disjoint* hole sets. Decided
+   shape: **declare required/optional keys ON THE SPEC**, no inference. ⚠ `actor.Attributes` needs
+   its own rule — it is a struct field that always exists, so reference-presence checking is vacuous.
+2. **Backlog 124** (completion never checks the claimant) needs a **per-verb authorization model
+   that does not exist** — one `Eligibility` spec serves four verbs.
+3. **ADR-0185-core's D3**: `AuthzSpec` is durable in **two** places
+   (`wrkflw_human_task.eligibility` is the one all four `Authorize` sites read), and `Open *bool`
+   makes the zero value of the **public** `authz.AuthzSpec` fail-**OPEN**.
+4. **New backlog item from this delivery:** on `fiber`, a compressed body under the cap is
+   decompressed **twice**.
 
 ### ⚠ What `/code-review` found, and why it matters procedurally
 
@@ -146,16 +204,30 @@ and than `AUDIT.md`.
 
 ## ▶ NEXT WORK
 
-**Order: (1) run the two gates on `4661ac45` and merge it. (2) audit and implement B3. (3) B4–B7.**
+**Order: (1) finish ADR-0186 slice 1 (audit → fold → implement). (2) ADR-0185-core. (3) slices 2–4.
+(4) B4–B7. (5) blocker 5.**
 
 The remaining **~65 Design-tier items** are grouped into five bundles. Each needs a spec + ADR + plan
-and **ONE** rule-#9 adversarial audit before implementation. **Next free ADR = 0185.**
+and **ONE** rule-#9 adversarial audit before implementation. **Next free ADR = 0187.**
 
-- **B3 authz/security** — 51, 52, 53, 54, 65, 98, 99, 100, 101, 103, 104, 124. A draft bundle was
-  being written when this session ended; if `docs/specs/2026-08-20-authz-security-hardening.md`
-  exists it is **NOT AUDITED and is not an input to implementation**. ⚠ 51/52/53 **compose** — fixing
-  one alone leaves the path open. 53 is ONE item (= blocker 1's tail), with an extra leg found in
-  triage: `Privileges` is documented as **not evaluated**, so a privileges-only spec is also allow-all.
+- **B3 authz/security** — re-cut into **four** deliveries plus ADR-0185-core and the deferred
+  103/124 (see State above). ⏳ **ADR-0186 slice 1** (backlog 98, 104 + posture 100/101) has its
+  bundle written and its audit **in flight**; **slices 2–4** (backlog 54, 65, 99) are held in
+  `docs/specs/2026-08-21-untrusted-input-deferred-slices.md`; **ADR-0185-core** (51/52/53) and the
+  deferred 103/124 follow.
+  ⚠ **Dispatch every future audit exactly as these were** — it works: four Opus lenses
+  (execution / failure-modes / **counting** / **interaction**), **detached worktrees at the bundle
+  commit**, a **step-0 bundle-presence check every brief states explicitly**, and **"append per
+  finding, before the next probe"** (a mid-run kill cost three lenses their work once; the second
+  time, 2,418 of 3,717 lines were already on disk).
+  ⚠ Brief the **counting** lens that the failure mode is **the net and the anchor, not the
+  arithmetic** — every sum in four rounds has been right, and that lens found the decisive Critical
+  in four consecutive bundles. Brief the **interaction** lens with the **explicit list of what
+  changed**; its question is *"what does this decision assume someone else will hand it, and who
+  agreed to that?"*, and it found 8 Criticals on its first use.
+  ⚠ **The evidence file is an INPUT to the audit, not a conclusion of it** — attack it too. Findings
+  have landed inside the bundle's own evidence file in two separate rounds, and in this one the
+  author's own probe refuted a real audit finding and was itself wrong (§6.3a).
 - **B4 durability/reconciliation** — 66 (the class), 67, 24, 29, 37, 39, 57, 63, 76, 77, 81.
 - **B5 engine core** — 55, 56, 70, 71, 72, **73** (⚠ its guard, 114, is now shipped — do not delete the
   `cloneState` deep-copy without reading the comment now on that line), 11, 12, 13, 17.
@@ -178,7 +250,7 @@ and **ONE** rule-#9 adversarial audit before implementation. **Next free ADR = 0
 
 ⚠ **Detail lives in `docs/plans/sweep-evidence/triage-*.md`.** These lines are labels, not statements.
 
-**Closed by the sweep (branch `4661ac45`):** 3b, 3d, 3e, 9, 10, 15, 26, 28, 30, 31 (engine+scheduler
+**Closed by the sweep (merged as `020af37b`):** 3b, 3d, 3e, 9, 10, 15, 26, 28, 30, 31 (engine+scheduler
 halves), 34, 38, 40, 44, 48, 49, 58, 74, 75, 84, 87, 89, 95, 102, 107, 112, 113, 114, 115, 116, 117,
 118, 119, 121, 122, 123, 125, 127, blockers 7 and 8.
 **Adjudicated, not defects:** 8, 18, 20, 97, 126, 3f, 6, 35, 36, 37, 45, 46.

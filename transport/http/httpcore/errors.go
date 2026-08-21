@@ -15,6 +15,14 @@ import (
 // ErrBadInput is the sentinel for 400-class decode/validation errors.
 var ErrBadInput = errors.New("workflow-httpcore: bad input")
 
+// ErrRequestBodyTooLarge is the sentinel for an INBOUND request body that
+// exceeded [CustomizeConfig.MaxBodyBytes]. It classifies as 413.
+//
+// ⚠ Not to be confused with action/httpcall.ErrBodyTooLarge, a distinct
+// sentinel meaning an OUTBOUND response exceeded httpcall's own cap — a
+// server-side fault the caller cannot correct, which correctly stays a 500.
+var ErrRequestBodyTooLarge = errors.New("workflow-httpcore: request body too large")
+
 // ErrorBody is the JSON error envelope. Message is omitted for 5xx responses.
 type ErrorBody struct {
 	Error   string `json:"error"`
@@ -33,6 +41,27 @@ func ClassifyError(err error) (int, ErrorBody) {
 		return http.StatusForbidden, ErrorBody{Error: "forbidden", Message: err.Error()}
 	case errors.Is(err, kernel.ErrConcurrentUpdate):
 		return http.StatusConflict, ErrorBody{Error: "conflict", Message: err.Error()}
+	// ⚠ POSITION IS BEHAVIOUR. This arm MUST precede the 400 arm below. Go's
+	// switch is ordered, so an error matching two arms resolves to whichever
+	// comes first — and an oversize body arrives wrapped in ErrBadInput from
+	// every decode site, so it matches both. Below the 400 arm this returns
+	// "bad_request" (MEASURED: 413 expected, 400 actual) and the oversize case
+	// becomes indistinguishable from malformed JSON.
+	//
+	// STANDING INVARIANT for any arm added to this switch: state its position
+	// relative to the arms it can co-match, and carry a test asserting an error
+	// matching two arms resolves to the intended one. Ordering that is not
+	// pinned by a test is ordering that silently rots on the next edit.
+	//
+	// ⚠ The body is STATIC — no err.Error(), unlike every other 4xx arm, which
+	// this one must not inherit by accident. It deliberately does not name the
+	// configured limit: that is deployment configuration, and echoing it tells
+	// an attacker exactly what to stay under.
+	case errors.Is(err, ErrRequestBodyTooLarge):
+		return http.StatusRequestEntityTooLarge, ErrorBody{
+			Error:   "request_too_large",
+			Message: "request body exceeds the configured limit",
+		}
 	case errors.Is(err, kernel.ErrBadCursor), errors.Is(err, kernel.ErrBadArmedTimerCursor),
 		errors.Is(err, ErrBadInput), errors.Is(err, validation.ErrInvalidInput),
 		// Both outcome sentinels describe a completion payload the caller can

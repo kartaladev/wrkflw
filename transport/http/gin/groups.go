@@ -1,6 +1,7 @@
 package gin
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -30,6 +31,10 @@ func (ir InstanceRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeO
 	// POST /instances → StartInstance
 	rt.POST(bp+"/instances", observe(inst, http.MethodPost, bp+"/instances", func(gc *ginlib.Context) {
 		var in httpcore.StartInput
+		if err := capBody(cfg, gc); err != nil {
+			writeErr(cfg, gc, err)
+			return
+		}
 		if err := gc.ShouldBindJSON(&in); err != nil {
 			writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			return
@@ -79,6 +84,10 @@ func (ir InstanceRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeO
 	rt.POST(bp+"/instances/:id/signals", observe(inst, http.MethodPost, bp+"/instances/:id/signals", func(gc *ginlib.Context) {
 		id := gc.Param("id")
 		var in httpcore.SignalInput
+		if err := capBody(cfg, gc); err != nil {
+			writeErr(cfg, gc, err)
+			return
+		}
 		if err := gc.ShouldBindJSON(&in); err != nil {
 			writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			return
@@ -111,6 +120,10 @@ func (mr MessageRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOp
 	// POST /messages → DeliverMessage
 	rt.POST(bp+"/messages", observe(inst, http.MethodPost, bp+"/messages", func(gc *ginlib.Context) {
 		var in httpcore.MessageInput
+		if err := capBody(cfg, gc); err != nil {
+			writeErr(cfg, gc, err)
+			return
+		}
 		if err := gc.ShouldBindJSON(&in); err != nil {
 			writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			return
@@ -148,6 +161,10 @@ func (tr TaskRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOptio
 	rt.POST(bp+"/tasks/:token/claim", observe(inst, http.MethodPost, bp+"/tasks/:token/claim", func(gc *ginlib.Context) {
 		token := gc.Param("token")
 		var in httpcore.ClaimInput
+		if err := capBody(cfg, gc); err != nil {
+			writeErr(cfg, gc, err)
+			return
+		}
 		if err := gc.ShouldBindJSON(&in); err != nil {
 			writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			return
@@ -164,6 +181,10 @@ func (tr TaskRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOptio
 	rt.POST(bp+"/tasks/:token/complete", observe(inst, http.MethodPost, bp+"/tasks/:token/complete", func(gc *ginlib.Context) {
 		token := gc.Param("token")
 		var in httpcore.CompleteInput
+		if err := capBody(cfg, gc); err != nil {
+			writeErr(cfg, gc, err)
+			return
+		}
 		if err := gc.ShouldBindJSON(&in); err != nil {
 			writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			return
@@ -180,6 +201,10 @@ func (tr TaskRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOptio
 	rt.POST(bp+"/tasks/:token/reassign", observe(inst, http.MethodPost, bp+"/tasks/:token/reassign", func(gc *ginlib.Context) {
 		token := gc.Param("token")
 		var in httpcore.ReassignInput
+		if err := capBody(cfg, gc); err != nil {
+			writeErr(cfg, gc, err)
+			return
+		}
 		if err := gc.ShouldBindJSON(&in); err != nil {
 			writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			return
@@ -261,6 +286,14 @@ func (ar AdminRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOpti
 			instanceID := gc.Param("id")
 			incidentID := gc.Param("incidentID")
 			var in httpcore.ResolveIncidentInput
+			// The body is optional, but "optional" is not "unbounded": an oversize
+			// body is refused here exactly as at the twelve required-body sites.
+			// ⚠ Only the oversize outcome aborts — every other decode error stays
+			// ignored below, which is what lets an absent body succeed.
+			if err := capBody(cfg, gc); errors.Is(err, httpcore.ErrRequestBodyTooLarge) {
+				writeErr(cfg, gc, err)
+				return
+			}
 			// Body is optional; ignore parse error for an empty body.
 			_ = gc.ShouldBindJSON(&in)
 			status, body, err := httpcore.ResolveIncident(gc.Request.Context(), ar.Svc, instanceID, incidentID, in)
@@ -278,6 +311,10 @@ func (ar AdminRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOpti
 			var in httpcore.ResolveCompensationStallInput
 			// Body is REQUIRED: command_id and disposition are both mandatory and
 			// neither may default (ADR-0175).
+			if err := capBody(cfg, gc); err != nil {
+				writeErr(cfg, gc, err)
+				return
+			}
 			if err := gc.ShouldBindJSON(&in); err != nil {
 				writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 				return
@@ -323,6 +360,10 @@ func (ar AdminRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOpti
 
 		rt.POST(bp+"/admin/dead-letters/redrive", observe(inst, http.MethodPost, bp+"/admin/dead-letters/redrive", func(gc *ginlib.Context) {
 			var in httpcore.RedriveInput
+			if err := capBody(cfg, gc); err != nil {
+				writeErr(cfg, gc, err)
+				return
+			}
 			if err := gc.ShouldBindJSON(&in); err != nil {
 				writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 				return
@@ -351,6 +392,10 @@ func (ar AdminRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOpti
 
 		rt.POST(bp+"/admin/policies", observe(inst, http.MethodPost, bp+"/admin/policies", func(gc *ginlib.Context) {
 			var in httpcore.PolicyRuleInput
+			if err := capBody(cfg, gc); err != nil {
+				writeErr(cfg, gc, err)
+				return
+			}
 			if err := gc.ShouldBindJSON(&in); err != nil {
 				writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 				return
@@ -365,6 +410,10 @@ func (ar AdminRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOpti
 
 		rt.DELETE(bp+"/admin/policies", observe(inst, http.MethodDelete, bp+"/admin/policies", func(gc *ginlib.Context) {
 			var in httpcore.PolicyRuleInput
+			if err := capBody(cfg, gc); err != nil {
+				writeErr(cfg, gc, err)
+				return
+			}
 			if err := gc.ShouldBindJSON(&in); err != nil {
 				writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 				return
@@ -388,6 +437,10 @@ func (ar AdminRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOpti
 
 		rt.POST(bp+"/admin/role-bindings", observe(inst, http.MethodPost, bp+"/admin/role-bindings", func(gc *ginlib.Context) {
 			var in httpcore.RoleBindingInput
+			if err := capBody(cfg, gc); err != nil {
+				writeErr(cfg, gc, err)
+				return
+			}
 			if err := gc.ShouldBindJSON(&in); err != nil {
 				writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 				return
@@ -402,6 +455,10 @@ func (ar AdminRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOpti
 
 		rt.DELETE(bp+"/admin/role-bindings", observe(inst, http.MethodDelete, bp+"/admin/role-bindings", func(gc *ginlib.Context) {
 			var in httpcore.RoleBindingInput
+			if err := capBody(cfg, gc); err != nil {
+				writeErr(cfg, gc, err)
+				return
+			}
 			if err := gc.ShouldBindJSON(&in); err != nil {
 				writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 				return

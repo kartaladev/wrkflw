@@ -24,6 +24,24 @@ func WithBasePath(p string) httpcore.CustomizeOption[fiberlib.Router] {
 	return httpcore.WithBasePath[fiberlib.Router](p)
 }
 
+// WithMaxBodyBytes is a convenience alias for httpcore.WithMaxBodyBytes typed
+// for fiber.Router. It bounds the inbound request body to n bytes; a larger
+// body is refused with 413 before it is parsed. n <= 0 disables the cap. The
+// default is 1 MiB.
+//
+// ⚠ The alias is not sugar — the generic httpcore.WithMaxBodyBytes CANNOT be
+// called without spelling the router type out, because R appears only in its
+// result type and so is never inferable from the argument list.
+//
+// ⚠ This bounds what the adapter PARSES, not what fiber READS. A body above
+// fiber.Config.BodyLimit (default 4 MiB) is refused by fasthttp before any
+// route in the group runs, with a plain-text response and no ErrorBody
+// envelope. Peak per-request memory is therefore governed by
+// fiber.Config.BodyLimit; set that too if it matters.
+func WithMaxBodyBytes(n int64) httpcore.CustomizeOption[fiberlib.Router] {
+	return httpcore.WithMaxBodyBytes[fiberlib.Router](n)
+}
+
 // WithMiddleware wraps the router returned by cfg.Wrap in a fiber Group with
 // mw as middleware handlers. This is the fiber-native way to apply middleware
 // to a subset of routes — it mirrors the gin adapter's Use approach but uses

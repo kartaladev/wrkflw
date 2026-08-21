@@ -17,6 +17,47 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **Request bodies are capped at 1 MiB by default, and oversize is a new `413` (ADR-0186).**
+  Every route group mounted from `transport/http/{stdlib,gin,fiber}` now bounds the request body.
+  Two observable breaks:
+
+  1. **A new `413 Request Entity Too Large`** appears on routes that previously answered `400`,
+     `500`, or — for a body consisting of a complete JSON value followed by excess bytes — a
+     spurious **`2xx`**. Clients with an exhaustive status switch will not recognise it. The body is
+     `{"error":"request_too_large","message":"request body exceeds the configured limit"}` and
+     deliberately does not name the limit.
+  2. **Requests that succeed today by exceeding the cap now fail.** Previously nothing bounded a
+     request body at any of the 39 decode sites; a `json.Decoder` stops at the first complete JSON
+     value, so trailing bytes were never even read.
+
+  **Opt out or resize** with the adapter option — the generic `httpcore.WithMaxBodyBytes` cannot be
+  called directly, because its type parameter is not inferable:
+
+  ```go
+  stdlib.Mount(mux, svc, stdlib.WithMaxBodyBytes(4<<20))  // 4 MiB
+  stdlib.Mount(mux, svc, stdlib.WithMaxBodyBytes(0))      // non-positive disables the cap
+  ```
+
+  ⚠ **The cap is per route group.** `Mount` covers 6 of the 13 decode sites per adapter; pass the
+  same option to `AdminRoutes{…}.Customize(...)` to cover the rest. See `SECURITY.md` for that and
+  for four other documented properties — notably that the cap bounds **size, not time** (set
+  `http.Server.ReadTimeout` yourself), and that peak memory differs per adapter.
+
+  Under-cap behaviour is unchanged on every adapter: each keeps its existing JSON decoder, so no
+  request that fits the cap changes status or body.
+
+  **The body read is also bounded in time**, because reading to completion before parsing turns a
+  stalled client into an indefinite handler hold — measured, `201` in 0 s before the cap and no
+  response at all after it. `stdlib` and `gin` arm a **30 s** deadline whenever the cap is active;
+  `WithBodyReadTimeout(0)` disables it. ⚠ It **overwrites** the whole-request deadline derived from
+  `http.Server.ReadTimeout` for the duration of the body read, so keep `ReadTimeout` no shorter.
+  All three `examples/` now set `ReadTimeout` alongside `ReadHeaderTimeout`.
+
+  ⚠ On `fiber`, a body whose **decompressed** size exceeds `fiber.Config.BodyLimit` is now answered
+  **413 with a normal error envelope** instead of `400` — `fiber` sets 413 itself while decoding and
+  the adapter no longer overwrites it. This also removes a second full decompression of such a body
+  (measured: 32.17 MiB → 16.15 MiB allocated).
+
 - **`service.Service` gained `ResolveCompensationStall` (ADR-0175) — SILENT for embedders,
   a COMPILE BREAK for hand-rolled implementations.** `InstanceOps` — and therefore
   `Service`, which embeds it — now declares:

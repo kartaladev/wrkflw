@@ -48,6 +48,28 @@ importable surface a consumer embeds (see the README "Package map"). It does **n
   implementation detail of each backend adapter (Postgres, MySQL, SQLite), evolved via
   the migration mechanism, not a hand-editable surface.
 
+
+### Request body caps (ADR-0186, pre-v0.1.0)
+
+`httpcore.CustomizeConfig.MaxBodyBytes` and the three adapter options
+(`stdlib`/`gin`/`fiber` `WithMaxBodyBytes`) follow the library's existing bound convention, matching
+`action/httpcall.WithMaxResponseSize`: a plain `int64`, a **non-positive value disables** the bound,
+and the default is applied when the option is absent. New code bounding a body should use the same
+shape rather than introducing a pointer or a sentinel of its own.
+
+`httpcore.CustomizeConfig.BodyReadTimeout` and `WithBodyReadTimeout` (plus the `stdlib` and `gin`
+aliases) follow the same convention: a `time.Duration`, **non-positive disables**, default applied
+when the option is absent. It is armed **only when the cap is active**, and there is no `fiber`
+alias because fasthttp reads the body before the route group is entered.
+
+`httpcore.ErrRequestBodyTooLarge` classifies as **413**. ⚠ It is distinct from
+`action/httpcall.ErrBodyTooLarge`, which means an *outbound response* exceeded that action's own cap
+and correctly remains a **500**.
+
+⚠ `ClassifyError`'s arms are **ordered**, and position is behaviour: an error matching two arms
+resolves to whichever comes first. Any new arm must state its position relative to the arms it can
+co-match and carry a test asserting the intended resolution.
+
 ## Deprecation taxonomy
 
 When an exported symbol must be retired, we deprecate before removal rather than breaking
