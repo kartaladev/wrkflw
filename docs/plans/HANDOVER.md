@@ -190,12 +190,13 @@ and than `AUDIT.md`.
 
 ## ▶ NEXT WORK
 
-**Order: (1) the five deferred B3 deliveries, §AT-REST first. (2) B4–B7. (3) blocker 5.**
+**Order: (1) the four REMAINING deferred B3 deliveries — ⚠ §AT-REST is DONE (ADR-0187, merge
+`4e2c0af4`); **ADR-0185-core is next**. (2) B4–B7. (3) blocker 5.**
 
 The remaining **~65 Design-tier items** are grouped into bundles. Each needs a spec + ADR + plan and
 **ONE** rule-#9 adversarial audit before implementation. **Next free ADR = 0188.**
 
-### B3 authz/security — five deliveries left, all held in one file
+### B3 authz/security — **four** deliveries left (§AT-REST shipped), all held in one file
 
 ⚠ **Read `docs/specs/2026-08-21-untrusted-input-deferred-slices.md` before starting any of them.**
 It carries **every finding their audits established** and the design increment each still owes.
