@@ -202,13 +202,15 @@ It carries **every finding their audits established** and the design increment e
 ⚠⚠ **That file is now PUBLIC on `main`** (owner-authorised) and is a roadmap of five *unfixed*
 holes. **Treat them as time-sensitive.**
 
-1. ~~**§AT-REST** (backlog 100/101)~~ — ✅ **SHIPPED as ADR-0187, merge `4e2c0af4`.**
-   Bundle written; audit running. ⚠ **Do not restart this from the deferred-slices file** — the
-   ADR-0187 bundle supersedes that section's design and re-derived its claims rather than inheriting
-   them. Two corrections landed as designed (discover migration dirs by glob — a **fourth** exists
-   holding the casbin policy; and the per-dialect question), plus one the measurement changed: the
-   48-vs-67 divergence is **entirely** the `TIMESTAMPTZ`→`TEXT` mapping, so the classification is
-   **dialect-INVARIANT by role** while only `keyed` is per dialect.
+1. ~~**§AT-REST** (backlog 100/101)~~ — ✅ **SHIPPED as ADR-0187, merge `4e2c0af4`.** See the State
+   section above. ⚠ **Do not restart it from the deferred-slices file** — ADR-0187 supersedes that
+   section's design and re-derived its claims rather than inheriting them. ⚠ Two of that section's
+   own prescriptions turned out WRONG and are recorded corrected in ADR-0187: the glob
+   `**/migrations/*.sql` matches **1 of 4** files (discovery is a stated RULE plus a two-way
+   declaration, because dialect cannot be inferred from a path), and the classification is
+   **dialect-INVARIANT by role** — the 48-vs-67 divergence is *entirely* the `TIMESTAMPTZ`→`TEXT`
+   mapping, so only `keyed` is per dialect.
+
 2. **ADR-0185-core** (51/52/53) — actor in `context.Context`; constructing a `ProcessEngine` without
    an authorizer is an error; an eligibility spec that states nothing denies. ⚠ Its D3 carries two
    confirmed defects: `AuthzSpec` is durable in **THREE** places — ⚠⚠ **CORRECTED 2026-08-23 by
