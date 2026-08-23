@@ -9,7 +9,7 @@ top to bottom; it is meant to stay short enough that you can.
 > see `docs/plans/HANDOVER-archive.md`. Per-delivery detail belongs in that delivery's plan under
 > a `▶ Progress` block. This file carries only: where `main` is, what is unmerged, and what next.
 
-## State — updated 2026-08-23 (**ADR-0187 MERGED and PUSHED**; nothing in flight)
+## State — updated 2026-08-23 (**ADR-0187 merged+pushed**; **ADR-0185-core IN FLIGHT, audit running**)
 
 **`main` is PUSHED and clean.** ⚠ Re-derive it (`git rev-parse --short refs/heads/main`); anchor on
 **merge** SHAs, which never move: **ADR-0187 at-rest posture `4e2c0af4` (latest shipped)**,
@@ -17,8 +17,64 @@ ADR-0186 body caps `13b3bfb0`, the backlog
 sweep `020af37b`, 0184 `be6e6b55`, 0183 `a7575ed5`, 0179 `962aeb25`, 0181/0182 `1ac140f6`,
 0177/0178/0180 `a5b33e4c`, 0176 `52bf0f80`, 0175 `6e4addc8`.
 
-**▶ NOTHING IS IN FLIGHT.** `design/at-rest-posture` merged `--no-ff` as **`4e2c0af4`** and pushed;
-branch deleted; worktrees clean.
+**▶ ADR-0185-core FAILED ITS AUDIT (third failure for this lineage) and is PARKED.** Branch
+`design/authz-identity-core`, banner-marked in both the ADR and the plan. 58 findings / 22 raw
+Criticals / 21 accepted. ⛔ **Do not execute any task from
+`docs/plans/2026-08-23-authz-identity-core.md`** — several are known wrong. Read
+`docs/plans/sweep-evidence/audit-0185core-adjudication.md` first.
+
+### ⭐⭐⭐ READ THIS BEFORE READING ANY AUDIT RESULT AGAIN — the count is an INSTRUMENT READING
+
+Full analysis: **`docs/plans/sweep-evidence/meta-analysis-audit-finding-rate.md`** (193 accepted
+findings classified across 10 rounds). Controller-verified arithmetic.
+
+**Across SEVEN four-lens rounds spanning a 12× swing in artifact size (10 decisions → 1 stripped
+decision), the yield is 15.14 ± 0.83 findings per lens — CV 5.5 %, range 14.00–16.25.** Findings
+correlate with **lens count r = 0.855** and with scope **not at all**. `reaudit-0187` is the natural
+experiment: 2 lenses → 34 findings, i.e. 17.0/lens, *above* average.
+
+⇒ **"~58 findings again" NEVER meant "no progress". It meant "four agents were pointed at it again".**
+Each lens returns ~15 findings about any artifact of this complexity and will do so indefinitely.
+**Stop reporting the total as a quality signal.**
+
+**The real signal the total hid: Criticals per lens fell 8.25 → 3.50 under ADR-0186's scope cut.**
+And findings never repeat — each round's design was better than the last. Noise is NOT the
+explanation: cosmetic findings are **8.3 %**, and **65 of 67 raw Criticals corpus-wide were accepted
+(97 %)**. The findings are real; they are merely inexhaustible.
+
+**Root causes over 193 accepted findings: ~82 % design-process, ~10 % architectural, ~8 % cosmetic.**
+⚠ The architectural share is **not spread evenly — it is one lineage**:
+ADR-0186 **4.6 %** · ADR-0187 **6.3 %** · **ADR-0185 authz-identity 22.6 %, rising to 35.3 % in the
+latest round.** **Every architectural finding but one traces to ONE concept: `AuthzSpec`, durable in
+three unreconciled shapes.** Its durable-copy count rotted **1 → 2 → 3** across three rounds and
+**each correction was itself wrong**.
+
+⚠ **The largest recurring PROCESS cause was diagnosed and never fixed.** Bucket D (an enumeration
+derived with the wrong grep net) is **25.4 % of all findings, non-zero in ALL TEN rounds**.
+`reaudit-0186`'s own adjudication prescribed the fix — derive enumerations with `go/parser` tooling
+instead of prose — and **nobody adopted it**. This round's `nodeYAML` miss is that same failure.
+
+⚠ Caveat: the per-lens arithmetic and lens counts are controller-verified; the **bucket
+classification is a single-pass hand judgment**, Critical-biased by construction — directionally
+solid, not precise to the point.
+
+### ▶▶ DECISION (owner, 2026-08-24): refactor `AuthzSpec`'s representation FIRST
+
+A **behaviour-preserving** delivery giving eligibility ONE canonical representation with
+**machine-checked correspondence** across what today is: **5 type declarations**
+(`authz.AuthzSpec`, `activity.UserTask`, `model.NodeWire`, `model.nodeYAML`,
+`humantask.HumanTask.Eligibility`), **4 hand-written field-by-field copy sites**
+(`definition/model/yaml.go:112`, `definition/activity/activity.go:240` and `:251`,
+`engine/step_nodes.go:724`), **3 persisted encodings** under **2 key spellings**
+(`Open` vs `eligible_open`), and **1 cross-package reflection pin**
+(`internal/atrest/classification_test.go` `TestDefinitionEligibilityFieldsAreTheDeclaredSet`).
+Nothing checks these agree; every conversion is a struct literal that stays valid when a field is
+added to one side and forgotten on the other.
+
+**Then D1 (backlog 51), then D3 — which becomes a 2-file change instead of a 9-site one.** It also
+pays off for deferred backlog **103** and **124**, which touch the same concept. **Next free ADR 0188.**
+
+`design/at-rest-posture` merged `--no-ff` as **`4e2c0af4`** and pushed; branch deleted.
 
 ### ✅🚚 ADR-0187 — the at-rest posture is stated once and machine-checked (backlog 100/101)
 
@@ -190,8 +246,25 @@ and than `AUDIT.md`.
 
 ## ▶ NEXT WORK
 
-**Order: (1) the four REMAINING deferred B3 deliveries — ⚠ §AT-REST is DONE (ADR-0187, merge
-`4e2c0af4`); **ADR-0185-core is next**. (2) B4–B7. (3) blocker 5.**
+**Order (revised 2026-08-24 after the meta-analysis — see State):**
+**(1) ADR-0188: refactor `AuthzSpec`'s representation** — behaviour-preserving, one canonical
+eligibility representation with machine-checked correspondence. This is the architectural root of
+22.6→35.3 % of the ADR-0185 lineage's findings and it blocks nothing else usefully.
+**(2) D1 alone (backlog 51)** — the actor travels in `context.Context`. Nearly untouched by the
+audit; it does NOT touch the representation, so it is independent of (1) and could run in parallel.
+**(3) D2 (52)** — ⚠ needs a design increment first: *"when human tasks are configured"* **is not a
+state that exists** (a bare `NewProcessEngine()` already serves human tasks on a defaulted
+`MemTaskStore` + `AllowAll`).
+**(4) D3 (53)** — after (1) it is a 2-file change. Re-derive its migration from scratch: the three
+copies have **different shapes**, and the prescribed SQL, the dialect handling and the
+`TestMigrations_OneFilePerDialect` guard were all wrong or unmentioned.
+**(5)** The remaining deferred B3 slices — §4XX (104), §READ-PATH (54), §SSRF (65), §BOUND (99).
+⚠ §AT-REST is DONE (ADR-0187). **(6) B4–B7. (7) blocker 5.**
+
+⚠ **Backlog 103 and 124 need their own ADRs** — they left ADR-0185 with their designs REFUTED, not
+merely unimplemented.
+⚠ **Adopt `reaudit-0186`'s never-implemented prescription** whenever the next spec is written:
+derive enumerations with `go/parser` tooling, not prose. It is 25.4 % of all findings ever.
 
 The remaining **~65 Design-tier items** are grouped into bundles. Each needs a spec + ADR + plan and
 **ONE** rule-#9 adversarial audit before implementation. **Next free ADR = 0188.**
@@ -213,16 +286,13 @@ holes. **Treat them as time-sensitive.**
    **dialect-INVARIANT by role** — the 48-vs-67 divergence is *entirely* the `TIMESTAMPTZ`→`TEXT`
    mapping, so only `keyed` is per dialect.
 
-2. **ADR-0185-core** (51/52/53) — actor in `context.Context`; constructing a `ProcessEngine` without
-   an authorizer is an error; an eligibility spec that states nothing denies. ⚠ Its D3 carries two
-   confirmed defects: `AuthzSpec` is durable in **THREE** places — ⚠⚠ **CORRECTED 2026-08-23 by
-   ADR-0187's `/code-review` gate; this line previously said "two" and that premise was FALSE.**
-   The third is **`wrkflw_definitions.definition`**: `definition/model/node_wire.go:27-29` declares
-   `EligibleRoles`/`EligiblePrivileges`/`EligibleExpr` with json tags and
-   `internal/persistence/store/definitions.go:120` marshals whole definitions into that column.
-   ⇒ **do NOT design ADR-0185-core against "two".** (`wrkflw_human_task.eligibility` is
-   the one all four `Authorize` sites read), and `Open *bool` makes the zero value of the **public**
-   `authz.AuthzSpec` fail-**OPEN**.
+2. ~~**ADR-0185-core** (51/52/53)~~ — ⏳ **IN FLIGHT**, see the State section. Designed against the
+   corrected premise: **`AuthzSpec` is durable in THREE places** — `wrkflw_human_task.eligibility`
+   (the copy all four `Authorize` sites read), `wrkflw_instances.snapshot` (via
+   `InstanceState.Tasks[].Eligibility` — **executed**, spec §2.1), and
+   `wrkflw_definitions.definition` (via `NodeWire`'s three `eligible_*` fields, which is what
+   **mints** new specs). Both of D3's confirmed defects are designed out (`Open bool` + migration;
+   the authorizer-aware gate).
 3. **§4XX** (104) — the largest and least settled; needs real design, not a fold.
 4. **§READ-PATH** (54) · 5. **§SSRF** (65) · 6. **§BOUND** (99).
 
@@ -293,6 +363,20 @@ bypassing the guard `Reassign` has twelve lines below it.
   MySQL's `-- +goose Down` drops **8** tables where Postgres and SQLite drop **9**: `wrkflw_outbox`
   is created and **never dropped**, so a MySQL rollback leaves the table behind. Verified:
   `grep -c "^DROP TABLE"` → postgres 9, mysql 8, sqlite 9. Small.
+- **141** — 🆕 **found while designing ADR-0185-core, PRE-EXISTING and unrelated to it.**
+  `wrkflw_instances.snapshot` carries the **full `AuthzSpec`** (`InstanceState.Tasks[].Eligibility`
+  → `store_core.go:81` `json.Marshal`) — **executed**, spec §2.1 — but is **absent from
+  `atrest.PolicyAtRestLocations`**, so `SECURITY.md`'s published "policy is durable at rest in N
+  places" undercounts by one. ⚠ **ADR-0187's guard structurally cannot see it**: `render.go:404-414`
+  fails only for a **`ClassPolicy`** column, and this one is `ClassFreeform` (`classification.go:106`)
+  — the *identical* case `wrkflw_definitions.definition` was hand-added for. **ADR-0187's own lesson
+  #2 recurring one level up.** Fix is scheduled in the 0185-core plan, Task 15. Small.
+- **142** — 🆕 **same origin.** There are **FIVE** `Authorizer` implementations, not the two ADR-0185's
+  earlier drafts reasoned over: `authz.AllowAll`, `authz.RoleAuthorizer`,
+  `internal/authz/casbin.Authorizer`, **`casbinauthz.Authorizer`** (public root-package delegate —
+  the one a consumer actually wires, since casbin is the baseline) and **`processtest.SpyAuthorizer`**
+  (public, and it **ALLOWS when `decide == nil`** — a public allow-by-default authorizer). The
+  SpyAuthorizer half is deliberately NOT fixed in 0185-core; it is reported, not changed. Small.
 - **128** — `persistence.NewSchedulerLocker(dl dialect.Locker)` leaks an `internal/` type through an
   exported signature; its doc comment invites consumers to supply a type they cannot name. Parked in a
   **self-cleaning** `knownOpenInternalLeaks` allow-list — a stale entry FAILS the test. → **B6**
