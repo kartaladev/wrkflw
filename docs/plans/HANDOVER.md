@@ -9,65 +9,72 @@ top to bottom; it is meant to stay short enough that you can.
 > see `docs/plans/HANDOVER-archive.md`. Per-delivery detail belongs in that delivery's plan under
 > a `▶ Progress` block. This file carries only: where `main` is, what is unmerged, and what next.
 
-## State — updated 2026-08-22 (ADR-0186 merged+pushed; **ADR-0187 bundle IN FLIGHT, audit running**)
+## State — updated 2026-08-23 (**ADR-0187 MERGED and PUSHED**; nothing in flight)
 
 **`main` is PUSHED and clean.** ⚠ Re-derive it (`git rev-parse --short refs/heads/main`); anchor on
 **merge** SHAs, which never move: **ADR-0186 body caps `13b3bfb0` (latest shipped)**, the backlog
 sweep `020af37b`, 0184 `be6e6b55`, 0183 `a7575ed5`, 0179 `962aeb25`, 0181/0182 `1ac140f6`,
 0177/0178/0180 `a5b33e4c`, 0176 `52bf0f80`, 0175 `6e4addc8`.
 
-**▶ IN FLIGHT: branch `design/at-rest-posture`** — ADR-0187 / §AT-REST (backlog 100/101), first of
-the five deliveries deferred out of ADR-0186. ⚠ **Do not quote a SHA here — the bundle is amended.**
-**DESIGN AUDITED (2 rounds), IMPLEMENTED (8 tasks), FINAL REVIEW FIXED, ALL GATES GREEN.**
-**⛔ ONLY REMAINING WORK: `/code-review` and `/security-review` — owner-invoked, I cannot run them.**
+**▶ NOTHING IS IN FLIGHT.** `design/at-rest-posture` merged `--no-ff` as **`4e2c0af4`** and pushed;
+branch deleted; worktrees clean.
 
-- Gates, all by exit code with Docker up: `go test -race ./...` **EXIT=0, 0 FAIL**; `go test ./...`
-  **EXIT=0**; `golangci-lint run ./...` **0 issues**; `internal/atrest` **90.4%**,
-  `internal/persistence/store` **88.1%** (floor 85). Repo-wide filtered **75.6%** is below the floor
-  but **measured pre-existing** — without this delivery the same profile gives 75.1%, so it RAISED
-  the total 0.4 points.
-- Shipped: `internal/atrest/{schema,discover,classification,render}.go`,
-  `internal/persistence/store/atrest_crosscheck_test.go` (Docker-gated), `scripts/gen-at-rest.sh`,
-  and the generated `## Data at rest` block in `SECURITY.md` (87 rows, per-dialect type + `keyed`).
-- Detail + residuals: the plan's `▶ Progress` block. Audit records:
-  `docs/plans/sweep-evidence/{audit,reaudit}-0187-*.md`.
+### ✅🚚 ADR-0187 — the at-rest posture is stated once and machine-checked (backlog 100/101)
 
-### ⭐⭐⭐ THE LESSONS — this delivery is the strongest evidence in the repo for two of them
+Merge **`4e2c0af4`**. Both Delivery Gates passed: `/code-review` **16 findings, none a false
+positive**, all fixed and folded; `/security-review` **0 findings**. Post-merge on `main`:
+`go test -race ./...` EXIT=0 zero FAIL, `golangci-lint run ./...` 0 issues, `gen-at-rest.sh`
+round-trips with a clean tree. `internal/atrest` **92.6%**, `internal/persistence/store` **88.1%**.
 
-1. **EXECUTION FOUND EVERY REAL DEFECT; READING FOUND NONE.** Two adversarial audit rounds (64
-   findings/17 Critical, then 34/11), eight task reviews and a final whole-branch review — and the
-   defects that mattered were all found by RUNNING something: a reciprocal class swap, a mutation, a
-   `grep` of the published artifact, a diff of a regenerated file.
-2. **⭐ A GUARD CAN BE BLIND TO THE CATEGORY OF CLAIM IT WAS BUILT TO POLICE.** The final review's
-   C1: `Render` retyped "casbin_rule.{ptype,v0..v5} are class `policy`" as prose, and
-   `TestSecurityMdInSync` compares SECURITY.md against `Render`'s OUTPUT — so a sentence inside
-   `Render` was only ever compared against itself. A reciprocal swap (both columns keyed, so the
-   per-class totals AND the keyed byClass map both stay balanced) left the WHOLE SUITE GREEN while
-   the document asserted those columns are `policy` and rendered `ptype` as `scalar`. **The delivery
-   whose charter is "a false claim cannot be published without failing a test" built a generator
-   that could publish a false claim with every test passing.** Now derived, with an error sentinel.
-3. **⚠⚠ A FALSE STATEMENT HAD ALREADY SHIPPED.** I3 was filed as "latent, verified absent from the
-   corpus" by both the final review and the controller's brief. **Both were wrong.** The published
-   SECURITY.md carried `BIGINT` for `wrkflw_outbox.id` on MySQL where the DDL declares
-   `BIGINT AUTO_INCREMENT`. Found by diffing the regenerated file — the delivery's own generator,
-   once fixed, revealed that the delivery had already published a falsehood.
-4. **TWELVE tests-that-cannot-fail now, THREE caught in this delivery alone** — Task 2's
-   brief-prescribed reconciliation test (checked only the test side, not the runtime check), Task 4's
-   **liveness guard** (passed while the function it guarded ignored its own `prefix` parameter), and
-   C1. ⚠ The Task 4 one is the sharpest: **the mechanism this repo adopted to stop shipping tests
-   that cannot fail had itself become one.**
-5. **⭐ Ask what SHAPE a guard detects, not whether it fails once.** A re-reviewer mapped the new
-   internal-label guard's reach: catches `(E3)`, `(E12)`, `(E3, E4)`; misses bare `E3`, `see E3`,
-   `(e3)`. That is the right question for every new guard.
-6. **An enumeration rotted AGAIN** — implementation found a **fourth** parser trap where the bundle
-   said three, after two audit rounds one of which was a lens dedicated to re-counting. Folded into
-   ADR decision 7 as E16 per rule #11.
+**What shipped.** `SECURITY.md` gains a **generated** `## Data at rest` section — all **87** stored
+columns (79 `wrkflw_*` + 8 `casbin_rule`) classified by logical role, with per-dialect physical type
+and a `keyed` **lower bound** (postgres 29 / mysql 28 / sqlite 28). No encryption mechanism: that
+deferral is the decision. `internal/atrest` holds the DDL reader, rule-based migration discovery,
+the classification, and the renderer; `scripts/gen-at-rest.sh` regenerates; guards fail the build on
+an unclassified column, a stale entry, drift, cross-dialect key-set disagreement, or a parse that
+disagrees with a live database. Detail + residuals: `docs/plans/2026-08-22-at-rest-posture.md`
+`▶ Progress`. Audit records: `docs/plans/sweep-evidence/{audit,reaudit}-0187-*.md`.
 
-⚠ **Residuals parked, not closed** (detail in the plan's `▶ Progress`): `keyed`'s UNIQUE/index facts
-have no live cross-check (only PK does); three more published sentences are retyped-not-derived in
-exactly C1's class, all true today but unguarded; and a `CREATE INDEX` naming a table from a
-different migration file derives no key silently — latent until a `0002_*.sql` lands, and now stated
-in the published caveat rather than denied by it.
+### ⭐⭐⭐ READ BEFORE THE NEXT DELIVERY — what this one actually established
+
+1. **EXECUTION FOUND EVERY REAL DEFECT; READING FOUND NONE.** Two design audit rounds (64 findings
+   / 17 Critical, then 34 / 11), eight task reviews, a whole-branch review, then the owner gate —
+   and everything that mattered came from RUNNING something.
+2. ⭐⭐ **A GUARD CAN BE BLIND TO THE CATEGORY OF CLAIM IT WAS BUILT TO POLICE.** `Render` retyped a
+   class claim as prose, and the drift guard compares `SECURITY.md` to `Render`'s **own output** —
+   so that sentence was only ever compared against itself. A reciprocal class swap left the WHOLE
+   SUITE GREEN while the document contradicted its own table.
+3. ⚠⚠ **A FALSE STATEMENT HAD ALREADY SHIPPED, TWICE.** The published table carried `BIGINT` where
+   MySQL declares `BIGINT AUTO_INCREMENT`, and a MySQL column name (`trigger`) that **does not
+   exist** (MySQL declares `trigger_`) — the latter because D2b's set-comparison normalization
+   leaked into rendering.
+4. ⚠⚠⚠ **"Authorization policy is durable in TWO places" was FALSE — there are THREE.** Per-node
+   `eligible_roles`/`eligible_privileges`/`eligible_expr` serialize into
+   `wrkflw_definitions.definition` (`definition/model/node_wire.go:27-29` →
+   `internal/persistence/store/definitions.go:120`). It was restated **NINE** times, including in
+   **E8, the evidence record the ADR cites as proof for that very decision**. Now derived from
+   `atrest.PolicyAtRestLocations` and validated both ways. **⚠ This premise ALSO fed ADR-0185-core's
+   D3 in this file — corrected in place; do NOT design 0185 against "two".**
+5. ⭐⭐ **A PARKED RESIDUAL IS NOT A SAFE RESIDUAL.** I parked "two places" as *retyped-not-derived,
+   true today, unguarded*. It was already false. **Treating "unguarded" as the risk while the claim
+   itself is wrong is the same error one level up. Re-derive a residual when you park it.**
+6. **TWELVE tests-that-cannot-fail now; THREE caught here** — a brief-prescribed reconciliation test
+   that checked only the test side, a **liveness guard** that passed while the function it guarded
+   ignored its own parameter (⚠ the mechanism adopted to stop shipping unfalsifiable tests had
+   become one), and the drift guard above.
+7. ⭐ **Ask what SHAPE a guard detects, not whether it fails once.** A re-reviewer mapped a new
+   guard's reach: catches `(E3)`, `(E12)`; misses bare `E3`, `see E3`, `(e3)`.
+8. **An enumeration rotted AGAIN** — implementation found a **fourth** parser trap where the bundle
+   said three, after two audit rounds one of which was a lens dedicated to re-counting.
+9. ⭐ **`go test -run` on a nonexistent name exits 0 — and ANCHORING THE REGEX DOES NOT HELP.** I
+   shipped `-run '^TestSecurityMdInSync$'` in `gen-at-rest.sh` calling it safe against renames.
+   Anchoring stops it matching the WRONG test; it does nothing about matching NOTHING. The gate
+   caught it in the one guard `SECURITY.md` tells readers protects them.
+
+⚠ **Residuals parked** (plan `▶ Progress`): `keyed`'s UNIQUE/index facts are now cross-checked, but
+three published sentences remain retyped-not-derived; and a `CREATE INDEX` naming a table from a
+different migration file derives no key silently — latent until a `0002_*.sql` lands, and stated in
+the published caveat rather than denied by it.
 
 `design/authz-security-b3` was merged `--no-ff` and deleted. Only `docs/architecture-audit`
 (`9769a8e5`, local-only, unpushable — working exploit chains in a public repo) remains unmerged.
@@ -185,17 +192,17 @@ and than `AUDIT.md`.
 **Order: (1) the five deferred B3 deliveries, §AT-REST first. (2) B4–B7. (3) blocker 5.**
 
 The remaining **~65 Design-tier items** are grouped into bundles. Each needs a spec + ADR + plan and
-**ONE** rule-#9 adversarial audit before implementation. **Next free ADR = 0187.**
+**ONE** rule-#9 adversarial audit before implementation. **Next free ADR = 0188.**
 
 ### B3 authz/security — five deliveries left, all held in one file
 
 ⚠ **Read `docs/specs/2026-08-21-untrusted-input-deferred-slices.md` before starting any of them.**
 It carries **every finding their audits established** and the design increment each still owes.
-⚠ The 0187–0191 numbering in that file is a **reservation, not a record** — next free ADR is 0187.
+⚠ The 0187–0191 numbering in that file is a **reservation, not a record** — 0187 is now USED (§AT-REST); next free is 0188.
 ⚠⚠ **That file is now PUBLIC on `main`** (owner-authorised) and is a roadmap of five *unfixed*
 holes. **Treat them as time-sensitive.**
 
-1. **§AT-REST** (backlog 100/101) — ⏳ **IN FLIGHT as ADR-0187**, see the State section above.
+1. ~~**§AT-REST** (backlog 100/101)~~ — ✅ **SHIPPED as ADR-0187, merge `4e2c0af4`.**
    Bundle written; audit running. ⚠ **Do not restart this from the deferred-slices file** — the
    ADR-0187 bundle supersedes that section's design and re-derived its claims rather than inheriting
    them. Two corrections landed as designed (discover migration dirs by glob — a **fourth** exists
