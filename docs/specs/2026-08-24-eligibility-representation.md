@@ -83,7 +83,7 @@ into any existing test file there. The `nodeYAML` guard **must** be an internal 
 
 | # | site | direction |
 |---|---|---|
-| 1 | `definition/model/yaml.go:112-114` | `nodeYAML` → `NodeWire` |
+| 1 | `fromNodeYAML` (`definition/model/yaml.go`) — ⚠ was cited as `:112-114`; the backlog-143 fix moved it | `nodeYAML` → `NodeWire` |
 | 2 | `definition/activity/activity.go:240` (`FromWire`) | `NodeWire` → `UserTask` |
 | 3 | `definition/activity/activity.go:251` (`ToWire`) | `UserTask` → `NodeWire` |
 | 4 | `engine/step_nodes.go:724` | `UserTask` → `authz.AuthzSpec` |

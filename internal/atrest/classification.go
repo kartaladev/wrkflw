@@ -40,10 +40,18 @@ type PolicyLocation struct {
 // sentence. The count is DERIVED from this slice; it is never retyped.
 //
 // ⚠ It is deliberately NOT the same thing as "the columns classed
-// ClassPolicy". The third entry is classed `freeform`, and that is the whole
-// point of the enumeration: wrkflw_definitions.definition holds the marshalled
-// process definition (internal/persistence/store/definitions.go PutDefinition
-// json.Marshals the whole ProcessDefinition into it), and
+// ClassPolicy". TWO of the entries are classed `freeform`, and that is the whole
+// point of the enumeration — a freeform column can carry policy without the
+// class ever saying so, and the completeness guard in render.go only checks
+// ClassPolicy columns, so neither is discoverable by machine:
+//
+//   - wrkflw_instances.snapshot holds the serialized instance state, and
+//     engine.InstanceState.Tasks carries every in-flight human task whose
+//     Eligibility is a full authz.AuthzSpec (backlog 141).
+//   - wrkflw_definitions.definition holds the marshalled process definition
+//     (internal/persistence/store/definitions.go PutDefinition json.Marshals the
+//     whole ProcessDefinition into it), and
+//
 // definition/model/node_wire.go declares eligible_roles / eligible_privileges /
 // eligible_expr on NodeWire — so every user task's eligibility rule is inside
 // that JSON. Executed: marshalling a definition whose user task carries all
@@ -70,6 +78,13 @@ var PolicyAtRestLocations = []PolicyLocation{
 		Table: "wrkflw_human_task", Column: "eligibility",
 		Detail: "holds the per-task eligibility rule the four `Authorize` sites in " +
 			"`runtime/task/service.go` evaluate (class `policy`)",
+	},
+	{
+		Table: "wrkflw_instances", Column: "snapshot",
+		Detail: "is class `freeform` because it holds the serialized instance state — but " +
+			"engine.InstanceState.Tasks carries every in-flight human task, and each one's " +
+			"`Eligibility` is a full authz.AuthzSpec, so the eligibility rule governing live " +
+			"work is inside that JSON (backlog 141)",
 	},
 	{
 		Table: "wrkflw_definitions", Column: "definition",

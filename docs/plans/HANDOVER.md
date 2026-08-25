@@ -9,7 +9,7 @@ top to bottom; it is meant to stay short enough that you can.
 > see `docs/plans/HANDOVER-archive.md`. Per-delivery detail belongs in that delivery's plan under
 > a `▶ Progress` block. This file carries only: where `main` is, what is unmerged, and what next.
 
-## State — updated 2026-08-23 (**ADR-0187 merged+pushed**; **ADR-0185-core IN FLIGHT, audit running**)
+## State — updated 2026-08-25 (**ADR-0185-core FAILED+parked · ADR-0188 REJECTED · the real defects FIXED**)
 
 **`main` is PUSHED and clean.** ⚠ Re-derive it (`git rev-parse --short refs/heads/main`); anchor on
 **merge** SHAs, which never move: **ADR-0187 at-rest posture `4e2c0af4` (latest shipped)**,
@@ -30,16 +30,35 @@ directly instead.** Branch `design/authz-identity-core` carries both, banner-mar
   fail-OPEN at the mint site with every guard green. `docs/adr/0188-*.md` now records the rejection
   and its reasons. ⛔ Do not execute `docs/plans/2026-08-25-representations-reconciled.md`.
 
-**▶▶ WHAT IS ACTUALLY BEING FIXED (owner, 2026-08-25): the four real defects that work uncovered**,
-as one ordinary bug-fix bundle — **143** (the only user-facing one), **144**, **141**, and
-`humantask.Clone()`'s false safety comment. **Then backlog 51** (the forgeable principal), which is
-the real security exposure.
+**✅ THE REAL DEFECTS ARE FIXED** — commit on `design/authz-identity-core`, **awaiting the owner
+Delivery Gate** (`/code-review`, `/security-review`), not yet merged.
+- **143** ✅ (user-facing) `boundary_action` / `boundary_error_expr` now authorable in YAML — field
+  **and** mapping in one change (field-alone is a **net regression**), fixture keys demanded by the
+  pre-existing derived guard, mutation-verified.
+- **141** ✅ `wrkflw_instances.snapshot` added to `PolicyAtRestLocations`; `SECURITY.md` 3 → 4; the
+  **hardcoded** pin at `render_test.go:227` fixed and its `NotContains` arms given a staleness role.
+- **`scripts/gen-at-rest.sh`** ✅ hardened — it verified ONE test and printed *"regenerated and
+  verified"* over a **red package**; it now requires `./internal/atrest` green. Mutation-verified.
+- **`humantask.Clone`** ✅ false comment corrected + `TestCloneIsolatesEveryEligibilitySlice`, which
+  derives the slice-field set reflectively and is value-based. Mutation-verified both directions.
+- ⬜ **144 DEFERRED, deliberately** — YAML cannot author the nested trigger forms. `TriggerWire`
+  has **json tags only** across **11** fields including a custom `schedule.ClockTime`, so this is a
+  serialization-contract change needing design, not a bug fix.
+
+Verification: `go test -race ./...` EXIT=0 zero failures · `golangci-lint run ./...` 0 issues ·
+touched packages `definition/model` 95.1 %, `internal/atrest` 92.6 %, `humantask` 100 % · repo total
+75.8 %, **unchanged from the pre-change baseline, measured by stashing rather than assumed**.
+
+**▶▶ NEXT: backlog 51** — the actor travels in `context.Context` instead of the request body. The
+real security exposure, and nearly untouched by the ADR-0185 audit.
 
 ⚠⚠ **THE REPRESENTATION TRAP REMAINS, AND ADR-0185 D3's PLAN MUST CARRY THIS WARNING.** Eligibility
-is declared in **5 types** and copied by hand at **5 sites**: `definition/model/yaml.go:112-114`,
-`definition/activity/activity.go:240` and `:251`, `engine/step_nodes.go:724`, and
-`humantask.Clone()` (`humantask.go:139-140` — found by the audit; ⚠ its own comment claims the
-opposite). **A miss at `yaml.go`'s mapping or at the mint site is SILENT**, and the mint-site miss is
+is declared in **5 types** and copied by hand at **5 sites**, cited by SYMBOL because line numbers
+rot — the backlog-143 fix moved the `yaml.go` block six lines the day after these were written:
+`fromNodeYAML` (`definition/model/yaml.go`), `FromWire` and `ToWire`
+(`definition/activity/activity.go`), `userTaskStrategy.enter` (`engine/step_nodes.go`), and
+`HumanTask.Clone` (`humantask/humantask.go` — found by the audit; ⚠ its comment used to claim the
+opposite, corrected 2026-08-25). **A miss at `yaml.go`'s mapping or at the mint site is SILENT**, and the mint-site miss is
 **fail-open**. Nothing guards this. Reviving ADR-0188's two *working* guards (`nodeYAML` coverage and
 the eligibility correspondence) is cheap and available if it bites again.
 
@@ -78,144 +97,13 @@ instead of prose — and **nobody adopted it**. This round's `nodeYAML` miss is 
 classification is a single-pass hand judgment**, Critical-biased by construction — directionally
 solid, not precise to the point.
 
-### ▶▶ DECISION (owner, 2026-08-24): refactor `AuthzSpec`'s representation FIRST
+### ▶▶ SUPERSEDED — the 2026-08-24 "refactor `AuthzSpec` first" decision
 
-A **behaviour-preserving** delivery giving eligibility ONE canonical representation with
-**machine-checked correspondence** across what today is: **5 type declarations**
-(`authz.AuthzSpec`, `activity.UserTask`, `model.NodeWire`, `model.nodeYAML`,
-`humantask.HumanTask.Eligibility`), **4 hand-written field-by-field copy sites**
-(`definition/model/yaml.go:112`, `definition/activity/activity.go:240` and `:251`,
-`engine/step_nodes.go:724`), **3 persisted encodings** under **2 key spellings**
-(`Open` vs `eligible_open`), and **1 cross-package reflection pin**
-(`internal/atrest/classification_test.go` `TestDefinitionEligibilityFieldsAreTheDeclaredSet`).
-Nothing checks these agree; every conversion is a struct literal that stays valid when a field is
-added to one side and forgotten on the other.
-
-**Then D1 (backlog 51), then D3 — which becomes a 2-file change instead of a 9-site one.** It also
-pays off for deferred backlog **103** and **124**, which touch the same concept. **Next free ADR 0188.**
-
-`design/at-rest-posture` merged `--no-ff` as **`4e2c0af4`** and pushed; branch deleted.
-
-### ✅🚚 ADR-0187 — the at-rest posture is stated once and machine-checked (backlog 100/101)
-
-Merge **`4e2c0af4`**. Both Delivery Gates passed: `/code-review` **16 findings, none a false
-positive**, all fixed and folded; `/security-review` **0 findings**. Post-merge on `main`:
-`go test -race ./...` EXIT=0 zero FAIL, `golangci-lint run ./...` 0 issues, `gen-at-rest.sh`
-round-trips with a clean tree. `internal/atrest` **92.6%**, `internal/persistence/store` **88.1%**.
-
-**What shipped.** `SECURITY.md` gains a **generated** `## Data at rest` section — all **87** stored
-columns (79 `wrkflw_*` + 8 `casbin_rule`) classified by logical role, with per-dialect physical type
-and a `keyed` **lower bound** (postgres 29 / mysql 28 / sqlite 28). No encryption mechanism: that
-deferral is the decision. `internal/atrest` holds the DDL reader, rule-based migration discovery,
-the classification, and the renderer; `scripts/gen-at-rest.sh` regenerates; guards fail the build on
-an unclassified column, a stale entry, drift, cross-dialect key-set disagreement, or a parse that
-disagrees with a live database. Detail + residuals: `docs/plans/2026-08-22-at-rest-posture.md`
-`▶ Progress`. Audit records: `docs/plans/sweep-evidence/{audit,reaudit}-0187-*.md`.
-
-### ⭐⭐⭐ READ BEFORE THE NEXT DELIVERY — what this one actually established
-
-1. **EXECUTION FOUND EVERY REAL DEFECT; READING FOUND NONE.** Two design audit rounds (64 findings
-   / 17 Critical, then 34 / 11), eight task reviews, a whole-branch review, then the owner gate —
-   and everything that mattered came from RUNNING something.
-2. ⭐⭐ **A GUARD CAN BE BLIND TO THE CATEGORY OF CLAIM IT WAS BUILT TO POLICE.** `Render` retyped a
-   class claim as prose, and the drift guard compares `SECURITY.md` to `Render`'s **own output** —
-   so that sentence was only ever compared against itself. A reciprocal class swap left the WHOLE
-   SUITE GREEN while the document contradicted its own table.
-3. ⚠⚠ **A FALSE STATEMENT HAD ALREADY SHIPPED, TWICE.** The published table carried `BIGINT` where
-   MySQL declares `BIGINT AUTO_INCREMENT`, and a MySQL column name (`trigger`) that **does not
-   exist** (MySQL declares `trigger_`) — the latter because D2b's set-comparison normalization
-   leaked into rendering.
-4. ⚠⚠⚠ **"Authorization policy is durable in TWO places" was FALSE — there are THREE.** Per-node
-   `eligible_roles`/`eligible_privileges`/`eligible_expr` serialize into
-   `wrkflw_definitions.definition` (`definition/model/node_wire.go:27-29` →
-   `internal/persistence/store/definitions.go:120`). It was restated **NINE** times, including in
-   **E8, the evidence record the ADR cites as proof for that very decision**. Now derived from
-   `atrest.PolicyAtRestLocations` and validated both ways. **⚠ This premise ALSO fed ADR-0185-core's
-   D3 in this file — corrected in place; do NOT design 0185 against "two".**
-5. ⭐⭐ **A PARKED RESIDUAL IS NOT A SAFE RESIDUAL.** I parked "two places" as *retyped-not-derived,
-   true today, unguarded*. It was already false. **Treating "unguarded" as the risk while the claim
-   itself is wrong is the same error one level up. Re-derive a residual when you park it.**
-6. **TWELVE tests-that-cannot-fail now; THREE caught here** — a brief-prescribed reconciliation test
-   that checked only the test side, a **liveness guard** that passed while the function it guarded
-   ignored its own parameter (⚠ the mechanism adopted to stop shipping unfalsifiable tests had
-   become one), and the drift guard above.
-7. ⭐ **Ask what SHAPE a guard detects, not whether it fails once.** A re-reviewer mapped a new
-   guard's reach: catches `(E3)`, `(E12)`; misses bare `E3`, `see E3`, `(e3)`.
-8. **An enumeration rotted AGAIN** — implementation found a **fourth** parser trap where the bundle
-   said three, after two audit rounds one of which was a lens dedicated to re-counting.
-9. ⭐ **`go test -run` on a nonexistent name exits 0 — and ANCHORING THE REGEX DOES NOT HELP.** I
-   shipped `-run '^TestSecurityMdInSync$'` in `gen-at-rest.sh` calling it safe against renames.
-   Anchoring stops it matching the WRONG test; it does nothing about matching NOTHING. The gate
-   caught it in the one guard `SECURITY.md` tells readers protects them.
-
-⚠ **Residuals parked** (plan `▶ Progress`): `keyed`'s UNIQUE/index facts are now cross-checked, but
-three published sentences remain retyped-not-derived; and a `CREATE INDEX` naming a table from a
-different migration file derives no key silently — latent until a `0002_*.sql` lands, and stated in
-the published caveat rather than denied by it.
-
-`design/authz-security-b3` was merged `--no-ff` and deleted. Only `docs/architecture-audit`
-(`9769a8e5`, local-only, unpushable — working exploit chains in a public repo) remains unmerged.
-
-### ✅🚚 ADR-0186 — request bodies are capped before they are parsed (backlog 98)
-
-Merge **`13b3bfb0`**. Both Delivery Gates passed: `/code-review` 4 findings (2 MEDIUM, 2 LOW) all
-fixed and folded via `--amend`; `/security-review` **0 findings**. Post-merge on `main`:
-`go test -race ./...` EXIT=0, `golangci-lint run ./...` 0 issues, `go vet`/`go build ./examples/...`
-clean. Detail: [[adr-0186-body-caps-shipped]].
-
-**What shipped.** Cap the **READ**, leave each adapter's **PARSE** untouched. `MaxBodyBytes int64`,
-default 1 MiB in `ResolveConfig`'s **struct literal** (not the post-loop guard, which would erase an
-explicit `0`); **`n <= 0` disables**. Bare `httpcore.ErrRequestBodyTooLarge` → **413**, arm
-**before** the ordered 400 arm, **static body naming no limit**. `BodyReadTimeout` 30 s, armed only
-when the cap is active. **Non-generic per-adapter aliases** for both options — the generic form
-**cannot infer `R`**. ⚠ **The cap is PER ROUTE GROUP**: `Mount` covers **6 of 13** sites; **21 of 39
-repo-wide sit behind `AdminRoutes`**; `MountHealth` forwards no options. Five residuals are in
-`SECURITY.md`.
-
-### ⭐⭐⭐ READ THIS BEFORE DESIGNING ANYTHING — the trend was the finding
-
-ADR-0186 was **audited SEVEN times and never passed**. Scope was cut ~12× and the count never moved:
-
-| round | scope | findings | Critical |
-|---|---|---|---|
-| 1–2 | B3, 12 items | 58, 38 | 12, ~13 |
-| 3–4 | 6 decisions | 63, 56 | 33, 28 |
-| 5 | 3 decisions | 65 | 20 |
-| 6 | **1 decision** | 61 | 24 |
-| 7 | **1 decision, stripped** | 57 | 14 |
-
-**Round 6 is the control experiment: it failed at a bundle size of ONE decision.** Splitting was
-exhausted there, stripping at round 7. ⇒ **the finding rate is a property of the PROCESS, not the
-bundle.** It shipped under **rule #11 as a deliberate, recorded exception to rule #9** — ADR-0186's
-`Status` line, its banner and the merge commit all say so, so it is never mistaken for a bundle that
-passed. ⚠ **That precedent is available for a future bundle that stops converging. It is NOT a
-licence to skip audits.**
-
-**Two characterisations to carry into every future bundle:**
-1. ⭐⭐⭐ *"The bundle's probes are narrow in a consistent direction: **toward the fixture that
-   demonstrates the fix**."* ⚠⚠ **Execution catches a false PREMISE, not a NARROW FIXTURE** — the
-   probe passes. ⚠ Round 7's bundle **quoted this in its own banner and then reproduced it in its
-   central evidence section.**
-2. ⭐⭐⭐ *"A boundary derived correctly at one level, then **asserted one level up without
-   re-derivation**."*
-
-⭐⭐⭐ **FOUR times this lineage claimed a gap the repo had ALREADY FILLED** —
-`runtime/kernel/cursorcodec.go:27-28` (trailing data, ADR-0160) · `action/httpcall.go:186-194` (the
-cap convention) · `wrkflw_rest_requests_total{http.status_code}` (already counts every 413) ·
-`httpcall.go:209` (`30 * time.Second`). ⇒ **"Search the repo for an existing convention BEFORE
-writing a new symbol" is now a step in the plan's fan-out rules.**
-
-⭐⭐ **18 design corrections came from IMPLEMENTATION, not from seven audits** — incl. a mutation
-that **refuted the stated reason** for the bare sentinel, a prescribed falsifier that **did not
-falsify what it claimed**, prescribed tests that left **11 of 13 sites unverified**, and an
-implementer who **deleted a vacuous test of their own** (the seventh test-that-cannot-fail in this
-repo, avoided unprompted).
-⚠⚠ **Both `/code-review` MEDIUMs were regressions this delivery INTRODUCED and had DOCUMENTED
-rather than MITIGATED.** The review refused that distinction, correctly. **A residual you wrote
-down is still a defect you shipped.**
-
-**Seven adjudications + 28 lens reports** are on `main` in `docs/plans/sweep-evidence/`: `audit-b3`,
-`reaudit-b3`, `audit-0186`, `reaudit-0186`, `audit3-0186`, `audit4-0186`, `audit5-0186`.
+That decision produced **ADR-0188**, which was audited and then **REJECTED** (2026-08-25): zero
+user-facing value, and execution proved it did not close the class it targeted. **Do not revive it
+from this file** — read `docs/adr/0188-representations-reconciled-by-machine.md`, which records the
+rejection and its three grounds, and the adjudication beside it. The real defects that analysis
+found are fixed; see the State section.
 
 ## What the sweep actually established
 
@@ -319,13 +207,10 @@ holes. **Treat them as time-sensitive.**
    **dialect-INVARIANT by role** — the 48-vs-67 divergence is *entirely* the `TIMESTAMPTZ`→`TEXT`
    mapping, so only `keyed` is per dialect.
 
-2. ~~**ADR-0185-core** (51/52/53)~~ — ⏳ **IN FLIGHT**, see the State section. Designed against the
-   corrected premise: **`AuthzSpec` is durable in THREE places** — `wrkflw_human_task.eligibility`
-   (the copy all four `Authorize` sites read), `wrkflw_instances.snapshot` (via
-   `InstanceState.Tasks[].Eligibility` — **executed**, spec §2.1), and
-   `wrkflw_definitions.definition` (via `NodeWire`'s three `eligible_*` fields, which is what
-   **mints** new specs). Both of D3's confirmed defects are designed out (`Open bool` + migration;
-   the authorizer-aware gate).
+2. ~~**ADR-0185-core** (51/52/53)~~ — ⛔ **FAILED its rule-#9 audit and is PARKED**; do NOT execute
+   its plan. See the State section. Its D3 premise about the durable copies is corrected there, but
+   the *design* was refuted on other grounds — read
+   `sweep-evidence/audit-0185core-adjudication.md` before reviving any part of it.
 3. **§4XX** (104) — the largest and least settled; needs real design, not a fold.
 4. **§READ-PATH** (54) · 5. **§SSRF** (65) · 6. **§BOUND** (99).
 

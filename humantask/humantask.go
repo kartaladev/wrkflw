@@ -129,7 +129,14 @@ type HumanTask struct {
 //
 // This is the single deep-copy definition for a task; the engine's instance-state
 // clone and the caching task store both delegate here rather than re-deriving it,
-// so a newly added mutable field is isolated everywhere at once.
+// so a field isolated HERE is isolated everywhere at once.
+//
+// ⚠ That is a claim about the call sites, NOT about the field set. The
+// Eligibility slices below are enumerated BY HAND, so a mutable field added to
+// authz.AuthzSpec is NOT isolated until it is added here — the earlier wording
+// ("a newly added mutable field is isolated everywhere at once") promised
+// otherwise and was false. TestCloneIsolatesEveryEligibilityReference derives that
+// field set reflectively and fails until this function catches up.
 func (t HumanTask) Clone() HumanTask {
 	// Guard on nil, not on length: a zero-length slice with spare capacity is
 	// still shared, so two clones appending to it would write the same backing

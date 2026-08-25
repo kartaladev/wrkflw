@@ -35,13 +35,13 @@
 > ⛔ **Do NOT implement 103 or 124 from this record.** Both were removed *because their
 > designs were refuted*. Each gets its own ADR.
 >
-> **Status: still Proposed, pending the re-cut bundle's own rule-#9 audit.** A bundle whose
+> **Status: Proposed, but its re-cut bundle's rule-#9 audit has RUN and FAILED — see the banner above.** A bundle whose
 > Decisions changed has not been audited, and these have now changed three times.
 > Spec + executed evidence + the removal grid:
 > `docs/specs/2026-08-23-authz-identity-core.md`.
 > Prior adjudications: `docs/plans/sweep-evidence/{audit,reaudit}-b3-adjudication.md`.
 
-- Status: **Proposed** (pending rule-#9 audit of the re-cut bundle)
+- Status: **Proposed — its rule-#9 audit RAN and FAILED (2026-08-23); pending revision, and pending an owner scope decision before any revision**
 - Date: 2026-08-20, revised 2026-08-21, **re-cut 2026-08-23**
 - Amends: **ADR-0117 Decisions 1 and 3** — Decision 1's *"with none set, the engine gate
   is open"* and Decision 3's *"any combination (**including none**) is valid"*. Both must

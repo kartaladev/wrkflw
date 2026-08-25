@@ -218,3 +218,29 @@ func TestDefinitionEligibilityFieldsAreTheDeclaredSet(t *testing.T) {
 		"NodeWire's eligibility fields changed; PolicyAtRestLocations' "+
 			"wrkflw_definitions.definition entry names these by JSON key and must be re-derived")
 }
+
+// TestPolicyAtRestLocationsIncludesTheInstanceSnapshot is the regression test
+// for backlog 141.
+//
+// What makes it fail before the fix: PolicyAtRestLocations names three
+// locations and omits wrkflw_instances.snapshot, which carries the full
+// authz.AuthzSpec via engine.InstanceState.Tasks[].Eligibility. The published
+// SECURITY.md count is therefore short by one.
+//
+// ⚠ The completeness guard in render.go cannot catch this: it fails only for a
+// ClassPolicy column, and wrkflw_instances.snapshot is ClassFreeform — the
+// identical case wrkflw_definitions.definition was hand-added for.
+func TestPolicyAtRestLocationsIncludesTheInstanceSnapshot(t *testing.T) {
+	t.Parallel()
+
+	var found bool
+	for _, loc := range atrest.PolicyAtRestLocations {
+		if loc.Table == "wrkflw_instances" && loc.Column == "snapshot" {
+			found = true
+			assert.NotEmpty(t, loc.Detail, "the entry must say WHY it holds policy")
+		}
+	}
+	assert.True(t, found,
+		"wrkflw_instances.snapshot holds every in-flight task's Eligibility (an authz.AuthzSpec) "+
+			"and must be listed, or SECURITY.md understates where policy is durable")
+}

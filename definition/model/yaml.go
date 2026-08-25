@@ -58,12 +58,18 @@ type nodeYAML struct {
 	// TerminationReason and TerminationOutcome mirror the like-named NodeWire
 	// fields — the EndTerminate payload authored alongside endBehavior:
 	// "terminate" (ADR-0119). TerminationOutcome is "complete" or "abort".
-	TerminationReason  string          `yaml:"termination_reason,omitempty"`
-	TerminationOutcome string          `yaml:"termination_outcome,omitempty"`
-	AttachedTo         string          `yaml:"attached_to,omitempty"`
-	NonInterrupting    bool            `yaml:"non_interrupting,omitempty"`
-	Subprocess         *definitionYAML `yaml:"subprocess,omitempty"`
-	DefRef             string          `yaml:"def_ref,omitempty"`
+	TerminationReason  string `yaml:"termination_reason,omitempty"`
+	TerminationOutcome string `yaml:"termination_outcome,omitempty"`
+	AttachedTo         string `yaml:"attached_to,omitempty"`
+	NonInterrupting    bool   `yaml:"non_interrupting,omitempty"`
+	// BoundaryAction / BoundaryErrorExpr mirror the like-named NodeWire fields so
+	// that event.WithBoundaryAction and event.WithBoundaryErrorExpr are reachable
+	// from YAML, which they were not before backlog 143: a boundary could be
+	// attached in YAML but never given an action or an error predicate.
+	BoundaryAction    string          `yaml:"boundary_action,omitempty"`
+	BoundaryErrorExpr string          `yaml:"boundary_error_expr,omitempty"`
+	Subprocess        *definitionYAML `yaml:"subprocess,omitempty"`
+	DefRef            string          `yaml:"def_ref,omitempty"`
 	// Validation mirrors NodeWire.Validation for the YAML authoring form.
 	Validation *validate.ValidationDescriptor `yaml:"validation,omitempty"`
 }
@@ -140,6 +146,8 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 		TerminationOutcome:    ny.TerminationOutcome,
 		AttachedTo:            ny.AttachedTo,
 		NonInterrupting:       ny.NonInterrupting,
+		BoundaryAction:        ny.BoundaryAction,
+		BoundaryErrorExpr:     ny.BoundaryErrorExpr,
 		Subprocess:            subDef,
 		DefRef:                ny.DefRef,
 		Validation:            ny.Validation,

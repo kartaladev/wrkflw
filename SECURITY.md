@@ -233,9 +233,10 @@ The following `actor`-classed column(s) are indexed; encrypting any of them non-
 
 `casbin_rule` is conditionally present: it exists only in a Postgres deployment that has called `casbinauthz.MigrateCasbin`, which is never run automatically — the `FromDB` policy source requires that call, and any deployment that has made it keeps the table whatever policy source it later wires.
 
-⚠ Authorization policy is durable at rest in **three** places, not one. Encrypting only the `policy`-classed columns is therefore not enough:
+⚠ Authorization policy is durable at rest in **four** places, not one. Encrypting only the `policy`-classed columns is therefore not enough:
 - `casbin_rule` holds the deployment's casbin policy rules verbatim, one rule per row (class `policy`).
 - `wrkflw_human_task.eligibility` holds the per-task eligibility rule the four `Authorize` sites in `runtime/task/service.go` evaluate (class `policy`).
+- `wrkflw_instances.snapshot` is class `freeform` because it holds the serialized instance state — but engine.InstanceState.Tasks carries every in-flight human task, and each one's `Eligibility` is a full authz.AuthzSpec, so the eligibility rule governing live work is inside that JSON (backlog 141).
 - `wrkflw_definitions.definition` is class `freeform` because it holds the whole serialized process definition — but every node's `eligible_roles`, `eligible_privileges` and `eligible_expr` are serialized INSIDE that JSON, so encrypting only the `policy`-classed columns leaves per-node eligibility rules in the clear.
 
 No column-level codec and no hash-chained journal ship with this delivery (ADR-0187 D10, the non-goals — see `docs/specs/2026-08-22-at-rest-posture.md` § D10) — nothing in this table implies one exists.

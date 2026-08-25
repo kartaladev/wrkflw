@@ -50,4 +50,25 @@ run_sync_test() {
 run_sync_test "the regeneration pass" -update
 run_sync_test "the verification pass"
 
-echo "SECURITY.md at-rest block regenerated and verified."
+# ⚠ The two passes above run ONE test. That is not the same as the package being
+# green, and the difference is not hypothetical: adding a policy-at-rest location
+# (backlog 141) leaves TestSecurityMdInSync passing while render_test.go's
+# hardcoded count assertion fails — so this script would have printed
+# "regenerated and verified" over a RED package. A narrow -run filter reports on
+# what it selected, never on what it skipped.
+# ⚠ mktemp, not a fixed /tmp path: a pre-existing file owned by another user
+# makes the redirect fail, which bash scores as a non-zero condition — so the
+# script would announce "NOT green" for a package it never ran, the exact
+# false-diagnostic class this block was added to prevent. A symlink there would
+# instead be truncated.
+pkg_log=$(mktemp)
+trap 'rm -f "$pkg_log"' EXIT
+if ! go test ./internal/atrest/ -count=1 >"$pkg_log" 2>&1; then
+	cat "$pkg_log" >&2
+	echo "gen-at-rest: SECURITY.md was regenerated, but ./internal/atrest is NOT green." >&2
+	echo "The generated block may be correct while another guard in the package" >&2
+	echo "disagrees with it — fix that before trusting this output." >&2
+	exit 1
+fi
+
+echo "SECURITY.md at-rest block regenerated and verified; ./internal/atrest is green."

@@ -12,9 +12,12 @@
 
 A node's fields are declared in five Go types — `authz.AuthzSpec`, `activity.UserTask`,
 `model.NodeWire` (44 exported fields, the persisted contract), `model.nodeYAML` (39, the YAML
-authoring form), and `humantask.HumanTask.Eligibility` — and copied between them by hand-written
-assignments at `yaml.go:112-114`, `activity.go:240`, `activity.go:251` and `engine/step_nodes.go:724`
-(plus, found during the audit, `humantask.Clone()`). Each is a struct literal that stays valid when a
+authoring form), and `humantask.HumanTask.Eligibility` — and copied between them by **five**
+hand-written assignments, cited by SYMBOL because line numbers rot — the backlog-143 fix
+moved the `yaml.go` block six lines the day after this was written: `fromNodeYAML` (`yaml.go`),
+`FromWire` and `ToWire` (`activity.go`), `userTaskStrategy.enter` (`engine/step_nodes.go`), and
+`HumanTask.Clone` (`humantask/humantask.go`, found during the audit — the original bundle counted
+**four**, missing it). Each is a struct literal that stays valid when a
 field is added on one side and forgotten on the other.
 
 The risk is real and has a record: ADR-0185-core's D3 needed to add one boolean and **missed
