@@ -9,82 +9,128 @@ top to bottom; it is meant to stay short enough that you can.
 > see `docs/plans/HANDOVER-archive.md`. Per-delivery detail belongs in that delivery's plan under
 > a `▶ Progress` block. This file carries only: where `main` is, what is unmerged, and what next.
 
-## State — updated 2026-08-25 (**MERGED and PUSHED; nothing in flight; next is backlog 51**)
+## State — updated 2026-08-26 (**ADR-0189 SHIPPED — both gates passed, merged and pushed**)
 
-**`main` is PUSHED and clean at merge `b5fe7272`.** ⚠ Re-derive the head
-(`git rev-parse --short refs/heads/main`); anchor on **merge** SHAs, which never move:
-**`b5fe7272` (latest shipped — YAML boundary options, at-rest count, clone guard)**,
-ADR-0187 `4e2c0af4`, ADR-0186 `13b3bfb0`, the backlog sweep `020af37b`, 0184 `be6e6b55`,
-0183 `a7575ed5`, 0179 `962aeb25`, 0181/0182 `1ac140f6`, 0177/0178/0180 `a5b33e4c`, 0176 `52bf0f80`,
-0175 `6e4addc8`.
+**`main` has advanced.** ⚠ Re-derive the head (`git rev-parse --short refs/heads/main`); anchor on
+**merge** SHAs, which never move: **`ADR0189_MERGE` (latest shipped — ADR-0189, backlog 51)**,
+`b5fe7272`, ADR-0187 `4e2c0af4`, ADR-0186 `13b3bfb0`, the backlog sweep
+`020af37b`, 0184 `be6e6b55`, 0183 `a7575ed5`, 0179 `962aeb25`, 0181/0182 `1ac140f6`,
+0177/0178/0180 `a5b33e4c`, 0176 `52bf0f80`, 0175 `6e4addc8`.
 
-**▶ NOTHING IS IN FLIGHT.** Branch `design/authz-identity-core` merged `--no-ff` and deleted;
-worktrees clean. **▶▶ NEXT: backlog 51** — the section below headed *NEXT WORK* carries everything
-needed to start it.
+### ✅🚚 SHIPPED: ADR-0189 — the actor is no longer self-asserted (closes backlog 51)
 
-### ✅🚚 What `b5fe7272` shipped
+**Merged `--no-ff` and pushed.** Branch `feat/request-actor-identity` deleted on merge.
+Per-delivery detail lives in the plan's `▶ Progress` block —
+`docs/plans/2026-08-25-request-actor-identity.md`.
 
-**Code — four real defects**, all found while designing and then *rejecting* ADR-0188:
-- **143** ⭐ the only user-facing one — `boundary_action` / `boundary_error_expr` are now authorable
-  in YAML. Both were public Go options (`event.WithBoundaryAction`, `WithBoundaryErrorExpr`) with
-  wire support and a dedicated example, but `nodeYAML` declared neither, so a YAML author could
-  attach a boundary and never give it an action or an error predicate. ⚠ Field **and** mapping
-  landed together: the field alone is a **net regression** under `KnownFields(true)`.
-- **141** — `wrkflw_instances.snapshot` added to `atrest.PolicyAtRestLocations`; `SECURITY.md`'s
-  policy-at-rest count 3 → 4. ADR-0187's completeness guard could not see it (the column is
-  `ClassFreeform`). Also fixed a **hardcoded** count pin in `render_test.go`.
-- **`scripts/gen-at-rest.sh`** — verified ONE test, so it could print *"regenerated and verified"*
-  over a **red package**; now requires the package green, via `mktemp` + `trap`.
-- **`humantask.Clone`** — its comment claimed a safety property it did not have; a reflective,
-  value-based guard now makes the claim true for every reference field.
+**Gates:** `/code-review high` — **8 findings, NONE a false positive, all fixed and folded**.
+`/security-review` — **0 findings** (one candidate raised, rejected by the false-positive filter
+at 2/10: the exposure it named is pre-existing and already routed to ADR-0190).
 
-**Documents — two bundles that did NOT survive their audits**, retained banner-marked:
-**ADR-0185-core** (failed, parked) and **ADR-0188** (audited, then **Rejected**, three grounds
-recorded). With them: four lens reports + an adjudication for each, and
-**`docs/plans/sweep-evidence/meta-analysis-audit-finding-rate.md`**.
+**What it does.** `transport/http/httpcore` built `authz.Actor` from the REQUEST BODY, so any
+caller could post `{"actor":{"id":"alice","roles":["manager"]}}` and be believed. The actor now
+comes from the `context.Context` via a new `authz` seam and from nowhere else, for the three
+human-task verbs.
 
-**Gates:** `go test -race ./...` EXIT=0 zero failures · `golangci-lint run ./...` 0 issues ·
-touched packages 95.1 % / 92.6 % / 100 % · **`/code-review high` 8 findings (4 MEDIUM, 4 LOW), all
-reproduced, NONE a false positive, all fixed and folded** · **`/security-review` 0 findings**.
+**✅ Verification passed** (2026-08-26, Docker up): `go test -race ./...` **EXIT=0** ·
+`go test ./...` **EXIT=0** · `golangci-lint run ./...` **repo-wide, 0 issues** · every touched
+package ≥ 85 % (`authz` 100 %, `service` **93.5 %** filtered — 53.9 % raw is the four generated
+mocks, not a regression).
 
-### ⭐⭐⭐ READ THIS BEFORE READING ANY AUDIT RESULT — the count is an INSTRUMENT READING
+### ⭐⭐ What the gates caught that THREE audit rounds did not
 
-Full analysis: **`docs/plans/sweep-evidence/meta-analysis-audit-finding-rate.md`** (193 accepted
-findings classified across 10 rounds; arithmetic controller-verified).
+1. ⚠⚠ **A 41 MB binary committed at the repo root.** `.gitignore` carries a warning about this exact
+   mistake **with an audit recipe**; a new `examples/` main was added without running it.
+   **If you add an example, run that recipe.**
+2. ⚠⚠ **`deepCopyBounded` was not a deep copy** — it handled `map[string]any`/`[]any` only, so every
+   other container escaped **by reference**, falsifying the guarantee written three lines above it.
+   *Third* time in this delivery a guard was validated against the half of its input space that works.
+3. ⚠⚠ **Identity resolved AFTER the body read** (F6). Owner decision D-4 had accepted this as a
+   residual on the premise "those routes are unauthenticated anyway" — **a premise this very record
+   falsified by authenticating them.** Now resolved before the decode; ordering inverted to
+   **401 → 413 → 400 → 404**, which broke seven tests, all correctly, including a contract a
+   subagent had deliberately pinned. ⭐ *A test asserting an ordering must be revisited when the
+   ordering is the thing you change.*
+4. ⚠ **A doc comment orphaned onto the wrong field** — the hazard a subagent had explicitly warned
+   about, and my own orphan-check missed it because struct-field comments are tab-indented and the
+   regex was anchored at column 0.
 
-**Seven four-lens rounds spanning a 12× swing in artifact size returned 15.14 ± 0.83 findings per
-lens — CV 5.5 %, range 14.00–16.25.** Findings correlate with **lens count r = 0.855** and with
-scope **not at all**. `reaudit-0187` is the natural experiment: 2 lenses → 34 findings = 17.0/lens,
-*above* average.
+⭐ **`/code-review` returned 8 findings and NOT ONE was a false positive** — the twelfth consecutive
+delivery where the real gate found what adversarial stand-ins did not.
 
-⇒ **"~58 findings again" NEVER meant "no progress". It meant "four agents were pointed at it
-again".** ⛔ **Never report a raw total as a quality signal. Report Criticals per lens** — that
-number moved (**8.25 → 3.50**). Noise is NOT the explanation: cosmetic findings are **8.3 %** and
-**65 of 67 raw Criticals corpus-wide were accepted (97 %)**. The findings are real; they are
-inexhaustible.
-⚠ ADR-0188's own audit came in at **11.0 findings / 3.75 Criticals per lens** — the first round
-*below* the 15.14 ± 0.83 band. One round does not refute the model; do not over-read it either.
+### ⚠⚠⚠ THIS BUNDLE FAILED THREE rule-#9 AUDITS. Read this before trusting its lineage.
 
-**Root causes over 193 accepted findings: ~82 % design-process, ~10 % architectural, ~8 % cosmetic.**
-⚠ The architectural share is **ONE LINEAGE**: ADR-0186 **4.6 %** · ADR-0187 **6.3 %** ·
-**ADR-0185 authz-identity 22.6 % → 35.3 %** — all tracing to eligibility having several
-unreconciled representations.
-⚠⚠ **The largest recurring PROCESS cause was diagnosed and never adopted.** Bucket D (an enumeration
-built with the **wrong grep net**) is **25.4 % of accepted findings, non-zero in ALL TEN rounds**;
-`reaudit-0186` prescribed the fix — **derive enumerations with `go/parser` tooling, not prose** —
-and nobody implemented it. ⚠ Corrected denominator: 25.4 % is of the **193 accepted**, not of the
-554 raw (that share is 8.8 %).
+| round | scope | findings | Criticals | **Criticals/lens** |
+|---|---|---|---|---|
+| 1 (`7fa756d0`) | 2 decisions | 48 | 7 | 1.75 |
+| 2 (`37d77a34`) | 9 decisions | 58 | 15 | 3.75 |
+| 3 (`3e96e836`) | **1 decision** | 59 | 19 | **4.75** |
 
-### ⚠⚠ THE REPRESENTATION TRAP REMAINS — ADR-0185 D3's plan must carry this warning
+⭐⭐⭐ **THE SCOPE HYPOTHESIS IS REFUTED BY ITS OWN NEXT DATA POINT.** Rounds 1–2 concluded the
+Criticals tracked scope; three lenses asserted it independently; the owner cut the scope on it; and
+round 3 — a ONE-decision bundle — scored **higher**. Two confounds nobody controlled for: each
+round's lenses were **briefed with the previous round's findings** (the instrument was sharpened
+between measurements), and the documents grew every round (more claims ⇒ more falsifiable claims).
+⛔ **Criticals/lens must not be used as a bundle-health metric again without controlling for both.**
+⚠ And round 3's pre-registered decision rule was calibrated from a **SPLICED** series — `8.25 → 3.50`
+are **ADR-0186's** rounds, not this lineage's; one ADR-0185 round measured 5.50 and was omitted.
 
-ADR-0188 would have guarded it and was rejected (zero user-facing value; and execution proved its
-guards checked field **names** where the defect is field **copies**). So eligibility is still
-declared in **5 types** and copied by hand at **5 sites**, cited by SYMBOL because line numbers rot:
-`fromNodeYAML` (`definition/model/yaml.go`), `FromWire` and `ToWire`
-(`definition/activity/activity.go`), `userTaskStrategy.enter` (`engine/step_nodes.go`), and
-`HumanTask.Clone` (`humantask/humantask.go`). **A miss at `yaml.go`'s mapping or at the mint site is
-SILENT**, and the mint-site miss is **fail-open**. Reviving ADR-0188's two *working* guards
-(`nodeYAML` coverage and the eligibility correspondence) is cheap and available if it bites again.
+Evidence in-repo: `docs/plans/sweep-evidence/audit{,2,3}-0189-*.md` — twelve lens reports, three
+adjudications, and two author-written grids.
+
+### ⭐ What this delivery taught, beyond ADR-0189
+
+1. ⚠⚠ **A count is re-derived only when its MEMBER SET is re-derived — paste the list, not the
+   total.** Round 1's "29 pins" and the inherited "29" were **different sets of 29** that matched by
+   coincidence, disjoint on five members. Two nets agreeing on a total is not corroboration.
+2. ⚠⚠ **Every BEHAVIOURAL change needs its own net.** The final count moved 29 → 48 → **50** because
+   a compile ablation sees signature changes and a grep sees literals, and **neither sees a status
+   code moving**. Three rounds running, a decision was added after the count and the count was not
+   re-derived.
+3. ⚠⚠ **A guard tested with a fixture from the half that works is not tested.** The attribute guard
+   was wrong **twice**, by the same category of error one layer apart: round 2 validated the encoder
+   where the decoder matters; round 3 validated `Attributes` alone where the **enclosing document**
+   matters. Fixed by an explicit depth bound, which is shape-independent — there are THREE stored
+   shapes (`claim_actor` = `Actor`, `candidates` = `[]Actor`, the snapshot deeper).
+4. ⚠⚠ **An inherited citation restated with its hedge stripped produced two Criticals in one round.**
+   `docs/adr/0148-*.md` contains **no "kiosk" and no "anonymous"** — that blessing is the repo's own,
+   in `humantask/validate.go:24`. And the resolver-timeout precedent's godoc caveat ("*must honour
+   ctx cancellation*") was dropped when restated.
+5. ⚠ **The author's own interaction grid was diagnosed BACKWARDS** ("every wrong cell involved a
+   removal" — it was 2 of 4; 3 involved a **survivor**), so it drew zero survivor×survivor pairs —
+   where three Criticals lived. **A grid's axes must cover every changed decision against every
+   other, not only the ones that moved out.**
+6. ⚠ **An accepted finding that is not FOLDED is not fixed.** Round 2's F5 predicted the inert
+   timeout precisely; it was accepted, never folded, and shipped — caught only by two implementers
+   source-verifying independently.
+
+### 🆕 Filed by this delivery — all still OPEN
+
+- **The deny-list actor-attribute fail-open is LIVE on `main` today.** Measured: with attributes
+  dropped, `actor.Attributes.status != "blocked"` **ALLOWs**. ADR-0189 narrows it (1 of 8 shapes);
+  **7 of 8 still ALLOW**. ⚠ Distinct from backlog 103 only in the **root**, not the mechanism.
+- **Actor attributes reach an UNAUTHENTICATED read surface.** `GET /instances/{id}/actionable` and
+  `/snapshot` render `Claim.Actor` and `Candidates` verbatim with no authorization; `SECURITY.md`
+  classifies both as personal data. ⚠ The channel pre-exists (candidates already render attributes
+  per ADR-0147) **but the population rate changes**: the old channel needs an opt-in
+  `ActorResolver`, the new one is fed by `RequestActorFunc`, which every HTTP consumer configures.
+- **`InstanceRoutes`, `MessageRoutes`, `AdminRoutes` authenticate NOTHING** — `POST /instances`,
+  `/signals`, `/messages` are state-changing and open. → **ADR-0190**.
+- **Admin operations have no audit record at all** (`admin_endpoints.go` has zero `authz.` refs).
+
+### ▶▶ NEXT, after this merges: **ADR-0190** — route-group authentication and the admin posture
+
+⚠⚠ **0190 must argue against `ADR-0095 §"Admin-by-composition (default-absent)"`, not around it.**
+That ADR states default-absent *"replaces the old default-deny (403) … this is safer"*, and
+`examples/production_wiring:273-275` implements the posture with a fail-closed `requireAdminToken`.
+Round 2 of this bundle reintroduced the default-deny ADR-0095 removed **without ever citing it**,
+and its Decision 6 broke that very consumer (401 despite a correct token).
+⚠ 0190 inherits C **and** D as a pair: authenticating admin routes without a role gate lets any
+authenticated caller administer; a role gate without authentication gates on unverified roles.
+⚠ Scope facts, measured: **five** route groups per adapter (`HealthRoutes` must stay open — a load
+balancer has no credential); **63 handler sites**, of which **33 are behind a `!= nil` guard**, and
+`POST /admin/role-bindings` is inside the invisible 11; adding a pre-decode 401 to the other groups
+breaks **~186 assertions across 13 test files, 7 of which no document named**.
 
 ## What the sweep actually established
 
@@ -133,128 +179,22 @@ and than `AUDIT.md`.
 | 44 vacuous `Never` sites | 16 | **7** (5 already had preconditions, 3 hung) |
 | node kinds (README/memory) | "19" / "18 with impls" | **18 constants = 17 authorable**, **16** with strategies; `KindBoundaryEvent` intentionally unregistered |
 
-## ▶ NEXT WORK — **backlog 51: the actor must not be self-asserted**
+## ✅ backlog 51 is IMPLEMENTED — the old "NEXT WORK" block is gone
 
-### The defect, in one paragraph
+This file previously carried a long *"▶ NEXT WORK — backlog 51"* section derived from the parked
+ADR-0185. **That work is done**, on `feat/request-actor-identity`, as ADR-0189. The section was
+removed rather than left with a ✅ beside it, because a fresh session reading top-to-bottom would
+otherwise start designing something that already exists.
 
-`transport/http/httpcore` builds `authz.Actor` **from the request body** at
-`endpoints.go:119,132,150` — the only three `authz.Actor{…}` constructions in `transport/`,
-non-test. Any caller can post `{"actor":{"id":"alice","roles":["manager"]}}` and be believed.
-`CustomizeConfig` declares no identity seam, so a consumer's authentication middleware has **no
-supported way** to override it. `Actor.Attributes` is dropped at all three sites, so attribute
-predicates over actor attributes cannot be satisfied over HTTP at all.
+⚠ **ADR-0185 stays Proposed-and-failed** for its D2 (backlog 52, the allow-all default authorizer)
+and D3 (backlog 53, the empty `AuthzSpec` that means allow-all). ⛔ **Do NOT implement 52 or 53 from
+that record** — both designs were refuted by its audits. Each needs its own ADR.
+⚠ ADR-0185's banner and ADR-0189's `Supersedes-in-part` line already say this; if they ever
+disagree with this file, **the ADRs win and this file gets corrected**.
 
-**This is the most directly exploitable open item in the repo.** It is D1 of the parked ADR-0185.
-
-### ⚠⚠ START HERE, AND MIND THE PROVENANCE
-
-The design below comes from **`docs/adr/0185-authorization-identity-is-not-self-asserted.md`, a
-bundle that FAILED its rule-#9 audit three times**. ⛔ **Do NOT inherit D2 (52) or D3 (53)** — both
-were refuted. **D1 survived nearly intact** (one Critical, named below), and the facts here were
-**re-derived or confirmed by that audit**, not merely restated. Adjudication:
-`docs/plans/sweep-evidence/audit-0185core-adjudication.md`. Read it before writing anything.
-
-### Facts CONFIRMED by execution during the ADR-0185 audit — reuse, but re-verify anchors
-
-- **29 pin sites / 9 files / 5 packages** assert the body-derived contract — httpcore 11 (5 in
-  `dto_test.go`, 6 literals in `endpoints_test.go`), gin 7, fiber 5, stdlib 5, parity 1. The
-  counting lens attacked this and found it **exact**. The net is closed **by construction**:
-  `httpcore/dto.go` declares exactly three Actor-bearing fields (`ClaimInput.Actor`,
-  `CompleteInput.Actor`, `ReassignInput.By`). ⚠ One occurrence is deliberately excluded —
-  `validate_test.go`'s `httpcore.Validate(httpcore.ClaimInput{})` survives field removal.
-- ⚠⚠ **CORRECTION the audit forced:** the two pins that assert a **vacuous 403** are **BOTH in
-  `stdlib`** (`errors_test.go:158` and `:187`). `gin/gin_coverage_test.go:244` asserts **404**, not
-  403, and **gin has no 403 assertion at all**. The ADR's earlier "one stdlib, one gin" was wrong.
-  Those two must be **rewritten**, not recompiled — after D1 they would still return 403 *from the
-  zero actor*, passing while testing nothing.
-- **All three adapters tolerate unknown body keys**, so *"a body still carrying `actor`/`by` is
-  IGNORED, not rejected"* is **correct** — ADR-0167's strictness does not reach the DTO decode path.
-  This was an open question in the failed plan; the execution lens answered it.
-- **fiber propagates via `c.SetContext`, NOT `c.Locals`** — verified. A consumer following fiber's
-  most idiomatic path gets a **silently unauthenticated** request. `SECURITY.md` and the examples
-  must show `SetContext`.
-- **`WithActorResolver` is already taken THREE times** for the opposite concept
-  (`service/options.go:99`, `runtime/task/service.go:113`, `processtest/harness.go:104` — "who
-  *could* act"). Use **`httpcore.WithRequestActor`**.
-- **ADR-0186's option-alias convention already exists and must be reused**: the generic
-  `httpcore.With…[R any]` form **cannot infer `R`**, so each adapter carries a non-generic alias
-  (`stdlib`/`gin`/`fiber` `options.go`, see `WithMaxBodyBytes`). ⇒ **2 new options × 3 adapters = 6
-  aliases.** ⚠ Read each adapter's `options.go` first; they do not all carry the same set today.
-- **Three `examples/` mains** mount task routes via `stdlib.Mount` with **no authentication**:
-  `production_wiring`, `sqlite_wiring`, `mysql_wiring`.
-
-### ⚠ The one Critical against D1, which MUST be designed out
-
-**`WithAnonymousActorAllowed()` and the empty-`Actor.ID` rejection void each other** — the three
-demo mains would be unable to claim. The anonymous opt-in must synthesize a **non-empty sentinel
-identity**, and the ADR must say which.
-
-### ⚠ Three more corrections D1 owes
-
-1. **Delete** *"`Actor.Attributes` reaches the authorizer — closing finding 4's second leg for
-   free."* It was refuted (`actor` is a struct; `Attributes` always exists at depth-1) **and** its
-   referent (D4) is deferred.
-2. ⚠ **D1 makes backlog 103 MORE reachable, and 103 is deferred.** Today all three endpoints drop
-   `Attributes`, so `actor.Attributes.*` predicates fail closed *vacuously*; once the actor arrives
-   whole they go live with nothing bounding them. This belongs in **Consequences/Negative** as a
-   cost of shipping D1 alone, not in a follow-ups list.
-3. **Re-derive the empty-`Actor.ID` rule's rationale.** It was justified by the deferred D5's
-   `"" == ""` degeneracy. It survives on independent grounds (the audit trail must not record `""`;
-   a caller past the 401 has an ID) — but write *those*, or it is a dangling citation.
-
-### ⚠ A residual D1 may NOT claim away
-
-`ProcessDriver.ApplyTrigger` **bypasses authorization by design** and says so in its own godoc;
-`engine.NewHumanCompleted` is likewise exported module-root API. A D1 delivery covers the four
-`runtime/task` verbs. **Do not claim the chain is closed.**
-
-### Then, in order
-
-**(2) backlog 52** — ⚠ needs a design increment first: *"when human tasks are configured"* **is not a
-state that exists** (a bare `service.NewProcessEngine()` already serves human tasks on a defaulted
-`MemTaskStore` + `AllowAll`). **(3) 53** — ⚠ re-derive its migration from scratch; the three durable
-copies have **different shapes**, the prescribed SQL corrupts the definitions copy, and
-`TestMigrations_OneFilePerDialect` forbids a `0002` file. **(4)** the deferred B3 slices — §4XX
-(104), §READ-PATH (54), §SSRF (65), §BOUND (99). **(5) B4–B7. (6) blocker 5.**
-⚠ **Backlog 103 and 124 need their own ADRs** — they left ADR-0185 with their designs **refuted**.
-⚠ **144 is open and deliberately deferred**: YAML cannot author the nested trigger forms
-(`TriggerWire` has json tags only across 11 fields incl. a custom `schedule.ClockTime`), so it is a
-serialization-contract change, not a bug fix.
-
-### ⭐ How to run the audit — this dispatch works, reuse it verbatim
-
-Four Opus lenses (**execution / failure-modes / counting / interaction**), **detached worktrees at
-the bundle commit**, a **step-0 bundle-presence check stated explicitly in every brief**, and
-**"append findings per finding, before the next probe"** (a mid-run kill cost three lenses their
-work once; the second time 2,418 of 3,717 lines were already on disk).
-⚠ Brief the **counting** lens that the failure mode is **the net, the anchor, and the SCOPE — not
-the arithmetic**: every sum across seven rounds was right, and that lens found the decisive Critical
-in six consecutive bundles.
-⚠ Brief the **interaction** lens with the **explicit list of what changed**; its question is *"what
-does this decision assume someone else will hand it, and who agreed to that?"*
-⚠⚠ **A REMOVAL is a change and generates its own grid** — when you cut N decisions out, derive the
-survivor×removed pairs explicitly; it is not smaller than the grid you deleted.
-⚠ **The evidence file is an INPUT to the audit, not a conclusion of it** — attack it too. Findings
-landed inside the bundle's own evidence file in two separate rounds, and in one the author's own
-probe refuted a real audit finding and was itself wrong.
-
-- **B4 durability/reconciliation** — 66 (the class), 67, 24, 29, 37, 39, 57, 63, 76, 77, 81.
-- **B5 engine core** — 55, 56, 70, 71, 72, **73** (⚠ its guard, 114, is now shipped — do not delete the
-  `cloneState` deep-copy without reading the comment now on that line), 11, 12, 13, 17.
-- **B6 public API, window-limited (cheap only before v0.1.0)** — 61, 62, 92, **128**, **130**, 88, 91,
-  32. ⚠ **68 (multi-module split) is DEFERRED by owner decision**; `CLAUDE.md` locks one `go.mod` at
-  the root, so changing it needs its own ADR.
-- **B7 observability** — 59, 60, 106, 110, 111, 112-adjacent, plus **108** (now unblocked: 116 shipped).
-
-### Open decisions that are the owner's, not an agent's
-
-1. **Item 120 — `samber/do`** is locked in `STABILITY.md` **and `CLAUDE.md`'s tech-stack table**, absent
-   from `go.mod`, imported by zero files. Adopt it, or strike it from both. Untouched deliberately.
-2. **Should casbin's `Enforce` fail CLOSED on stale policy?** Today a revoked permission still returns
-   `true, err=nil` after a failed reload. The sweep shipped the ERROR log + failure counter but did
-   **not** change the failure mode — it is an availability/security trade-off. Pairs with item 106.
-3. **Item 109 — should `OpenSQLite` REJECT an unsafe pool, or only warn?** Warn shipped; reject is
-   breaking and is recorded as an open question in ADR-0082 §2.
+What ADR-0189 did NOT close, so nobody re-reads 0185 looking for it: backlog **52**, **53**, **62**,
+**90**, **103**, **124** are all still open, and the newly-filed items are listed under
+*🆕 Filed by this delivery* above.
 
 ## Backlog
 
@@ -265,10 +205,15 @@ halves), 34, 38, 40, 44, 48, 49, 58, 74, 75, 84, 87, 89, 95, 102, 107, 112, 113,
 118, 119, 121, 122, 123, 125, 127, blockers 7 and 8.
 **Closed by ADR-0186 (merged as `13b3bfb0`):** **98** (no request body cap).
 **Closed by `b5fe7272`:** **143** (boundary options unreachable from YAML — the user-facing one) and **141** (`SECURITY.md` understated the policy-at-rest locations), plus the `humantask.Clone` false-safety comment and `gen-at-rest.sh`'s one-test verification.
+**Implemented by ADR-0189 (branch, unmerged):** **51** (the actor is no longer self-asserted on the
+three human-task verbs).
 **Rejected, not built:** **ADR-0188** (machine-checked reconciliation) — see its ADR for the three grounds. ⚠ The trap it would have guarded is still open; see the State section.
 **Adjudicated, not defects:** 8, 18, 20, 97, 126, 3f, 6, 35, 36, 37, 45, 46.
 
-**Still open — Design tier:** 4, 5, 7, 11, 12, 13, 17, 19/41, 24, 27, 29, 32, 33, 39, 47, 50, 51, 52,
+**Implemented, on a branch, NOT yet merged:** **51** (ADR-0189 — see *IN FLIGHT* above). It leaves
+the backlog list only when the branch merges.
+
+**Still open — Design tier:** 4, 5, 7, 11, 12, 13, 17, 19/41, 24, 27, 29, 32, 33, 39, 47, 50, 52,
 53, 54, 55, 56, 57, 59, 60, 61, 62, 63, 64, 65, 66, 67, 69, 70, 71, 72, 73, 76, 77, 78, 79, 80, 81,
 82, 83, 85, 86, 88, 90, 91, 92, 93, 94, 96, 99, 100, 101, 103, 104, 105, 106, 109 (reject leg),
 110, 111, 124. **68 deferred.**

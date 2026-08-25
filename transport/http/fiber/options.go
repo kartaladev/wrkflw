@@ -13,6 +13,8 @@
 package fiber
 
 import (
+	"time"
+
 	fiberlib "github.com/gofiber/fiber/v3"
 
 	"github.com/kartaladev/wrkflw/transport/http/httpcore"
@@ -40,6 +42,48 @@ func WithBasePath(p string) httpcore.CustomizeOption[fiberlib.Router] {
 // fiber.Config.BodyLimit; set that too if it matters.
 func WithMaxBodyBytes(n int64) httpcore.CustomizeOption[fiberlib.Router] {
 	return httpcore.WithMaxBodyBytes[fiberlib.Router](n)
+}
+
+// WithRequestActor is a convenience alias for httpcore.WithRequestActor typed
+// for fiber.Router. It overrides how the AUTHENTICATED principal of a
+// human-task request is resolved. fn == nil restores the default, which reads
+// the actor a consumer's authentication middleware placed on the request
+// context with authz.ContextWithActor and refuses with 401 when nothing did
+// (ADR-0189).
+//
+// ⚠ The alias is not sugar — the generic httpcore.WithRequestActor CANNOT be
+// called without spelling the router type out, because R appears only in its
+// result type and so is never inferable from the argument list.
+//
+// ⚠ In fiber, middleware must publish the actor with c.SetContext, NOT
+// c.Locals. fiber.Ctx.Context() returns a SEPARATE object from the Ctx itself
+// (its godoc: "returns a non-nil, empty context, if it was not set earlier"),
+// and this adapter hands c.Context() to httpcore — so a Locals write is
+// invisible to the seam and the request fails closed with 401:
+//
+//	app.Use(func(c fiber.Ctx) error {
+//		a, err := authenticate(c) // your credential check
+//		if err != nil {
+//			return c.SendStatus(fiber.StatusUnauthorized)
+//		}
+//		c.SetContext(authz.ContextWithActor(c.Context(), a))
+//		return c.Next()
+//	})
+func WithRequestActor(fn httpcore.RequestActorFunc) httpcore.CustomizeOption[fiberlib.Router] {
+	return httpcore.WithRequestActor[fiberlib.Router](fn)
+}
+
+// WithRequestActorTimeout is a convenience alias for
+// httpcore.WithRequestActorTimeout typed for fiber.Router. It bounds how long
+// the configured httpcore.RequestActorFunc may take; d <= 0 disables the bound.
+// The default is 10s.
+//
+// ⚠ The alias is not sugar — see WithRequestActor for why R cannot be inferred.
+//
+// ⚠ It bounds only a resolver that honours ctx cancellation: the bound is a
+// context deadline, not a hard kill.
+func WithRequestActorTimeout(d time.Duration) httpcore.CustomizeOption[fiberlib.Router] {
+	return httpcore.WithRequestActorTimeout[fiberlib.Router](d)
 }
 
 // WithMiddleware wraps the router returned by cfg.Wrap in a fiber Group with

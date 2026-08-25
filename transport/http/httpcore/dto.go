@@ -7,13 +7,6 @@ import (
 	"github.com/kartaladev/wrkflw/engine"
 )
 
-// Actor carries identity and role membership for task-related requests.
-// It mirrors the original inline actorBody request structs.
-type Actor struct {
-	ID    string   `json:"id"`
-	Roles []string `json:"roles"`
-}
-
 // StartInput is the request body for POST /instances (start a process instance).
 // DefRef is required; the instance ID is server-generated.
 type StartInput struct {
@@ -39,15 +32,19 @@ type MessageInput struct {
 }
 
 // ClaimInput is the request body for POST /tasks/{token}/claim.
-// No fields are required — an empty actor is allowed.
-type ClaimInput struct {
-	Actor Actor `json:"actor"`
-}
+//
+// It is deliberately EMPTY. The claimant is the AUTHENTICATED actor resolved from the
+// request context (ADR-0189), never a value the caller supplies — before that record
+// this struct carried an Actor and any caller could name their own roles.
+//
+// The type is kept rather than dropped so a body posted by a pre-ADR-0189 client still
+// decodes to a no-op instead of failing, and so the route keeps a stable signature.
+type ClaimInput struct{}
 
 // CompleteInput is the request body for POST /tasks/{token}/complete.
-// No fields are required — actor and output are both optional.
+// No fields are required. ⚠ The completing actor is NOT carried here: it is resolved
+// from the request context (ADR-0189).
 type CompleteInput struct {
-	Actor Actor `json:"actor"`
 	// Outcome is the business outcome the actor chose (e.g. "approve"); optional.
 	// When the user-task node declares an outcome set, an outcome outside it is
 	// rejected by the engine.
@@ -58,12 +55,11 @@ type CompleteInput struct {
 }
 
 // ReassignInput is the request body for POST /tasks/{token}/reassign.
-// No fields carry explicit required-field validation in the rest handler,
-// so no validate tags are added.
+// From and To name task PARTICIPANTS, not the requester. ⚠ The actor performing the
+// reassignment is resolved from the request context (ADR-0189), not from the body.
 type ReassignInput struct {
 	From string `json:"from"`
 	To   string `json:"to"`
-	By   Actor  `json:"by"`
 }
 
 // --- Admin DTOs (the admin request bodies) ---

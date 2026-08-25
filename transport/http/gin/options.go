@@ -60,6 +60,50 @@ func WithBodyReadTimeout(d time.Duration) httpcore.CustomizeOption[ginlib.IRoute
 	return httpcore.WithBodyReadTimeout[ginlib.IRouter](d)
 }
 
+// WithRequestActor returns a CustomizeOption that overrides how the human-task
+// routes resolve the AUTHENTICATED principal of a request. fn == nil restores the
+// default — the [authz.ContextWithActor] seam — which refuses with 401 when
+// nothing authenticated the caller.
+//
+// ⚠ The actor is read from here and from nowhere else. A request body carrying
+// an "actor" or "by" field is ignored (ADR-0189).
+//
+// ⚠ gin middleware must publish the actor on the REQUEST's context, not with
+// gc.Set: gin.Context.Set stores on the gin.Context, which gc.Request.Context()
+// — the context this adapter hands the engine — never sees. MEASURED: a gc.Set
+// middleware leaves the route unauthenticated and the request is refused 401
+// (TestTaskRoutes_GinSetDoesNotAuthenticate). Write it like this instead:
+//
+//	func authenticate(gc *gin.Context) {
+//		actor, err := myAuth(gc.Request)
+//		if err != nil {
+//			gc.AbortWithStatus(http.StatusUnauthorized)
+//			return
+//		}
+//		gc.Request = gc.Request.WithContext(authz.ContextWithActor(gc.Request.Context(), actor))
+//		gc.Next()
+//	}
+//
+// ⚠ This alias is REQUIRED for the same inference reason as [WithMaxBodyBytes]:
+// R appears only in the result type of httpcore.WithRequestActor.
+func WithRequestActor(fn httpcore.RequestActorFunc) httpcore.CustomizeOption[ginlib.IRouter] {
+	return httpcore.WithRequestActor[ginlib.IRouter](fn)
+}
+
+// WithRequestActorTimeout returns a CustomizeOption bounding how long the
+// configured [httpcore.RequestActorFunc] may take. d <= 0 disables the bound —
+// the same convention as [WithMaxBodyBytes] and [WithBodyReadTimeout]. The
+// default is 10s.
+//
+// ⚠ It bounds only a resolver that HONOURS ctx cancellation; see
+// [httpcore.CustomizeConfig.RequestActorTimeout] for the measurement.
+//
+// ⚠ This alias is REQUIRED for the same inference reason as [WithMaxBodyBytes]:
+// R appears only in the result type of httpcore.WithRequestActorTimeout.
+func WithRequestActorTimeout(d time.Duration) httpcore.CustomizeOption[ginlib.IRouter] {
+	return httpcore.WithRequestActorTimeout[ginlib.IRouter](d)
+}
+
 // WithMiddleware returns a CustomizeOption that applies mw as gin middleware on
 // every route the group registers. Multiple WithMiddleware calls compose: each
 // wraps the previous group (outermost-last order).

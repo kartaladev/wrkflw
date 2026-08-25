@@ -23,6 +23,24 @@ var ErrBadInput = errors.New("workflow-httpcore: bad input")
 // server-side fault the caller cannot correct, which correctly stays a 500.
 var ErrRequestBodyTooLarge = errors.New("workflow-httpcore: request body too large")
 
+// ErrUnauthenticated is the sentinel for a request on which no identity was
+// established: no middleware placed an actor on the context, the configured
+// [RequestActorFunc] is nil, or the resolver produced the zero actor.
+// It classifies as 401.
+//
+// ⚠ It is a REFUSAL, never a downgrade. Nothing in this package may respond to an
+// unresolved identity by proceeding with the zero authz.Actor (ADR-0189).
+var ErrUnauthenticated = errors.New("workflow-httpcore: unauthenticated")
+
+// ErrIdentityUnavailable is the sentinel for a [RequestActorFunc] that FAILED, or
+// whose actor carries attributes this transport will not store. It classifies as
+// 503, so a broken identity provider does not read as a client error and, more
+// importantly, does not become an open door.
+//
+// ⚠ It WRAPS the resolver's own error with %w, and that error is arbitrary consumer
+// code. See the ordering note on ClassifyError's first arms.
+var ErrIdentityUnavailable = errors.New("workflow-httpcore: identity unavailable")
+
 // ErrorBody is the JSON error envelope. Message is omitted for 5xx responses.
 type ErrorBody struct {
 	Error   string `json:"error"`
@@ -33,6 +51,35 @@ type ErrorBody struct {
 // Message is empty; callers log the raw error instead of exposing it.
 func ClassifyError(err error) (int, ErrorBody) {
 	switch {
+	// ⚠ POSITION IS BEHAVIOUR — these two arms are FIRST, above every other arm.
+	//
+	// ErrIdentityUnavailable wraps the consumer's own resolver error with %w. That
+	// error is arbitrary third-party code and may itself wrap ANY sentinel this
+	// switch tests for — kernel.ErrInstanceNotFound, authz.ErrNotAuthorized,
+	// ErrBadInput. Below any of them, a broken identity provider would classify as
+	// 404 / 403 / 400 and hide an availability fault behind a client error.
+	//
+	// STANDING INVARIANT (see the 413 arm below for the sibling case): an arm whose
+	// sentinel wraps CALLER-SUPPLIED errors must precede every arm its payload could
+	// match. For an arbitrary payload that means first.
+	//
+	// ⚠ ErrUnauthenticated precedes ErrIdentityUnavailable because the two can
+	// co-match each other — a resolver reporting "no credential" wrapped by an
+	// outage error — and "no credential" is the more specific fact. A resolver
+	// reporting it is not an outage.
+	// TestClassifyError_IdentitySentinelsOutrankEveryOtherArm pins all of this; it
+	// fails if either arm moves below the 404 or 403 arm, or if the two swap.
+	//
+	// ⚠ 503 is a 5xx, so Message stays EMPTY: the wrapped error may name the
+	// consumer's identity provider and must not reach the client. The adapters'
+	// writeErr logs the raw error instead.
+	case errors.Is(err, ErrUnauthenticated):
+		return http.StatusUnauthorized, ErrorBody{
+			Error:   "unauthenticated",
+			Message: "the request carries no authenticated actor",
+		}
+	case errors.Is(err, ErrIdentityUnavailable):
+		return http.StatusServiceUnavailable, ErrorBody{Error: "identity_unavailable"}
 	case errors.Is(err, kernel.ErrInstanceNotFound),
 		errors.Is(err, kernel.ErrDefinitionNotFound),
 		errors.Is(err, humantask.ErrTaskNotFound):

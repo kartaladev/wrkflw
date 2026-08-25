@@ -147,12 +147,17 @@ func TestTaskRoutes_Complete_ServiceError(t *testing.T) {
 	h, svc := transporttest.NewHarness(t, def)
 	taskID := transporttest.StartedApprovalInstance(t, h, "task-complete-err-1")
 
+	// The forbidden actor is AUTHENTICATED by the resolver, not asserted by the
+	// body (ADR-0189). Without it the request is refused at 401 and the 403
+	// authorization path this test exists for is never reached.
 	mux := http.NewServeMux()
-	stdlib.Mount(mux, svc)
+	stdlib.Mount(mux, svc, stdlib.WithRequestActor(
+		staticActor(authz.Actor{ID: "bob", Roles: []string{"viewer"}}),
+	))
 
 	// Forbidden actor → service error.
 	req := newPostRequest(t, "/tasks/"+taskID+"/complete", map[string]any{
-		"actor": map[string]any{"id": "bob", "roles": []string{"viewer"}},
+		"output": map[string]any{"approved": true},
 	})
 	rr := do(mux, req)
 	if rr.Code != http.StatusForbidden {
@@ -177,14 +182,18 @@ func TestTaskRoutes_Reassign_ServiceError(t *testing.T) {
 		t.Fatalf("claim: %v", err)
 	}
 
+	// The unauthorized reassigner is AUTHENTICATED by the resolver, not asserted
+	// by the body's former "by" key (ADR-0189). Without it the request is refused
+	// at 401 and the 403 authorization path this test exists for is never reached.
 	mux := http.NewServeMux()
-	stdlib.Mount(mux, svc)
+	stdlib.Mount(mux, svc, stdlib.WithRequestActor(
+		staticActor(authz.Actor{ID: "bob", Roles: []string{"viewer"}}),
+	))
 
 	// Unauthorized reassigner.
 	req := newPostRequest(t, "/tasks/"+taskID+"/reassign", map[string]any{
 		"from": "alice",
 		"to":   "carol",
-		"by":   map[string]any{"id": "bob", "roles": []string{"viewer"}},
 	})
 	rr := do(mux, req)
 	if rr.Code != http.StatusForbidden {

@@ -141,14 +141,19 @@ func (g TaskRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOptio
 	rt.Post(cfg.BasePath+"/tasks/:token/claim", observed(inst, "POST", cfg.BasePath+"/tasks/:token/claim",
 		func(c fiberlib.Ctx) error {
 			token := c.Params("token")
+			// ⚠ Identity FIRST, before the body is read: an unauthenticated caller must not
+			// be able to force a MaxBodyBytes read or hold the handler for BodyReadTimeout.
+			actor, aerr := httpcore.RequestActor(c.Context(), cfg.RequestActor)
+			if aerr != nil {
+				return writeErr(cfg, c, aerr)
+			}
 			var in httpcore.ClaimInput
-			if oversizeBody(cfg, c) {
-				return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
+			// Body is OPTIONAL: ClaimInput is empty since ADR-0189, so a
+			// migrated client sends none. Oversize is still 413.
+			if err := bindOptionalBody(cfg, c, &in); err != nil {
+				return writeErr(cfg, c, err)
 			}
-			if err := c.Bind().JSON(&in); err != nil {
-				return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
-			}
-			status, body, err := httpcore.ClaimTask(c.Context(), g.Svc, token, in, cfg.InstanceMapper)
+			status, body, err := httpcore.ClaimTask(c.Context(), g.Svc, token, in, cfg.InstanceMapper, actor)
 			if err != nil {
 				return writeErr(cfg, c, err)
 			}
@@ -158,6 +163,12 @@ func (g TaskRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOptio
 	rt.Post(cfg.BasePath+"/tasks/:token/complete", observed(inst, "POST", cfg.BasePath+"/tasks/:token/complete",
 		func(c fiberlib.Ctx) error {
 			token := c.Params("token")
+			// ⚠ Identity FIRST, before the body is read: an unauthenticated caller must not
+			// be able to force a MaxBodyBytes read or hold the handler for BodyReadTimeout.
+			actor, aerr := httpcore.RequestActor(c.Context(), cfg.RequestActor)
+			if aerr != nil {
+				return writeErr(cfg, c, aerr)
+			}
 			var in httpcore.CompleteInput
 			if oversizeBody(cfg, c) {
 				return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
@@ -165,7 +176,7 @@ func (g TaskRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOptio
 			if err := c.Bind().JSON(&in); err != nil {
 				return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			}
-			status, body, err := httpcore.CompleteTask(c.Context(), g.Svc, token, in, cfg.InstanceMapper)
+			status, body, err := httpcore.CompleteTask(c.Context(), g.Svc, token, in, cfg.InstanceMapper, actor)
 			if err != nil {
 				return writeErr(cfg, c, err)
 			}
@@ -175,6 +186,12 @@ func (g TaskRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOptio
 	rt.Post(cfg.BasePath+"/tasks/:token/reassign", observed(inst, "POST", cfg.BasePath+"/tasks/:token/reassign",
 		func(c fiberlib.Ctx) error {
 			token := c.Params("token")
+			// ⚠ Identity FIRST, before the body is read: an unauthenticated caller must not
+			// be able to force a MaxBodyBytes read or hold the handler for BodyReadTimeout.
+			actor, aerr := httpcore.RequestActor(c.Context(), cfg.RequestActor)
+			if aerr != nil {
+				return writeErr(cfg, c, aerr)
+			}
 			var in httpcore.ReassignInput
 			if oversizeBody(cfg, c) {
 				return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
@@ -182,7 +199,7 @@ func (g TaskRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOptio
 			if err := c.Bind().JSON(&in); err != nil {
 				return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			}
-			status, body, err := httpcore.ReassignTask(c.Context(), g.Svc, token, in, cfg.InstanceMapper)
+			status, body, err := httpcore.ReassignTask(c.Context(), g.Svc, token, in, cfg.InstanceMapper, actor)
 			if err != nil {
 				return writeErr(cfg, c, err)
 			}

@@ -1,10 +1,15 @@
 package httpcore_test
 
 import (
+	"context"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/kartaladev/wrkflw/authz"
 
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/transport/http/httpcore"
@@ -249,4 +254,81 @@ func TestBodyReadTimeoutDefaultAndDisable(t *testing.T) {
 			tc.assert(t, cfg)
 		})
 	}
+}
+
+func TestResolveConfig_RequestActor(t *testing.T) {
+	t.Parallel()
+
+	custom := httpcore.RequestActorFunc(func(context.Context) (authz.Actor, error) {
+		return authz.Actor{ID: "from-option"}, nil
+	})
+
+	tests := map[string]struct {
+		opts   []httpcore.CustomizeOption[*http.ServeMux]
+		ctx    func(t *testing.T) context.Context
+		assert func(t *testing.T, got authz.Actor, err error)
+	}{
+		"default reads the context seam": {
+			ctx: func(t *testing.T) context.Context {
+				return authz.ContextWithActor(t.Context(), authz.Actor{ID: "alice"})
+			},
+			assert: func(t *testing.T, got authz.Actor, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, "alice", got.ID)
+			},
+		},
+		"default with nothing on the context reports ErrUnauthenticated": {
+			ctx: func(t *testing.T) context.Context { return t.Context() },
+			assert: func(t *testing.T, _ authz.Actor, err error) {
+				assert.ErrorIs(t, err, httpcore.ErrUnauthenticated)
+			},
+		},
+		"WithRequestActor overrides the default": {
+			opts: []httpcore.CustomizeOption[*http.ServeMux]{
+				httpcore.WithRequestActor[*http.ServeMux](custom),
+			},
+			ctx: func(t *testing.T) context.Context {
+				return authz.ContextWithActor(t.Context(), authz.Actor{ID: "ignored"})
+			},
+			assert: func(t *testing.T, got authz.Actor, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, "from-option", got.ID)
+			},
+		},
+		// ⚠ nil must RESTORE the fail-closed default, not disable resolution. A func
+		// HAS a nil, unlike MaxBodyBytes' int64, so the post-loop guard is safe here.
+		"WithRequestActor(nil) restores the fail-closed default": {
+			opts: []httpcore.CustomizeOption[*http.ServeMux]{
+				httpcore.WithRequestActor[*http.ServeMux](nil),
+			},
+			ctx: func(t *testing.T) context.Context { return t.Context() },
+			assert: func(t *testing.T, _ authz.Actor, err error) {
+				assert.ErrorIs(t, err, httpcore.ErrUnauthenticated)
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := httpcore.ResolveConfig(tc.opts...)
+			require.NotNil(t, cfg.RequestActor, "ResolveConfig must always leave a resolver")
+			got, err := cfg.RequestActor(tc.ctx(t))
+			tc.assert(t, got, err)
+		})
+	}
+}
+
+// TestResolveConfig_RequestActorTimeout pins the default and that the option is
+// seeded in the STRUCT LITERAL, so an explicit non-positive value survives as
+// "disabled" — the same rule BodyReadTimeout follows.
+func TestResolveConfig_RequestActorTimeout(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, 10*time.Second, httpcore.ResolveConfig[*http.ServeMux]().RequestActorTimeout)
+	assert.Equal(t, time.Duration(0),
+		httpcore.ResolveConfig(httpcore.WithRequestActorTimeout[*http.ServeMux](0)).RequestActorTimeout,
+		"an explicit 0 must survive as disabled, not be re-defaulted")
+	assert.Equal(t, 2*time.Second,
+		httpcore.ResolveConfig(httpcore.WithRequestActorTimeout[*http.ServeMux](2*time.Second)).RequestActorTimeout)
 }

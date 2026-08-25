@@ -42,48 +42,45 @@ func TestMessageInputJSONTags(t *testing.T) {
 	}
 }
 
-func TestActorJSONTags(t *testing.T) {
-	const in = `{"id":"u1","roles":["admin","user"]}`
-	var got httpcore.Actor
-	if err := json.Unmarshal([]byte(in), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.ID != "u1" || len(got.Roles) != 2 || got.Roles[0] != "admin" {
-		t.Fatalf("wire tags mismatch: %+v", got)
-	}
-}
+// TestTaskDTOsIgnoreAStaleActorField pins the migration contract of ADR-0189: the
+// actor fields are GONE from the three task DTOs, and a body still carrying the
+// pre-ADR-0189 "actor"/"by" keys must DECODE CLEANLY with the value simply unread.
+//
+// A 400 here would buy no security — nothing reads the value — and would break
+// consumers' rollout windows. Executed on all three adapters: no DisallowUnknownFields
+// exists anywhere in transport/ or internal/.
+func TestTaskDTOsIgnoreAStaleActorField(t *testing.T) {
+	t.Run("claim", func(t *testing.T) {
+		var got httpcore.ClaimInput
+		if err := json.Unmarshal([]byte(`{"actor":{"id":"u1","roles":["reviewer"]}}`), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got != (httpcore.ClaimInput{}) {
+			t.Fatalf("stale actor must not be read: %+v", got)
+		}
+	})
 
-func TestClaimInputJSONTags(t *testing.T) {
-	const in = `{"actor":{"id":"u1","roles":["reviewer"]}}`
-	var got httpcore.ClaimInput
-	if err := json.Unmarshal([]byte(in), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Actor.ID != "u1" || len(got.Actor.Roles) != 1 {
-		t.Fatalf("wire tags mismatch: %+v", got)
-	}
-}
+	t.Run("complete keeps its own fields", func(t *testing.T) {
+		const in = `{"actor":{"id":"u1","roles":[]},"outcome":"approve","output":{"approved":true}}`
+		var got httpcore.CompleteInput
+		if err := json.Unmarshal([]byte(in), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Outcome != "approve" || got.Output["approved"].(bool) != true {
+			t.Fatalf("wire tags mismatch: %+v", got)
+		}
+	})
 
-func TestCompleteInputJSONTags(t *testing.T) {
-	const in = `{"actor":{"id":"u1","roles":[]},"output":{"approved":true}}`
-	var got httpcore.CompleteInput
-	if err := json.Unmarshal([]byte(in), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Actor.ID != "u1" || got.Output["approved"].(bool) != true {
-		t.Fatalf("wire tags mismatch: %+v", got)
-	}
-}
-
-func TestReassignInputJSONTags(t *testing.T) {
-	const in = `{"from":"alice","to":"bob","by":{"id":"mgr","roles":["manager"]}}`
-	var got httpcore.ReassignInput
-	if err := json.Unmarshal([]byte(in), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.From != "alice" || got.To != "bob" || got.By.ID != "mgr" {
-		t.Fatalf("wire tags mismatch: %+v", got)
-	}
+	t.Run("reassign keeps from/to, drops by", func(t *testing.T) {
+		const in = `{"from":"alice","to":"bob","by":{"id":"mgr","roles":["manager"]}}`
+		var got httpcore.ReassignInput
+		if err := json.Unmarshal([]byte(in), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.From != "alice" || got.To != "bob" {
+			t.Fatalf("from/to are task PARTICIPANTS and must survive: %+v", got)
+		}
+	})
 }
 
 // Admin DTOs.
@@ -148,9 +145,10 @@ func TestCompleteInputCarriesOutcomeAndNote(t *testing.T) {
 	cases := []testCase{
 		{
 			name: "outcome and note decode alongside output",
+			// ⚠ The body still carries "actor": that is the pre-ADR-0189 shape, kept here
+			// deliberately to pin that a lagging client's body still decodes cleanly.
 			body: `{"actor":{"id":"u-jane"},"outcome":"approve","note":"budget confirmed","output":{"amount":100}}`,
 			assert: func(t *testing.T, in httpcore.CompleteInput) {
-				require.Equal(t, "u-jane", in.Actor.ID)
 				require.Equal(t, "approve", in.Outcome)
 				require.Equal(t, "budget confirmed", in.Note)
 				require.Equal(t, map[string]any{"amount": float64(100)}, in.Output)

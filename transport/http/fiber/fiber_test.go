@@ -15,12 +15,14 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	fiberlib "github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/kartaladev/wrkflw/authz"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/internal/transporttest"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
@@ -91,6 +93,16 @@ func newPostRequest(t *testing.T, path string, body any) *http.Request {
 	}
 	r.Header.Set("Content-Type", "application/json")
 	return r.WithContext(t.Context())
+}
+
+// staticActor returns a RequestActorFunc that authenticates EVERY request as
+// the named principal. It stands in for a consumer's authentication middleware
+// in tests that care about what the actor is allowed to do, not about how it
+// was authenticated.
+func staticActor(id string, roles ...string) httpcore.RequestActorFunc {
+	return func(context.Context) (authz.Actor, error) {
+		return authz.Actor{ID: id, Roles: roles}, nil
+	}
 }
 
 // newGetRequest creates a GET request.
@@ -548,6 +560,10 @@ func TestMessageRoutes_Customize(t *testing.T) {
 }
 
 // TestTaskRoutes_Customize verifies POST /tasks/:token/claim returns 200.
+//
+// The request carries NO body: ClaimInput is an empty struct since ADR-0189,
+// so a correctly-migrated client sends nothing at all. The identity comes from
+// the mount's RequestActor, never from the payload.
 func TestTaskRoutes_Customize(t *testing.T) {
 	t.Parallel()
 
@@ -557,11 +573,9 @@ func TestTaskRoutes_Customize(t *testing.T) {
 	taskID := transporttest.StartedApprovalInstance(t, h, "task-claim-fiber-1")
 
 	app := newApp()
-	fiber.Mount(app, svc)
+	fiber.Mount(app, svc, fiber.WithRequestActor(staticActor("alice", "manager")))
 
-	status, body := appDo(t, app, newPostRequest(t, "/tasks/"+taskID+"/claim", map[string]any{
-		"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
-	}))
+	status, body := appDo(t, app, newPostRequest(t, "/tasks/"+taskID+"/claim", nil))
 
 	if status != http.StatusOK {
 		t.Fatalf("want 200 claim, got %d (body=%s)", status, body)
@@ -578,18 +592,15 @@ func TestTaskRoutes_Complete(t *testing.T) {
 	taskID := transporttest.StartedApprovalInstance(t, h, "task-complete-fiber-1")
 
 	app := newApp()
-	fiber.Mount(app, svc)
+	fiber.Mount(app, svc, fiber.WithRequestActor(staticActor("alice", "manager")))
 
-	// Claim first, then complete.
-	statusClaim, bodyClaim := appDo(t, app, newPostRequest(t, "/tasks/"+taskID+"/claim", map[string]any{
-		"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
-	}))
+	// Claim first, then complete. Neither body carries an actor any more.
+	statusClaim, bodyClaim := appDo(t, app, newPostRequest(t, "/tasks/"+taskID+"/claim", nil))
 	if statusClaim != http.StatusOK {
 		t.Fatalf("claim want 200, got %d (body=%s)", statusClaim, bodyClaim)
 	}
 
 	status, body := appDo(t, app, newPostRequest(t, "/tasks/"+taskID+"/complete", map[string]any{
-		"actor":  map[string]any{"id": "alice", "roles": []string{"manager"}},
 		"output": map[string]any{"approved": true},
 	}))
 	if status != http.StatusOK {
@@ -608,23 +619,267 @@ func TestTaskRoutes_Reassign(t *testing.T) {
 	taskID := transporttest.StartedApprovalInstance(t, h, "task-reassign-fiber-1")
 
 	app := newApp()
-	fiber.Mount(app, svc)
+	fiber.Mount(app, svc, fiber.WithRequestActor(staticActor("alice", "manager")))
 
 	// Claim first so alice is the claimant.
-	statusClaim, bodyClaim := appDo(t, app, newPostRequest(t, "/tasks/"+taskID+"/claim", map[string]any{
-		"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
-	}))
+	statusClaim, bodyClaim := appDo(t, app, newPostRequest(t, "/tasks/"+taskID+"/claim", nil))
 	if statusClaim != http.StatusOK {
 		t.Fatalf("claim want 200, got %d (body=%s)", statusClaim, bodyClaim)
 	}
 
+	// "by" is gone from ReassignInput: the reassigner is the authenticated
+	// principal. from/to stay — they name task assignees, not the caller.
 	status, body := appDo(t, app, newPostRequest(t, "/tasks/"+taskID+"/reassign", map[string]any{
 		"from": "alice",
 		"to":   "bob",
-		"by":   map[string]any{"id": "alice", "roles": []string{"manager"}},
 	}))
 	if status != http.StatusOK {
 		t.Fatalf("reassign want 200, got %d (body=%s)", status, body)
+	}
+}
+
+// TestIdentityOptionAliases asserts the two fiber-typed aliases set the fields
+// their generic counterparts set.
+//
+// ⚠ The aliases are not sugar: in httpcore.WithRequestActor[R] the type
+// parameter R appears ONLY in the result type, so it can never be inferred and
+// a direct call must spell fiber.Router out. Deleting either alias would not
+// break compilation of this adapter — it would only push that spelling onto
+// every consumer — so the aliases need a test of their own.
+//
+// RequestActorTimeout is asserted on the CONFIG rather than through a mounted
+// route on purpose: httpcore.ClaimTask/CompleteTask/ReassignTask currently pass
+// a literal 0 to resolveRequestActor, so no end-to-end request can observe the
+// value today. The alias still has to put it in the right field.
+func TestIdentityOptionAliases(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		opt    httpcore.CustomizeOption[fiberlib.Router]
+		assert func(t *testing.T, cfg httpcore.CustomizeConfig[fiberlib.Router])
+	}
+
+	cases := map[string]testCase{
+		"WithRequestActor installs the resolver": {
+			opt: fiber.WithRequestActor(staticActor("alice", "manager")),
+			assert: func(t *testing.T, cfg httpcore.CustomizeConfig[fiberlib.Router]) {
+				t.Helper()
+				require.NotNil(t, cfg.RequestActor)
+				a, err := cfg.RequestActor(t.Context())
+				require.NoError(t, err)
+				assert.Equal(t, "alice", a.ID)
+				assert.Equal(t, []string{"manager"}, a.Roles)
+			},
+		},
+		"WithRequestActor(nil) falls back to the context seam": {
+			opt: fiber.WithRequestActor(nil),
+			assert: func(t *testing.T, cfg httpcore.CustomizeConfig[fiberlib.Router]) {
+				t.Helper()
+				require.NotNil(t, cfg.RequestActor, "ResolveConfig must restore the default")
+				seeded := authz.ContextWithActor(t.Context(), authz.Actor{ID: "bob"})
+				a, err := cfg.RequestActor(seeded)
+				require.NoError(t, err)
+				assert.Equal(t, "bob", a.ID)
+			},
+		},
+		"WithRequestActorTimeout sets the bound": {
+			opt: fiber.WithRequestActorTimeout(3 * time.Second),
+			assert: func(t *testing.T, cfg httpcore.CustomizeConfig[fiberlib.Router]) {
+				t.Helper()
+				assert.Equal(t, 3*time.Second, cfg.RequestActorTimeout)
+			},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			tc.assert(t, httpcore.ResolveConfig(tc.opt))
+		})
+	}
+}
+
+// TestTaskRoutes_ActorComesFromMiddlewareNotTheBody pins ADR-0189's core
+// decision for the fiber adapter: the acting principal is whatever the
+// consumer's AUTHENTICATION middleware put on the request context, and a body
+// claiming a different identity is ignored rather than believed.
+//
+// The middleware authenticates a VIEWER — a role the approval task's
+// eligibility spec (activity.WithEligibleRoles("manager")) does not admit —
+// while the request body still carries the pre-ADR-0189
+// {"actor": {..., "roles": ["manager"]}} payload a stale client would send.
+// 403 is the only answer that proves the body lost: a 200 would mean the
+// self-asserted manager role in the payload had been honoured.
+//
+// ⚠ The middleware writes the actor with c.SetContext, NOT c.Locals — see
+// TestTaskRoutes_LocalsDoesNotAuthenticate for why that distinction is a
+// contract of this adapter rather than an incidental style choice.
+func TestTaskRoutes_ActorComesFromMiddlewareNotTheBody(t *testing.T) {
+	t.Parallel()
+
+	def := transporttest.ApprovalProcess()
+	h, svc := transporttest.NewHarness(t, def)
+
+	taskID := transporttest.StartedApprovalInstance(t, h, "task-claim-fiber-middleware")
+
+	app := newApp()
+	app.Use(func(c fiberlib.Ctx) error {
+		c.SetContext(authz.ContextWithActor(c.Context(), authz.Actor{
+			ID: "eve", Roles: []string{"viewer"},
+		}))
+		return c.Next()
+	})
+	fiber.Mount(app, svc)
+
+	status, body := appDo(t, app, newPostRequest(t, "/tasks/"+taskID+"/claim", map[string]any{
+		"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
+	}))
+
+	assert.Equal(t, http.StatusForbidden, status, "body=%s", body)
+	assert.Contains(t, body, `"forbidden"`)
+}
+
+// TestTaskRoutes_NoIdentity401 pins the fail-closed default: a mount with no
+// RequestActor and no authentication middleware answers 401, never a 200 for
+// the zero actor.
+//
+// ⚠ The task in this test EXISTS and the 401 still precedes the lookup, which
+// is deliberate — an unauthenticated caller must not be able to tell a real
+// task id from a fabricated one. TestTaskRoutes_NoIdentity401 and its sibling
+// row in TestTaskRoutes_ClaimBodyIsOptionalButStillBounded together fix the
+// order: 413 (body) → 401 (identity) → 404 (lookup).
+func TestTaskRoutes_NoIdentity401(t *testing.T) {
+	t.Parallel()
+
+	def := transporttest.ApprovalProcess()
+	h, svc := transporttest.NewHarness(t, def)
+
+	taskID := transporttest.StartedApprovalInstance(t, h, "task-claim-fiber-noidentity")
+
+	app := newApp()
+	fiber.Mount(app, svc)
+
+	status, body := appDo(t, app, newPostRequest(t, "/tasks/"+taskID+"/claim", nil))
+
+	assert.Equal(t, http.StatusUnauthorized, status, "body=%s", body)
+	assert.Contains(t, body, `"unauthenticated"`)
+}
+
+// TestTaskRoutes_LocalsDoesNotAuthenticate pins a CONTRACT, not an accident:
+// fiber's most canonical middleware channel, c.Locals, does NOT authenticate a
+// request for this adapter, and a consumer who reaches for it gets a
+// fail-closed 401 instead of a silently wrong identity.
+//
+// The mechanism, MEASURED on fiber v3.4.0 with one middleware writing each way
+// and a handler reading both:
+//
+//	SetContext   c.Context().Value=from-middleware   c.Value=<nil>
+//	Locals       c.Context().Value=<nil>             c.Value=from-middleware
+//
+// fiber.Ctx.Context() returns a SEPARATE object from the Ctx itself — its own
+// godoc says it "returns a non-nil, empty context, if it was not set earlier" —
+// while Ctx additionally implements context.Context, whose Value reads Locals.
+// groups.go hands c.Context() to httpcore, so only the SetContext half is
+// visible to the actor seam.
+//
+// ⚠ If this test ever returns 403 (i.e. the viewer identity DID arrive), fiber
+// has unified the two objects. That is not a licence to delete the test: it
+// means SECURITY.md and the fiber examples must be revisited, because the
+// documented "use c.SetContext" guidance would no longer be the only working
+// channel — and because a channel that starts working silently changes which
+// requests are authenticated.
+func TestTaskRoutes_LocalsDoesNotAuthenticate(t *testing.T) {
+	t.Parallel()
+
+	def := transporttest.ApprovalProcess()
+	h, svc := transporttest.NewHarness(t, def)
+
+	taskID := transporttest.StartedApprovalInstance(t, h, "task-claim-fiber-locals")
+
+	app := newApp()
+	app.Use(func(c fiberlib.Ctx) error {
+		// The canonical fiber idiom — and the one that does NOT reach the seam.
+		c.Locals("actor", authz.Actor{ID: "eve", Roles: []string{"viewer"}})
+		return c.Next()
+	})
+	fiber.Mount(app, svc)
+
+	status, body := appDo(t, app, newPostRequest(t, "/tasks/"+taskID+"/claim", nil))
+
+	assert.Equal(t, http.StatusUnauthorized, status,
+		"c.Locals must NOT authenticate — fail closed, body=%s", body)
+	assert.Contains(t, body, `"unauthenticated"`)
+}
+
+// TestTaskRoutes_ClaimBodyIsOptionalButStillBounded pins the claim route's body
+// contract after ADR-0189 emptied ClaimInput.
+//
+// A correctly-migrated client sends NO body at all, so requiring one would
+// break every such client with a 400 (MEASURED before the optional decode
+// existed: an absent body answered 400 "unexpected end of JSON input"). The
+// route therefore ignores an absent or undecodable payload and proceeds with
+// the zero ClaimInput.
+//
+// ⚠ Optional is not unbounded. The oversize row is the load-bearing one: it
+// fails if the optional decode is written as a bare "ignore the error", which
+// would drop this route out of ADR-0186's 413 contract while every other row
+// here stayed green. TestEveryDecodeSiteIsBounded covers the same fact from the
+// enumeration side; this row keeps it attached to the reason.
+func TestTaskRoutes_ClaimBodyIsOptionalButStillBounded(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		raw    []byte
+		assert func(t *testing.T, status int, body string)
+	}
+
+	ok := func(t *testing.T, status int, body string) {
+		t.Helper()
+		assert.Equal(t, http.StatusOK, status, "body=%s", body)
+	}
+
+	cases := map[string]testCase{
+		"absent body": {
+			raw:    nil,
+			assert: ok,
+		},
+		"empty JSON object": {
+			raw:    []byte(`{}`),
+			assert: ok,
+		},
+		"undecodable body is ignored, not a 400": {
+			raw:    []byte(`}{ not json`),
+			assert: ok,
+		},
+		"oversize body is still 413": {
+			raw: startBody(2 << 20),
+			assert: func(t *testing.T, status int, body string) {
+				t.Helper()
+				assert.Equal(t, http.StatusRequestEntityTooLarge, status, "body=%.200s", body)
+				assert.Contains(t, body, `"request_too_large"`)
+			},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			def := transporttest.ApprovalProcess()
+			h, svc := transporttest.NewHarness(t, def)
+
+			taskID := transporttest.StartedApprovalInstance(t, h, "task-claim-fiber-optional-"+name)
+
+			app := newApp()
+			fiber.Mount(app, svc,
+				fiber.WithMaxBodyBytes(1<<20),
+				fiber.WithRequestActor(staticActor("alice", "manager")),
+			)
+
+			status, body := appDo(t, app, newRawPostRequest(t, "/tasks/"+taskID+"/claim", tc.raw, ""))
+			tc.assert(t, status, body)
+		})
 	}
 }
 

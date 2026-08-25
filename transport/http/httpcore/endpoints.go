@@ -113,10 +113,19 @@ func DeliverMessage(ctx context.Context, svc service.Service, in MessageInput) (
 
 // ClaimTask authorizes the actor and claims a human task, returning (200,
 // mappedBody, nil) on success.
-func ClaimTask(ctx context.Context, svc service.Service, token string, in ClaimInput, mapper func(engine.InstanceState) any) (int, any, error) {
+func ClaimTask(ctx context.Context, svc service.Service, token string, in ClaimInput, mapper func(engine.InstanceState) any, actor authz.Actor) (int, any, error) {
+	// ⚠ The actor arrives already RESOLVED — the adapter calls [RequestActor] before it
+	// reads the body, so an unauthenticated caller is refused without one being read.
+	//
+	// This guard is defence in depth for a consumer-written adapter that skips that
+	// call: a zero actor can never mean "authenticated". It performs no I/O.
+	if isZeroActor(actor) {
+		return 0, nil, fmt.Errorf("%w: the endpoint received the zero actor", ErrUnauthenticated)
+	}
+	a := actor
 	pi, err := svc.ClaimTask(ctx, service.ClaimTaskRequest{
 		TaskID: token,
-		Actor:  authz.Actor{ID: in.Actor.ID, Roles: in.Actor.Roles},
+		Actor:  a,
 	})
 	if err != nil {
 		return 0, nil, err
@@ -126,10 +135,19 @@ func ClaimTask(ctx context.Context, svc service.Service, token string, in ClaimI
 
 // CompleteTask authorizes the actor and completes a human task, returning (200,
 // mappedBody, nil) on success.
-func CompleteTask(ctx context.Context, svc service.Service, token string, in CompleteInput, mapper func(engine.InstanceState) any) (int, any, error) {
+func CompleteTask(ctx context.Context, svc service.Service, token string, in CompleteInput, mapper func(engine.InstanceState) any, actor authz.Actor) (int, any, error) {
+	// ⚠ The actor arrives already RESOLVED — the adapter calls [RequestActor] before it
+	// reads the body, so an unauthenticated caller is refused without one being read.
+	//
+	// This guard is defence in depth for a consumer-written adapter that skips that
+	// call: a zero actor can never mean "authenticated". It performs no I/O.
+	if isZeroActor(actor) {
+		return 0, nil, fmt.Errorf("%w: the endpoint received the zero actor", ErrUnauthenticated)
+	}
+	a := actor
 	pi, err := svc.CompleteTask(ctx, service.CompleteTaskRequest{
 		TaskID:  token,
-		Actor:   authz.Actor{ID: in.Actor.ID, Roles: in.Actor.Roles},
+		Actor:   a,
 		Outcome: in.Outcome,
 		Note:    in.Note,
 		Output:  in.Output,
@@ -142,12 +160,21 @@ func CompleteTask(ctx context.Context, svc service.Service, token string, in Com
 
 // ReassignTask authorizes the reassigner and reassigns a human task, returning
 // (200, mappedBody, nil) on success.
-func ReassignTask(ctx context.Context, svc service.Service, token string, in ReassignInput, mapper func(engine.InstanceState) any) (int, any, error) {
+func ReassignTask(ctx context.Context, svc service.Service, token string, in ReassignInput, mapper func(engine.InstanceState) any, actor authz.Actor) (int, any, error) {
+	// ⚠ The actor arrives already RESOLVED — the adapter calls [RequestActor] before it
+	// reads the body, so an unauthenticated caller is refused without one being read.
+	//
+	// This guard is defence in depth for a consumer-written adapter that skips that
+	// call: a zero actor can never mean "authenticated". It performs no I/O.
+	if isZeroActor(actor) {
+		return 0, nil, fmt.Errorf("%w: the endpoint received the zero actor", ErrUnauthenticated)
+	}
+	a := actor
 	pi, err := svc.ReassignTask(ctx, service.ReassignTaskRequest{
 		TaskID: token,
 		From:   in.From,
 		To:     in.To,
-		By:     authz.Actor{ID: in.By.ID, Roles: in.By.Roles},
+		By:     a,
 	})
 	if err != nil {
 		return 0, nil, err

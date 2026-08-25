@@ -161,15 +161,26 @@ func TestMessageRoutes_DeliverMessage_ErrorPath(t *testing.T) {
 
 // ─── TaskRoutes error path tests ─────────────────────────────────────────────
 
-func newTaskSrv(t *testing.T) *httptest.Server {
+func newTaskSrv(t *testing.T, opts ...httpcore.CustomizeOption[ginlib.IRouter]) *httptest.Server {
 	t.Helper()
 	r := ginlib.New()
-	ginadapter.TaskRoutes{Svc: &errInstanceSvc{}}.Customize(r)
+	ginadapter.TaskRoutes{Svc: &errInstanceSvc{}}.Customize(r, opts...)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 	return srv
 }
 
+// TestTaskRoutes_Claim_BadJSON asserts 401, NOT the 400 it asserted before
+// ADR-0189, and both halves of that are deliberate:
+//
+//   - the claim route now decodes OPTIONALLY (ClaimInput has no fields left, so a
+//     migrated client sends no body at all), which means "not-json" no longer
+//     produces a decode error to answer 400 with — it leaves the zero input;
+//   - the mount is bare, so nothing authenticated the request and identity
+//     resolution refuses first.
+//
+// A 400 here would mean the optional decoder had regressed back to a required
+// one; a 200 would mean identity resolution stopped failing closed.
 func TestTaskRoutes_Claim_BadJSON(t *testing.T) {
 	t.Parallel()
 	def := transporttest.LinearProcess()
@@ -181,28 +192,37 @@ func TestTaskRoutes_Claim_BadJSON(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	resp := post(t, srv, "/tasks/tok/claim", "not-json")
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("want 400, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", resp.StatusCode)
 	}
 }
 
+// TestTaskRoutes_Claim_ErrorPath pins the service-error branch, so it must get
+// PAST identity resolution: since ADR-0189 the 401 precedes the task lookup, and
+// mounting bare would answer 401 and never reach errInstanceSvc.
 func TestTaskRoutes_Claim_ErrorPath(t *testing.T) {
 	t.Parallel()
-	resp := post(t, newTaskSrv(t), "/tasks/bad-token/claim", map[string]any{
-		"actor": map[string]any{"id": "alice"},
-	})
+	srv := newTaskSrv(t, ginadapter.WithRequestActor(staticActor("alice")))
+	resp := post(t, srv, "/tasks/bad-token/claim", map[string]any{})
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("want 404, got %d", resp.StatusCode)
 	}
 }
 
+// TestTaskRoutes_Complete_BadJSON is about the DECODER, not identity: it pins
+// that a malformed body on the complete route is refused with 400.
+//
+// ⚠ The mount must authenticate. Since ADR-0189 the complete route resolves the
+// actor BEFORE it reads the body, so a bare mount answers 401 and the decoder is
+// never reached — the 400 this test exists for would be unobservable. The actor
+// is scaffolding to get past the 401 gate; it is not part of what is asserted.
 func TestTaskRoutes_Complete_BadJSON(t *testing.T) {
 	t.Parallel()
 	def := transporttest.LinearProcess()
 	_, svc := transporttest.NewHarness(t, def)
 
 	r := ginlib.New()
-	ginadapter.TaskRoutes{Svc: svc}.Customize(r)
+	ginadapter.TaskRoutes{Svc: svc}.Customize(r, ginadapter.WithRequestActor(staticActor("alice")))
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -212,23 +232,33 @@ func TestTaskRoutes_Complete_BadJSON(t *testing.T) {
 	}
 }
 
+// TestTaskRoutes_Complete_ErrorPath needs an authenticated mount for the same
+// reason as TestTaskRoutes_Claim_ErrorPath: 401 now precedes the task lookup.
 func TestTaskRoutes_Complete_ErrorPath(t *testing.T) {
 	t.Parallel()
-	resp := post(t, newTaskSrv(t), "/tasks/bad-token/complete", map[string]any{
-		"actor": map[string]any{"id": "alice"},
+	srv := newTaskSrv(t, ginadapter.WithRequestActor(staticActor("alice")))
+	resp := post(t, srv, "/tasks/bad-token/complete", map[string]any{
+		"output": map[string]any{"approved": true},
 	})
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("want 404, got %d", resp.StatusCode)
 	}
 }
 
+// TestTaskRoutes_Reassign_BadJSON is about the DECODER, not identity: it pins
+// that a malformed body on the reassign route is refused with 400.
+//
+// ⚠ The mount must authenticate, for the same reason as
+// TestTaskRoutes_Complete_BadJSON: ADR-0189 moved actor resolution ahead of the
+// body read, so a bare mount answers 401 and never decodes. The actor here is
+// scaffolding to reach the decoder, not the subject of the assertion.
 func TestTaskRoutes_Reassign_BadJSON(t *testing.T) {
 	t.Parallel()
 	def := transporttest.LinearProcess()
 	_, svc := transporttest.NewHarness(t, def)
 
 	r := ginlib.New()
-	ginadapter.TaskRoutes{Svc: svc}.Customize(r)
+	ginadapter.TaskRoutes{Svc: svc}.Customize(r, ginadapter.WithRequestActor(staticActor("alice")))
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
@@ -238,10 +268,15 @@ func TestTaskRoutes_Reassign_BadJSON(t *testing.T) {
 	}
 }
 
+// TestTaskRoutes_Reassign_ErrorPath asserts 404 on an unknown token — it is the
+// service-error branch, not an authorization one; gin has no 403 assertion here.
+// The mount authenticates because 401 now precedes the task lookup, and the body
+// carries from/to only: the reassigner is the authenticated actor, never "by".
 func TestTaskRoutes_Reassign_ErrorPath(t *testing.T) {
 	t.Parallel()
-	resp := post(t, newTaskSrv(t), "/tasks/bad-token/reassign", map[string]any{
-		"from": "alice", "to": "carol", "by": map[string]any{"id": "alice"},
+	srv := newTaskSrv(t, ginadapter.WithRequestActor(staticActor("alice")))
+	resp := post(t, srv, "/tasks/bad-token/reassign", map[string]any{
+		"from": "alice", "to": "carol",
 	})
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("want 404, got %d", resp.StatusCode)

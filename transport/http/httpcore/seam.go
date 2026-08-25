@@ -5,14 +5,54 @@
 package httpcore
 
 import (
+	"context"
 	"log/slog"
 	"time"
 
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/kartaladev/wrkflw/authz"
 	"github.com/kartaladev/wrkflw/engine"
 )
+
+// RequestActorFunc resolves the AUTHENTICATED principal for one request.
+//
+// The default reads the actor a consumer's authentication middleware placed on the
+// context with [authz.ContextWithActor]. Override it with [WithRequestActor] when
+// the identity lives somewhere the context does not reach.
+//
+// Contract:
+//   - return the actor and a nil error when the request is authenticated;
+//   - return [ErrUnauthenticated] when it carries no credential (⇒ 401);
+//   - return any other error when the identity system itself failed (⇒ 503).
+//
+// ⚠ It answers WHO, not MAY. Returning authz.ErrNotAuthorized classifies as 503,
+// not 403 — see ClassifyError's first arms. Authorization is the Authorizer's job.
+//
+// ⚠ The transport READS the returned actor's Attributes once, to bound and copy
+// them. A consumer must not mutate that map (or anything nested in it) concurrently
+// with the request: iterating a map another goroutine is writing is a Go runtime
+// FATAL that recover() cannot catch. This is the same contract the existing
+// humantask.ActorResolver → candidates → task-store path already relies on.
+type RequestActorFunc func(context.Context) (authz.Actor, error)
+
+// defaultRequestActor reads the seam and refuses when nothing authenticated the
+// request. It is the value ResolveConfig installs when a consumer sets none.
+func defaultRequestActor(ctx context.Context) (authz.Actor, error) {
+	a, ok := authz.ActorFromContext(ctx)
+	if !ok {
+		return authz.Actor{}, ErrUnauthenticated
+	}
+	return a, nil
+}
+
+// defaultRequestActorTimeout bounds the consumer's resolver call when none is set.
+//
+// ⚠ 10s is not a new number: it mirrors the engine's own
+// WithCandidateResolveTimeout, which bounds the sibling "expand an eligibility spec
+// into actors" call.
+const defaultRequestActorTimeout = 10 * time.Second
 
 // CustomizeConfig carries per-mount configuration for a route group. R is the
 // framework router type (*http.ServeMux, gin.IRouter, fiber.Router). The struct
@@ -73,6 +113,27 @@ type CustomizeConfig[R any] struct {
 	// it: fasthttp has already read the entire body into memory before the
 	// handler runs, so there is no read for a deadline to bound there.
 	BodyReadTimeout time.Duration
+	// RequestActor resolves the authenticated principal for each human-task request.
+	// nil-safe: ResolveConfig defaults it to the [authz.ContextWithActor] seam, which
+	// refuses with [ErrUnauthenticated] when nothing authenticated the caller.
+	//
+	// ⚠ The transport reads the actor from HERE and from nowhere else. Before
+	// ADR-0189 it read `actor`/`by` out of the request body, which any caller could
+	// forge; those DTO fields no longer exist and a body still carrying them is
+	// ignored.
+	RequestActor RequestActorFunc
+	// RequestActorTimeout bounds how long [RequestActor] may take. The default is 10s;
+	// a non-positive value disables the bound.
+	//
+	// ⚠ It bounds only a resolver that HONOURS ctx cancellation. MEASURED: a resolver
+	// that ignores ctx ran 1.5s against a 200ms bound and returned successfully, so
+	// the request proceeded with an actor obtained after the deadline. The engine's
+	// WithCandidateResolveTimeout carries the same caveat in its own godoc.
+	//
+	// ⚠ Like BodyReadTimeout, the default lives in ResolveConfig's struct literal, NOT
+	// its post-loop nil-guard block: a time.Duration has no nil, so a post-loop guard
+	// could not distinguish "unset" from an explicit 0 (= disabled).
+	RequestActorTimeout time.Duration
 	// Logger receives 5xx raw error details (never sent to clients).
 	Logger         *slog.Logger
 	TracerProvider trace.TracerProvider
@@ -104,8 +165,9 @@ func ResolveConfig[R any](opts ...CustomizeOption[R]) CustomizeConfig[R] {
 		// overwrite either with an explicit 0 (= disabled). Moving these into the
 		// post-loop guard block would make an explicit 0 indistinguishable from
 		// unset — neither an int64 nor a time.Duration has a nil to test.
-		MaxBodyBytes:    defaultMaxBodyBytes,
-		BodyReadTimeout: defaultBodyReadTimeout,
+		MaxBodyBytes:        defaultMaxBodyBytes,
+		BodyReadTimeout:     defaultBodyReadTimeout,
+		RequestActorTimeout: defaultRequestActorTimeout,
 	}
 	for _, o := range opts {
 		if o != nil {
@@ -121,7 +183,60 @@ func ResolveConfig[R any](opts ...CustomizeOption[R]) CustomizeConfig[R] {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
+	// ⚠ Guarded HERE, not seeded in the literal above — the opposite of MaxBodyBytes,
+	// BodyReadTimeout and RequestActorTimeout. Those are seeded in the literal because
+	// an int64 and a time.Duration have no nil, so a post-loop guard could not tell
+	// "unset" from an explicit 0 (= disabled). A func DOES have a nil, and there is no
+	// "disabled" state to preserve: resolution is never optional. So
+	// WithRequestActor(nil) restores the default, which itself fails closed.
+	if cfg.RequestActor == nil {
+		cfg.RequestActor = defaultRequestActor
+	}
+	// ⚠ The bound is COMPOSED INTO the resolver here rather than passed alongside it.
+	//
+	// The three task endpoints take the resolver as their only added argument and have
+	// no sight of the config, so a separately-carried timeout would have been silently
+	// inert at every adapter — which is exactly what it was until this composition
+	// landed, found independently by two implementers. Wrapping keeps ADR-0189's "one
+	// added argument, no branch" true instead of falsifying it.
+	//
+	// Composed AFTER the option loop, so WithRequestActor and WithRequestActorTimeout
+	// may be passed in either order.
+	if cfg.RequestActorTimeout > 0 {
+		inner, d := cfg.RequestActor, cfg.RequestActorTimeout
+		cfg.RequestActor = func(ctx context.Context) (authz.Actor, error) {
+			ctx, cancel := context.WithTimeout(ctx, d)
+			defer cancel()
+			return inner(ctx)
+		}
+	}
 	return cfg
+}
+
+// WithRequestActor overrides how the authenticated principal is resolved for the
+// human-task routes. fn == nil restores the default (the [authz.ContextWithActor]
+// seam), which refuses with 401 when nothing authenticated the request.
+//
+// ⚠ The name is deliberate. WithActorResolver is already exported three times —
+// service, runtime/task and processtest — for the OPPOSITE concept: expanding an
+// eligibility spec into candidate actors ("who COULD act"). This one answers "who
+// IS acting".
+//
+// ⚠ Prefer the non-generic per-adapter alias — stdlib.WithRequestActor,
+// gin.WithRequestActor, fiber.WithRequestActor. R appears only in the result type,
+// so it cannot be inferred here and a direct call must spell the router type out.
+func WithRequestActor[R any](fn RequestActorFunc) CustomizeOption[R] {
+	return func(c *CustomizeConfig[R]) { c.RequestActor = fn }
+}
+
+// WithRequestActorTimeout bounds how long the configured [RequestActorFunc] may
+// take. d <= 0 disables the bound, matching WithMaxBodyBytes and
+// WithBodyReadTimeout. The default is 10s.
+//
+// ⚠ It bounds only a resolver that honours ctx cancellation — see
+// [CustomizeConfig.RequestActorTimeout] for the measurement.
+func WithRequestActorTimeout[R any](d time.Duration) CustomizeOption[R] {
+	return func(c *CustomizeConfig[R]) { c.RequestActorTimeout = d }
 }
 
 // WithBasePath prefixes every route the group registers (e.g. "/api/v1/workflow").

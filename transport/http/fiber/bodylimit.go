@@ -109,3 +109,36 @@ func oversizeBody(cfg httpcore.CustomizeConfig[fiberlib.Router], c fiberlib.Ctx)
 	}
 	return int64(len(decoded)) > n
 }
+
+// bindOptionalBody decodes an OPTIONAL JSON body into dst under cfg's inbound
+// cap. An ABSENT or UNDECODABLE body leaves dst at its zero value; an OVERSIZE
+// body is still refused. It returns [httpcore.ErrRequestBodyTooLarge] for that
+// refusal and nil otherwise, so a caller writes:
+//
+//	if err := bindOptionalBody(cfg, c, &in); err != nil {
+//		return writeErr(cfg, c, err)
+//	}
+//
+// ⚠ The sentinel is returned BARE. Wrapping it in [httpcore.ErrBadInput] — as
+// the REQUIRED decode sites rightly do with their bind error — would be
+// absorbed by the ordered switch in httpcore.ClassifyError, which answers
+// "bad_request" for anything matching ErrBadInput, and the 413 would silently
+// become a 400.
+//
+// ⚠ Optional is not unbounded. Skipping the cap here because the payload is
+// ignorable would leave one route decoding an arbitrarily large body into
+// memory, which is the exact hole ADR-0186's cap exists to close — and the
+// decompression accounting in [oversizeBody] applies unchanged.
+//
+// Only the claim route uses this: ADR-0189 emptied httpcore.ClaimInput, so a
+// correctly-migrated client sends NO body at all and requiring one would answer
+// 400 (MEASURED before this helper existed: "workflow-httpcore: bad input:
+// bind from body: unexpected end of JSON input"). CompleteInput and
+// ReassignInput still carry required content and keep the strict decode.
+func bindOptionalBody(cfg httpcore.CustomizeConfig[fiberlib.Router], c fiberlib.Ctx, dst any) error {
+	if oversizeBody(cfg, c) {
+		return httpcore.ErrRequestBodyTooLarge
+	}
+	_ = c.Bind().JSON(dst) // body is optional
+	return nil
+}

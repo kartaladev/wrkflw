@@ -34,12 +34,69 @@ Please include:
 `wrkflw` is an embeddable library; the consumer owns the deployed surface. A few responsibilities sit
 with the embedder and are documented rather than enforced by default:
 
+- **Authentication of every route group except the human-task verbs (ADR-0189).**
+  ⚠⚠ **`InstanceRoutes`, `MessageRoutes` and `AdminRoutes` authenticate NOTHING.** `POST /instances`,
+  `POST /instances/{id}/signals` and `POST /messages` are **state-changing** and open to any caller
+  that can reach them; the instance read routes (`GET /instances/{id}`, `/snapshot`, `/actionable`)
+  are likewise open, and they render `claim.actor` and `candidates[]` — classified `actor`, i.e.
+  personal data — to whoever asks. Put your own guard in front of these groups. Only
+  `POST /tasks/{token}/{claim,complete,reassign}` refuse an unauthenticated caller.
 - **Authorization** of the admin HTTP routes. Admin endpoints are default-absent by
   composition (ADR-0095): they exist only when you mount `AdminRoutes` on a router group
   that your own auth middleware already protects. They carry no built-in authentication.
 - **TLS** for the database, SMTP, and transport servers.
 - **Untrusted definitions** — enable the expression-evaluation timeout (injectable evaluator) before
   loading process definitions from untrusted input.
+
+## Request-actor identity (ADR-0189)
+
+The human-task verbs authorize against an actor **you** supply. Before ADR-0189 that actor came from
+the request body, so any caller could name their own roles; it now comes from the request context and
+from nowhere else.
+
+**Put the actor on the context in your authentication middleware.** ⚠ The idiom differs per adapter,
+and in gin and fiber the *most natural* channel is the one that does **not** work — both are
+measured, not theoretical:
+
+| adapter | ✅ reaches the handler | ❌ does NOT reach the handler |
+|---|---|---|
+| `stdlib` | `next.ServeHTTP(w, r.WithContext(authz.ContextWithActor(r.Context(), a)))` | — |
+| `gin` | `gc.Request = gc.Request.WithContext(authz.ContextWithActor(gc.Request.Context(), a))` | **`gc.Set(...)`** |
+| `fiber` | `c.SetContext(authz.ContextWithActor(c.Context(), a))` | **`c.Locals(...)`** |
+
+Using the ❌ column is **fail-closed** — the request gets a 401 rather than a false identity — but it
+will look like your middleware is being ignored. Each is pinned by a test; if one ever starts
+returning 403 the framework changed and this table is stale.
+
+**Or supply a resolver** when the identity is not on the context:
+
+```go
+stdlib.Mount(mux, svc, stdlib.WithRequestActor(func(ctx context.Context) (authz.Actor, error) {
+    a, err := myIdentityProvider.Resolve(ctx)
+    if errors.Is(err, myProvider.ErrNoCredential) {
+        return authz.Actor{}, httpcore.ErrUnauthenticated // ⇒ 401
+    }
+    return a, err // any other error ⇒ 503, never a downgrade to an anonymous actor
+}))
+```
+
+**The contract:**
+
+- no actor, a nil resolver, or the **zero** actor ⇒ **401**. ⚠ The zero actor is refused because
+  `actor, _ := authenticate(r)` produces exactly that on its error path. The *kiosk claimant*
+  `{ID:"", Roles:["kiosk"]}` is deliberately still accepted (ADR-0148).
+- a resolver **error** ⇒ **503**, never a downgrade. A returned `authz.ErrNotAuthorized` is also a
+  503: a resolver answers *who*, not *may*.
+- actor `Attributes` are bounded (64 levels deep, 16 KiB marshalled) and deep-copied. Exceeding
+  either ⇒ 503.
+- ⚠ **Your resolver must not mutate the returned actor's attributes concurrently.** The library reads
+  them once; iterating a map another goroutine is writing is a Go runtime fatal that `recover()`
+  cannot catch.
+- ✅ **The 401 is decided BEFORE the body is read.** An unauthenticated request to a human-task
+  route is refused without its body being consumed, so it cannot force a `MaxBodyBytes` read or
+  hold a handler for `BodyReadTimeout`. Ordering: **401 → 413 → 400 → 404**.
+  ⚠ One consequence worth knowing: an unauthenticated caller cannot learn whether its body was
+  oversize or malformed — both answer 401. That is deliberate.
 
 ## Request body limits (ADR-0186)
 

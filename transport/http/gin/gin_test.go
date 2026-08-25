@@ -402,23 +402,24 @@ func TestTaskRoutes_ClaimCompleteReassign(t *testing.T) {
 	h, svc := transporttest.NewHarness(t, approvalDef)
 
 	r := ginlib.New()
-	ginadapter.Mount(r, svc)
+	// ADR-0189: the actor is the AUTHENTICATED principal the mount resolves, not
+	// a field of the request body. The bodies below no longer carry "actor".
+	ginadapter.Mount(r, svc, ginadapter.WithRequestActor(staticActor("alice", "manager")))
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
 	token := transporttest.StartedApprovalInstance(t, h, "gin-task-1")
 
-	// Claim.
-	claimResp := post(t, srv, "/tasks/"+token+"/claim", map[string]any{
-		"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
-	})
+	// Claim. ClaimInput has no fields left, so an empty document is a complete
+	// claim request; see TestTaskRoutes_Claim_AcceptsAbsentBody for the shape a
+	// migrated client actually sends.
+	claimResp := post(t, srv, "/tasks/"+token+"/claim", map[string]any{})
 	if claimResp.StatusCode != http.StatusOK {
 		t.Fatalf("claim: want 200, got %d", claimResp.StatusCode)
 	}
 
 	// Complete.
 	completeResp := post(t, srv, "/tasks/"+token+"/complete", map[string]any{
-		"actor":  map[string]any{"id": "alice", "roles": []string{"manager"}},
 		"output": map[string]any{"approved": true},
 	})
 	if completeResp.StatusCode != http.StatusOK {
@@ -432,16 +433,16 @@ func TestTaskRoutes_Reassign(t *testing.T) {
 	h, svc := transporttest.NewHarness(t, approvalDef)
 
 	r := ginlib.New()
-	ginadapter.Mount(r, svc)
+	// ADR-0189: alice is authenticated by the mount; the reassign body carries
+	// only from/to, never the "by" actor it used to assert for itself.
+	ginadapter.Mount(r, svc, ginadapter.WithRequestActor(staticActor("alice", "manager")))
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
 	token := transporttest.StartedApprovalInstance(t, h, "gin-reassign-1")
 
 	// Claim first via HTTP.
-	claimResp := post(t, srv, "/tasks/"+token+"/claim", map[string]any{
-		"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
-	})
+	claimResp := post(t, srv, "/tasks/"+token+"/claim", map[string]any{})
 	if claimResp.StatusCode != http.StatusOK {
 		t.Fatalf("claim before reassign: want 200, got %d", claimResp.StatusCode)
 	}
@@ -450,7 +451,6 @@ func TestTaskRoutes_Reassign(t *testing.T) {
 	reassignResp := post(t, srv, "/tasks/"+token+"/reassign", map[string]any{
 		"from": "alice",
 		"to":   "carol",
-		"by":   map[string]any{"id": "alice", "roles": []string{"manager"}},
 	})
 	if reassignResp.StatusCode != http.StatusOK {
 		t.Fatalf("reassign: want 200, got %d", reassignResp.StatusCode)
