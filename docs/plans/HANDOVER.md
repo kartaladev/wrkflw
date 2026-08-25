@@ -9,101 +9,82 @@ top to bottom; it is meant to stay short enough that you can.
 > see `docs/plans/HANDOVER-archive.md`. Per-delivery detail belongs in that delivery's plan under
 > a `▶ Progress` block. This file carries only: where `main` is, what is unmerged, and what next.
 
-## State — updated 2026-08-25 (**ADR-0185-core FAILED+parked · ADR-0188 REJECTED · the real defects FIXED**)
+## State — updated 2026-08-25 (**MERGED and PUSHED; nothing in flight; next is backlog 51**)
 
-**`main` is PUSHED and clean.** ⚠ Re-derive it (`git rev-parse --short refs/heads/main`); anchor on
-**merge** SHAs, which never move: **ADR-0187 at-rest posture `4e2c0af4` (latest shipped)**,
-ADR-0186 body caps `13b3bfb0`, the backlog
-sweep `020af37b`, 0184 `be6e6b55`, 0183 `a7575ed5`, 0179 `962aeb25`, 0181/0182 `1ac140f6`,
-0177/0178/0180 `a5b33e4c`, 0176 `52bf0f80`, 0175 `6e4addc8`.
+**`main` is PUSHED and clean at merge `b5fe7272`.** ⚠ Re-derive the head
+(`git rev-parse --short refs/heads/main`); anchor on **merge** SHAs, which never move:
+**`b5fe7272` (latest shipped — YAML boundary options, at-rest count, clone guard)**,
+ADR-0187 `4e2c0af4`, ADR-0186 `13b3bfb0`, the backlog sweep `020af37b`, 0184 `be6e6b55`,
+0183 `a7575ed5`, 0179 `962aeb25`, 0181/0182 `1ac140f6`, 0177/0178/0180 `a5b33e4c`, 0176 `52bf0f80`,
+0175 `6e4addc8`.
 
-**▶ TWO DESIGN BUNDLES FAILED AND ARE PARKED; ADR-0188 IS REJECTED. Real defects being fixed
-directly instead.** Branch `design/authz-identity-core` carries both, banner-marked.
+**▶ NOTHING IS IN FLIGHT.** Branch `design/authz-identity-core` merged `--no-ff` and deleted;
+worktrees clean. **▶▶ NEXT: backlog 51** — the section below headed *NEXT WORK* carries everything
+needed to start it.
 
-- **ADR-0185-core** — failed its rule-#9 audit (third for that lineage). 58 findings / 22 raw
-  Criticals / 21 accepted. ⛔ Do not execute `docs/plans/2026-08-23-authz-identity-core.md`.
-  Adjudication: `sweep-evidence/audit-0185core-adjudication.md`.
-- **ADR-0188** — failed its audit (44 findings, **11.0 findings / 3.75 Criticals per lens**), then
-  **REJECTED by owner decision 2026-08-25**. It had **zero user-facing value** — test files plus one
-  generator line — and was scaffolding for the parked D3. Worse, execution proved it **did not close
-  the class**: the guards check field NAMES, the defect is field COPIES, so D3 still ships silently
-  fail-OPEN at the mint site with every guard green. `docs/adr/0188-*.md` now records the rejection
-  and its reasons. ⛔ Do not execute `docs/plans/2026-08-25-representations-reconciled.md`.
+### ✅🚚 What `b5fe7272` shipped
 
-**✅ THE REAL DEFECTS ARE FIXED** — commit on `design/authz-identity-core`, **awaiting the owner
-Delivery Gate** (`/code-review`, `/security-review`), not yet merged.
-- **143** ✅ (user-facing) `boundary_action` / `boundary_error_expr` now authorable in YAML — field
-  **and** mapping in one change (field-alone is a **net regression**), fixture keys demanded by the
-  pre-existing derived guard, mutation-verified.
-- **141** ✅ `wrkflw_instances.snapshot` added to `PolicyAtRestLocations`; `SECURITY.md` 3 → 4; the
-  **hardcoded** pin at `render_test.go:227` fixed and its `NotContains` arms given a staleness role.
-- **`scripts/gen-at-rest.sh`** ✅ hardened — it verified ONE test and printed *"regenerated and
-  verified"* over a **red package**; it now requires `./internal/atrest` green. Mutation-verified.
-- **`humantask.Clone`** ✅ false comment corrected + `TestCloneIsolatesEveryEligibilitySlice`, which
-  derives the slice-field set reflectively and is value-based. Mutation-verified both directions.
-- ⬜ **144 DEFERRED, deliberately** — YAML cannot author the nested trigger forms. `TriggerWire`
-  has **json tags only** across **11** fields including a custom `schedule.ClockTime`, so this is a
-  serialization-contract change needing design, not a bug fix.
+**Code — four real defects**, all found while designing and then *rejecting* ADR-0188:
+- **143** ⭐ the only user-facing one — `boundary_action` / `boundary_error_expr` are now authorable
+  in YAML. Both were public Go options (`event.WithBoundaryAction`, `WithBoundaryErrorExpr`) with
+  wire support and a dedicated example, but `nodeYAML` declared neither, so a YAML author could
+  attach a boundary and never give it an action or an error predicate. ⚠ Field **and** mapping
+  landed together: the field alone is a **net regression** under `KnownFields(true)`.
+- **141** — `wrkflw_instances.snapshot` added to `atrest.PolicyAtRestLocations`; `SECURITY.md`'s
+  policy-at-rest count 3 → 4. ADR-0187's completeness guard could not see it (the column is
+  `ClassFreeform`). Also fixed a **hardcoded** count pin in `render_test.go`.
+- **`scripts/gen-at-rest.sh`** — verified ONE test, so it could print *"regenerated and verified"*
+  over a **red package**; now requires the package green, via `mktemp` + `trap`.
+- **`humantask.Clone`** — its comment claimed a safety property it did not have; a reflective,
+  value-based guard now makes the claim true for every reference field.
 
-Verification: `go test -race ./...` EXIT=0 zero failures · `golangci-lint run ./...` 0 issues ·
-touched packages `definition/model` 95.1 %, `internal/atrest` 92.6 %, `humantask` 100 % · repo total
-75.8 %, **unchanged from the pre-change baseline, measured by stashing rather than assumed**.
+**Documents — two bundles that did NOT survive their audits**, retained banner-marked:
+**ADR-0185-core** (failed, parked) and **ADR-0188** (audited, then **Rejected**, three grounds
+recorded). With them: four lens reports + an adjudication for each, and
+**`docs/plans/sweep-evidence/meta-analysis-audit-finding-rate.md`**.
 
-**▶▶ NEXT: backlog 51** — the actor travels in `context.Context` instead of the request body. The
-real security exposure, and nearly untouched by the ADR-0185 audit.
+**Gates:** `go test -race ./...` EXIT=0 zero failures · `golangci-lint run ./...` 0 issues ·
+touched packages 95.1 % / 92.6 % / 100 % · **`/code-review high` 8 findings (4 MEDIUM, 4 LOW), all
+reproduced, NONE a false positive, all fixed and folded** · **`/security-review` 0 findings**.
 
-⚠⚠ **THE REPRESENTATION TRAP REMAINS, AND ADR-0185 D3's PLAN MUST CARRY THIS WARNING.** Eligibility
-is declared in **5 types** and copied by hand at **5 sites**, cited by SYMBOL because line numbers
-rot — the backlog-143 fix moved the `yaml.go` block six lines the day after these were written:
-`fromNodeYAML` (`definition/model/yaml.go`), `FromWire` and `ToWire`
-(`definition/activity/activity.go`), `userTaskStrategy.enter` (`engine/step_nodes.go`), and
-`HumanTask.Clone` (`humantask/humantask.go` — found by the audit; ⚠ its comment used to claim the
-opposite, corrected 2026-08-25). **A miss at `yaml.go`'s mapping or at the mint site is SILENT**, and the mint-site miss is
-**fail-open**. Nothing guards this. Reviving ADR-0188's two *working* guards (`nodeYAML` coverage and
-the eligibility correspondence) is cheap and available if it bites again.
-
-### ⭐⭐⭐ READ THIS BEFORE READING ANY AUDIT RESULT AGAIN — the count is an INSTRUMENT READING
+### ⭐⭐⭐ READ THIS BEFORE READING ANY AUDIT RESULT — the count is an INSTRUMENT READING
 
 Full analysis: **`docs/plans/sweep-evidence/meta-analysis-audit-finding-rate.md`** (193 accepted
-findings classified across 10 rounds). Controller-verified arithmetic.
+findings classified across 10 rounds; arithmetic controller-verified).
 
-**Across SEVEN four-lens rounds spanning a 12× swing in artifact size (10 decisions → 1 stripped
-decision), the yield is 15.14 ± 0.83 findings per lens — CV 5.5 %, range 14.00–16.25.** Findings
-correlate with **lens count r = 0.855** and with scope **not at all**. `reaudit-0187` is the natural
-experiment: 2 lenses → 34 findings, i.e. 17.0/lens, *above* average.
+**Seven four-lens rounds spanning a 12× swing in artifact size returned 15.14 ± 0.83 findings per
+lens — CV 5.5 %, range 14.00–16.25.** Findings correlate with **lens count r = 0.855** and with
+scope **not at all**. `reaudit-0187` is the natural experiment: 2 lenses → 34 findings = 17.0/lens,
+*above* average.
 
-⇒ **"~58 findings again" NEVER meant "no progress". It meant "four agents were pointed at it again".**
-Each lens returns ~15 findings about any artifact of this complexity and will do so indefinitely.
-**Stop reporting the total as a quality signal.**
-
-**The real signal the total hid: Criticals per lens fell 8.25 → 3.50 under ADR-0186's scope cut.**
-And findings never repeat — each round's design was better than the last. Noise is NOT the
-explanation: cosmetic findings are **8.3 %**, and **65 of 67 raw Criticals corpus-wide were accepted
-(97 %)**. The findings are real; they are merely inexhaustible.
+⇒ **"~58 findings again" NEVER meant "no progress". It meant "four agents were pointed at it
+again".** ⛔ **Never report a raw total as a quality signal. Report Criticals per lens** — that
+number moved (**8.25 → 3.50**). Noise is NOT the explanation: cosmetic findings are **8.3 %** and
+**65 of 67 raw Criticals corpus-wide were accepted (97 %)**. The findings are real; they are
+inexhaustible.
+⚠ ADR-0188's own audit came in at **11.0 findings / 3.75 Criticals per lens** — the first round
+*below* the 15.14 ± 0.83 band. One round does not refute the model; do not over-read it either.
 
 **Root causes over 193 accepted findings: ~82 % design-process, ~10 % architectural, ~8 % cosmetic.**
-⚠ The architectural share is **not spread evenly — it is one lineage**:
-ADR-0186 **4.6 %** · ADR-0187 **6.3 %** · **ADR-0185 authz-identity 22.6 %, rising to 35.3 % in the
-latest round.** **Every architectural finding but one traces to ONE concept: `AuthzSpec`, durable in
-three unreconciled shapes.** Its durable-copy count rotted **1 → 2 → 3** across three rounds and
-**each correction was itself wrong**.
+⚠ The architectural share is **ONE LINEAGE**: ADR-0186 **4.6 %** · ADR-0187 **6.3 %** ·
+**ADR-0185 authz-identity 22.6 % → 35.3 %** — all tracing to eligibility having several
+unreconciled representations.
+⚠⚠ **The largest recurring PROCESS cause was diagnosed and never adopted.** Bucket D (an enumeration
+built with the **wrong grep net**) is **25.4 % of accepted findings, non-zero in ALL TEN rounds**;
+`reaudit-0186` prescribed the fix — **derive enumerations with `go/parser` tooling, not prose** —
+and nobody implemented it. ⚠ Corrected denominator: 25.4 % is of the **193 accepted**, not of the
+554 raw (that share is 8.8 %).
 
-⚠ **The largest recurring PROCESS cause was diagnosed and never fixed.** Bucket D (an enumeration
-derived with the wrong grep net) is **25.4 % of all findings, non-zero in ALL TEN rounds**.
-`reaudit-0186`'s own adjudication prescribed the fix — derive enumerations with `go/parser` tooling
-instead of prose — and **nobody adopted it**. This round's `nodeYAML` miss is that same failure.
+### ⚠⚠ THE REPRESENTATION TRAP REMAINS — ADR-0185 D3's plan must carry this warning
 
-⚠ Caveat: the per-lens arithmetic and lens counts are controller-verified; the **bucket
-classification is a single-pass hand judgment**, Critical-biased by construction — directionally
-solid, not precise to the point.
-
-### ▶▶ SUPERSEDED — the 2026-08-24 "refactor `AuthzSpec` first" decision
-
-That decision produced **ADR-0188**, which was audited and then **REJECTED** (2026-08-25): zero
-user-facing value, and execution proved it did not close the class it targeted. **Do not revive it
-from this file** — read `docs/adr/0188-representations-reconciled-by-machine.md`, which records the
-rejection and its three grounds, and the adjudication beside it. The real defects that analysis
-found are fixed; see the State section.
+ADR-0188 would have guarded it and was rejected (zero user-facing value; and execution proved its
+guards checked field **names** where the defect is field **copies**). So eligibility is still
+declared in **5 types** and copied by hand at **5 sites**, cited by SYMBOL because line numbers rot:
+`fromNodeYAML` (`definition/model/yaml.go`), `FromWire` and `ToWire`
+(`definition/activity/activity.go`), `userTaskStrategy.enter` (`engine/step_nodes.go`), and
+`HumanTask.Clone` (`humantask/humantask.go`). **A miss at `yaml.go`'s mapping or at the mint site is
+SILENT**, and the mint-site miss is **fail-open**. Reviving ADR-0188's two *working* guards
+(`nodeYAML` coverage and the eligibility correspondence) is cheap and available if it bites again.
 
 ## What the sweep actually established
 
@@ -152,74 +133,93 @@ and than `AUDIT.md`.
 | 44 vacuous `Never` sites | 16 | **7** (5 already had preconditions, 3 hung) |
 | node kinds (README/memory) | "19" / "18 with impls" | **18 constants = 17 authorable**, **16** with strategies; `KindBoundaryEvent` intentionally unregistered |
 
-## ▶ NEXT WORK
+## ▶ NEXT WORK — **backlog 51: the actor must not be self-asserted**
 
-**Order (revised 2026-08-25 — ADR-0188 rejected, see State):**
-**(1) The four real defects, one ordinary bug-fix bundle, no ADR:**
-  - **143** ⭐ *the only user-facing one* — `event.WithBoundaryAction` / `WithBoundaryErrorExpr` are
-    unreachable from YAML. Add both to `nodeYAML` **and** its `yaml.go` mapping **and** the
-    `allFieldsYAML` fixture (an existing guard demands the fixture key). ⚠⚠ **Adding the field
-    WITHOUT the mapping is a NET REGRESSION** — measured: the key then parses clean and arrives
-    empty, where today it fails loudly under `KnownFields(true)`.
-  - **144** — YAML cannot author the nested trigger forms (only flat durations, so no
-    calendar/timezone triggers from ADR-0136/0137).
-  - **141** — `SECURITY.md` understates policy-at-rest locations (3, should be 4:
-    `wrkflw_instances.snapshot` carries the full `AuthzSpec`). ⚠ Also fix the **hardcoded** pin at
-    `internal/atrest/render_test.go:227` (`"durable at rest in **three** places"`), which the
-    ADR-0188 plan missed — and note `gen-at-rest.sh` printed *"regenerated and verified"* EXIT=0
-    over a red package.
-  - **`humantask.Clone()`** — its comment claims *"a newly added mutable field is isolated
-    everywhere at once"*; it hand-clones two `AuthzSpec` slices, so that is FALSE. Fix the claim;
-    consider hardening.
-**(2) Backlog 51** — the actor travels in `context.Context` instead of the request body. The real
-security exposure, and nearly untouched by the ADR-0185 audit.
-**(3) 52** — ⚠ needs a design increment: *"when human tasks are configured"* **is not a state that
-exists** (a bare `NewProcessEngine()` already serves human tasks on a defaulted `MemTaskStore` +
-`AllowAll`).
-**(4) 53** — ⚠ re-derive its migration from scratch; the three durable copies have **different
-shapes**, and the prescribed SQL, dialect handling and `TestMigrations_OneFilePerDialect` were all
-wrong or unmentioned.
-**(5)** Remaining deferred B3 slices — §4XX (104), §READ-PATH (54), §SSRF (65), §BOUND (99).
-**(6) B4–B7. (7) blocker 5.**
+### The defect, in one paragraph
 
-⚠ **Backlog 103 and 124 need their own ADRs** — they left ADR-0185 with their designs REFUTED, not
-merely unimplemented.
-⚠ **Adopt `reaudit-0186`'s never-implemented prescription** whenever the next spec is written:
-derive enumerations with `go/parser` tooling, not prose. It is 25.4 % of all findings ever.
+`transport/http/httpcore` builds `authz.Actor` **from the request body** at
+`endpoints.go:119,132,150` — the only three `authz.Actor{…}` constructions in `transport/`,
+non-test. Any caller can post `{"actor":{"id":"alice","roles":["manager"]}}` and be believed.
+`CustomizeConfig` declares no identity seam, so a consumer's authentication middleware has **no
+supported way** to override it. `Actor.Attributes` is dropped at all three sites, so attribute
+predicates over actor attributes cannot be satisfied over HTTP at all.
 
-The remaining **~65 Design-tier items** are grouped into bundles. Each needs a spec + ADR + plan and
-**ONE** rule-#9 adversarial audit before implementation. **Next free ADR = 0188.**
+**This is the most directly exploitable open item in the repo.** It is D1 of the parked ADR-0185.
 
-### B3 authz/security — **four** deliveries left (§AT-REST shipped), all held in one file
+### ⚠⚠ START HERE, AND MIND THE PROVENANCE
 
-⚠ **Read `docs/specs/2026-08-21-untrusted-input-deferred-slices.md` before starting any of them.**
-It carries **every finding their audits established** and the design increment each still owes.
-⚠ The 0187–0191 numbering in that file is a **reservation, not a record** — 0187 is now USED (§AT-REST); next free is 0188.
-⚠⚠ **That file is now PUBLIC on `main`** (owner-authorised) and is a roadmap of five *unfixed*
-holes. **Treat them as time-sensitive.**
+The design below comes from **`docs/adr/0185-authorization-identity-is-not-self-asserted.md`, a
+bundle that FAILED its rule-#9 audit three times**. ⛔ **Do NOT inherit D2 (52) or D3 (53)** — both
+were refuted. **D1 survived nearly intact** (one Critical, named below), and the facts here were
+**re-derived or confirmed by that audit**, not merely restated. Adjudication:
+`docs/plans/sweep-evidence/audit-0185core-adjudication.md`. Read it before writing anything.
 
-1. ~~**§AT-REST** (backlog 100/101)~~ — ✅ **SHIPPED as ADR-0187, merge `4e2c0af4`.** See the State
-   section above. ⚠ **Do not restart it from the deferred-slices file** — ADR-0187 supersedes that
-   section's design and re-derived its claims rather than inheriting them. ⚠ Two of that section's
-   own prescriptions turned out WRONG and are recorded corrected in ADR-0187: the glob
-   `**/migrations/*.sql` matches **1 of 4** files (discovery is a stated RULE plus a two-way
-   declaration, because dialect cannot be inferred from a path), and the classification is
-   **dialect-INVARIANT by role** — the 48-vs-67 divergence is *entirely* the `TIMESTAMPTZ`→`TEXT`
-   mapping, so only `keyed` is per dialect.
+### Facts CONFIRMED by execution during the ADR-0185 audit — reuse, but re-verify anchors
 
-2. ~~**ADR-0185-core** (51/52/53)~~ — ⛔ **FAILED its rule-#9 audit and is PARKED**; do NOT execute
-   its plan. See the State section. Its D3 premise about the durable copies is corrected there, but
-   the *design* was refuted on other grounds — read
-   `sweep-evidence/audit-0185core-adjudication.md` before reviving any part of it.
-3. **§4XX** (104) — the largest and least settled; needs real design, not a fold.
-4. **§READ-PATH** (54) · 5. **§SSRF** (65) · 6. **§BOUND** (99).
+- **29 pin sites / 9 files / 5 packages** assert the body-derived contract — httpcore 11 (5 in
+  `dto_test.go`, 6 literals in `endpoints_test.go`), gin 7, fiber 5, stdlib 5, parity 1. The
+  counting lens attacked this and found it **exact**. The net is closed **by construction**:
+  `httpcore/dto.go` declares exactly three Actor-bearing fields (`ClaimInput.Actor`,
+  `CompleteInput.Actor`, `ReassignInput.By`). ⚠ One occurrence is deliberately excluded —
+  `validate_test.go`'s `httpcore.Validate(httpcore.ClaimInput{})` survives field removal.
+- ⚠⚠ **CORRECTION the audit forced:** the two pins that assert a **vacuous 403** are **BOTH in
+  `stdlib`** (`errors_test.go:158` and `:187`). `gin/gin_coverage_test.go:244` asserts **404**, not
+  403, and **gin has no 403 assertion at all**. The ADR's earlier "one stdlib, one gin" was wrong.
+  Those two must be **rewritten**, not recompiled — after D1 they would still return 403 *from the
+  zero actor*, passing while testing nothing.
+- **All three adapters tolerate unknown body keys**, so *"a body still carrying `actor`/`by` is
+  IGNORED, not rejected"* is **correct** — ADR-0167's strictness does not reach the DTO decode path.
+  This was an open question in the failed plan; the execution lens answered it.
+- **fiber propagates via `c.SetContext`, NOT `c.Locals`** — verified. A consumer following fiber's
+  most idiomatic path gets a **silently unauthenticated** request. `SECURITY.md` and the examples
+  must show `SetContext`.
+- **`WithActorResolver` is already taken THREE times** for the opposite concept
+  (`service/options.go:99`, `runtime/task/service.go:113`, `processtest/harness.go:104` — "who
+  *could* act"). Use **`httpcore.WithRequestActor`**.
+- **ADR-0186's option-alias convention already exists and must be reused**: the generic
+  `httpcore.With…[R any]` form **cannot infer `R`**, so each adapter carries a non-generic alias
+  (`stdlib`/`gin`/`fiber` `options.go`, see `WithMaxBodyBytes`). ⇒ **2 new options × 3 adapters = 6
+  aliases.** ⚠ Read each adapter's `options.go` first; they do not all carry the same set today.
+- **Three `examples/` mains** mount task routes via `stdlib.Mount` with **no authentication**:
+  `production_wiring`, `sqlite_wiring`, `mysql_wiring`.
 
-**Also carried, not yet scheduled:** backlog **103** (deny-list ABAC predicates allow on a missing
-variable) is a **syntax problem that cannot be solved with syntax** — decided shape is *declare
-required/optional keys ON THE SPEC*, no inference; ⚠ `actor.Attributes` needs its own rule because
-it is a struct field that always exists, so reference-presence checking is vacuous there. Backlog
-**124** (completion never checks the claimant) needs a **per-verb authorization model that does not
-exist** — one `Eligibility` spec serves four verbs and casbin applies `Privileges` unconditionally.
+### ⚠ The one Critical against D1, which MUST be designed out
+
+**`WithAnonymousActorAllowed()` and the empty-`Actor.ID` rejection void each other** — the three
+demo mains would be unable to claim. The anonymous opt-in must synthesize a **non-empty sentinel
+identity**, and the ADR must say which.
+
+### ⚠ Three more corrections D1 owes
+
+1. **Delete** *"`Actor.Attributes` reaches the authorizer — closing finding 4's second leg for
+   free."* It was refuted (`actor` is a struct; `Attributes` always exists at depth-1) **and** its
+   referent (D4) is deferred.
+2. ⚠ **D1 makes backlog 103 MORE reachable, and 103 is deferred.** Today all three endpoints drop
+   `Attributes`, so `actor.Attributes.*` predicates fail closed *vacuously*; once the actor arrives
+   whole they go live with nothing bounding them. This belongs in **Consequences/Negative** as a
+   cost of shipping D1 alone, not in a follow-ups list.
+3. **Re-derive the empty-`Actor.ID` rule's rationale.** It was justified by the deferred D5's
+   `"" == ""` degeneracy. It survives on independent grounds (the audit trail must not record `""`;
+   a caller past the 401 has an ID) — but write *those*, or it is a dangling citation.
+
+### ⚠ A residual D1 may NOT claim away
+
+`ProcessDriver.ApplyTrigger` **bypasses authorization by design** and says so in its own godoc;
+`engine.NewHumanCompleted` is likewise exported module-root API. A D1 delivery covers the four
+`runtime/task` verbs. **Do not claim the chain is closed.**
+
+### Then, in order
+
+**(2) backlog 52** — ⚠ needs a design increment first: *"when human tasks are configured"* **is not a
+state that exists** (a bare `service.NewProcessEngine()` already serves human tasks on a defaulted
+`MemTaskStore` + `AllowAll`). **(3) 53** — ⚠ re-derive its migration from scratch; the three durable
+copies have **different shapes**, the prescribed SQL corrupts the definitions copy, and
+`TestMigrations_OneFilePerDialect` forbids a `0002` file. **(4)** the deferred B3 slices — §4XX
+(104), §READ-PATH (54), §SSRF (65), §BOUND (99). **(5) B4–B7. (6) blocker 5.**
+⚠ **Backlog 103 and 124 need their own ADRs** — they left ADR-0185 with their designs **refuted**.
+⚠ **144 is open and deliberately deferred**: YAML cannot author the nested trigger forms
+(`TriggerWire` has json tags only across 11 fields incl. a custom `schedule.ClockTime`), so it is a
+serialization-contract change, not a bug fix.
 
 ### ⭐ How to run the audit — this dispatch works, reuse it verbatim
 
@@ -264,6 +264,8 @@ probe refuted a real audit finding and was itself wrong.
 halves), 34, 38, 40, 44, 48, 49, 58, 74, 75, 84, 87, 89, 95, 102, 107, 112, 113, 114, 115, 116, 117,
 118, 119, 121, 122, 123, 125, 127, blockers 7 and 8.
 **Closed by ADR-0186 (merged as `13b3bfb0`):** **98** (no request body cap).
+**Closed by `b5fe7272`:** **143** (boundary options unreachable from YAML — the user-facing one) and **141** (`SECURITY.md` understated the policy-at-rest locations), plus the `humantask.Clone` false-safety comment and `gen-at-rest.sh`'s one-test verification.
+**Rejected, not built:** **ADR-0188** (machine-checked reconciliation) — see its ADR for the three grounds. ⚠ The trap it would have guarded is still open; see the State section.
 **Adjudicated, not defects:** 8, 18, 20, 97, 126, 3f, 6, 35, 36, 37, 45, 46.
 
 **Still open — Design tier:** 4, 5, 7, 11, 12, 13, 17, 19/41, 24, 27, 29, 32, 33, 39, 47, 50, 51, 52,
@@ -281,7 +283,7 @@ bypassing the guard `Reassign` has twelve lines below it.
   MySQL's `-- +goose Down` drops **8** tables where Postgres and SQLite drop **9**: `wrkflw_outbox`
   is created and **never dropped**, so a MySQL rollback leaves the table behind. Verified:
   `grep -c "^DROP TABLE"` → postgres 9, mysql 8, sqlite 9. Small.
-- **143** — 🆕 **found while deriving ADR-0188's YAML exception list, PRE-EXISTING.**
+- **143** — ✅ **CLOSED by `b5fe7272`.** Found while deriving ADR-0188's YAML exception list; PRE-EXISTING.
   **`event.WithBoundaryAction` and `event.WithBoundaryErrorExpr` are unreachable from YAML.**
   `nodeYAML` carries `AttachedTo` (`yaml.go:63`, mapped `:141`) so a boundary event **can** be
   declared in YAML, but `BoundaryAction`/`BoundaryErrorExpr` are absent from `nodeYAML` entirely —
@@ -290,13 +292,13 @@ bypassing the guard `Reassign` has twelve lines below it.
   (`event/event.go:388-389`, `:398`) and a dedicated example (`examples/scenarios/boundary_action/`).
   ⇒ a YAML author can attach a boundary and cannot give it an action or an error predicate. **Not a
   deliberate scope limit.** ADR-0188 declares and guards it; it does **not** fix it. Small.
-- **144** — 🆕 **same origin.** YAML cannot author the **canonical nested trigger forms**
+- **144** — ⬜ **OPEN, deliberately deferred** (serialization-contract change, not a bug fix). Same origin. YAML cannot author the **canonical nested trigger forms**
   (`TimerTrigger`, `WaitTrigger`, `DeadlineTrigger`); `nodeYAML` carries only the legacy flat
   `TimerDuration`/`WaitEvery`/`DeadlineDuration`, which `NodeWire.Wait()`/`ReadTrigger`
   (`node_wire.go:119`) decode. ⇒ **reduced expressiveness, not absence** — a YAML author gets
   durations but not the calendar/timezone triggers of ADR-0136/0137. Lower severity than 143
   because a path exists. Small.
-- **141** — 🆕 **found while designing ADR-0185-core, PRE-EXISTING and unrelated to it.**
+- **141** — ✅ **CLOSED by `b5fe7272`.** Found while designing ADR-0185-core; PRE-EXISTING and unrelated to it.
   `wrkflw_instances.snapshot` carries the **full `AuthzSpec`** (`InstanceState.Tasks[].Eligibility`
   → `store_core.go:81` `json.Marshal`) — **executed**, spec §2.1 — but is **absent from
   `atrest.PolicyAtRestLocations`**, so `SECURITY.md`'s published "policy is durable at rest in N
@@ -304,7 +306,7 @@ bypassing the guard `Reassign` has twelve lines below it.
   fails only for a **`ClassPolicy`** column, and this one is `ClassFreeform` (`classification.go:106`)
   — the *identical* case `wrkflw_definitions.definition` was hand-added for. **ADR-0187's own lesson
   #2 recurring one level up.** Fix is scheduled in the 0185-core plan, Task 15. Small.
-- **142** — 🆕 **same origin.** There are **FIVE** `Authorizer` implementations, not the two ADR-0185's
+- **142** — ⬜ **OPEN.** Same origin. There are **FIVE** `Authorizer` implementations, not the two ADR-0185's
   earlier drafts reasoned over: `authz.AllowAll`, `authz.RoleAuthorizer`,
   `internal/authz/casbin.Authorizer`, **`casbinauthz.Authorizer`** (public root-package delegate —
   the one a consumer actually wires, since casbin is the baseline) and **`processtest.SpyAuthorizer`**
