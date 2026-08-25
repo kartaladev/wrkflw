@@ -215,19 +215,33 @@ func TestRender(t *testing.T) {
 				require.NotEmpty(t, casbinSet.Note, "test fixture assumption: the real Note is non-empty")
 				assert.Contains(t, result, casbinSet.Note)
 
-				// Authorization policy is durable at rest in THREE places, not two.
-				// definition/model/node_wire.go declares eligible_roles /
-				// eligible_privileges / eligible_expr on every node, and
-				// internal/persistence/store/definitions.go marshals whole definitions
-				// into wrkflw_definitions.definition — so a consumer who encrypts the two
-				// `policy`-classed locations leaves per-node eligibility rules in the
-				// clear. Each name is asserted in its BACKTICKED, TABLE-QUALIFIED form,
-				// which appears only in the locations list: a bare "eligibility" would
-				// also match the Columns-table row and could never fail.
-				assert.Contains(t, result, "durable at rest in **three** places")
+				// Authorization policy is durable at rest in FOUR places. TWO of them
+				// are class `freeform` and are the reason this assertion exists: a
+				// consumer who encrypts only the `policy`-classed columns still leaves
+				// policy in the clear in both.
+				//   - wrkflw_definitions.definition — node_wire.go declares eligible_roles
+				//     / eligible_privileges / eligible_expr on every node, and
+				//     store/definitions.go marshals whole definitions into that column.
+				//   - wrkflw_instances.snapshot — engine.InstanceState.Tasks carries every
+				//     in-flight human task and each one's Eligibility is a full
+				//     authz.AuthzSpec (backlog 141).
+				// Each name is asserted in its BACKTICKED, TABLE-QUALIFIED form, which
+				// appears only in the locations list: a bare "eligibility" would also
+				// match the Columns-table row and could never fail.
+				//
+				// ⚠ The NotContains arms below CANNOT fail independently, and saying
+				// otherwise would make them the "test that cannot fail" pattern this
+				// repo tracks: the sentence is rendered exactly once from a derived
+				// count, so any regression already fails the Contains arm above. They
+				// are kept as a sharper failure MESSAGE naming the counts this document
+				// has previously published ("two" pre-ADR-0187, "three" pre-141), not
+				// as a second detection.
+				assert.Contains(t, result, "durable at rest in **four** places")
 				assert.Contains(t, result, "`wrkflw_human_task.eligibility`")
 				assert.Contains(t, result, "`wrkflw_definitions.definition`")
+				assert.Contains(t, result, "`wrkflw_instances.snapshot`")
 				assert.NotContains(t, result, "durable at rest in **two** places")
+				assert.NotContains(t, result, "durable at rest in **three** places")
 
 				// Consumer migrations out of scope; pointer to the non-goals (D10).
 				assert.Contains(t, result, "out of scope")

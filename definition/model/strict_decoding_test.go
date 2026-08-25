@@ -396,6 +396,8 @@ nodes:
     kind: boundaryEvent
     attached_to: charge
     error_code: CARD_DECLINED
+    boundary_action: notify-declined
+    boundary_error_expr: '_error == "CARD_DECLINED"'
   - id: nudge_boundary
     kind: boundaryEvent
     attached_to: approve
