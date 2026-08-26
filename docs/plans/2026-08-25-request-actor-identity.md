@@ -134,8 +134,10 @@ loudly in production code, exactly as predicted before any of it was written.
 > **For agentic workers:** REQUIRED SUB-SKILL: use `superpowers:subagent-driven-development`
 > to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
 
-> ⛔ **THIS BUNDLE HAS FAILED TWO rule-#9 AUDITS AND HAS BEEN RE-CUT.** It must be
-> **re-audited before any task below is dispatched**.
+> ✅ **SHIPPED — merged as `7be335fb`.** The task list below is history; read the `▶ Progress`
+> block above for what actually happened. It is kept because the audit trail cites it.
+>
+> ⛔ **This bundle FAILED THREE rule-#9 audits before the owner closed the audit phase.**
 > Round 1 (`7fa756d0`, 2 decisions): 48 findings / **7 Criticals**.
 > Round 2 (`37d77a34`, 9 decisions): 58 findings / **15 Criticals** — Criticals/lens **doubled**
 > when scope widened, so the scope is cut back to ONE decision.

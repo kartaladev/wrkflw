@@ -106,14 +106,25 @@ adjudications, and two author-written grids.
 
 ### 🆕 Filed by this delivery — all still OPEN
 
-- **The deny-list actor-attribute fail-open is LIVE on `main` today.** Measured: with attributes
-  dropped, `actor.Attributes.status != "blocked"` **ALLOWs**. ADR-0189 narrows it (1 of 8 shapes);
-  **7 of 8 still ALLOW**. ⚠ Distinct from backlog 103 only in the **root**, not the mechanism.
+- **The deny-list actor-attribute fail-open is NARROWED, not closed — still live on `main`.**
+  ⚠ The measurement that produced "ALLOWs" was taken **before** ADR-0189, when the transport dropped
+  attributes; do not re-quote it as current. Post-merge, an actor whose resolver supplies the
+  attribute is correctly **DENIED** — but that is **1 of 8 measured shapes**, and the other
+  **7 still ALLOW** (chiefly: the key absent from an otherwise-present attribute map).
+  ⚠ Distinct from backlog 103 only in the **root** (`actor.` vs `vars.`), not the mechanism —
+  `vars.status` over empty vars and `actor.Attributes.status` with the key absent are
+  byte-identical ALLOWs. **Needs its own ADR; do not fold it into 0190.**
 - **Actor attributes reach an UNAUTHENTICATED read surface.** `GET /instances/{id}/actionable` and
   `/snapshot` render `Claim.Actor` and `Candidates` verbatim with no authorization; `SECURITY.md`
-  classifies both as personal data. ⚠ The channel pre-exists (candidates already render attributes
-  per ADR-0147) **but the population rate changes**: the old channel needs an opt-in
+  classifies both as personal data. The channel **pre-exists** (candidates have rendered attributes
+  since ADR-0147) but the **population rate** changes: the old channel needs an opt-in
   `ActorResolver`, the new one is fed by `RequestActorFunc`, which every HTTP consumer configures.
+  ⚠ `/security-review` raised exactly this and its false-positive filter **rejected it at 2/10** —
+  not because it is imaginary, but because every element except attribute fidelity pre-dates
+  ADR-0189, and the real defect is the **missing authentication**, not the attributes. If it is
+  re-raised, recategorise as `missing_authentication` on `InstanceRoutes` and route it to 0190;
+  the snapshot also leaks process variables, notes and eligibility policy, which dwarf actor
+  attributes.
 - **`InstanceRoutes`, `MessageRoutes`, `AdminRoutes` authenticate NOTHING** — `POST /instances`,
   `/signals`, `/messages` are state-changing and open. → **ADR-0190**.
 - **Admin operations have no audit record at all** (`admin_endpoints.go` has zero `authz.` refs).
@@ -179,7 +190,7 @@ and than `AUDIT.md`.
 | 44 vacuous `Never` sites | 16 | **7** (5 already had preconditions, 3 hung) |
 | node kinds (README/memory) | "19" / "18 with impls" | **18 constants = 17 authorable**, **16** with strategies; `KindBoundaryEvent` intentionally unregistered |
 
-## ✅ backlog 51 is IMPLEMENTED — the old "NEXT WORK" block is gone
+## ✅ backlog 51 is CLOSED (merge `7be335fb`) — the old "NEXT WORK" block is gone
 
 This file previously carried a long *"▶ NEXT WORK — backlog 51"* section derived from the parked
 ADR-0185. **That work is done**, on `feat/request-actor-identity`, as ADR-0189. The section was
@@ -205,13 +216,11 @@ halves), 34, 38, 40, 44, 48, 49, 58, 74, 75, 84, 87, 89, 95, 102, 107, 112, 113,
 118, 119, 121, 122, 123, 125, 127, blockers 7 and 8.
 **Closed by ADR-0186 (merged as `13b3bfb0`):** **98** (no request body cap).
 **Closed by `b5fe7272`:** **143** (boundary options unreachable from YAML — the user-facing one) and **141** (`SECURITY.md` understated the policy-at-rest locations), plus the `humantask.Clone` false-safety comment and `gen-at-rest.sh`'s one-test verification.
-**Implemented by ADR-0189 (branch, unmerged):** **51** (the actor is no longer self-asserted on the
-three human-task verbs).
+**Closed by ADR-0189 (merged as `7be335fb`):** **51** — the actor is no longer self-asserted on the
+three human-task verbs. ⚠ It closes 51 **only for those three verbs**; the other route groups are
+untouched and are ADR-0190's subject.
 **Rejected, not built:** **ADR-0188** (machine-checked reconciliation) — see its ADR for the three grounds. ⚠ The trap it would have guarded is still open; see the State section.
 **Adjudicated, not defects:** 8, 18, 20, 97, 126, 3f, 6, 35, 36, 37, 45, 46.
-
-**Implemented, on a branch, NOT yet merged:** **51** (ADR-0189 — see *IN FLIGHT* above). It leaves
-the backlog list only when the branch merges.
 
 **Still open — Design tier:** 4, 5, 7, 11, 12, 13, 17, 19/41, 24, 27, 29, 32, 33, 39, 47, 50, 52,
 53, 54, 55, 56, 57, 59, 60, 61, 62, 63, 64, 65, 66, 67, 69, 70, 71, 72, 73, 76, 77, 78, 79, 80, 81,
@@ -322,6 +331,45 @@ bypassing the guard `Reassign` has twelve lines below it.
 - ⚠ **Restore a mutation from a `cp` backup, never `git checkout <path>`.**
 - `/code-review` and `/security-review` are **owner-invoked only**.
 - Push on merge (standing preference).
+
+### 🆕 Added by ADR-0189 — read these before the next delivery
+
+- ⚠⚠ **Adding an `examples/` main? RUN `.gitignore`'s own audit recipe.** It is written in the file,
+  with a warning that skipping it "leaks a ~12-33MB binary into git". ADR-0189 skipped it and
+  committed a **41 MB** Mach-O binary that `/code-review` caught:
+  ```bash
+  for d in $(go list -f '{{if eq .Name "main"}}{{.Dir}}{{end}}' ./examples/...); do \
+    grep -qxF "/$(basename $d)" .gitignore || echo "MISSING /$(basename $d)"; done
+  ```
+- ⚠⚠ **Criticals-per-lens is NOT a bundle-health metric.** ADR-0189 went 1.75 → 3.75 → **4.75**
+  while scope went 2 → 9 → **1 decision**. Each round's lenses were briefed with the prior round's
+  findings (the instrument sharpens between measurements) and the documents grew each round.
+  ⛔ Do not repeat that inference. And ⚠ its "pre-registered" rule was calibrated from **ADR-0186's**
+  numbers, spliced — check a series' provenance before building a decision on it.
+- ⚠⚠ **A count is re-derived only when its MEMBER SET is re-derived — paste the list, not the
+  total.** Two different nets both returned "29" while being **disjoint on five members**.
+- ⚠⚠ **Every BEHAVIOURAL change needs its own net.** A compile ablation sees signature changes; a
+  grep sees literals; **neither sees a status code moving.** That is how 29 → 48 → 50 happened.
+- ⚠⚠ **A guard tested with a fixture from the half that works is not tested.** The attribute guard
+  was wrong **twice**, the same category of error one layer apart. Test the guard against the
+  **real sink** (a store round-trip), never against itself.
+- ⚠ **When a decision rests on a premise your own change alters, RE-DERIVE the decision.** D-4
+  accepted a residual because "those routes are unauthenticated anyway" — and the same record then
+  authenticated them.
+- ⚠ **A test asserting an ORDERING must be revisited when the ordering is what you change.** Fixing
+  the body-read order inverted `413 → 401` into `401 → 413` and broke seven tests, all correctly,
+  including a contract a subagent had deliberately pinned with reasoning.
+- ⚠ **A test for a deadline must not fail by WAITING.** Mutating away a timeout gave `go test`
+  **EXIT=124**, not a failure — CI stalls and reports nothing. Give the fixture a bounded fallback
+  that SUCCEEDS, so the assertion fails readably.
+- ⚠ **An `Edit` anchored on `func X(` can insert between a doc comment and its `func`**, reparenting
+  the doc. It compiles, tests pass, `gofmt` and the linter say nothing. ⚠ An orphan-check regex must
+  allow leading whitespace — struct-field comments are tab-indented.
+- ⚠ **An accepted audit finding that is not FOLDED is not fixed.** Round 2's F5 predicted an inert
+  `RequestActorTimeout` precisely; it was accepted, never folded, and shipped.
+- ⭐ **A subagent refusing a brief may be right.** One followed the `table-test` skill over my brief
+  (canonical shape is a **slice**, not a map) and said so; checking it surfaced a rule I *had*
+  broken — rule 3's mandatory cancelled-context case.
 
 ## Process lessons — the 2026-08-20 backlog sweep
 
