@@ -129,7 +129,7 @@ adjudications, and two author-written grids.
   `/signals`, `/messages` are state-changing and open. → **ADR-0190**.
 - **Admin operations have no audit record at all** (`admin_endpoints.go` has zero `authz.` refs).
 
-### ▶▶ NEXT, after this merges: **ADR-0190** — route-group authentication and the admin posture
+### ▶▶ NEXT WORK: **ADR-0190** — route-group authentication and the admin posture
 
 ⚠⚠ **0190 must argue against `ADR-0095 §"Admin-by-composition (default-absent)"`, not around it.**
 That ADR states default-absent *"replaces the old default-deny (403) … this is safer"*, and
