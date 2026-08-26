@@ -39,6 +39,7 @@ go.work.sum
 #     grep -qxF "/$(basename $d)" .gitignore || echo "MISSING /$(basename $d)"; done
 #
 # examples/<name>
+/authenticated_tasks
 /broker_wiring
 /builtin_actions
 /cache_wiring

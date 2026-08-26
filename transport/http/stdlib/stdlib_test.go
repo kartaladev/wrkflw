@@ -15,6 +15,7 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	"github.com/kartaladev/wrkflw/authz"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/internal/transporttest"
 	"github.com/kartaladev/wrkflw/service"
@@ -464,13 +465,14 @@ func TestTaskRoutes_Customize(t *testing.T) {
 
 	taskID := transporttest.StartedApprovalInstance(t, h, "task-claim-stdlib-1")
 
+	// The claimant is AUTHENTICATED by the resolver, not asserted by the body
+	// (ADR-0189); httpcore.ClaimInput now has no fields, so no body is sent.
 	mux := http.NewServeMux()
-	stdlib.Mount(mux, svc)
+	stdlib.Mount(mux, svc, stdlib.WithRequestActor(
+		staticActor(authz.Actor{ID: "alice", Roles: []string{"manager"}}),
+	))
 
-	req := newPostRequest(t, "/tasks/"+taskID+"/claim", map[string]any{
-		"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
-	})
-	rr := do(mux, req)
+	rr := do(mux, newPostRequest(t, "/tasks/"+taskID+"/claim", nil))
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200 claim, got %d (body=%s)", rr.Code, rr.Body)

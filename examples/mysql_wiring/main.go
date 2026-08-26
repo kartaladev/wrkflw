@@ -259,7 +259,28 @@ func run(logger *slog.Logger) error {
 
 	// --- Mount BOTH the workflow REST routes and the health routes ---
 	mux := http.NewServeMux()
-	stdlib.Mount(mux, svc)
+	stdlib.Mount(mux, svc,
+		// DEMO ONLY, and deliberately OFF BY DEFAULT.
+		//
+		// ADR-0189 made the human-task verbs refuse an unauthenticated caller. This
+		// example is about durable wiring, not authentication, so it offers a constant
+		// actor — but only when WRKFLW_DEMO_INSECURE_ACTOR=1 is set explicitly.
+		//
+		// ⚠ The env gate is the point. Unset, this resolver refuses and the task routes
+		// answer 401, so copy-pasting this file into a real deployment FAILS CLOSED
+		// instead of silently authenticating every caller as a manager — which is
+		// precisely the self-asserted-actor hole ADR-0189 exists to close.
+		//
+		// A real deployment resolves the actor from a VERIFIED credential in its own
+		// middleware and calls authz.ContextWithActor; see SECURITY.md and
+		// examples/authenticated_tasks, which verifies a bearer token.
+		stdlib.WithRequestActor(func(context.Context) (authz.Actor, error) {
+			if os.Getenv("WRKFLW_DEMO_INSECURE_ACTOR") != "1" {
+				return authz.Actor{}, httpcore.ErrUnauthenticated
+			}
+			return authz.Actor{ID: "demo-user", Roles: []string{"manager"}}, nil
+		}),
+	)
 	stdlib.MountHealth(mux, readyChecks...)
 
 	srv := &http.Server{

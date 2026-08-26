@@ -76,6 +76,29 @@ func capBody[R any](cfg httpcore.CustomizeConfig[R], gc *ginlib.Context) error {
 	return nil
 }
 
+// bindOptionalJSON decodes an OPTIONAL JSON body into dst under cfg's inbound
+// cap. It reports false — having written the response itself — only when the body
+// was OVERSIZE; every other decode outcome, an absent or malformed body included,
+// leaves dst at whatever it already held and reports true.
+//
+// That asymmetry is the point. "Optional" is not "unbounded": ignoring the
+// oversize outcome too would leave the route reading an unbounded body into
+// memory, which is the exact hole [capBody] exists to close (ADR-0186). ⚠ Do not
+// collapse the two arms into `if err != nil` — a non-oversize read failure must
+// stay ignored here; see capBody's own note on why reporting it turns requests
+// that fit the cap into 400s.
+//
+// ⚠ SIBLING: stdlib/body.go's decodeOptionalRequestBody is the same contract for
+// net/http. A change to either belongs in both.
+func bindOptionalJSON[R any](cfg httpcore.CustomizeConfig[R], gc *ginlib.Context, dst any) bool {
+	if err := capBody(cfg, gc); errors.Is(err, httpcore.ErrRequestBodyTooLarge) {
+		writeErr(cfg, gc, err)
+		return false
+	}
+	_ = gc.ShouldBindJSON(dst) // body is optional: absent or malformed leaves dst untouched
+	return true
+}
+
 // armBodyReadDeadline sets a read deadline of d on the connection behind w and
 // returns the function that clears it again. d <= 0 arms nothing and returns a
 // no-op, matching the disabled convention of MaxBodyBytes.

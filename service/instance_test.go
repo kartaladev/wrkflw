@@ -1086,9 +1086,13 @@ func sampleState() engine.InstanceState {
 // document against docs/specs/assets/process-instance-sample.json — the canonical
 // target shape of the audit view.
 //
-// The fixture is built through the Go API rather than the HTTP transport on
-// purpose: httpcore.Actor is {id, roles} only, so claim.actor / completion.actor
-// could never carry the attributes the sample shows (ADR-0147 amendment #5).
+// The fixture is built through the Go API rather than the HTTP transport simply
+// because it is the cheaper way to drive a whole graph deterministically.
+//
+// ⚠ It is NOT because the transport cannot carry attributes. It used to be: ADR-0147
+// amendment #5 recorded that httpcore.Actor was {id, roles} only, so claim.actor and
+// completion.actor could never carry attributes over HTTP. ADR-0189 deleted that type
+// and the actor now reaches the engine whole, so the limitation is gone.
 // The comparison is marshal-side only — scoped_actions is derived, marshal-only
 // state (ADR-0144), so a JSON→struct→JSON round trip would drop it.
 func TestProcessInstanceMarshalMatchesSampleDocument(t *testing.T) {
@@ -1125,8 +1129,10 @@ func countingIDGenerator() idgen.Generator {
 // linked to the task by task_id.
 //
 // The whole graph runs on a deterministic id generator, so the document is
-// reproducible; the transport is deliberately bypassed because httpcore.Actor
-// cannot carry actor attributes (ADR-0147 amendment #5).
+// reproducible; the transport is bypassed for convenience, not necessity.
+// ⚠ ADR-0189 removed httpcore.Actor and the HTTP path now carries actor attributes,
+// so ADR-0147 amendment #5's "over HTTP those two slots can never carry attributes"
+// no longer holds.
 func TestProcessInstanceMarshalFromDrivenEngine(t *testing.T) {
 	t.Parallel()
 

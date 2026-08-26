@@ -1,5 +1,18 @@
 # 185. Authorization identity is not self-asserted, and eligibility must be stated
 
+> ## ✅ D1 HAS SHIPPED as ADR-0189. ⛔ D2 and D3 remain failed and are NOT inputs to implementation.
+>
+> **Decision 1 (backlog 51 — the actor must not be self-asserted) was re-cut as
+> `docs/adr/0189-the-http-transport-does-not-accept-a-self-asserted-actor.md` and implemented
+> 2026-08-26.** ADR-0189 supersedes-in-part this record's D1 only. ⚠ ADR-0189 dropped this
+> record's `WithAnonymousActorAllowed`, and its refusal rule targets the **zero actor** rather
+> than an empty `Actor.ID` — this record's version of D1 would have deleted ADR-0148's kiosk
+> claimant. **Read ADR-0189, not the D1 text below.**
+>
+> ⛔ **D2 (backlog 52, the allow-all default authorizer) and D3 (backlog 53, the empty AuthzSpec)
+> are still refuted and still open.** Each needs its own ADR. Nineteen of this bundle's 22 raw
+> Criticals were D3's.
+>
 > ## ⛔ THIRD AUDIT FAILED — 2026-08-23. NOT an input to implementation.
 >
 > The re-cut three-decision bundle **failed its rule-#9 audit**: 58 findings across four lenses,

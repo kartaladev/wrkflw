@@ -70,6 +70,31 @@ and correctly remains a **500**.
 resolves to whichever comes first. Any new arm must state its position relative to the arms it can
 co-match and carry a test asserting the intended resolution.
 
+### Request-actor identity (ADR-0189, pre-v0.1.0)
+
+`httpcore.CustomizeConfig.RequestActor` and the three adapter `WithRequestActor` aliases follow the
+**nil-restores-the-default** convention rather than the non-positive-disables one used by the
+bounds above, because a `func` has a nil and there is no "disabled" state to preserve: identity
+resolution is never optional. `WithRequestActor(nil)` therefore restores the fail-closed default,
+which reads `authz.ContextWithActor` and refuses with **401** when nothing authenticated the caller.
+
+`RequestActorTimeout` and `WithRequestActorTimeout` DO follow the bound convention — a
+`time.Duration`, **non-positive disables**, default 10s, mirroring the engine's
+`WithCandidateResolveTimeout`. ⚠ It bounds only a resolver that **honours `ctx` cancellation**; a
+resolver that ignores it still runs to completion. The hang is narrowed, not closed.
+
+`httpcore.ErrUnauthenticated` classifies as **401** and `httpcore.ErrIdentityUnavailable` as
+**503**. ⚠ Both are the **first two arms** of `ClassifyError`, ahead of every other arm, because
+`ErrIdentityUnavailable` wraps arbitrary consumer-supplied errors with `%w` and could otherwise
+co-match the 404, 403 or 400 arms. A resolver returning `authz.ErrNotAuthorized` is deliberately a
+**503, not a 403**: an identity resolver answers *who*, not *may*.
+
+⚠ Actor attributes supplied through a resolver are bounded — 64 levels of nesting, 16 KiB
+marshalled — and **deep-copied** at the seam. Both limits classify as 503. The bound is not
+cosmetic: `encoding/json`'s encoder has no nesting limit while its decoder caps the whole stored
+document at 10000, so an unbounded attribute can be written durably and then make the task row
+permanently unreadable.
+
 ## Deprecation taxonomy
 
 When an exported symbol must be retired, we deprecate before removal rather than breaking

@@ -133,11 +133,29 @@ func (c TaskRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpti
 
 	handle(r, inst, cfg, http.MethodPost, "/tasks/{token}/claim", func(w http.ResponseWriter, req *http.Request) {
 		token := req.PathValue("token")
-		var in httpcore.ClaimInput
-		if !decodeRequestBody(cfg, w, req, &in) {
+		// ⚠ Identity FIRST, before the body is read: an unauthenticated caller must not
+		// be able to force a MaxBodyBytes read or hold the handler for BodyReadTimeout.
+		actor, aerr := httpcore.RequestActor(req.Context(), cfg.RequestActor)
+		if aerr != nil {
+			writeErr(cfg, w, req, aerr)
 			return
 		}
-		status, body, err := httpcore.ClaimTask(req.Context(), c.Svc, token, in, cfg.InstanceMapper)
+		var in httpcore.ClaimInput
+		// Body is OPTIONAL here: since ADR-0189 removed the self-asserted actor,
+		// httpcore.ClaimInput has NO fields, so a correctly migrated client sends
+		// no body at all. MEASURED against the required-body decoder: a bodyless
+		// POST answered 400 "workflow-httpcore: bad input: EOF".
+		//
+		// ⚠ Claim ONLY. CompleteInput and ReassignInput still carry required
+		// content, so making their bodies optional would defer a missing-field
+		// failure to a worse error deeper in the service.
+		//
+		// An OVERSIZE body is still refused with 413 — decodeOptionalRequestBody
+		// discards the DECODE error, never the reader's.
+		if !decodeOptionalRequestBody(cfg, w, req, &in) {
+			return
+		}
+		status, body, err := httpcore.ClaimTask(req.Context(), c.Svc, token, in, cfg.InstanceMapper, actor)
 		if err != nil {
 			writeErr(cfg, w, req, err)
 			return
@@ -147,11 +165,18 @@ func (c TaskRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpti
 
 	handle(r, inst, cfg, http.MethodPost, "/tasks/{token}/complete", func(w http.ResponseWriter, req *http.Request) {
 		token := req.PathValue("token")
+		// ⚠ Identity FIRST, before the body is read: an unauthenticated caller must not
+		// be able to force a MaxBodyBytes read or hold the handler for BodyReadTimeout.
+		actor, aerr := httpcore.RequestActor(req.Context(), cfg.RequestActor)
+		if aerr != nil {
+			writeErr(cfg, w, req, aerr)
+			return
+		}
 		var in httpcore.CompleteInput
 		if !decodeRequestBody(cfg, w, req, &in) {
 			return
 		}
-		status, body, err := httpcore.CompleteTask(req.Context(), c.Svc, token, in, cfg.InstanceMapper)
+		status, body, err := httpcore.CompleteTask(req.Context(), c.Svc, token, in, cfg.InstanceMapper, actor)
 		if err != nil {
 			writeErr(cfg, w, req, err)
 			return
@@ -161,11 +186,18 @@ func (c TaskRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpti
 
 	handle(r, inst, cfg, http.MethodPost, "/tasks/{token}/reassign", func(w http.ResponseWriter, req *http.Request) {
 		token := req.PathValue("token")
+		// ⚠ Identity FIRST, before the body is read: an unauthenticated caller must not
+		// be able to force a MaxBodyBytes read or hold the handler for BodyReadTimeout.
+		actor, aerr := httpcore.RequestActor(req.Context(), cfg.RequestActor)
+		if aerr != nil {
+			writeErr(cfg, w, req, aerr)
+			return
+		}
 		var in httpcore.ReassignInput
 		if !decodeRequestBody(cfg, w, req, &in) {
 			return
 		}
-		status, body, err := httpcore.ReassignTask(req.Context(), c.Svc, token, in, cfg.InstanceMapper)
+		status, body, err := httpcore.ReassignTask(req.Context(), c.Svc, token, in, cfg.InstanceMapper, actor)
 		if err != nil {
 			writeErr(cfg, w, req, err)
 			return

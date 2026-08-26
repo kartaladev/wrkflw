@@ -191,11 +191,19 @@ Refreshing is therefore an explicit operation, not an automatic sweep — see
 
 - **Actor fidelity differs by slot.** `candidates[]` are resolver-sourced and
   carry whatever `Attributes` the resolver populated. `claim.actor` and
-  `completion.actor` come from the acting caller, and the HTTP transport's
-  `httpcore.Actor` is `{id, roles}` only — so over HTTP those two slots can never
-  carry attributes. Passthrough is faithful to what the engine observed; it does
-  not promise the same richness in every slot. Phase 8's whole-document test must
-  therefore build its fixture through the Go API, not the transport.
+  `completion.actor` come from the acting caller. Passthrough is faithful to what
+  the engine observed; it does not promise the same richness in every slot.
+
+  > ⚠ **AMENDED by ADR-0189 (2026-08-25).** This caveat originally continued: *"and
+  > the HTTP transport's `httpcore.Actor` is `{id, roles}` only — so over HTTP those
+  > two slots can never carry attributes … Phase 8's whole-document test must
+  > therefore build its fixture through the Go API, not the transport."*
+  >
+  > **That is no longer true.** ADR-0189 removed `httpcore.Actor` and the three
+  > body-derived actor fields; the authenticated actor now reaches the engine whole,
+  > `Attributes` included, so `claim.actor` and `completion.actor` over HTTP have the
+  > same fidelity as the resolver-sourced `candidates[]`. The Go-API fixture in
+  > `service/instance_test.go` is now a convenience, not a necessity.
 - **A reassigned task's claim is ID-only.** `HumanReassigned` identifies the new
   assignee by ID, so `handleHumanReassigned` records
   `Claim{Actor: authz.Actor{ID: t.To}}` — no roles, no attributes. A reassigned

@@ -17,6 +17,51 @@ release.
 
 ### Breaking changes (pre-v0.1.0 — no stability promise)
 
+- **The human-task routes no longer accept an actor in the request body; identity comes from the
+  request context (ADR-0189).** Before this, `transport/http/httpcore` built the `authz.Actor` that
+  reaches the authorization layer from `ClaimInput.Actor`, `CompleteInput.Actor` and
+  `ReassignInput.By` — so **any caller could post `{"actor":{"id":"alice","roles":["manager"]}}` and
+  be believed**, and a role-based `AuthzSpec` was satisfied by typing the role name.
+
+  Four observable breaks:
+
+  1. **`POST /tasks/{token}/{claim,complete,reassign}` answer `401` until something authenticates
+     the caller.** The body is `{"error":"unauthenticated","message":"the request carries no
+     authenticated actor"}`.
+  2. **The DTO fields and the `httpcore.Actor` type are removed.** A body still carrying `"actor"`
+     or `"by"` is **ignored, not rejected** — the value is simply never read — so a lagging client
+     keeps working once its deployment authenticates. `ReassignInput` keeps `From`/`To`: those name
+     task *participants*, not the requester.
+  3. **`httpcore.ClaimTask`, `CompleteTask` and `ReassignTask` gained a final
+     `RequestActorFunc` parameter.** This breaks consumer-written adapters that call them directly.
+  4. **A malformed claim body changes status, and how depends on who sends it.** `ClaimInput`
+     became a zero-field struct, so the claim route decodes an *optional* body and discards the
+     decode error. Measured: an **unauthenticated** caller now gets `401` where it got `400`; an
+     **authenticated** caller now gets `200` — **a previously-`400` request succeeds**, because
+     there is no longer anything in that body to reject. ⚠ An **oversize** body still answers
+     `413` — ADR-0186's cap keeps its contract.
+
+  **Wire it up** by having your authentication middleware put the actor on the request context:
+
+  ```go
+  // stdlib — derive the request; gin — gc.Request = gc.Request.WithContext(...);
+  // fiber — c.SetContext(...)   ⚠ NOT gc.Set and NOT c.Locals: neither reaches the handler's
+  // context, so a consumer using them gets a fail-closed 401 rather than a false identity.
+  next.ServeHTTP(w, r.WithContext(authz.ContextWithActor(r.Context(), a)))
+  ```
+
+  Or supply a resolver when the identity is not on the context:
+
+  ```go
+  stdlib.Mount(mux, svc, stdlib.WithRequestActor(func(ctx context.Context) (authz.Actor, error) {
+      return authz.Actor{ID: "demo-user", Roles: []string{"manager"}}, nil
+  }))
+  ```
+
+  ⚠ **This covers the three human-task verbs only.** `InstanceRoutes`, `MessageRoutes` and
+  `AdminRoutes` still authenticate nothing — `POST /instances`, `/signals` and `/messages` are
+  state-changing and open to any caller. Put your own guard in front of them; see `SECURITY.md`.
+
 - **Request bodies are capped at 1 MiB by default, and oversize is a new `413` (ADR-0186).**
   Every route group mounted from `transport/http/{stdlib,gin,fiber}` now bounds the request body.
   Two observable breaks:

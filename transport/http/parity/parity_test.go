@@ -48,6 +48,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kartaladev/wrkflw/authz"
+
 	ginlib "github.com/gin-gonic/gin"
 	fiberlib "github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
@@ -138,10 +140,10 @@ func getReqFactory(path string) reqFactory {
 
 // hitStdlib mounts svc on a fresh stdlib ServeMux, drives req through it, and
 // returns the adapterResult.
-func hitStdlib(t *testing.T, svc service.Service, mkReq reqFactory, withHealth bool) adapterResult {
+func hitStdlib(t *testing.T, svc service.Service, mkReq reqFactory, withHealth bool, actor ...authz.Actor) adapterResult {
 	t.Helper()
 	mux := http.NewServeMux()
-	stdlib.Mount(mux, svc)
+	stdlib.Mount(mux, svc, stdlib.WithRequestActor(parityActor(actor)))
 	if withHealth {
 		stdlib.MountHealth(mux)
 	}
@@ -153,10 +155,10 @@ func hitStdlib(t *testing.T, svc service.Service, mkReq reqFactory, withHealth b
 
 // hitGin mounts svc on a fresh gin engine backed by an httptest.Server, drives
 // req through it, and returns the adapterResult.
-func hitGin(t *testing.T, svc service.Service, mkReq reqFactory, withHealth bool) adapterResult {
+func hitGin(t *testing.T, svc service.Service, mkReq reqFactory, withHealth bool, actor ...authz.Actor) adapterResult {
 	t.Helper()
 	r := ginlib.New()
-	ginadapter.Mount(r, svc)
+	ginadapter.Mount(r, svc, ginadapter.WithRequestActor(parityActor(actor)))
 	if withHealth {
 		ginadapter.MountHealth(r)
 	}
@@ -189,10 +191,10 @@ func hitGin(t *testing.T, svc service.Service, mkReq reqFactory, withHealth bool
 
 // hitFiber mounts svc on a fresh fiber App, drives req through app.Test, and
 // returns the adapterResult.
-func hitFiber(t *testing.T, svc service.Service, mkReq reqFactory, withHealth bool) adapterResult {
+func hitFiber(t *testing.T, svc service.Service, mkReq reqFactory, withHealth bool, actor ...authz.Actor) adapterResult {
 	t.Helper()
 	app := fiberlib.New()
-	fiberadapter.Mount(app, svc)
+	fiberadapter.Mount(app, svc, fiberadapter.WithRequestActor(parityActor(actor)))
 	if withHealth {
 		fiberadapter.MountHealth(app)
 	}
@@ -205,6 +207,19 @@ func hitFiber(t *testing.T, svc service.Service, mkReq reqFactory, withHealth bo
 	defer resp.Body.Close() //nolint:errcheck
 	b, _ := io.ReadAll(resp.Body)
 	return parseAdapterResult(resp.StatusCode, b)
+}
+
+// parityActor turns the variadic actor argument into a resolver.
+//
+// With no actor supplied it returns nil, which restores httpcore's default — the
+// context seam — so an unauthenticated request is refused. That is what
+// TestParity_PostTasksClaim_Unauthenticated_401 relies on.
+func parityActor(actor []authz.Actor) httpcore.RequestActorFunc {
+	if len(actor) == 0 {
+		return nil
+	}
+	a := actor[0]
+	return func(context.Context) (authz.Actor, error) { return a, nil }
 }
 
 // hitServer drives mkReq against an already-running httptest.Server, for the
@@ -442,9 +457,10 @@ func TestParity_PostSignals_200(t *testing.T) {
 	svcG, mkG := makeInstanceAndSignalReq()
 	svcF, mkF := makeInstanceAndSignalReq()
 
-	s := hitStdlib(t, svcS, mkS, false)
-	g := hitGin(t, svcG, mkG, false)
-	f := hitFiber(t, svcF, mkF, false)
+	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
+	s := hitStdlib(t, svcS, mkS, false, manager)
+	g := hitGin(t, svcG, mkG, false, manager)
+	f := hitFiber(t, svcF, mkF, false, manager)
 
 	if s.status != http.StatusOK {
 		t.Fatalf("stdlib: want 200 got %d (body=%s)", s.status, s.rawBody)
@@ -514,9 +530,11 @@ func TestParity_PostTasksClaim_200(t *testing.T) {
 		def := transporttest.ApprovalProcess()
 		h, svcLocal := transporttest.NewHarness(t, def)
 		taskID := transporttest.StartedApprovalInstance(t, h, instanceID)
-		mkReq := jsonReqFactory(http.MethodPost, "/tasks/"+taskID+"/claim", map[string]any{
-			"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
-		})
+		// ⚠ The body no longer carries the actor (ADR-0189); the identity is supplied
+		// through the seam by the hit helpers below. An empty object is sent rather than
+		// no body so this case stays about PARITY of the 200 path, not about the
+		// optional-body decode, which each adapter pins separately.
+		mkReq := jsonReqFactory(http.MethodPost, "/tasks/"+taskID+"/claim", map[string]any{})
 		return svcLocal, mkReq
 	}
 
@@ -524,9 +542,10 @@ func TestParity_PostTasksClaim_200(t *testing.T) {
 	svcG, mkG := makeApprovalAndClaimReq("parity-claim-gin")
 	svcF, mkF := makeApprovalAndClaimReq("parity-claim-fiber")
 
-	s := hitStdlib(t, svcS, mkS, false)
-	g := hitGin(t, svcG, mkG, false)
-	f := hitFiber(t, svcF, mkF, false)
+	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
+	s := hitStdlib(t, svcS, mkS, false, manager)
+	g := hitGin(t, svcG, mkG, false, manager)
+	f := hitFiber(t, svcF, mkF, false, manager)
 
 	if s.status != http.StatusOK {
 		t.Fatalf("stdlib: want 200 got %d (body=%s)", s.status, s.rawBody)
@@ -1234,4 +1253,42 @@ func TestFiberDivergence_AboveFiberConfigBodyLimit(t *testing.T) {
 	assert.Contains(t, got.fiberErr.Error(), "body size exceeds the given limit")
 	assert.Empty(t, got.fiber.rawBody,
 		"fiber: no ErrorBody envelope is produced — there is no response at all")
+}
+
+// TestParity_PostTasksClaim_Unauthenticated_401 pins that all three adapters are
+// identically FAIL-CLOSED, not merely identically functional.
+//
+// ⚠ Parity of the happy path is the weaker property. Before ADR-0189 every adapter
+// accepted a body-supplied actor identically; what matters now is that each refuses an
+// unauthenticated caller with the same status AND the same error envelope, so a
+// consumer cannot tell the adapters apart by how they reject.
+func TestParity_PostTasksClaim_Unauthenticated_401(t *testing.T) {
+	t.Parallel()
+
+	makeReq := func(instanceID string) (service.Service, reqFactory) {
+		def := transporttest.ApprovalProcess()
+		h, svcLocal := transporttest.NewHarness(t, def)
+		taskID := transporttest.StartedApprovalInstance(t, h, instanceID)
+		// The body still carries the pre-ADR-0189 actor on purpose: a forged manager
+		// must not promote an unauthenticated caller on ANY adapter.
+		return svcLocal, jsonReqFactory(http.MethodPost, "/tasks/"+taskID+"/claim", map[string]any{
+			"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
+		})
+	}
+
+	svcS, mkS := makeReq("parity-claim-401-stdlib")
+	svcG, mkG := makeReq("parity-claim-401-gin")
+	svcF, mkF := makeReq("parity-claim-401-fiber")
+
+	// No actor argument ⇒ the default context-seam resolver ⇒ nothing authenticated.
+	s := hitStdlib(t, svcS, mkS, false)
+	g := hitGin(t, svcG, mkG, false)
+	f := hitFiber(t, svcF, mkF, false)
+
+	for name, got := range map[string]adapterResult{"stdlib": s, "gin": g, "fiber": f} {
+		if got.status != http.StatusUnauthorized {
+			t.Fatalf("%s: want 401 for an unauthenticated claim, got %d (body=%s)", name, got.status, got.rawBody)
+		}
+	}
+	assertParity(t, "POST /tasks/{token}/claim unauthenticated", s, g, f, true)
 }

@@ -85,11 +85,14 @@ func TestTaskRoutes_Complete(t *testing.T) {
 		t.Fatalf("claim: %v", err)
 	}
 
+	// The completing actor is AUTHENTICATED by the resolver, not asserted by the
+	// body (ADR-0189).
 	mux := http.NewServeMux()
-	stdlib.Mount(mux, svc)
+	stdlib.Mount(mux, svc, stdlib.WithRequestActor(
+		staticActor(authz.Actor{ID: "alice", Roles: []string{"manager"}}),
+	))
 
 	req := newPostRequest(t, "/tasks/"+taskID+"/complete", map[string]any{
-		"actor":  map[string]any{"id": "alice", "roles": []string{"manager"}},
 		"output": map[string]any{"approved": true},
 	})
 	rr := do(mux, req)
@@ -117,13 +120,16 @@ func TestTaskRoutes_Reassign(t *testing.T) {
 		t.Fatalf("claim: %v", err)
 	}
 
+	// The reassigning actor is AUTHENTICATED by the resolver, not asserted by the
+	// body's former "by" key (ADR-0189).
 	mux := http.NewServeMux()
-	stdlib.Mount(mux, svc)
+	stdlib.Mount(mux, svc, stdlib.WithRequestActor(
+		staticActor(authz.Actor{ID: "alice", Roles: []string{"manager"}}),
+	))
 
 	req := newPostRequest(t, "/tasks/"+taskID+"/reassign", map[string]any{
 		"from": "alice",
 		"to":   "carol",
-		"by":   map[string]any{"id": "alice", "roles": []string{"manager"}},
 	})
 	rr := do(mux, req)
 
@@ -132,7 +138,14 @@ func TestTaskRoutes_Reassign(t *testing.T) {
 	}
 }
 
-// TestTaskRoutes_BadJSON verifies that a malformed JSON body → 400.
+// TestTaskRoutes_BadJSON verifies that an unreadable body on claim → 401, not 400.
+//
+// ⚠ This asserted 400 before ADR-0189. The claim body is now OPTIONAL — with
+// httpcore.ClaimInput a zero-field struct a migrated client sends none at all —
+// so decodeOptionalRequestBody DISCARDS the decode error and the handler proceeds
+// to actor resolution, which refuses the unauthenticated request first. The 400
+// arm of decodeRequestBody is still exercised by the complete/reassign routes
+// below, whose bodies remain required.
 func TestTaskRoutes_BadJSON(t *testing.T) {
 	t.Parallel()
 
@@ -153,8 +166,8 @@ func TestTaskRoutes_BadJSON(t *testing.T) {
 	req = req.WithContext(t.Context())
 
 	rr := do(mux, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("want 400 for bad JSON, got %d (body=%s)", rr.Code, rr.Body)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401 for bad JSON on the optional claim body, got %d (body=%s)", rr.Code, rr.Body)
 	}
 }
 
@@ -166,8 +179,15 @@ func TestTaskRoutes_Complete_BadJSON(t *testing.T) {
 	h, svc := transporttest.NewHarness(t, def)
 	taskID := transporttest.StartedApprovalInstance(t, h, "task-complete-badjson-1")
 
+	// The mount MUST authenticate, even though this test is about the BODY.
+	// Since the ADR-0189 review fix (F6) the task routes resolve identity BEFORE
+	// reading the body — 401 → 413 → 400 → 404 — so an unauthenticated mount is
+	// refused at 401 and the 400 decode arm under test is never reached. The
+	// actor here is incidental to the assertion; its presence is not.
 	mux := http.NewServeMux()
-	stdlib.Mount(mux, svc)
+	stdlib.Mount(mux, svc, stdlib.WithRequestActor(
+		staticActor(authz.Actor{ID: "alice", Roles: []string{"manager"}}),
+	))
 
 	req, err := http.NewRequest(http.MethodPost, "/tasks/"+taskID+"/complete", errReader{})
 	if err != nil {
@@ -190,8 +210,15 @@ func TestTaskRoutes_Reassign_BadJSON(t *testing.T) {
 	h, svc := transporttest.NewHarness(t, def)
 	taskID := transporttest.StartedApprovalInstance(t, h, "task-reassign-badjson-1")
 
+	// The mount MUST authenticate, even though this test is about the BODY.
+	// Since the ADR-0189 review fix (F6) the task routes resolve identity BEFORE
+	// reading the body — 401 → 413 → 400 → 404 — so an unauthenticated mount is
+	// refused at 401 and the 400 decode arm under test is never reached. The
+	// actor here is incidental to the assertion; its presence is not.
 	mux := http.NewServeMux()
-	stdlib.Mount(mux, svc)
+	stdlib.Mount(mux, svc, stdlib.WithRequestActor(
+		staticActor(authz.Actor{ID: "alice", Roles: []string{"manager"}}),
+	))
 
 	req, err := http.NewRequest(http.MethodPost, "/tasks/"+taskID+"/reassign", errReader{})
 	if err != nil {

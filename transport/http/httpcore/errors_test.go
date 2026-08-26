@@ -372,3 +372,64 @@ func TestOversizedBodyClassifiesAs413NotBadRequest(t *testing.T) {
 		})
 	}
 }
+
+// TestClassifyError_IdentitySentinelsOutrankEveryOtherArm pins the ordering the
+// ErrIdentityUnavailable wrap requires. Its payload is ARBITRARY CONSUMER CODE, so
+// it can co-match ANY arm; the arm must therefore precede all of them.
+//
+// FAILS IF THE ARMS MOVE: below the 404 arm, "wraps a not-found sentinel" returns
+// 404; below the 403 arm, "wraps ErrNotAuthorized" returns 403.
+func TestClassifyError_IdentitySentinelsOutrankEveryOtherArm(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		err    error
+		assert func(t *testing.T, status int, body httpcore.ErrorBody)
+	}{
+		"bare unauthenticated → 401": {
+			err: httpcore.ErrUnauthenticated,
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusUnauthorized, status)
+				assert.Equal(t, "unauthenticated", body.Error)
+			},
+		},
+		"identity failure wrapping ErrNotAuthorized → 503, NOT 403": {
+			err: fmt.Errorf("%w: %w", httpcore.ErrIdentityUnavailable, authz.ErrNotAuthorized),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusServiceUnavailable, status)
+				assert.Equal(t, "identity_unavailable", body.Error)
+				assert.Empty(t, body.Message, "5xx must never carry the raw error")
+			},
+		},
+		"identity failure wrapping a not-found sentinel → 503, NOT 404": {
+			err: fmt.Errorf("%w: %w", httpcore.ErrIdentityUnavailable, kernel.ErrInstanceNotFound),
+			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusServiceUnavailable, status)
+				assert.Equal(t, "identity_unavailable", body.Error)
+			},
+		},
+		"identity failure wrapping ErrBadInput → 503, NOT 400": {
+			err: fmt.Errorf("%w: %w", httpcore.ErrIdentityUnavailable, httpcore.ErrBadInput),
+			assert: func(t *testing.T, status int, _ httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusServiceUnavailable, status)
+			},
+		},
+		// ⭐ The pair round 2 missed: the two NEW arms co-match EACH OTHER. errors.go's
+		// standing invariant demands a test for exactly this, and the round-2 bundle
+		// violated the invariant it cited as its own authority.
+		"identity failure wrapping ErrUnauthenticated → 401, the more specific": {
+			err: fmt.Errorf("%w: %w", httpcore.ErrIdentityUnavailable, httpcore.ErrUnauthenticated),
+			assert: func(t *testing.T, status int, _ httpcore.ErrorBody) {
+				assert.Equal(t, http.StatusUnauthorized, status)
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			status, body := httpcore.ClassifyError(tc.err)
+			tc.assert(t, status, body)
+		})
+	}
+}

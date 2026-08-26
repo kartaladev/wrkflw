@@ -1,7 +1,6 @@
 package gin
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -160,16 +159,23 @@ func (tr TaskRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOptio
 	// POST /tasks/:token/claim
 	rt.POST(bp+"/tasks/:token/claim", observe(inst, http.MethodPost, bp+"/tasks/:token/claim", func(gc *ginlib.Context) {
 		token := gc.Param("token")
+		// ⚠ Identity FIRST, before the body is read: an unauthenticated caller must not
+		// be able to force a MaxBodyBytes read or hold the handler for BodyReadTimeout.
+		actor, aerr := httpcore.RequestActor(gc.Request.Context(), cfg.RequestActor)
+		if aerr != nil {
+			writeErr(cfg, gc, aerr)
+			return
+		}
 		var in httpcore.ClaimInput
-		if err := capBody(cfg, gc); err != nil {
-			writeErr(cfg, gc, err)
+		// ⚠ The claim body is OPTIONAL, unlike complete's and reassign's.
+		// httpcore.ClaimInput has no fields left since ADR-0189 took the actor out
+		// of it, so a correctly migrated client sends NO body — which a required
+		// decode refuses with 400 "EOF" (MEASURED, before this change). An
+		// oversize body is still refused 413; see bindOptionalJSON.
+		if !bindOptionalJSON(cfg, gc, &in) {
 			return
 		}
-		if err := gc.ShouldBindJSON(&in); err != nil {
-			writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
-			return
-		}
-		status, body, err := httpcore.ClaimTask(gc.Request.Context(), tr.Svc, token, in, cfg.InstanceMapper)
+		status, body, err := httpcore.ClaimTask(gc.Request.Context(), tr.Svc, token, in, cfg.InstanceMapper, actor)
 		if err != nil {
 			writeErr(cfg, gc, err)
 			return
@@ -180,6 +186,13 @@ func (tr TaskRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOptio
 	// POST /tasks/:token/complete
 	rt.POST(bp+"/tasks/:token/complete", observe(inst, http.MethodPost, bp+"/tasks/:token/complete", func(gc *ginlib.Context) {
 		token := gc.Param("token")
+		// ⚠ Identity FIRST, before the body is read: an unauthenticated caller must not
+		// be able to force a MaxBodyBytes read or hold the handler for BodyReadTimeout.
+		actor, aerr := httpcore.RequestActor(gc.Request.Context(), cfg.RequestActor)
+		if aerr != nil {
+			writeErr(cfg, gc, aerr)
+			return
+		}
 		var in httpcore.CompleteInput
 		if err := capBody(cfg, gc); err != nil {
 			writeErr(cfg, gc, err)
@@ -189,7 +202,7 @@ func (tr TaskRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOptio
 			writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			return
 		}
-		status, body, err := httpcore.CompleteTask(gc.Request.Context(), tr.Svc, token, in, cfg.InstanceMapper)
+		status, body, err := httpcore.CompleteTask(gc.Request.Context(), tr.Svc, token, in, cfg.InstanceMapper, actor)
 		if err != nil {
 			writeErr(cfg, gc, err)
 			return
@@ -200,6 +213,13 @@ func (tr TaskRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOptio
 	// POST /tasks/:token/reassign
 	rt.POST(bp+"/tasks/:token/reassign", observe(inst, http.MethodPost, bp+"/tasks/:token/reassign", func(gc *ginlib.Context) {
 		token := gc.Param("token")
+		// ⚠ Identity FIRST, before the body is read: an unauthenticated caller must not
+		// be able to force a MaxBodyBytes read or hold the handler for BodyReadTimeout.
+		actor, aerr := httpcore.RequestActor(gc.Request.Context(), cfg.RequestActor)
+		if aerr != nil {
+			writeErr(cfg, gc, aerr)
+			return
+		}
 		var in httpcore.ReassignInput
 		if err := capBody(cfg, gc); err != nil {
 			writeErr(cfg, gc, err)
@@ -209,7 +229,7 @@ func (tr TaskRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOptio
 			writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			return
 		}
-		status, body, err := httpcore.ReassignTask(gc.Request.Context(), tr.Svc, token, in, cfg.InstanceMapper)
+		status, body, err := httpcore.ReassignTask(gc.Request.Context(), tr.Svc, token, in, cfg.InstanceMapper, actor)
 		if err != nil {
 			writeErr(cfg, gc, err)
 			return
@@ -287,15 +307,12 @@ func (ar AdminRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOpti
 			incidentID := gc.Param("incidentID")
 			var in httpcore.ResolveIncidentInput
 			// The body is optional, but "optional" is not "unbounded": an oversize
-			// body is refused here exactly as at the twelve required-body sites.
-			// ⚠ Only the oversize outcome aborts — every other decode error stays
-			// ignored below, which is what lets an absent body succeed.
-			if err := capBody(cfg, gc); errors.Is(err, httpcore.ErrRequestBodyTooLarge) {
-				writeErr(cfg, gc, err)
+			// body is refused here exactly as at the required-body sites. That rule
+			// now lives in bindOptionalJSON, shared with the claim route, so the two
+			// optional-body sites cannot drift apart.
+			if !bindOptionalJSON(cfg, gc, &in) {
 				return
 			}
-			// Body is optional; ignore parse error for an empty body.
-			_ = gc.ShouldBindJSON(&in)
 			status, body, err := httpcore.ResolveIncident(gc.Request.Context(), ar.Svc, instanceID, incidentID, in)
 			if err != nil {
 				writeErr(cfg, gc, err)

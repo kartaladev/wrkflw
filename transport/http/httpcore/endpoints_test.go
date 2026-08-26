@@ -1,9 +1,13 @@
 package httpcore_test
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/kartaladev/wrkflw/authz"
 	"github.com/kartaladev/wrkflw/definition/model"
@@ -395,14 +399,16 @@ func TestClaimTask(t *testing.T) {
 
 	tests := map[string]struct {
 		setupToken func(h *transporttest.Harness) string
-		in         httpcore.ClaimInput
+		actor      httpcore.RequestActorFunc
 		assert     func(t *testing.T, status int, body any, err error)
 	}{
 		"success → 200 with body": {
 			setupToken: func(h *transporttest.Harness) string {
 				return transporttest.StartedApprovalInstance(t, h, "claim-ok-1")
 			},
-			in: httpcore.ClaimInput{Actor: httpcore.Actor{ID: "alice", Roles: []string{"manager"}}},
+			actor: func(context.Context) (authz.Actor, error) {
+				return authz.Actor{ID: "alice", Roles: []string{"manager"}}, nil
+			},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -419,7 +425,9 @@ func TestClaimTask(t *testing.T) {
 			setupToken: func(h *transporttest.Harness) string {
 				return transporttest.StartedApprovalInstance(t, h, "claim-forbidden-1")
 			},
-			in: httpcore.ClaimInput{Actor: httpcore.Actor{ID: "bob", Roles: []string{"viewer"}}},
+			actor: func(context.Context) (authz.Actor, error) {
+				return authz.Actor{ID: "bob", Roles: []string{"viewer"}}, nil
+			},
 			assert: func(t *testing.T, _ int, _ any, err error) {
 				if err == nil {
 					t.Fatal("want error for unauthorized actor")
@@ -433,7 +441,7 @@ func TestClaimTask(t *testing.T) {
 			t.Parallel()
 			h, svc := transporttest.NewHarness(t, def)
 			token := tc.setupToken(h)
-			status, body, err := httpcore.ClaimTask(t.Context(), svc, token, tc.in, nil)
+			status, body, err := httpcore.ClaimTask(t.Context(), svc, token, httpcore.ClaimInput{}, nil, orDefaultActor(tc.actor))
 			tc.assert(t, status, body, err)
 		})
 	}
@@ -448,6 +456,7 @@ func TestCompleteTask(t *testing.T) {
 	tests := map[string]struct {
 		setupToken func(h *transporttest.Harness, svc service.Service) string
 		in         httpcore.CompleteInput
+		actor      httpcore.RequestActorFunc
 		assert     func(t *testing.T, status int, body any, err error)
 	}{
 		"success → 200 with completed status": {
@@ -463,7 +472,6 @@ func TestCompleteTask(t *testing.T) {
 				return token
 			},
 			in: httpcore.CompleteInput{
-				Actor:  httpcore.Actor{ID: "alice", Roles: []string{"manager"}},
 				Output: map[string]any{"approved": true},
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
@@ -482,7 +490,10 @@ func TestCompleteTask(t *testing.T) {
 			setupToken: func(h *transporttest.Harness, _ service.Service) string {
 				return transporttest.StartedApprovalInstance(t, h, "complete-unauth-1")
 			},
-			in: httpcore.CompleteInput{Actor: httpcore.Actor{ID: "bob", Roles: []string{"viewer"}}},
+			in: httpcore.CompleteInput{},
+			actor: func(context.Context) (authz.Actor, error) {
+				return authz.Actor{ID: "bob", Roles: []string{"viewer"}}, nil
+			},
 			assert: func(t *testing.T, _ int, _ any, err error) {
 				if err == nil {
 					t.Fatal("want error for unauthorized actor")
@@ -496,7 +507,7 @@ func TestCompleteTask(t *testing.T) {
 			t.Parallel()
 			h, svc := transporttest.NewHarness(t, def)
 			token := tc.setupToken(h, svc)
-			status, body, err := httpcore.CompleteTask(t.Context(), svc, token, tc.in, nil)
+			status, body, err := httpcore.CompleteTask(t.Context(), svc, token, tc.in, nil, orDefaultActor(tc.actor))
 			tc.assert(t, status, body, err)
 		})
 	}
@@ -511,6 +522,7 @@ func TestReassignTask(t *testing.T) {
 	tests := map[string]struct {
 		setupToken func(h *transporttest.Harness, svc service.Service) string
 		in         httpcore.ReassignInput
+		actor      httpcore.RequestActorFunc
 		assert     func(t *testing.T, status int, body any, err error)
 	}{
 		"success → 200 with body": {
@@ -528,7 +540,6 @@ func TestReassignTask(t *testing.T) {
 			in: httpcore.ReassignInput{
 				From: "alice",
 				To:   "carol",
-				By:   httpcore.Actor{ID: "alice", Roles: []string{"manager"}},
 			},
 			assert: func(t *testing.T, status int, body any, err error) {
 				if err != nil {
@@ -543,6 +554,9 @@ func TestReassignTask(t *testing.T) {
 			},
 		},
 		"unauthorized reassigner → error propagated": {
+			actor: func(context.Context) (authz.Actor, error) {
+				return authz.Actor{ID: "bob", Roles: []string{"viewer"}}, nil
+			},
 			setupToken: func(h *transporttest.Harness, svc service.Service) string {
 				token := transporttest.StartedApprovalInstance(t, h, "reassign-unauth-1")
 				_, err := svc.ClaimTask(t.Context(), service.ClaimTaskRequest{
@@ -557,7 +571,6 @@ func TestReassignTask(t *testing.T) {
 			in: httpcore.ReassignInput{
 				From: "alice",
 				To:   "carol",
-				By:   httpcore.Actor{ID: "bob", Roles: []string{"viewer"}},
 			},
 			assert: func(t *testing.T, _ int, _ any, err error) {
 				if err == nil {
@@ -572,8 +585,83 @@ func TestReassignTask(t *testing.T) {
 			t.Parallel()
 			h, svc := transporttest.NewHarness(t, def)
 			token := tc.setupToken(h, svc)
-			status, body, err := httpcore.ReassignTask(t.Context(), svc, token, tc.in, nil)
+			status, body, err := httpcore.ReassignTask(t.Context(), svc, token, tc.in, nil, orDefaultActor(tc.actor))
 			tc.assert(t, status, body, err)
 		})
 	}
+}
+
+// TestClaimTask_ActorComesFromTheResolverNotTheBody is the point of ADR-0189: a body
+// that names a manager cannot promote an unauthenticated caller.
+//
+// FAILS BEFORE THE CHANGE: ClaimTask reads in.Actor, so the forged manager claims the
+// task and the call returns 200.
+func TestClaimTask_ActorComesFromTheResolverNotTheBody(t *testing.T) {
+	t.Parallel()
+
+	def := transporttest.ApprovalProcess()
+
+	tests := map[string]struct {
+		actor  httpcore.RequestActorFunc
+		assert func(t *testing.T, status int, err error)
+	}{
+		"authenticated manager → 200": {
+			actor: func(context.Context) (authz.Actor, error) {
+				return authz.Actor{ID: "alice", Roles: []string{"manager"}}, nil
+			},
+			assert: func(t *testing.T, status int, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, http.StatusOK, status)
+			},
+		},
+		"authenticated viewer → the engine's 403 propagates": {
+			actor: func(context.Context) (authz.Actor, error) {
+				return authz.Actor{ID: "bob", Roles: []string{"viewer"}}, nil
+			},
+			assert: func(t *testing.T, _ int, err error) {
+				assert.ErrorIs(t, err, authz.ErrNotAuthorized)
+			},
+		},
+		"no resolver → 401, whatever the body claimed": {
+			actor: nil,
+			assert: func(t *testing.T, _ int, err error) {
+				assert.ErrorIs(t, err, httpcore.ErrUnauthenticated)
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			h, svc := transporttest.NewHarness(t, def)
+			token := transporttest.StartedApprovalInstance(t, h, "claim-seam-"+name)
+			// ⚠ A nil resolver means "nothing authenticated this request": the adapter
+			// would have refused before the body. Model that as the zero actor, which the
+			// endpoint's own defence-in-depth guard must still reject.
+			var a authz.Actor
+			if tc.actor != nil {
+				a, _ = tc.actor(t.Context())
+			}
+			status, _, err := httpcore.ClaimTask(t.Context(), svc, token, httpcore.ClaimInput{}, nil, a)
+			tc.assert(t, status, err)
+		})
+	}
+}
+
+// orDefaultActor supplies an authenticated manager when a case does not name an
+// actor, so tests that are ABOUT something else (outcomes, notes, wrong state) do not
+// all have to restate the identity. Cases that are about identity name it explicitly.
+//
+// ⚠ The endpoints now take an already-RESOLVED authz.Actor: the adapter calls
+// httpcore.RequestActor BEFORE reading the body, so an unauthenticated caller is
+// refused without one being read.
+func orDefaultActor(fn httpcore.RequestActorFunc) authz.Actor {
+	if fn == nil {
+		return authz.Actor{ID: "alice", Roles: []string{"manager"}}
+	}
+	a, err := fn(context.Background())
+	if err != nil {
+		return authz.Actor{}
+	}
+	return a
 }
