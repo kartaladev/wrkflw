@@ -12,7 +12,7 @@ top to bottom; it is meant to stay short enough that you can.
 ## State — updated 2026-08-26 (**ADR-0189 SHIPPED — both gates passed, merged and pushed**)
 
 **`main` has advanced.** ⚠ Re-derive the head (`git rev-parse --short refs/heads/main`); anchor on
-**merge** SHAs, which never move: **`ADR0189_MERGE` (latest shipped — ADR-0189, backlog 51)**,
+**merge** SHAs, which never move: **`7be335fb` (latest shipped — ADR-0189, backlog 51)**,
 `b5fe7272`, ADR-0187 `4e2c0af4`, ADR-0186 `13b3bfb0`, the backlog sweep
 `020af37b`, 0184 `be6e6b55`, 0183 `a7575ed5`, 0179 `962aeb25`, 0181/0182 `1ac140f6`,
 0177/0178/0180 `a5b33e4c`, 0176 `52bf0f80`, 0175 `6e4addc8`.

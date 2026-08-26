@@ -2,8 +2,7 @@
 
 ## ▶ Progress — SHIPPED. Both review gates passed; merged to `main`.
 
-**Branch:** `feat/request-actor-identity` (single amended commit; do not quote its SHA — the
-amend moves it. Base is `main` at merge `b5fe7272`.)
+**Merged as `7be335fb`** (`--no-ff`, from `feat/request-actor-identity`, base `b5fe7272`).
 **State:** all 13 tasks implemented, both gates passed, merged `--no-ff` and pushed.
 
 ### Delivery Gate
