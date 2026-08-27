@@ -32,6 +32,19 @@ func seedDisclose(t *testing.T) (*http.ServeMux, string, service.Service) {
 		t.Fatalf("seed: %v", err)
 	}
 
+	// ⚠ Claim the task with an actor whose ID IS the canary. Without this the
+	// /actionable case is VACUOUS: that view renders no variables at all, so an
+	// assertion that the secret is absent passes whether or not the projection runs.
+	// Proven by ablation — with the wiring removed, three of four cases went RED and
+	// actionable stayed green.
+	for _, tk := range pi.State().Tasks {
+		if _, cerr := svc.ClaimTask(t.Context(), service.ClaimTaskRequest{
+			TaskID: tk.TaskID,
+			Actor:  authz.Actor{ID: discloseSecret, Roles: []string{"manager"}},
+		}); cerr != nil {
+			t.Fatalf("claim: %v", cerr)
+		}
+	}
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc)
 	return mux, pi.State().InstanceID, svc
