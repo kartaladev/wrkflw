@@ -57,24 +57,62 @@ func GetInstance(ctx context.Context, svc service.Service, id string, mapper fun
 // bookkeeping (timers, armed events, scopes, etc.). The returned
 // service.ProcessInstance marshals directly to that projection, so no
 // transport-side view construction is needed.
-func GetInstanceSnapshot(ctx context.Context, svc service.Service, id string) (int, any, error) {
+//
+// proj, when non-nil, projects the state before it is marshalled; withholdDef additionally
+// drops the embedded definition (ADR-0190). Both come from the adapter's per-request
+// disclosure decision — see [DisclosingProjection] and [WithholdDefinition].
+//
+// ⚠ The projected instance is built by [service.ProjectFor], NOT by
+// service.NewProcessInstance. The latter always embeds the definition, so rebuilding
+// through it silently RE-EMBEDDED a template that WithoutEmbeddedDefinition had suppressed
+// — widening disclosure on the one route this narrows.
+func GetInstanceSnapshot(
+	ctx context.Context,
+	svc service.Service,
+	id string,
+	proj func(engine.InstanceState) engine.InstanceState,
+	withholdDef bool,
+) (int, any, error) {
 	pi, err := svc.GetInstance(ctx, id)
 	if err != nil {
 		return 0, nil, err
 	}
-	return http.StatusOK, pi, nil
+	if proj == nil && !withholdDef {
+		return http.StatusOK, pi, nil
+	}
+	return http.StatusOK, service.ProjectFor(pi, proj, withholdDef), nil
 }
 
 // GetActionableView returns an ActionableView DTO (200) — a curated projection
 // listing open human tasks and the allowed next-step actions from the
 // definition. State and definition are sourced from the returned
 // service.ProcessInstance (definition may be nil if unresolved).
-func GetActionableView(ctx context.Context, svc service.Service, id string) (int, any, error) {
+//
+// ⚠ It needs BOTH knobs. proj governs the state; withholdDef governs the DEFINITION, and
+// the definition is where allowed_actions[].condition comes from — an expr predicate that
+// discloses business policy. A projection of the state alone leaves those conditions on the
+// wire, and because the leak is a routing expression rather than a value, a test grepping
+// for a secret string never sees it.
+func GetActionableView(
+	ctx context.Context,
+	svc service.Service,
+	id string,
+	proj func(engine.InstanceState) engine.InstanceState,
+	withholdDef bool,
+) (int, any, error) {
 	pi, err := svc.GetInstance(ctx, id)
 	if err != nil {
 		return 0, nil, err
 	}
-	return http.StatusOK, view.NewActionableView(pi.State(), pi.Definition()), nil
+	st := pi.State()
+	if proj != nil {
+		st = proj(st)
+	}
+	def := pi.Definition()
+	if withholdDef {
+		def = nil
+	}
+	return http.StatusOK, view.NewActionableView(st, def), nil
 }
 
 // DeliverSignal delivers a signal to an existing process instance and returns

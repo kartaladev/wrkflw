@@ -36,7 +36,7 @@ func (g InstanceRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeO
 			if err := c.Bind().JSON(&in); err != nil {
 				return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			}
-			status, body, err := httpcore.StartInstance(c.Context(), g.Svc, in, cfg.InstanceMapper)
+			status, body, err := httpcore.StartInstance(c.Context(), g.Svc, in, httpcore.DisclosingMapper(c.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper))
 			if err != nil {
 				return writeErr(cfg, c, err)
 			}
@@ -46,7 +46,7 @@ func (g InstanceRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeO
 	rt.Get(cfg.BasePath+"/instances/:id", observed(inst, "GET", cfg.BasePath+"/instances/:id",
 		func(c fiberlib.Ctx) error {
 			id := c.Params("id")
-			status, body, err := httpcore.GetInstance(c.Context(), g.Svc, id, cfg.InstanceMapper)
+			status, body, err := httpcore.GetInstance(c.Context(), g.Svc, id, httpcore.DisclosingMapper(c.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper))
 			if err != nil {
 				return writeErr(cfg, c, err)
 			}
@@ -56,7 +56,7 @@ func (g InstanceRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeO
 	rt.Get(cfg.BasePath+"/instances/:id/snapshot", observed(inst, "GET", cfg.BasePath+"/instances/:id/snapshot",
 		func(c fiberlib.Ctx) error {
 			id := c.Params("id")
-			status, body, err := httpcore.GetInstanceSnapshot(c.Context(), g.Svc, id)
+			status, body, err := httpcore.GetInstanceSnapshot(c.Context(), g.Svc, id, httpcore.DisclosingProjection(c.Context(), cfg.RequestActor, cfg.Disclosure), httpcore.WithholdDefinition(c.Context(), cfg.RequestActor, cfg.Disclosure))
 			if err != nil {
 				return writeErr(cfg, c, err)
 			}
@@ -66,7 +66,7 @@ func (g InstanceRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeO
 	rt.Get(cfg.BasePath+"/instances/:id/actionable", observed(inst, "GET", cfg.BasePath+"/instances/:id/actionable",
 		func(c fiberlib.Ctx) error {
 			id := c.Params("id")
-			status, body, err := httpcore.GetActionableView(c.Context(), g.Svc, id)
+			status, body, err := httpcore.GetActionableView(c.Context(), g.Svc, id, httpcore.DisclosingProjection(c.Context(), cfg.RequestActor, cfg.Disclosure), httpcore.WithholdDefinition(c.Context(), cfg.RequestActor, cfg.Disclosure))
 			if err != nil {
 				return writeErr(cfg, c, err)
 			}
@@ -83,7 +83,7 @@ func (g InstanceRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeO
 			if err := c.Bind().JSON(&in); err != nil {
 				return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			}
-			status, body, err := httpcore.DeliverSignal(c.Context(), g.Svc, id, in, cfg.InstanceMapper)
+			status, body, err := httpcore.DeliverSignal(c.Context(), g.Svc, id, in, httpcore.DisclosingMapper(c.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper))
 			if err != nil {
 				return writeErr(cfg, c, err)
 			}
@@ -153,7 +153,7 @@ func (g TaskRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOptio
 			if err := bindOptionalBody(cfg, c, &in); err != nil {
 				return writeErr(cfg, c, err)
 			}
-			status, body, err := httpcore.ClaimTask(c.Context(), g.Svc, token, in, cfg.InstanceMapper, actor)
+			status, body, err := httpcore.ClaimTask(c.Context(), g.Svc, token, in, httpcore.DisclosingMapper(c.Context(), cfg.RequestActor, cfg.Disclosure, httpcore.DisclosingMapper(c.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper)), actor)
 			if err != nil {
 				return writeErr(cfg, c, err)
 			}
@@ -176,7 +176,7 @@ func (g TaskRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOptio
 			if err := c.Bind().JSON(&in); err != nil {
 				return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			}
-			status, body, err := httpcore.CompleteTask(c.Context(), g.Svc, token, in, cfg.InstanceMapper, actor)
+			status, body, err := httpcore.CompleteTask(c.Context(), g.Svc, token, in, httpcore.DisclosingMapper(c.Context(), cfg.RequestActor, cfg.Disclosure, httpcore.DisclosingMapper(c.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper)), actor)
 			if err != nil {
 				return writeErr(cfg, c, err)
 			}
@@ -199,7 +199,7 @@ func (g TaskRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOptio
 			if err := c.Bind().JSON(&in); err != nil {
 				return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			}
-			status, body, err := httpcore.ReassignTask(c.Context(), g.Svc, token, in, cfg.InstanceMapper, actor)
+			status, body, err := httpcore.ReassignTask(c.Context(), g.Svc, token, in, httpcore.DisclosingMapper(c.Context(), cfg.RequestActor, cfg.Disclosure, httpcore.DisclosingMapper(c.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper)), actor)
 			if err != nil {
 				return writeErr(cfg, c, err)
 			}
@@ -294,7 +294,7 @@ func (g AdminRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOpti
 				}
 				// Body is optional — ignore decode errors (defaults to zero AddAttempts).
 				_ = c.Bind().JSON(&in)
-				status, body, err := httpcore.ResolveIncident(c.Context(), g.Svc, id, incidentID, in)
+				status, body, err := httpcore.ResolveIncident(c.Context(), g.Svc, id, incidentID, in, httpcore.DisclosingMapper(c.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper))
 				if err != nil {
 					return writeErr(cfg, c, err)
 				}
@@ -315,7 +315,7 @@ func (g AdminRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOpti
 				if err := c.Bind().JSON(&in); err != nil {
 					return writeErr(cfg, c, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 				}
-				status, body, err := httpcore.ResolveCompensationStall(c.Context(), g.Svc, id, in)
+				status, body, err := httpcore.ResolveCompensationStall(c.Context(), g.Svc, id, in, httpcore.DisclosingMapper(c.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper))
 				if err != nil {
 					return writeErr(cfg, c, err)
 				}
@@ -327,7 +327,7 @@ func (g AdminRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOpti
 		observed(inst, "POST", cfg.BasePath+"/admin/instances/:id/cancel",
 			func(c fiberlib.Ctx) error {
 				id := c.Params("id")
-				status, body, err := httpcore.CancelInstance(c.Context(), g.Svc, id)
+				status, body, err := httpcore.CancelInstance(c.Context(), g.Svc, id, httpcore.DisclosingMapper(c.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper))
 				if err != nil {
 					return writeErr(cfg, c, err)
 				}

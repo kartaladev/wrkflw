@@ -22,7 +22,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kartaladev/wrkflw/authz"
 	"github.com/kartaladev/wrkflw/internal/transporttest"
+	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 	"github.com/kartaladev/wrkflw/transport/http/stdlib"
 )
 
@@ -178,7 +180,16 @@ func TestUnderCapBehaviourIsUnchanged(t *testing.T) {
 			mux := http.NewServeMux()
 			// Cap ACTIVE and far above these bodies: the point is that an active
 			// cap changes nothing for a body under it.
-			stdlib.Mount(mux, svc, stdlib.WithMaxBodyBytes(64<<10))
+			//
+			// ⚠ DiscloseAll is required, not incidental. ADR-0190 projects the
+			// response for a caller it cannot identify, and this mount has no
+			// authentication — so without the opt-out the assertions below would
+			// fail on the DISCLOSURE change and stop testing the body cap at all.
+			// Opting out keeps this guard discriminating: it still fails if an
+			// under-cap body ever renders differently.
+			stdlib.Mount(mux, svc,
+				stdlib.WithMaxBodyBytes(64<<10),
+				httpcore.WithDisclosure[*http.ServeMux](authz.DiscloseAll))
 
 			tc.assert(t, do(mux, newRawPostRequest(t, "/instances", tc.raw)))
 		})

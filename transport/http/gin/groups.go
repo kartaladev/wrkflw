@@ -38,7 +38,7 @@ func (ir InstanceRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeO
 			writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			return
 		}
-		status, body, err := httpcore.StartInstance(gc.Request.Context(), ir.Svc, in, cfg.InstanceMapper)
+		status, body, err := httpcore.StartInstance(gc.Request.Context(), ir.Svc, in, httpcore.DisclosingMapper(gc.Request.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper))
 		if err != nil {
 			writeErr(cfg, gc, err)
 			return
@@ -49,7 +49,7 @@ func (ir InstanceRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeO
 	// GET /instances/:id → GetInstance
 	rt.GET(bp+"/instances/:id", observe(inst, http.MethodGet, bp+"/instances/:id", func(gc *ginlib.Context) {
 		id := gc.Param("id")
-		status, body, err := httpcore.GetInstance(gc.Request.Context(), ir.Svc, id, cfg.InstanceMapper)
+		status, body, err := httpcore.GetInstance(gc.Request.Context(), ir.Svc, id, httpcore.DisclosingMapper(gc.Request.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper))
 		if err != nil {
 			writeErr(cfg, gc, err)
 			return
@@ -60,7 +60,7 @@ func (ir InstanceRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeO
 	// GET /instances/:id/snapshot → GetInstanceSnapshot
 	rt.GET(bp+"/instances/:id/snapshot", observe(inst, http.MethodGet, bp+"/instances/:id/snapshot", func(gc *ginlib.Context) {
 		id := gc.Param("id")
-		status, body, err := httpcore.GetInstanceSnapshot(gc.Request.Context(), ir.Svc, id)
+		status, body, err := httpcore.GetInstanceSnapshot(gc.Request.Context(), ir.Svc, id, httpcore.DisclosingProjection(gc.Request.Context(), cfg.RequestActor, cfg.Disclosure), httpcore.WithholdDefinition(gc.Request.Context(), cfg.RequestActor, cfg.Disclosure))
 		if err != nil {
 			writeErr(cfg, gc, err)
 			return
@@ -71,7 +71,7 @@ func (ir InstanceRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeO
 	// GET /instances/:id/actionable → GetActionableView
 	rt.GET(bp+"/instances/:id/actionable", observe(inst, http.MethodGet, bp+"/instances/:id/actionable", func(gc *ginlib.Context) {
 		id := gc.Param("id")
-		status, body, err := httpcore.GetActionableView(gc.Request.Context(), ir.Svc, id)
+		status, body, err := httpcore.GetActionableView(gc.Request.Context(), ir.Svc, id, httpcore.DisclosingProjection(gc.Request.Context(), cfg.RequestActor, cfg.Disclosure), httpcore.WithholdDefinition(gc.Request.Context(), cfg.RequestActor, cfg.Disclosure))
 		if err != nil {
 			writeErr(cfg, gc, err)
 			return
@@ -91,7 +91,7 @@ func (ir InstanceRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeO
 			writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			return
 		}
-		status, body, err := httpcore.DeliverSignal(gc.Request.Context(), ir.Svc, id, in, cfg.InstanceMapper)
+		status, body, err := httpcore.DeliverSignal(gc.Request.Context(), ir.Svc, id, in, httpcore.DisclosingMapper(gc.Request.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper))
 		if err != nil {
 			writeErr(cfg, gc, err)
 			return
@@ -175,7 +175,7 @@ func (tr TaskRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOptio
 		if !bindOptionalJSON(cfg, gc, &in) {
 			return
 		}
-		status, body, err := httpcore.ClaimTask(gc.Request.Context(), tr.Svc, token, in, cfg.InstanceMapper, actor)
+		status, body, err := httpcore.ClaimTask(gc.Request.Context(), tr.Svc, token, in, httpcore.DisclosingMapper(gc.Request.Context(), cfg.RequestActor, cfg.Disclosure, httpcore.DisclosingMapper(gc.Request.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper)), actor)
 		if err != nil {
 			writeErr(cfg, gc, err)
 			return
@@ -202,7 +202,7 @@ func (tr TaskRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOptio
 			writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			return
 		}
-		status, body, err := httpcore.CompleteTask(gc.Request.Context(), tr.Svc, token, in, cfg.InstanceMapper, actor)
+		status, body, err := httpcore.CompleteTask(gc.Request.Context(), tr.Svc, token, in, httpcore.DisclosingMapper(gc.Request.Context(), cfg.RequestActor, cfg.Disclosure, httpcore.DisclosingMapper(gc.Request.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper)), actor)
 		if err != nil {
 			writeErr(cfg, gc, err)
 			return
@@ -229,7 +229,7 @@ func (tr TaskRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOptio
 			writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 			return
 		}
-		status, body, err := httpcore.ReassignTask(gc.Request.Context(), tr.Svc, token, in, cfg.InstanceMapper, actor)
+		status, body, err := httpcore.ReassignTask(gc.Request.Context(), tr.Svc, token, in, httpcore.DisclosingMapper(gc.Request.Context(), cfg.RequestActor, cfg.Disclosure, httpcore.DisclosingMapper(gc.Request.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper)), actor)
 		if err != nil {
 			writeErr(cfg, gc, err)
 			return
@@ -313,7 +313,7 @@ func (ar AdminRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOpti
 			if !bindOptionalJSON(cfg, gc, &in) {
 				return
 			}
-			status, body, err := httpcore.ResolveIncident(gc.Request.Context(), ar.Svc, instanceID, incidentID, in)
+			status, body, err := httpcore.ResolveIncident(gc.Request.Context(), ar.Svc, instanceID, incidentID, in, httpcore.DisclosingMapper(gc.Request.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper))
 			if err != nil {
 				writeErr(cfg, gc, err)
 				return
@@ -336,7 +336,7 @@ func (ar AdminRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOpti
 				writeErr(cfg, gc, fmt.Errorf("%w: %w", httpcore.ErrBadInput, err))
 				return
 			}
-			status, body, err := httpcore.ResolveCompensationStall(gc.Request.Context(), ar.Svc, instanceID, in)
+			status, body, err := httpcore.ResolveCompensationStall(gc.Request.Context(), ar.Svc, instanceID, in, httpcore.DisclosingMapper(gc.Request.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper))
 			if err != nil {
 				writeErr(cfg, gc, err)
 				return
@@ -348,7 +348,7 @@ func (ar AdminRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOpti
 	rt.POST(bp+"/admin/instances/:id/cancel",
 		observe(inst, http.MethodPost, bp+"/admin/instances/:id/cancel", func(gc *ginlib.Context) {
 			instanceID := gc.Param("id")
-			status, body, err := httpcore.CancelInstance(gc.Request.Context(), ar.Svc, instanceID)
+			status, body, err := httpcore.CancelInstance(gc.Request.Context(), ar.Svc, instanceID, httpcore.DisclosingMapper(gc.Request.Context(), cfg.RequestActor, cfg.Disclosure, cfg.InstanceMapper))
 			if err != nil {
 				writeErr(cfg, gc, err)
 				return

@@ -189,7 +189,7 @@ func TestGetInstanceSnapshot(t *testing.T) {
 			t.Parallel()
 			_, svc := transporttest.NewHarness(t, def)
 			id := tc.setup(svc)
-			status, body, err := httpcore.GetInstanceSnapshot(t.Context(), svc, id)
+			status, body, err := httpcore.GetInstanceSnapshot(t.Context(), svc, id, nil, false)
 			tc.assert(t, status, body, err)
 		})
 	}
@@ -242,7 +242,7 @@ func TestGetActionableView(t *testing.T) {
 			t.Parallel()
 			_, svc := transporttest.NewHarness(t, def)
 			id := tc.setup(svc)
-			status, body, err := httpcore.GetActionableView(t.Context(), svc, id)
+			status, body, err := httpcore.GetActionableView(t.Context(), svc, id, nil, false)
 			tc.assert(t, status, body, err)
 		})
 	}

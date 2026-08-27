@@ -99,7 +99,11 @@ func AdminListInstances(ctx context.Context, svc service.Service, q ListInstance
 // ResolveIncident resolves an open incident on a process instance, optionally
 // granting additional execution attempts via in.AddAttempts. Returns (200,
 // InstanceView, nil) on success.
-func ResolveIncident(ctx context.Context, svc service.Service, instanceID, incidentID string, in ResolveIncidentInput) (int, any, error) {
+// ⚠ mapper carries the adapter's per-request disclosure decision (ADR-0190). These three
+// admin endpoints render instance state through NewInstanceView DIRECTLY, bypassing
+// mapInstance — a fourth render mechanism that no earlier draft of that record counted, and
+// which therefore stayed fully open while the six mapInstance sites were being closed.
+func ResolveIncident(ctx context.Context, svc service.Service, instanceID, incidentID string, in ResolveIncidentInput, mapper func(engine.InstanceState) any) (int, any, error) {
 	pi, err := svc.ResolveIncident(ctx, service.ResolveIncidentRequest{
 		InstanceID:  instanceID,
 		IncidentID:  incidentID,
@@ -108,17 +112,17 @@ func ResolveIncident(ctx context.Context, svc service.Service, instanceID, incid
 	if err != nil {
 		return 0, nil, err
 	}
-	return http.StatusOK, NewInstanceView(pi.State()), nil
+	return http.StatusOK, mapInstance(mapper, pi.State()), nil
 }
 
 // CancelInstance cancels the given process instance. Returns (200,
 // InstanceView, nil) on success.
-func CancelInstance(ctx context.Context, svc service.Service, instanceID string) (int, any, error) {
+func CancelInstance(ctx context.Context, svc service.Service, instanceID string, mapper func(engine.InstanceState) any) (int, any, error) {
 	pi, err := svc.CancelInstance(ctx, service.CancelInstanceRequest{InstanceID: instanceID})
 	if err != nil {
 		return 0, nil, err
 	}
-	return http.StatusOK, NewInstanceView(pi.State()), nil
+	return http.StatusOK, mapInstance(mapper, pi.State()), nil
 }
 
 // dlqListResponse is the JSON envelope returned by ListDeadLetters.
@@ -493,7 +497,7 @@ func AdminInstanceLineage(ctx context.Context, a service.LineageAdmin, instanceI
 // from resolve-incident, and abandon one distinct from retry/skip. This function
 // enforces neither: like every other endpoint here it runs behind the mount's
 // middleware, and the caller is responsible for gating it.
-func ResolveCompensationStall(ctx context.Context, svc service.Service, instanceID string, in ResolveCompensationStallInput) (int, any, error) {
+func ResolveCompensationStall(ctx context.Context, svc service.Service, instanceID string, in ResolveCompensationStallInput, mapper func(engine.InstanceState) any) (int, any, error) {
 	if in.CommandID == "" {
 		return 0, nil, fmt.Errorf("%w: command_id is required — read it from the instance's compensating.active_command_id",
 			ErrBadInput)
@@ -511,5 +515,5 @@ func ResolveCompensationStall(ctx context.Context, svc service.Service, instance
 	if err != nil {
 		return 0, nil, err
 	}
-	return http.StatusOK, NewInstanceView(pi.State()), nil
+	return http.StatusOK, mapInstance(mapper, pi.State()), nil
 }

@@ -32,6 +32,17 @@ const (
 	// process definition, which carries every node's eligibility spec, and the flow
 	// conditions rendered as a task's allowed actions.
 	DisclosePolicy DisclosureCategory = "policy"
+
+	// DiscloseAll is a SENTINEL meaning "do not project at all" — the complete opt-out,
+	// restoring the pre-ADR-0190 wire shape.
+	//
+	// ⚠ It is NOT the union of the four categories above, and must never be implemented as
+	// one. Those categories name the fields somebody classified; 20 of engine.InstanceState's
+	// 31 exported fields are restorable by NONE of them — among them `Incidents` and
+	// `Compensating`, the projection that makes a WEDGED instance findable (ADR-0175). A
+	// union-shaped DiscloseAll would silently break that operator escape hatch while
+	// advertising itself as a full restoration.
+	DiscloseAll DisclosureCategory = "all"
 )
 
 // DisclosureSet is a membership test over categories. Its ZERO VALUE is the closed
