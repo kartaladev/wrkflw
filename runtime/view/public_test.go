@@ -33,7 +33,7 @@ func stateWithSecretEverywhere(t *testing.T) engine.InstanceState {
 
 	ended := now.Add(time.Hour)
 
-	return engine.InstanceState{
+	st := engine.InstanceState{
 		InstanceID: "i1",
 		DefID:      "d1",
 		DefVersion: 1,
@@ -85,6 +85,19 @@ func stateWithSecretEverywhere(t *testing.T) engine.InstanceState {
 		CmdSeq:                     7, TokenSeq: 7, TaskSeq: 7,
 		TimerSeq: 7, ScopeSeq: 7, IncidentSeq: 7,
 	}
+	// ⚠ The compensation cursor's TYPE is unexported, but every one of its fields is
+	// exported — so this package can both populate it and project it. It was previously
+	// listed as unpoliceable, which understated what the guard could reach.
+	//
+	// Records[].Input is a FIFTH snapshot of the process variables, and FinalErr is the
+	// same string as PendingFinalErr, which is withheld under every category.
+	st.Compensating.ActiveCmdID = "cmd-1"
+	st.Compensating.ScopeID = "s1"
+	st.Compensating.StartedAt = now
+	st.Compensating.NextIndex = 1
+	st.Compensating.Records = []engine.CompensationRecord{rec()}
+	st.Compensating.FinalErr = secret
+	return st
 }
 
 // unpoliceableByFixture lists withheld InstanceState fields this external test package
@@ -100,7 +113,6 @@ var unpoliceableByFixture = map[string]string{
 	"ArmedEvents":                "[]armedEvent — element type unexported",
 	"Boundaries":                 "[]boundaryArm — element type unexported",
 	"EventTriggeredSubprocesses": "[]eventTriggeredSubprocessArm — element type unexported",
-	"Compensating":               "compensationCursor — type unexported",
 }
 
 func marshal(t *testing.T, v any) string {
@@ -230,6 +242,63 @@ func TestPublicState_CategoriesAreIndependent(t *testing.T) {
 				}
 				if got.Tasks[0].Claim != nil {
 					t.Error("DiscloseVariables must not restore actors")
+				}
+			},
+		},
+		{
+			// ⚠ THE CASE THAT WAS MISSING. The table tested actors, actors+notes,
+			// variables and policy — never notes ALONE, which is exactly the
+			// configuration that silently produced nothing while both godocs promised
+			// independence.
+			name: "notes alone restores the note without the actor",
+			set:  authz.NewDisclosureSet(authz.DiscloseNotes),
+			assert: func(t *testing.T, got engine.InstanceState) {
+				if got.Tasks[0].Completion == nil {
+					t.Fatal("DiscloseNotes alone must restore the Completion carrying the note")
+				}
+				if got.Tasks[0].Completion.Note != secret {
+					t.Errorf("note not restored, got %q", got.Tasks[0].Completion.Note)
+				}
+				if got.Tasks[0].Completion.Actor.ID != "" {
+					t.Error("DiscloseNotes must NOT restore the completing actor")
+				}
+				if got.Tasks[0].Claim != nil {
+					t.Error("DiscloseNotes must not restore the claim")
+				}
+			},
+		},
+		{
+			// The operator escape hatch: ADR-0175's active_command_id and incident ids
+			// reach the wire on /snapshot alone, and no category restored them.
+			name: "operations restores the compensation cursor and incident ids",
+			set:  authz.NewDisclosureSet(authz.DiscloseOperations),
+			assert: func(t *testing.T, got engine.InstanceState) {
+				if len(got.Incidents) == 0 {
+					t.Fatal("DiscloseOperations must restore incidents so ResolveIncident is reachable")
+				}
+				if got.Incidents[0].ID != "inc1" {
+					t.Errorf("incident id not restored, got %q", got.Incidents[0].ID)
+				}
+				if got.Incidents[0].Error != "" {
+					t.Errorf("incident ERROR TEXT must stay withheld — it is consumer "+
+						"error text and may embed variables; got %q", got.Incidents[0].Error)
+				}
+				if got.Variables != nil {
+					t.Error("DiscloseOperations must not restore variables")
+				}
+				if got.Compensating.ActiveCmdID != "cmd-1" {
+					t.Error("DiscloseOperations must restore the compensation cursor id — " +
+						"it is what makes a wedged instance recoverable (ADR-0175)")
+				}
+				// ⚠ Records[].Input is a FIFTH variables snapshot; FinalErr is the same
+				// string as PendingFinalErr, which is withheld under every category.
+				if got.Compensating.Records != nil {
+					t.Errorf("DiscloseOperations leaked compensation record inputs: %v",
+						got.Compensating.Records)
+				}
+				if got.Compensating.FinalErr != "" {
+					t.Errorf("DiscloseOperations leaked terminal error text: %q",
+						got.Compensating.FinalErr)
 				}
 			},
 		},

@@ -25,7 +25,11 @@ carrying only allow-listed fields, so a field added tomorrow is withheld by defa
 
 - **Branch:** `design/route-group-authz-posture`, base `main` at merge `7be335fb`.
   **NOT pushed, NOT merged.**
-- **Status:** ✅ **PHASE 1 IMPLEMENTED AND GREEN.** Awaiting the owner-invoked delivery gates.
+- **Status:** ✅ **PHASE 1 SHIPPED — both delivery gates passed.**
+  `/code-review high`: **7 findings (4 Major, 3 Minor), NONE a false positive**, all fixed and
+  folded. `/security-review`: **1 finding**, adjudicated defense-in-depth at 6/10 (unreachable
+  through any built-in renderer) and **fixed anyway**, because it defeated `DisclosingMapper`'s
+  own written contract and `SECURITY.md` recommends the setting that exposes it.
 - **Verification, measured 2026-08-27 with Docker up:**
   `go test ./...` **EXIT=0, 65 ok / 0 FAIL** · `golangci-lint run ./...` **repo-wide, 0 issues**
   · `gofmt` clean.
@@ -76,13 +80,34 @@ carrying only allow-listed fields, so a field added tomorrow is withheld by defa
   variables, so the assertion could not fail. Fixed by claiming the task with an actor whose
   ID is the canary.
 
-### Remaining before delivery
+### What the gates caught that TWO four-lens audits did not
 
-1. `/code-review` and `/security-review` — **owner-invoked only**; fold findings via `--amend`.
-2. Merge `--no-ff` to `main` and push.
-   ⚠ **Point `/security-review` at `identified()` hardest.** It trusts whatever
-   `RequestActorFunc` returns; a resolver that manufactures an actor gets full fidelity, and
-   that predicate is load-bearing for the entire posture.
+1. ⚠⚠ **`DisclosingMapper` was NESTED INSIDE ITSELF at all nine human-task sites**, from a
+   scripted edit whose second pattern matched the text the first had inserted. **Every test
+   passed** — projecting twice is idempotent, so the defect was invisible to every correctness
+   assertion, including the mutation-verified ones. ⇒ **An idempotent defect needs a
+   call-count or cost assertion.** One now exists.
+2. ⚠⚠ **Identity was resolved 2–3× per request**, and `/snapshot`/`/actionable` fed two
+   SEPARATE resolutions into two halves of ONE decision — a non-repeatable resolver could
+   project the state while still emitting the definition. ADR-0190 Decision 7 said "decides
+   once per request"; the code did not.
+3. ⚠⚠ **`DiscloseNotes` was inert without `DiscloseActors`**, contradicting both godocs. The
+   categories-are-independent table tested actors, actors+notes, variables and policy — **never
+   notes ALONE**, the one failing case.
+4. ⚠⚠ **The projection removed ADR-0175's operator escape hatch.**
+5. ⚠⚠⚠ **`/security-review` found a leak in code written to fix finding 4** — the new
+   `DiscloseOperations` copied the compensation cursor wholesale, carrying `Records[].Input`
+   (a FIFTH variables snapshot) and `FinalErr` (**the same string** as `PendingFinalErr`, which
+   is withheld under every category, and the same `errorCode` as `Incident.Error`, which is
+   blanked). One value, three dispositions.
+   ⚠⚠⚠ **The guard was blind BECAUSE I HAD TOLD IT TO BE.** `Compensating` sat in
+   `unpoliceableByFixture` as "type unexported" — **false**: the type is unexported but all
+   **20 fields are exported**, so the black-box package can populate and project it. ⇒ **A
+   declared exemption is a place the guard cannot look; an over-broad one is worse than none.**
+
+### Remaining
+
+Merge `--no-ff` to `main` and push. Phases 2 and 3 deferred, constraints recorded in the spec.
 
 ## Global Constraints
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/kartaladev/wrkflw/authz"
@@ -157,5 +158,91 @@ func TestDiscloseAllRestoresThePriorShape(t *testing.T) {
 	rr := do(mux, newGetRequest(t, "/instances/"+pi.State().InstanceID))
 	if !strings.Contains(rr.Body.String(), discloseSecret) {
 		t.Errorf("DiscloseAll must restore the prior shape\nstatus=%d body=%s", rr.Code, rr.Body)
+	}
+}
+
+// TestResolverCalledOncePerRequest pins ADR-0190 Decision 7's "decides once per request".
+//
+// ⚠ This exists because a scripted edit once nested DisclosingMapper inside itself at all
+// nine human-task sites, and EVERY EXISTING TEST STILL PASSED — projecting twice is
+// idempotent, so the bug was invisible to correctness assertions. It cost 3 resolver calls
+// per claim and turned the documented 10s RequestActorTimeout into a 30s worst case.
+//
+// ⚠ It also guards a CORRECTNESS property, not just cost: /snapshot and /actionable feed one
+// resolution into two arguments. Resolving twice lets a non-repeatable resolver answer
+// differently for each half — projecting the state while still emitting the definition, or
+// the reverse.
+func TestResolverCalledOncePerRequest(t *testing.T) {
+	t.Parallel()
+
+	def := transporttest.ApprovalProcess()
+	_, svc := transporttest.NewHarness(t, def)
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: model.Latest("approval"), Vars: map[string]any{"ssn": discloseSecret},
+	})
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	id := pi.State().InstanceID
+
+	cases := []struct {
+		name string
+		path string
+	}{
+		{"plain read", "/instances/" + id},
+		{"snapshot", "/instances/" + id + "/snapshot"},
+		{"actionable", "/instances/" + id + "/actionable"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var calls atomic.Int32
+			mux := http.NewServeMux()
+			stdlib.Mount(mux, svc, stdlib.WithRequestActor(
+				func(context.Context) (authz.Actor, error) {
+					calls.Add(1)
+					return authz.Actor{ID: "alice", Roles: []string{"manager"}}, nil
+				}))
+
+			if rr := do(mux, newGetRequest(t, tc.path)); rr.Code != http.StatusOK {
+				t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body)
+			}
+			if got := calls.Load(); got != 1 {
+				t.Errorf("resolver called %d times, want exactly 1", got)
+			}
+		})
+	}
+}
+
+// TestDiscloseAllSkipsResolution pins that the opt-out short-circuits identity resolution.
+//
+// A consumer who has opted out of the whole posture must not pay for resolution, nor trigger
+// its side effects, on every request.
+func TestDiscloseAllSkipsResolution(t *testing.T) {
+	t.Parallel()
+
+	def := transporttest.ApprovalProcess()
+	_, svc := transporttest.NewHarness(t, def)
+	pi, err := svc.StartInstance(t.Context(), service.StartInstanceRequest{
+		DefRef: model.Latest("approval"), Vars: map[string]any{"ssn": discloseSecret},
+	})
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	var calls atomic.Int32
+	mux := http.NewServeMux()
+	stdlib.Mount(mux, svc,
+		stdlib.WithRequestActor(func(context.Context) (authz.Actor, error) {
+			calls.Add(1)
+			return authz.Actor{ID: "alice"}, nil
+		}),
+		httpcore.WithDisclosure[*http.ServeMux](authz.DiscloseAll))
+
+	do(mux, newGetRequest(t, "/instances/"+pi.State().InstanceID+"/snapshot"))
+	if got := calls.Load(); got != 0 {
+		t.Errorf("DiscloseAll must not resolve identity at all; resolver called %d times", got)
 	}
 }

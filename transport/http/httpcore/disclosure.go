@@ -58,15 +58,59 @@ func DisclosingMapper(
 	d authz.DisclosureSet,
 	inner func(engine.InstanceState) any,
 ) func(engine.InstanceState) any {
+	return NewDisclosure(ctx, resolve, d).Mapper(inner)
+}
+
+// Disclosure is ONE request's disclosure decision, resolved once.
+//
+// ⚠ Resolving once is the point, not an optimisation. The helpers used to each call the
+// consumer's RequestActorFunc themselves, so a single /snapshot request resolved identity
+// TWICE — and the two answers feed different halves of one decision. A resolver that is not
+// perfectly repeatable (a one-shot credential, a transient IdP error, a rate limiter, or the
+// first call's timeout consuming the request deadline) could then project the state while
+// still emitting the definition, or the reverse. It also multiplied a consumer's resolver
+// side effects and turned the documented 10s RequestActorTimeout into a 30s worst case.
+type Disclosure struct {
+	identified bool
+	set        authz.DisclosureSet
+}
+
+// NewDisclosure resolves the caller's identity ONCE and returns the decision.
+//
+// ⚠ The DiscloseAll short-circuit precedes resolution deliberately: a consumer who has opted
+// out of the whole posture must not pay for identity resolution, nor trigger its side
+// effects, on every request.
+func NewDisclosure(ctx context.Context, resolve RequestActorFunc, d authz.DisclosureSet) Disclosure {
+	if d.Has(authz.DiscloseAll) {
+		return Disclosure{identified: true, set: d}
+	}
+	return Disclosure{identified: identified(ctx, resolve), set: d}
+}
+
+// Mapper returns the instance mapper for this request. inner nil means [NewInstanceView].
+func (dd Disclosure) Mapper(inner func(engine.InstanceState) any) func(engine.InstanceState) any {
 	if inner == nil {
 		inner = func(st engine.InstanceState) any { return NewInstanceView(st) }
 	}
-	if identified(ctx, resolve) || d.Has(authz.DiscloseAll) {
+	if dd.identified {
 		return inner
 	}
-	return func(st engine.InstanceState) any {
-		return inner(view.PublicState(st, d))
+	return func(st engine.InstanceState) any { return inner(view.PublicState(st, dd.set)) }
+}
+
+// Projection returns the state projection, or nil when the state passes through whole.
+func (dd Disclosure) Projection() func(engine.InstanceState) engine.InstanceState {
+	if dd.identified {
+		return nil
 	}
+	return func(st engine.InstanceState) engine.InstanceState {
+		return view.PublicState(st, dd.set)
+	}
+}
+
+// WithholdDefinition reports whether the embedded definition must be withheld.
+func (dd Disclosure) WithholdDefinition() bool {
+	return !dd.identified && !dd.set.Has(authz.DisclosePolicy)
 }
 
 // DisclosingProjection returns the state projection to apply for this request, or nil when
@@ -74,17 +118,19 @@ func DisclosingMapper(
 //
 // It serves the render paths that do not go through an instance mapper: the self-marshalling
 // snapshot, which hands it to [service.ProjectFor], and the actionable view.
+//
+// ⚠ DO NOT PAIR THIS WITH THE OTHER FREE FUNCTION. DisclosingProjection and
+// WithholdDefinition each construct their own [Disclosure], so calling both resolves
+// identity TWICE and reintroduces the split decision the Disclosure type exists to prevent:
+// a resolver that is not perfectly repeatable can then project the state while still
+// emitting the definition, or the reverse. An adapter that needs both must build ONE
+// [NewDisclosure] value and call its methods. The three shipped adapters do.
 func DisclosingProjection(
 	ctx context.Context,
 	resolve RequestActorFunc,
 	d authz.DisclosureSet,
 ) func(engine.InstanceState) engine.InstanceState {
-	if identified(ctx, resolve) || d.Has(authz.DiscloseAll) {
-		return nil
-	}
-	return func(st engine.InstanceState) engine.InstanceState {
-		return view.PublicState(st, d)
-	}
+	return NewDisclosure(ctx, resolve, d).Projection()
 }
 
 // WithholdDefinition reports whether the embedded process definition must be withheld from
@@ -94,7 +140,13 @@ func DisclosingProjection(
 // policy in the sense [authz.DisclosePolicy] governs — and it reaches the wire by two routes
 // the state projection cannot touch: the `definition` embed on the snapshot document, and
 // the flow conditions rendered as a task's allowed actions.
+//
+// ⚠ DO NOT PAIR THIS WITH THE OTHER FREE FUNCTION. DisclosingProjection and
+// WithholdDefinition each construct their own [Disclosure], so calling both resolves
+// identity TWICE and reintroduces the split decision the Disclosure type exists to prevent:
+// a resolver that is not perfectly repeatable can then project the state while still
+// emitting the definition, or the reverse. An adapter that needs both must build ONE
+// [NewDisclosure] value and call its methods. The three shipped adapters do.
 func WithholdDefinition(ctx context.Context, resolve RequestActorFunc, d authz.DisclosureSet) bool {
-	return !identified(ctx, resolve) &&
-		!d.Has(authz.DisclosePolicy) && !d.Has(authz.DiscloseAll)
+	return NewDisclosure(ctx, resolve, d).WithholdDefinition()
 }

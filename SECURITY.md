@@ -38,8 +38,13 @@ with the embedder and are documented rather than enforced by default:
   ⚠⚠ **`InstanceRoutes`, `MessageRoutes` and `AdminRoutes` authenticate NOTHING.** `POST /instances`,
   `POST /instances/{id}/signals` and `POST /messages` are **state-changing** and open to any caller
   that can reach them; the instance read routes (`GET /instances/{id}`, `/snapshot`, `/actionable`)
-  are likewise open, and they render `claim.actor` and `candidates[]` — classified `actor`, i.e.
-  personal data — to whoever asks. Put your own guard in front of these groups. Only
+  are likewise open.
+  ⚠ **Updated by ADR-0190:** those read routes no longer render `claim.actor`, `candidates[]`,
+  process variables, notes or policy to a caller the transport cannot identify — see
+  **Read disclosure (ADR-0190)** below. They still *respond*; they disclose structural fields
+  only. Personal data reaches a caller only when your resolver identifies the request, or the
+  mount sets `DiscloseActors` / `DiscloseAll`. The routes remain **open**, so put your own
+  guard in front of these groups regardless. Only
   `POST /tasks/{token}/{claim,complete,reassign}` refuse an unauthenticated caller.
 - **Authorization** of the admin HTTP routes. Admin endpoints are default-absent by
   composition (ADR-0095): they exist only when you mount `AdminRoutes` on a router group
@@ -139,6 +144,19 @@ stdlib.Mount(mux, svc, httpcore.WithDisclosure[*http.ServeMux](authz.DiscloseAll
 // Or widen one category at a time from the closed default.
 httpcore.WithDisclosure[*http.ServeMux](authz.DiscloseVariables)
 ```
+
+Categories: `DiscloseVariables`, `DiscloseActors`, `DiscloseNotes`, `DisclosePolicy`, and
+`DiscloseOperations`.
+
+⚠ **Operators running admin routes without an identifying resolver want
+`DiscloseOperations`.** ADR-0175's escape hatch needs `compensating.active_command_id` and
+`incidents[].id`, which reach the wire on `GET /instances/{id}/snapshot` alone; without this
+category the only way to read them is `DiscloseAll`, which also re-opens process variables.
+`DiscloseOperations` restores the incident *ids* and the compensation cursor's execution
+position, but **not** the three fields that carry process data: `incidents[].error`,
+`compensating.records[].input` (a snapshot of the variables at each compensable activity's
+invocation) and `compensating.final_err`. Those are your action's error text and your process
+variables, so they need `DiscloseVariables` as well.
 
 ⚠ `DiscloseAll` is a **sentinel meaning "do not project"**, not the union of the four
 categories. Twenty of `engine.InstanceState`'s thirty-one exported fields are restorable by

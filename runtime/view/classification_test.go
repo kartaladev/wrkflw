@@ -22,6 +22,8 @@ const (
 	gatedVariables
 	gatedActors
 	gatedPolicy
+	gatedNotes
+	gatedOperations
 )
 
 // The classification. THIS TABLE IS THE DESIGN — see PublicState's doc comment.
@@ -43,8 +45,9 @@ var classification = map[string]map[string]disposition{
 		// Withheld under every category. The sequence counters and internal bookkeeping
 		// have no consumer-facing meaning; PendingFinalErr and Incidents carry consumer
 		// error text, which may embed variables.
-		"Incidents": withheld, "PendingFinalErr": withheld, "Compensating": withheld,
-		"Timers": withheld, "ArmedEvents": withheld, "Boundaries": withheld,
+		"Incidents": gatedOperations, "Compensating": gatedOperations,
+		"PendingFinalErr": withheld,
+		"Timers":          withheld, "ArmedEvents": withheld, "Boundaries": withheld,
 		"EventTriggeredSubprocesses": withheld, "DeferredCompensationThrows": withheld,
 		"RecentCompensationCmdIDs": withheld,
 		"CmdSeq":                   withheld, "TokenSeq": withheld, "TaskSeq": withheld,
@@ -82,8 +85,42 @@ var classification = map[string]map[string]disposition{
 	},
 	"Completion": {
 		"Actor": gatedActors, "At": gatedActors, "Outcome": gatedActors,
-		// The note is the one field inside Completion with its OWN category.
-		"Note": gatedActors,
+		// ⚠ The note has its OWN category, and the struct is restored by EITHER — who
+		// completed a task and what they wrote are independent disclosures.
+		"Note": gatedNotes,
+	},
+	// ⚠ The compensation cursor is copied WHOLESALE (its type is unexported, so
+	// runtime/view cannot build a fresh one), which is exactly the hazard the three
+	// types above carry. It was unclassified until a security review found
+	// Records[].Input — a fifth process-variable snapshot — and FinalErr riding out
+	// under DiscloseOperations alone.
+	"compensationCursor": {
+		// Operator-facing execution position: what makes a wedged instance recoverable.
+		"ScopeID": gatedOperations, "ArchiveKey": gatedOperations,
+		"ResumeNode": gatedOperations, "ResumeScope": gatedOperations,
+		"ToNode": gatedOperations, "ReverseNode": gatedOperations,
+		"ReverseResetVars": gatedOperations, "RestoreTargetVars": gatedOperations,
+		"StartRecordCount": gatedOperations, "TeardownArchiveKey": gatedOperations,
+		"TeardownArchiveOffset": gatedOperations, "TeardownArchiveCount": gatedOperations,
+		"NextIndex": gatedOperations, "StartedAt": gatedOperations,
+		"ActiveCmdID": gatedOperations, "RetryAttempts": gatedOperations,
+		"RetryTimerID": gatedOperations, "FinalStatus": gatedOperations,
+		// ⚠ Records[].Input is a process-variable snapshot; FinalErr is the same string
+		// as PendingFinalErr and Incident.Error. Both need DiscloseVariables.
+		"Records": gatedVariables, "FinalErr": gatedVariables,
+	},
+	"CompensationRecord": {
+		"NodeID": gatedOperations, "Action": gatedOperations, "CompletedAt": gatedOperations,
+		"Input": gatedVariables,
+	},
+	"Incident": {
+		// The operator-facing fields: enough to call ResolveIncident.
+		"ID": gatedOperations, "Kind": gatedOperations, "TokenID": gatedOperations,
+		"NodeID": gatedOperations, "ScopeID": gatedOperations,
+		"CommandID": gatedOperations, "Attempts": gatedOperations,
+		"CreatedAt": gatedOperations,
+		// ⚠ err.Error() from the consumer's action, verbatim; may embed variables.
+		"Error": gatedVariables,
 	},
 	"Actor": {
 		"ID": gatedActors, "Roles": gatedActors, "Attributes": gatedActors,
@@ -101,6 +138,19 @@ var classifiedTypes = []struct {
 	{"Claim", reflect.TypeOf(humantask.Claim{})},
 	{"Completion", reflect.TypeOf(humantask.Completion{})},
 	{"Actor", reflect.TypeOf(authz.Actor{})},
+	{"Incident", reflect.TypeOf(engine.Incident{})},
+	// ⚠ Reached through the exported FIELD, since the cursor's own type is unexported.
+	{"compensationCursor", reflect.TypeOf(engine.InstanceState{}).Field(fieldIndex("Compensating")).Type},
+	{"CompensationRecord", reflect.TypeOf(engine.CompensationRecord{})},
+}
+
+// fieldIndex returns the index of an exported InstanceState field by name.
+func fieldIndex(name string) int {
+	f, ok := reflect.TypeOf(engine.InstanceState{}).FieldByName(name)
+	if !ok {
+		panic("InstanceState has no field " + name)
+	}
+	return f.Index[0]
 }
 
 // TestClassification_IsTotal is the invariant the whole disclosure posture rests on.
@@ -187,7 +237,7 @@ func TestClassification_MatchesPublicState(t *testing.T) {
 				t.Errorf("InstanceState.%s is classified public but PublicState left it "+
 					"zero in the closed projection", name)
 			}
-		case withheld, gatedVariables, gatedActors, gatedPolicy:
+		case withheld, gatedVariables, gatedActors, gatedPolicy, gatedNotes, gatedOperations:
 			if !f.IsZero() {
 				t.Errorf("InstanceState.%s is classified %v but survived the CLOSED "+
 					"projection", name, disp)

@@ -17,7 +17,9 @@ type DisclosureCategory string
 const (
 	// DiscloseVariables permits process variables and every snapshot of them — the
 	// instance variables, the start variables, each token's payload, each task's
-	// variable snapshot, and each compensation record's input.
+	// variable snapshot, and each compensation record's input — including the records
+	// pinned on an in-flight compensation cursor, which DiscloseOperations does NOT
+	// restore on its own.
 	DiscloseVariables DisclosureCategory = "variables"
 	// DiscloseActors permits actor identity and attributes: task candidates, and the
 	// actor recorded on a claim or a completion.
@@ -28,6 +30,20 @@ const (
 	// Completion struct: disclosing who completed a task is not the same decision as
 	// disclosing what they wrote about it.
 	DiscloseNotes DisclosureCategory = "notes"
+	// DiscloseOperations permits the operator-facing execution cursor: open incidents
+	// (their ids, kinds and nodes) and the compensation cursor.
+	//
+	// ⚠ It exists because withholding these removed ADR-0175's operator escape hatch.
+	// `compensating.active_command_id` and `incidents[].id` reach the wire on exactly one
+	// route — GET /instances/{id}/snapshot — and ResolveCompensationStall's own error text
+	// tells an operator to read the command id from there. Without a category short of
+	// DiscloseAll, that instruction pointed at a field the same mount no longer emitted,
+	// and the only recovery also re-opened process variables.
+	//
+	// ⚠ It does NOT restore incidents[].error. That is the consumer's action error verbatim
+	// and may embed process variables, so it stays withheld unless DiscloseVariables is also
+	// set — the id is what makes an incident actionable, the text is what makes it leak.
+	DiscloseOperations DisclosureCategory = "operations"
 	// DisclosePolicy permits authorization policy and routing expressions: the embedded
 	// process definition, which carries every node's eligibility spec, and the flow
 	// conditions rendered as a task's allowed actions.

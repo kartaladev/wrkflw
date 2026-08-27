@@ -27,8 +27,9 @@ import (
 //
 // pi is normally the concrete instance this package returns, whose marshalling policy is
 // preserved. A ProcessInstance from anywhere else has no policy this package can read, so
-// the projection is rebuilt with the definition withheld unless the caller asked to keep it
-// — the fail-closed reading of "we do not know what this thing was configured to emit".
+// its projection ALWAYS withholds the definition — withholdDefinition=false does not
+// override that. This is the fail-closed reading of "we do not know what this thing was
+// configured to emit", and it is deliberately stricter than the concrete path.
 func ProjectFor(
 	pi ProcessInstance,
 	proj func(engine.InstanceState) engine.InstanceState,

@@ -9,7 +9,7 @@ top to bottom; it is meant to stay short enough that you can.
 > see `docs/plans/HANDOVER-archive.md`. Per-delivery detail belongs in that delivery's plan under
 > a `▶ Progress` block. This file carries only: where `main` is, what is unmerged, and what next.
 
-## State — updated 2026-08-27 (**ADR-0190 phase 1 IMPLEMENTED, awaiting the delivery gates**)
+## State — updated 2026-08-27 (**ADR-0190 phase 1 SHIPPED — both gates passed**)
 
 **`main` has NOT moved.** Re-derive its head (`git rev-parse --short refs/heads/main`); anchor
 on **merge** SHAs, which never move: **`7be335fb` (latest shipped — ADR-0189, backlog 51)**,
@@ -35,10 +35,16 @@ same `mapInstance` call as the GET, and a signal matching no waiter is a clean n
 caller refused `variables` on the read obtained the identical document by changing the verb.
 Any per-endpoint fix was wrong by construction.
 
-**Remaining:** `/code-review` and `/security-review` (owner-invoked), fold findings via
-`--amend`, then merge `--no-ff` and push.
-⚠ **Point the security review at `identified()`**: it trusts whatever `RequestActorFunc`
-returns, and that predicate is load-bearing for the whole posture.
+**Gates:** `/code-review high` — **7 findings (4 Major, 3 Minor), NONE a false positive**.
+`/security-review` — **1 finding**, filtered to defense-in-depth at 6/10 and **fixed anyway**.
+
+⭐⭐⭐ **The gates found FIVE things TWO four-lens audits did not**, and the sharpest was in code
+written to fix an earlier gate finding. ⚠⚠ **One defect was invisible to every test because it
+was IDEMPOTENT** — `DisclosingMapper` nested inside itself at nine sites, costing 3 resolver
+calls per claim and turning a documented 10 s bound into 30 s, with the whole suite green.
+⚠⚠⚠ **Another survived because a guard exemption I wrote was FALSE**: `Compensating` was
+declared unpoliceable as "type unexported", but the type is unexported while all **20 fields
+are exported**. **A declared exemption is a place the guard cannot look.**
 
 ### ⚠⚠ ADR-0190 FAILED TWO rule-#9 AUDITS. Read this before trusting the design's lineage.
 

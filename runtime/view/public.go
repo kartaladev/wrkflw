@@ -67,6 +67,26 @@ func PublicState(st engine.InstanceState, d authz.DisclosureSet) engine.Instance
 	out.Tokens = projectTokens(st.Tokens, d)
 	out.Tasks = projectTasks(st.Tasks, d)
 
+	if d.Has(authz.DiscloseOperations) {
+		// ⚠ The cursor is copied wholesale because its TYPE is unexported, so this package
+		// cannot build a fresh one — "withheld by construction" does NOT protect it, exactly
+		// as it does not protect Claim, Completion and Actor. Two of its fields are therefore
+		// cleared explicitly, and `compensationCursor` is a classified type so a field added
+		// to it FAILS TestClassification_IsTotal until someone decides its disposition.
+		out.Compensating = st.Compensating
+		if !d.Has(authz.DiscloseVariables) {
+			// Records[].Input is documented as "a snapshot of the instance variables at the
+			// moment the activity was invoked" — the FIFTH such snapshot, and the only one
+			// that was not gated on DiscloseVariables with its four siblings.
+			out.Compensating.Records = nil
+			// FinalErr is the SAME STRING as PendingFinalErr, which is withheld under every
+			// category, and the same errorCode that populates Incident.Error, which
+			// projectIncidents blanks. One value must not have three dispositions.
+			out.Compensating.FinalErr = ""
+		}
+		out.Incidents = projectIncidents(st.Incidents, d)
+	}
+
 	if d.Has(authz.DiscloseVariables) {
 		out.Variables = st.Variables
 		out.StartVariables = st.StartVariables
@@ -129,7 +149,32 @@ func projectTasks(in []humantask.HumanTask, d authz.DisclosureSet) []humantask.H
 		if d.Has(authz.DiscloseActors) {
 			out[i].Candidates = tk.Candidates
 			out[i].Claim = tk.Claim
+		}
+		// ⚠ Completion is restored by EITHER category, because it carries two independently
+		// governed things: who completed the task (actors) and what they wrote (notes).
+		// Gating the whole struct on DiscloseActors made DiscloseNotes inert on its own,
+		// silently producing nothing while its godoc promised independence.
+		if d.Has(authz.DiscloseActors) || d.Has(authz.DiscloseNotes) {
 			out[i].Completion = projectCompletion(tk.Completion, d)
+		}
+	}
+	return out
+}
+
+// projectIncidents restores the operator-facing incident fields, withholding the error text
+// unless variables are disclosed too.
+//
+// ⚠ Incident.Error is err.Error() from the consumer's own action, verbatim. The id is what
+// makes an incident actionable through ResolveIncident; the text is what makes it leak.
+func projectIncidents(in []engine.Incident, d authz.DisclosureSet) []engine.Incident {
+	if in == nil {
+		return nil
+	}
+	out := make([]engine.Incident, len(in))
+	for i, inc := range in {
+		out[i] = inc
+		if !d.Has(authz.DiscloseVariables) {
+			out[i].Error = ""
 		}
 	}
 	return out
@@ -150,6 +195,9 @@ func projectCompletion(c *humantask.Completion, d authz.DisclosureSet) *humantas
 	cc := *c
 	if !d.Has(authz.DiscloseNotes) {
 		cc.Note = ""
+	}
+	if !d.Has(authz.DiscloseActors) {
+		cc.Actor = authz.Actor{}
 	}
 	return &cc
 }
