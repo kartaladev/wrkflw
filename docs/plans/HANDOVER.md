@@ -9,139 +9,79 @@ top to bottom; it is meant to stay short enough that you can.
 > see `docs/plans/HANDOVER-archive.md`. Per-delivery detail belongs in that delivery's plan under
 > a `▶ Progress` block. This file carries only: where `main` is, what is unmerged, and what next.
 
-## State — updated 2026-08-26 (**ADR-0189 SHIPPED — both gates passed, merged and pushed**)
+## State — updated 2026-08-27 (**ADR-0190 phase 1 IMPLEMENTED, awaiting the delivery gates**)
 
-**`main` has advanced.** ⚠ Re-derive the head (`git rev-parse --short refs/heads/main`); anchor on
-**merge** SHAs, which never move: **`7be335fb` (latest shipped — ADR-0189, backlog 51)**,
-`b5fe7272`, ADR-0187 `4e2c0af4`, ADR-0186 `13b3bfb0`, the backlog sweep
-`020af37b`, 0184 `be6e6b55`, 0183 `a7575ed5`, 0179 `962aeb25`, 0181/0182 `1ac140f6`,
+**`main` has NOT moved.** Re-derive its head (`git rev-parse --short refs/heads/main`); anchor
+on **merge** SHAs, which never move: **`7be335fb` (latest shipped — ADR-0189, backlog 51)**,
+`b5fe7272`, ADR-0187 `4e2c0af4`, ADR-0186 `13b3bfb0`, the backlog sweep `020af37b`,
+0184 `be6e6b55`, 0183 `a7575ed5`, 0179 `962aeb25`, 0181/0182 `1ac140f6`,
 0177/0178/0180 `a5b33e4c`, 0176 `52bf0f80`, 0175 `6e4addc8`.
 
-### ✅🚚 SHIPPED: ADR-0189 — the actor is no longer self-asserted (closes backlog 51)
+### ▶▶ IN FLIGHT: ADR-0190 phase 1 — the read disclosure is closed
 
-**Merged `--no-ff` and pushed.** Branch `feat/request-actor-identity` deleted on merge.
-Per-delivery detail lives in the plan's `▶ Progress` block —
-`docs/plans/2026-08-25-request-actor-identity.md`.
+**Branch `design/route-group-authz-posture`, NOT pushed, NOT merged.** Per-delivery detail —
+commits, design corrections, test-quality lessons — is in the plan's `▶ Progress` block:
+`docs/plans/2026-08-26-route-group-authorization-posture.md`. **Read that before touching this.**
 
-**Gates:** `/code-review high` — **8 findings, NONE a false positive, all fixed and folded**.
-`/security-review` — **0 findings** (one candidate raised, rejected by the false-positive filter
-at 2/10: the exposure it named is pre-existing and already routed to ADR-0190).
+**Verification (2026-08-27, Docker up):** `go test ./...` **EXIT=0, 65 ok / 0 FAIL** ·
+`golangci-lint run ./...` **repo-wide, 0 issues** · `gofmt` clean.
 
-**What it does.** `transport/http/httpcore` built `authz.Actor` from the REQUEST BODY, so any
-caller could post `{"actor":{"id":"alice","roles":["manager"]}}` and be believed. The actor now
-comes from the `context.Context` via a new `authz` seam and from nowhere else, for the three
-human-task verbs.
+**What it does.** Eleven HTTP entry points rendered instance data to unauthenticated callers.
+They now return structural fields only unless the request carries an actor with a non-empty
+ID. `authz.DiscloseAll` is the one-call opt-out; four categories widen it selectively.
 
-**✅ Verification passed** (2026-08-26, Docker up): `go test -race ./...` **EXIT=0** ·
-`go test ./...` **EXIT=0** · `golangci-lint run ./...` **repo-wide, 0 issues** · every touched
-package ≥ 85 % (`authz` 100 %, `service` **93.5 %** filtered — 53.9 % raw is the four generated
-mocks, not a regression).
+⚠⚠ **`POST /instances/{id}/signals` is why all eleven had to land together.** It ends in the
+same `mapInstance` call as the GET, and a signal matching no waiter is a clean no-op — so a
+caller refused `variables` on the read obtained the identical document by changing the verb.
+Any per-endpoint fix was wrong by construction.
 
-### ⭐⭐ What the gates caught that THREE audit rounds did not
+**Remaining:** `/code-review` and `/security-review` (owner-invoked), fold findings via
+`--amend`, then merge `--no-ff` and push.
+⚠ **Point the security review at `identified()`**: it trusts whatever `RequestActorFunc`
+returns, and that predicate is load-bearing for the whole posture.
 
-1. ⚠⚠ **A 41 MB binary committed at the repo root.** `.gitignore` carries a warning about this exact
-   mistake **with an audit recipe**; a new `examples/` main was added without running it.
-   **If you add an example, run that recipe.**
-2. ⚠⚠ **`deepCopyBounded` was not a deep copy** — it handled `map[string]any`/`[]any` only, so every
-   other container escaped **by reference**, falsifying the guarantee written three lines above it.
-   *Third* time in this delivery a guard was validated against the half of its input space that works.
-3. ⚠⚠ **Identity resolved AFTER the body read** (F6). Owner decision D-4 had accepted this as a
-   residual on the premise "those routes are unauthenticated anyway" — **a premise this very record
-   falsified by authenticating them.** Now resolved before the decode; ordering inverted to
-   **401 → 413 → 400 → 404**, which broke seven tests, all correctly, including a contract a
-   subagent had deliberately pinned. ⭐ *A test asserting an ordering must be revisited when the
-   ordering is the thing you change.*
-4. ⚠ **A doc comment orphaned onto the wrong field** — the hazard a subagent had explicitly warned
-   about, and my own orphan-check missed it because struct-field comments are tab-indented and the
-   regex was anchored at column 0.
+### ⚠⚠ ADR-0190 FAILED TWO rule-#9 AUDITS. Read this before trusting the design's lineage.
 
-⭐ **`/code-review` returned 8 findings and NOT ONE was a false positive** — the twelfth consecutive
-delivery where the real gate found what adversarial stand-ins did not.
+| round | scope | findings | Critical |
+|---|---|---|---|
+| 1 (`98382afd`) | deny-list redaction in `service` | ~72 | 17 |
+| 2 (`a161f347`) | allow-list projection in the transport | ~50 | 16 |
 
-### ⚠⚠⚠ THIS BUNDLE FAILED THREE rule-#9 AUDITS. Read this before trusting its lineage.
+Round 1 killed the design outright; revision 2 was a **different** design, not a patched one.
+Round 2 then found its code did not compile and its presence signal was never set. The owner
+directed fold-and-implement rather than a third round: round 2's Criticals were
+implementation-level where round 1's were design-level, and rule #11 budgets for
+implementation correcting design. **Eight lens reports are committed in-repo** at
+`docs/specs/2026-08-2{6,7}-adr-0190-audit*` — ~2 900 + ~2 100 lines.
 
-| round | scope | findings | Criticals | **Criticals/lens** |
-|---|---|---|---|---|
-| 1 (`7fa756d0`) | 2 decisions | 48 | 7 | 1.75 |
-| 2 (`37d77a34`) | 9 decisions | 58 | 15 | 3.75 |
-| 3 (`3e96e836`) | **1 decision** | 59 | 19 | **4.75** |
+⭐⭐⭐ **THE COUNT BARELY MOVED (17 → 16) WHILE THE DESIGN CHANGED WHOLESALE.** This is
+ADR-0186's seven-round finding reproduced exactly: the finding rate is a property of the
+**process**, not the bundle. ⛔ Do not read a high round-2 count as "the revision was bad".
 
-⭐⭐⭐ **THE SCOPE HYPOTHESIS IS REFUTED BY ITS OWN NEXT DATA POINT.** Rounds 1–2 concluded the
-Criticals tracked scope; three lenses asserted it independently; the owner cut the scope on it; and
-round 3 — a ONE-decision bundle — scored **higher**. Two confounds nobody controlled for: each
-round's lenses were **briefed with the previous round's findings** (the instrument was sharpened
-between measurements), and the documents grew every round (more claims ⇒ more falsifiable claims).
-⛔ **Criticals/lens must not be used as a bundle-health metric again without controlling for both.**
-⚠ And round 3's pre-registered decision rule was calibrated from a **SPLICED** series — `8.25 → 3.50`
-are **ADR-0186's** rounds, not this lineage's; one ADR-0185 round measured 5.50 and was omitted.
+### ⭐ What these two audits taught
 
-Evidence in-repo: `docs/plans/sweep-evidence/audit{,2,3}-0189-*.md` — twelve lens reports, three
-adjudications, and two author-written grids.
-
-### ⭐ What this delivery taught, beyond ADR-0189
-
-1. ⚠⚠ **A count is re-derived only when its MEMBER SET is re-derived — paste the list, not the
-   total.** Round 1's "29 pins" and the inherited "29" were **different sets of 29** that matched by
-   coincidence, disjoint on five members. Two nets agreeing on a total is not corroboration.
-2. ⚠⚠ **Every BEHAVIOURAL change needs its own net.** The final count moved 29 → 48 → **50** because
-   a compile ablation sees signature changes and a grep sees literals, and **neither sees a status
-   code moving**. Three rounds running, a decision was added after the count and the count was not
-   re-derived.
-3. ⚠⚠ **A guard tested with a fixture from the half that works is not tested.** The attribute guard
-   was wrong **twice**, by the same category of error one layer apart: round 2 validated the encoder
-   where the decoder matters; round 3 validated `Attributes` alone where the **enclosing document**
-   matters. Fixed by an explicit depth bound, which is shape-independent — there are THREE stored
-   shapes (`claim_actor` = `Actor`, `candidates` = `[]Actor`, the snapshot deeper).
-4. ⚠⚠ **An inherited citation restated with its hedge stripped produced two Criticals in one round.**
-   `docs/adr/0148-*.md` contains **no "kiosk" and no "anonymous"** — that blessing is the repo's own,
-   in `humantask/validate.go:24`. And the resolver-timeout precedent's godoc caveat ("*must honour
-   ctx cancellation*") was dropped when restated.
-5. ⚠ **The author's own interaction grid was diagnosed BACKWARDS** ("every wrong cell involved a
-   removal" — it was 2 of 4; 3 involved a **survivor**), so it drew zero survivor×survivor pairs —
-   where three Criticals lived. **A grid's axes must cover every changed decision against every
-   other, not only the ones that moved out.**
-6. ⚠ **An accepted finding that is not FOLDED is not fixed.** Round 2's F5 predicted the inert
-   timeout precisely; it was accepted, never folded, and shipped — caught only by two implementers
-   source-verifying independently.
-
-### 🆕 Filed by this delivery — all still OPEN
-
-- **The deny-list actor-attribute fail-open is NARROWED, not closed — still live on `main`.**
-  ⚠ The measurement that produced "ALLOWs" was taken **before** ADR-0189, when the transport dropped
-  attributes; do not re-quote it as current. Post-merge, an actor whose resolver supplies the
-  attribute is correctly **DENIED** — but that is **1 of 8 measured shapes**, and the other
-  **7 still ALLOW** (chiefly: the key absent from an otherwise-present attribute map).
-  ⚠ Distinct from backlog 103 only in the **root** (`actor.` vs `vars.`), not the mechanism —
-  `vars.status` over empty vars and `actor.Attributes.status` with the key absent are
-  byte-identical ALLOWs. **Needs its own ADR; do not fold it into 0190.**
-- **Actor attributes reach an UNAUTHENTICATED read surface.** `GET /instances/{id}/actionable` and
-  `/snapshot` render `Claim.Actor` and `Candidates` verbatim with no authorization; `SECURITY.md`
-  classifies both as personal data. The channel **pre-exists** (candidates have rendered attributes
-  since ADR-0147) but the **population rate** changes: the old channel needs an opt-in
-  `ActorResolver`, the new one is fed by `RequestActorFunc`, which every HTTP consumer configures.
-  ⚠ `/security-review` raised exactly this and its false-positive filter **rejected it at 2/10** —
-  not because it is imaginary, but because every element except attribute fidelity pre-dates
-  ADR-0189, and the real defect is the **missing authentication**, not the attributes. If it is
-  re-raised, recategorise as `missing_authentication` on `InstanceRoutes` and route it to 0190;
-  the snapshot also leaks process variables, notes and eligibility policy, which dwarf actor
-  attributes.
-- **`InstanceRoutes`, `MessageRoutes`, `AdminRoutes` authenticate NOTHING** — `POST /instances`,
-  `/signals`, `/messages` are state-changing and open. → **ADR-0190**.
-- **Admin operations have no audit record at all** (`admin_endpoints.go` has zero `authz.` refs).
-
-### ▶▶ NEXT WORK: **ADR-0190** — route-group authentication and the admin posture
-
-⚠⚠ **0190 must argue against `ADR-0095 §"Admin-by-composition (default-absent)"`, not around it.**
-That ADR states default-absent *"replaces the old default-deny (403) … this is safer"*, and
-`examples/production_wiring:273-275` implements the posture with a fail-closed `requireAdminToken`.
-Round 2 of this bundle reintroduced the default-deny ADR-0095 removed **without ever citing it**,
-and its Decision 6 broke that very consumer (401 despite a correct token).
-⚠ 0190 inherits C **and** D as a pair: authenticating admin routes without a role gate lets any
-authenticated caller administer; a role gate without authentication gates on unverified roles.
-⚠ Scope facts, measured: **five** route groups per adapter (`HealthRoutes` must stay open — a load
-balancer has no credential); **63 handler sites**, of which **33 are behind a `!= nil` guard**, and
-`POST /admin/role-bindings` is inside the invisible 11; adding a pre-decode 401 to the other groups
-breaks **~186 assertions across 13 test files, 7 of which no document named**.
+1. ⚠⚠⚠ **EVERY hand-derived enumeration in this bundle was wrong, including the corrections
+   of earlier errors.** Variables sites went **2 → 3 → 4 → 7**; render paths went **3 → 11
+   entry points across 4 mechanisms**. I corrected the render count from two to three, wrote
+   a guard *because* it had already rotted once, and was still wrong — I re-checked the paths
+   I already knew instead of deriving the set from `mapInstance`'s call sites.
+   ⇒ **The fix is a classification-totality guard, not a fifth count.** It fails on a field
+   NOBODY THOUGHT ABOUT rather than one someone forgot to list.
+2. ⚠⚠ **A deny-list over a growing struct fails open on every field anyone adds.** It did:
+   four snapshots of the process variables survived a redactor written to catch them.
+   ⇒ **Allow-list. Build a fresh struct; unlisted fields are absent by construction.**
+3. ⚠⚠ **A REVIEW FINDING IS A CLAIM NEEDING EXECUTION — including one from an audit you
+   commissioned.** Round 1's F18 claimed the tree was not green (`59 ok / 2 FAIL`,
+   "pre-existing MySQL/testcontainers"). I accepted it and restated it as fact in **three**
+   places. **It is FALSE** — measured `EXIT=0`, both packages pass. The plan would have told
+   an implementer to ignore genuine regressions.
+4. ⚠⚠ **An accepted finding that is not FOLDED is not fixed.** Round 1 found "six of them
+   mutate" should be five; I accepted it and **the fix vanished when I rewrote the ADR's
+   Context.** ADR-0189's lesson, one delivery later.
+5. ⭐ **Two guards with similar shapes can answer different questions.** ADR-0189's
+   `isZeroActor` asks *may this actor ACT* and deliberately admits a kiosk claimant; ADR-0190
+   asks *may this caller SEE EVERYTHING*. Reusing it handed full variables to an anonymous
+   caller.
 
 ## What the sweep actually established
 

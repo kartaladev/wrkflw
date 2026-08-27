@@ -98,6 +98,74 @@ stdlib.Mount(mux, svc, stdlib.WithRequestActor(func(ctx context.Context) (authz.
   ⚠ One consequence worth knowing: an unauthenticated caller cannot learn whether its body was
   oversize or malformed — both answer 401. That is deliberate.
 
+## Read disclosure (ADR-0190)
+
+**This library does not authenticate.** Authentication happens upstream, in your middleware.
+The library maps an external identity — carried on `context.Context` via
+`authz.ContextWithActor`, or resolved by a `RequestActorFunc` you supply — into
+`authz.Actor`, and acts on it. It adds no credential parsing, no token validation and no
+session concept, and it does **not** refuse unauthenticated requests.
+
+### ⚠ BREAKING: unidentified callers now receive a projection
+
+Every HTTP entry point that renders instance-derived data — **eleven** of them, across four
+mechanisms, on all three adapters — now returns **structural fields only** to a caller the
+transport could not identify: instance/definition/task/token identity, statuses, timestamps,
+retry counts, and the task lifecycle state.
+
+Withheld by default: **process variables** (all snapshots of them), **actor identity and
+attributes** (candidates, claims, completions), **completion notes**, and **policy** (the
+embedded definition, which carries every node's eligibility spec, and flow conditions).
+
+An **identified** caller — one for whom your `RequestActorFunc` returns an actor with a
+non-empty `ID` — is unaffected and receives full fidelity.
+
+⚠ A **kiosk** actor `{ID: "", Roles: ["kiosk"]}` may still *act* on a task (ADR-0189 blesses
+that) but receives the **projection**, because an actor with no ID is unattributable.
+
+⚠ A custom `InstanceMapper` now receives the **projected state** on an unidentified read.
+Filtering a mapper's output cannot work — it may render any field — so it is never handed
+the withheld data.
+
+**Embedded consumers are unaffected.** `ProcessInstance.State()` and `.Definition()` return
+full fidelity in-process; this is a transport rendering policy only.
+
+### Opting out, and opting partly in
+
+```go
+// Restore the pre-ADR-0190 wire shape completely.
+stdlib.Mount(mux, svc, httpcore.WithDisclosure[*http.ServeMux](authz.DiscloseAll))
+
+// Or widen one category at a time from the closed default.
+httpcore.WithDisclosure[*http.ServeMux](authz.DiscloseVariables)
+```
+
+⚠ `DiscloseAll` is a **sentinel meaning "do not project"**, not the union of the four
+categories. Twenty of `engine.InstanceState`'s thirty-one exported fields are restorable by
+no category — including `compensating`, which is what makes a wedged instance findable
+(ADR-0175). A union-shaped opt-out would have broken that operator escape hatch while
+advertising itself as a full restoration.
+
+### Residuals — known, accepted, not fixed
+
+- **Structural fields are an oracle over withheld ones.** `history[].node_id` reveals which
+  gateway branch a process took, and a branch is a function of the process variables — so an
+  observer can infer variable values from structure. Closing this would mean withholding
+  history, which destroys the view's usefulness for legitimate readers. Accepted.
+- **Error bodies are out of scope.** `ClassifyError` renders `err.Error()` on 4xx, and an
+  authorization failure can carry the predicate source. The 403 arm fires only for
+  `authz.ErrNotAuthorized`, which today occurs only on the three human-task verbs, so the
+  reader is already authenticated. Accepted at lower severity.
+- **The projection answers `engine.InstanceState`'s methods about ITSELF.** `HasArmedTimers()`
+  on a projection reports false because timers were withheld, not because none are armed. A
+  distinct projection type would fix this and was rejected: `InstanceMapper` is
+  `func(engine.InstanceState) any`, a public seam, so a new type breaks every consumer's
+  mapper.
+- **State-changing routes remain reachable without your middleware.** `POST /instances`,
+  `/signals` and `/messages` are open by design — this record narrows what their responses
+  disclose, not who may call them. Authorization for those operations is deferred to a
+  later record.
+
 ## Request body limits (ADR-0186)
 
 Every HTTP route group mounted from `transport/http/{stdlib,gin,fiber}` bounds the request body at

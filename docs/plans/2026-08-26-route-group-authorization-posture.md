@@ -24,19 +24,65 @@ carrying only allow-listed fields, so a field added tomorrow is withheld by defa
 ## ▶ Progress
 
 - **Branch:** `design/route-group-authz-posture`, base `main` at merge `7be335fb`.
-- **Status:** ▶ **REVISION 2 + ROUND-2 FIXES FOLDED — CLEARED FOR IMPLEMENTATION.**
-  Revision 1 failed its audit (~72 findings, 17 Critical); revision 2 was audited again
-  (~50 findings, 16 Critical) and its Criticals are folded below. Owner decision 2026-08-27:
-  fold the mechanical fixes and implement rather than run a third round — round 2's Criticals
-  are implementation-level (the code did not compile) where round 1's were design-level, and
-  rule #11 budgets for implementation correcting design.
-  ⚠ Three findings were adjudicated as **residuals, not fixed** — see "Accepted residuals".
-- **Phases landed:** none.
-- ⚠ **Do not reconstruct revision 1's design.** `service.WithRedaction`, `Redactable`,
-  `RedactionOf`, the `processInstance` redaction field and the `newInstanceJSON` signature
-  change are **deleted**. Spec §0 records why each failed.
+  **NOT pushed, NOT merged.**
+- **Status:** ✅ **PHASE 1 IMPLEMENTED AND GREEN.** Awaiting the owner-invoked delivery gates.
+- **Verification, measured 2026-08-27 with Docker up:**
+  `go test ./...` **EXIT=0, 65 ok / 0 FAIL** · `golangci-lint run ./...` **repo-wide, 0 issues**
+  · `gofmt` clean.
+- **Audit history:** revision 1 failed (~72 findings, 17 Critical); revision 2 failed
+  (~50 findings, 16 Critical); owner then directed fold-and-implement rather than a third
+  round. All eight lens reports are committed in `docs/specs/2026-08-2{6,7}-adr-0190-audit*`.
 
----
+### Commits (oldest first)
+
+| commit | what |
+|---|---|
+| `69393f56` | design bundle rev 2 + round-2 fixes + both audit evidence sets |
+| `204494d9` | `authz` — disclosure vocabulary (allow-list) + the repo's second purity guard |
+| `22cb9230` | `runtime/view` — `PublicState` + classification-totality guard |
+| `96d6223d` | `service` — `ProjectFor` |
+| `969e9a31` | `transport` — all 11 render sites wired, 3 adapters |
+| `5d53d24e` | parity tests for gin and fiber |
+
+### What implementation changed in the design — folded, not left in the transcript
+
+1. **`service` IS modified.** The ADR claimed otherwise. `/snapshot` returns the
+   self-marshalling `ProcessInstance` and only `service` can build one; rebuilding via
+   `NewProcessInstance` **re-embeds the definition**, undoing `WithoutEmbeddedDefinition`.
+   Hence `service.ProjectFor`, which may only ADD an omission.
+2. **"Actor present" became "actor with a non-empty ID".** Reusing ADR-0189's `isZeroActor`
+   handed full variables to the blessed kiosk claimant. The two guards answer different
+   questions — *may this actor ACT* versus *may this caller SEE EVERYTHING*.
+3. **The API break is 5 signatures, not 11.** Six render sites already accept
+   `cfg.InstanceMapper`, so the adapters pass a per-request WRAPPED mapper and those
+   endpoints never learn disclosure exists. Round 2 predicted "~70 call sites across 4
+   packages"; the measured figure is 7 test call sites.
+
+### ⚠ Test-quality lessons from this implementation
+
+- **My own drift guard rested on a false premise.** It assumed the fixture populated every
+  public field; `Status: StatusRunning` is **iota 0**, so a dropped `Status` compared equal
+  to a kept one. The explicit `FIXTURE GAP` arm that fixed it then found **13 more**
+  unpoliced fields.
+- **Five withheld fields CANNOT be populated from an external test package** (unexported
+  element types). Declared in `unpoliceableByFixture` with reasons rather than silently
+  unpoliced.
+- **A mutation that fails to COMPILE is not a RED.** Deleting a term from `ProjectFor` left a
+  variable unused; `||`→`&&` was the valid mutation.
+- **An ablation that stays green means UNTESTED before it means REDUNDANT.** The first fiber
+  ablation hit only `StartInstance`, which those tests never exercise.
+- **A vacuous case can hide inside a discriminating table.** With all nine fiber sites
+  ablated, three of four went RED and `/actionable` stayed green — that view renders no
+  variables, so the assertion could not fail. Fixed by claiming the task with an actor whose
+  ID is the canary.
+
+### Remaining before delivery
+
+1. `/code-review` and `/security-review` — **owner-invoked only**; fold findings via `--amend`.
+2. Merge `--no-ff` to `main` and push.
+   ⚠ **Point `/security-review` at `identified()` hardest.** It trusts whatever
+   `RequestActorFunc` returns; a resolver that manufactures an actor gets full fidelity, and
+   that predicate is load-bearing for the entire posture.
 
 ## Global Constraints
 

@@ -5,7 +5,7 @@
   Critical) found its code did not compile and its presence signal was never set. Both
   evidence sets are in-repo. Owner decision 2026-08-27: fold and implement rather than run a
   third round — round 2's Criticals are implementation-level where round 1's were
-  design-level, and rule #11 budgets for implementation correcting design. Not yet implemented.
+  design-level, and rule #11 budgets for implementation correcting design. **Phase 1 IMPLEMENTED** on `design/route-group-authz-posture`; phases 2 and 3 deferred.
 - Date: 2026-08-26, revised 2026-08-27
 - **⚠ REVISION 1 FAILED ITS AUDIT.** Four lenses, ~71 findings, **17 Critical**. Evidence
   in-repo: `docs/specs/2026-08-26-adr-0190-audit-{execution,counting,failuremode,interaction}.md`.
@@ -78,10 +78,22 @@ token validation, no session concept, **no default-deny on unauthenticated reque
 group mounted without the consumer's middleware stays reachable; what changes is what its
 response *discloses*.
 
-### 2. Disclosure control is a TRANSPORT concern, and `service` is not modified
+### 2. Disclosure control is a TRANSPORT concern; `service` gains exactly one function
 
 "An unidentified caller" is a transport concept. An embedded consumer calling `svc.GetInstance`
 in-process is the trusted application and has no such notion.
+
+⚠ **CORRECTED BY IMPLEMENTATION.** This decision originally read *"`service` is not
+modified"*. That proved impossible: `/snapshot` returns the self-marshalling
+`ProcessInstance`, and only `service` can construct one. The transport's alternative —
+rebuilding via `service.NewProcessInstance` — **re-embeds the definition**, because that
+constructor always embeds; it would have silently undone `WithoutEmbeddedDefinition` for
+every consumer using it, on the one route this record narrows.
+
+So `service` gains **one** function, [service.ProjectFor], which renders a projected
+instance and may only ADD an omission, never remove one. The disclosure *decision* still
+lives entirely in the transport; `service` only carries it into the document. Nothing else
+in `service` changed, and the embedded consumer's `json.Marshal(pi)` is untouched.
 
 Revision 1 put this in `service` and the audit showed the consequence: `ProcessInstance` embeds
 `json.Marshaler`, so a redaction stamp would have silently redacted `json.Marshal(pi)` for the
@@ -94,7 +106,22 @@ to someone we cannot identify; authorization is about what anyone may do.
 ### 3. The signal is ACTOR PRESENCE, never the gate outcome
 
 The transport already resolves the actor per request via ADR-0189's `httpcore.RequestActor`.
-**Actor present ⇒ full fidelity. No actor ⇒ the public projection.**
+**An actor with a non-empty ID ⇒ full fidelity. Anything else ⇒ the public projection.**
+
+⚠ **CORRECTED BY IMPLEMENTATION.** This originally read *"actor present"*, and "present"
+was implemented with ADR-0189's `isZeroActor`. The test failed, correctly: that guard
+deliberately **admits** the kiosk claimant `{ID:"", Roles:["kiosk"]}` blessed at
+`humantask/validate.go:24`, so an anonymous caller received full process variables.
+
+The two guards answer different questions. ADR-0189's asks *may this actor ACT*; this one
+asks *may this caller SEE EVERYTHING*, and an actor with no ID is unattributable — there is
+nobody to hold responsible for the disclosure. A kiosk may therefore complete a task and
+still receive the projection.
+
+⚠ It also keys on the configured `RequestActorFunc`, **not** `authz.ActorFromContext`.
+Nothing in `transport/http` ever calls `authz.ContextWithActor` — ADR-0189 passes the actor
+to the endpoints as an argument — so a context-keyed check is always false and would have
+projected for authenticated callers too.
 
 ⚠ Revision 1 keyed fidelity on "was this read gated and did it pass". **Measured: an empty
 `AuthzSpec` allows the ZERO actor.** A consumer writing the natural read policy
@@ -137,8 +164,8 @@ nobody thought about.
 
 `httpcore.WithDisclosure(cats ...authz.DisclosureCategory)` — a `CustomizeOption` on the mount,
 not a service `Option`. Categories are **additive**: `DiscloseVariables`, `DiscloseActors`,
-`DiscloseNotes`, `DisclosePolicy`. Default: none. `httpcore.DiscloseAll` restores the exact
-pre-ADR-0190 wire shape in one call.
+`DiscloseNotes`, `DisclosePolicy`. Default: none. `authz.DiscloseAll` restores the pre-ADR-0190 wire
+shape in one call.
 
 ⚠ Polarity is inverted from revision 1 on purpose: the consumer *widens* disclosure explicitly
 rather than *narrowing* it from an open default. Adding a category is a deliberate act;
@@ -173,17 +200,25 @@ they must satisfy are recorded in spec §3 D2 and D7; the load-bearing ones:
 
 ## Consequences
 
-**Positive.** All eleven render entry points close at once, including `POST /signals`, which
-made any per-endpoint fix futile. A field added to `InstanceState` tomorrow is withheld by
+**Positive.** All eleven render entry points close at once — verified end-to-end on all three
+adapters — including `POST /signals`, which made any per-endpoint fix futile. A field added to `InstanceState` tomorrow is withheld by
 default and fails a guard until classified — the failure mode that produced four different
 answers to one question is structurally removed. `service` is untouched, so the embedded
 consumer's `json.Marshal(pi)` is unaffected. Phase 1 is independently coherent and independently
 shippable.
 
-**Negative.** ⚠ **This is a source-incompatible public API change**, discovered by the round-2
-audit and not by design: threading the disclosure set reaches **11 exported `httpcore`
-signatures and ~70 call sites across 4 packages**. A consumer calling those `httpcore`
-functions directly must update their calls. Declared here rather than discovered at upgrade.
+**Negative.** ⚠ **This is a source-incompatible public API change** — but a much smaller one
+than the round-2 audit predicted, and the correction is recorded because the prediction is
+also on the record. The audit derived "11 exported signatures and ~70 call sites across 4
+packages". The measured change is **5 exported signatures and 7 test call sites**:
+`GetInstanceSnapshot` and `GetActionableView` each take a projection and a
+withhold-definition flag; `ResolveIncident`, `CancelInstance` and `ResolveCompensationStall`
+each take an instance mapper.
+
+Six of the eleven render sites needed **no signature change at all**, because they already
+accept `cfg.InstanceMapper` — so the adapters pass a per-request WRAPPED mapper instead, and
+the endpoints never learn that disclosure exists. A consumer calling those five `httpcore`
+functions directly must update their calls.
 
 All eleven entry points change shape by default for unauthenticated callers;
 `DiscloseAll` is the documented one-call opt-out and this must be a headline breaking change,
