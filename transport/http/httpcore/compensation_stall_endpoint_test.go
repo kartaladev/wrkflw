@@ -91,7 +91,7 @@ func TestResolveCompensationStallEndpoint(t *testing.T) {
 			h, svc := transporttest.NewHarness(t, def)
 			transporttest.StartedApprovalInstance(t, h, "inst-1")
 
-			status, body, err := httpcore.ResolveCompensationStall(t.Context(), svc, "inst-1", tc.in)
+			status, body, err := httpcore.ResolveCompensationStall(t.Context(), svc, "inst-1", tc.in, nil)
 			tc.assert(t, status, body, err)
 		})
 	}

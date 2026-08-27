@@ -134,6 +134,22 @@ type CustomizeConfig[R any] struct {
 	// its post-loop nil-guard block: a time.Duration has no nil, so a post-loop guard
 	// could not distinguish "unset" from an explicit 0 (= disabled).
 	RequestActorTimeout time.Duration
+	// Disclosure widens what an UNIDENTIFIED caller may see (ADR-0190).
+	//
+	// The zero value is the closed posture: a caller the transport could not identify
+	// receives structural fields only — no process variables, actors, notes or policy.
+	// An identified caller is unaffected and always receives full fidelity.
+	//
+	// ⚠ "Identified" means the configured [RequestActorFunc] returned an actor with a
+	// non-empty ID. It is deliberately stricter than the guard ADR-0189 applies to a
+	// claimant: a kiosk actor {ID:"", Roles:["kiosk"]} may act on a task and still receive
+	// the projection, because an actor with no ID is unattributable.
+	//
+	// Set [authz.DiscloseAll] to opt out completely and restore the pre-ADR-0190 shape.
+	//
+	// ⚠ Unlike MaxBodyBytes, this needs no "was it set" flag: WithDisclosure() with no
+	// categories and never calling it are the SAME posture, so a nil map is unambiguous.
+	Disclosure authz.DisclosureSet
 	// Logger receives 5xx raw error details (never sent to clients).
 	Logger         *slog.Logger
 	TracerProvider trace.TracerProvider
@@ -227,6 +243,25 @@ func ResolveConfig[R any](opts ...CustomizeOption[R]) CustomizeConfig[R] {
 // so it cannot be inferred here and a direct call must spell the router type out.
 func WithRequestActor[R any](fn RequestActorFunc) CustomizeOption[R] {
 	return func(c *CustomizeConfig[R]) { c.RequestActor = fn }
+}
+
+// WithDisclosure widens what an UNIDENTIFIED caller may see, from the closed default.
+//
+// Categories are ADDITIVE to the structural baseline: pass [authz.DiscloseVariables] to
+// restore process variables, [authz.DiscloseActors] for claim/candidate identities,
+// [authz.DiscloseNotes] for completion notes, [authz.DisclosePolicy] for the embedded
+// definition and flow conditions. Pass [authz.DiscloseAll] to opt out of projection
+// entirely and restore the exact pre-ADR-0190 wire shape.
+//
+// ⚠ The polarity is deliberate: a consumer WIDENS disclosure explicitly, rather than
+// narrowing it from an open default. Adding a category is a deliberate act; forgetting one
+// is safe. An earlier design used the opposite polarity and failed open on four separate
+// snapshots of the process variables that nobody remembered to list.
+//
+// It does not affect identified callers, and it does not affect an EMBEDDED consumer at
+// all — ProcessInstance.State() and .Definition() keep returning full fidelity in-process.
+func WithDisclosure[R any](cats ...authz.DisclosureCategory) CustomizeOption[R] {
+	return func(c *CustomizeConfig[R]) { c.Disclosure = authz.NewDisclosureSet(cats...) }
 }
 
 // WithRequestActorTimeout bounds how long the configured [RequestActorFunc] may

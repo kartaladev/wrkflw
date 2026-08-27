@@ -170,7 +170,7 @@ func TestResolveIncidentOnTerminalInstanceMapsTo422(t *testing.T) {
 			// Go through the httpcore seam the adapters call, not the service
 			// method directly, so the whole transport path is covered.
 			_, _, err := httpcore.ResolveIncident(ctx, f.svc, f.instanceID, f.incidentID,
-				httpcore.ResolveIncidentInput{AddAttempts: 1})
+				httpcore.ResolveIncidentInput{AddAttempts: 1}, nil)
 
 			var (
 				status int

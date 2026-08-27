@@ -196,7 +196,7 @@ func TestResolveIncident(t *testing.T) {
 			t.Parallel()
 			_, svc := transporttest.NewHarness(t, def)
 			instanceID, incidentID := tc.setup(svc)
-			status, body, err := httpcore.ResolveIncident(t.Context(), svc, instanceID, incidentID, tc.in)
+			status, body, err := httpcore.ResolveIncident(t.Context(), svc, instanceID, incidentID, tc.in, nil)
 			tc.assert(t, status, body, err)
 		})
 	}
@@ -252,7 +252,7 @@ func TestCancelInstance(t *testing.T) {
 			t.Parallel()
 			_, svc := transporttest.NewHarness(t, def)
 			instanceID := tc.setup(svc)
-			status, body, err := httpcore.CancelInstance(t.Context(), svc, instanceID)
+			status, body, err := httpcore.CancelInstance(t.Context(), svc, instanceID, nil)
 			tc.assert(t, status, body, err)
 		})
 	}

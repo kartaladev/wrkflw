@@ -40,7 +40,7 @@ func (c InstanceRoutes) Customize(mux *http.ServeMux, opts ...httpcore.Customize
 		if !decodeRequestBody(cfg, w, req, &in) {
 			return
 		}
-		status, body, err := httpcore.StartInstance(req.Context(), c.Svc, in, cfg.InstanceMapper)
+		status, body, err := httpcore.StartInstance(req.Context(), c.Svc, in, httpcore.NewDisclosure(req.Context(), cfg.RequestActor, cfg.Disclosure).Mapper(cfg.InstanceMapper))
 		if err != nil {
 			writeErr(cfg, w, req, err)
 			return
@@ -50,7 +50,7 @@ func (c InstanceRoutes) Customize(mux *http.ServeMux, opts ...httpcore.Customize
 
 	handle(r, inst, cfg, http.MethodGet, "/instances/{id}", func(w http.ResponseWriter, req *http.Request) {
 		id := req.PathValue("id")
-		status, body, err := httpcore.GetInstance(req.Context(), c.Svc, id, cfg.InstanceMapper)
+		status, body, err := httpcore.GetInstance(req.Context(), c.Svc, id, httpcore.NewDisclosure(req.Context(), cfg.RequestActor, cfg.Disclosure).Mapper(cfg.InstanceMapper))
 		if err != nil {
 			writeErr(cfg, w, req, err)
 			return
@@ -60,7 +60,8 @@ func (c InstanceRoutes) Customize(mux *http.ServeMux, opts ...httpcore.Customize
 
 	handle(r, inst, cfg, http.MethodGet, "/instances/{id}/snapshot", func(w http.ResponseWriter, req *http.Request) {
 		id := req.PathValue("id")
-		status, body, err := httpcore.GetInstanceSnapshot(req.Context(), c.Svc, id)
+		dd := httpcore.NewDisclosure(req.Context(), cfg.RequestActor, cfg.Disclosure)
+		status, body, err := httpcore.GetInstanceSnapshot(req.Context(), c.Svc, id, dd.Projection(), dd.WithholdDefinition())
 		if err != nil {
 			writeErr(cfg, w, req, err)
 			return
@@ -70,7 +71,8 @@ func (c InstanceRoutes) Customize(mux *http.ServeMux, opts ...httpcore.Customize
 
 	handle(r, inst, cfg, http.MethodGet, "/instances/{id}/actionable", func(w http.ResponseWriter, req *http.Request) {
 		id := req.PathValue("id")
-		status, body, err := httpcore.GetActionableView(req.Context(), c.Svc, id)
+		dd := httpcore.NewDisclosure(req.Context(), cfg.RequestActor, cfg.Disclosure)
+		status, body, err := httpcore.GetActionableView(req.Context(), c.Svc, id, dd.Projection(), dd.WithholdDefinition())
 		if err != nil {
 			writeErr(cfg, w, req, err)
 			return
@@ -84,7 +86,7 @@ func (c InstanceRoutes) Customize(mux *http.ServeMux, opts ...httpcore.Customize
 		if !decodeRequestBody(cfg, w, req, &in) {
 			return
 		}
-		status, body, err := httpcore.DeliverSignal(req.Context(), c.Svc, id, in, cfg.InstanceMapper)
+		status, body, err := httpcore.DeliverSignal(req.Context(), c.Svc, id, in, httpcore.NewDisclosure(req.Context(), cfg.RequestActor, cfg.Disclosure).Mapper(cfg.InstanceMapper))
 		if err != nil {
 			writeErr(cfg, w, req, err)
 			return
@@ -155,7 +157,7 @@ func (c TaskRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpti
 		if !decodeOptionalRequestBody(cfg, w, req, &in) {
 			return
 		}
-		status, body, err := httpcore.ClaimTask(req.Context(), c.Svc, token, in, cfg.InstanceMapper, actor)
+		status, body, err := httpcore.ClaimTask(req.Context(), c.Svc, token, in, httpcore.NewDisclosure(req.Context(), cfg.RequestActor, cfg.Disclosure).Mapper(cfg.InstanceMapper), actor)
 		if err != nil {
 			writeErr(cfg, w, req, err)
 			return
@@ -176,7 +178,7 @@ func (c TaskRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpti
 		if !decodeRequestBody(cfg, w, req, &in) {
 			return
 		}
-		status, body, err := httpcore.CompleteTask(req.Context(), c.Svc, token, in, cfg.InstanceMapper, actor)
+		status, body, err := httpcore.CompleteTask(req.Context(), c.Svc, token, in, httpcore.NewDisclosure(req.Context(), cfg.RequestActor, cfg.Disclosure).Mapper(cfg.InstanceMapper), actor)
 		if err != nil {
 			writeErr(cfg, w, req, err)
 			return
@@ -197,7 +199,7 @@ func (c TaskRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpti
 		if !decodeRequestBody(cfg, w, req, &in) {
 			return
 		}
-		status, body, err := httpcore.ReassignTask(req.Context(), c.Svc, token, in, cfg.InstanceMapper, actor)
+		status, body, err := httpcore.ReassignTask(req.Context(), c.Svc, token, in, httpcore.NewDisclosure(req.Context(), cfg.RequestActor, cfg.Disclosure).Mapper(cfg.InstanceMapper), actor)
 		if err != nil {
 			writeErr(cfg, w, req, err)
 			return
@@ -266,7 +268,7 @@ func (c AdminRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpt
 			if !decodeOptionalRequestBody(cfg, w, req, &in) {
 				return
 			}
-			status, body, err := httpcore.ResolveIncident(req.Context(), c.Svc, instanceID, incidentID, in)
+			status, body, err := httpcore.ResolveIncident(req.Context(), c.Svc, instanceID, incidentID, in, httpcore.NewDisclosure(req.Context(), cfg.RequestActor, cfg.Disclosure).Mapper(cfg.InstanceMapper))
 			if err != nil {
 				writeErr(cfg, w, req, err)
 				return
@@ -283,7 +285,7 @@ func (c AdminRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpt
 			if !decodeRequestBody(cfg, w, req, &in) {
 				return
 			}
-			status, body, err := httpcore.ResolveCompensationStall(req.Context(), c.Svc, instanceID, in)
+			status, body, err := httpcore.ResolveCompensationStall(req.Context(), c.Svc, instanceID, in, httpcore.NewDisclosure(req.Context(), cfg.RequestActor, cfg.Disclosure).Mapper(cfg.InstanceMapper))
 			if err != nil {
 				writeErr(cfg, w, req, err)
 				return
@@ -294,7 +296,7 @@ func (c AdminRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpt
 	handle(r, inst, cfg, http.MethodPost, "/admin/instances/{id}/cancel",
 		func(w http.ResponseWriter, req *http.Request) {
 			instanceID := req.PathValue("id")
-			status, body, err := httpcore.CancelInstance(req.Context(), c.Svc, instanceID)
+			status, body, err := httpcore.CancelInstance(req.Context(), c.Svc, instanceID, httpcore.NewDisclosure(req.Context(), cfg.RequestActor, cfg.Disclosure).Mapper(cfg.InstanceMapper))
 			if err != nil {
 				writeErr(cfg, w, req, err)
 				return
