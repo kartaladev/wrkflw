@@ -109,7 +109,7 @@ func TestBroadcastSignalFiresBoundary(t *testing.T) {
 //
 // The arm is tracked as an armedEvent, not a token carrying AwaitSignal, so the
 // runtime can only reach it if SignalWaiters() surfaces event-gateway signal
-// arms (ADR-0154). Without that, the gateway parks forever and neither arm ever
+// arms. Without that, the gateway parks forever and neither arm ever
 // wins. It reuses eventGatewayCorrelatedMsgDef, whose "sig-catch" arm races the
 // correlated message arm.
 func TestBroadcastSignalWinsEventGatewayArm(t *testing.T) {

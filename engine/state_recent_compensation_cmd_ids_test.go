@@ -1,7 +1,7 @@
 package engine_test
 
-// state_recent_compensation_cmd_ids_test.go — ADR-0179 Decision 5: the bounded
-// ring of recently dispatched compensation command ids.
+// state_recent_compensation_cmd_ids_test.go — the bounded ring of recently
+// dispatched compensation command ids.
 //
 // Three properties are pinned here, none of them covered by any pre-existing
 // test:
@@ -16,9 +16,9 @@ package engine_test
 //
 //   - Every compensationInvoke dispatch site must append to the ring. The site
 //     set is DERIVED from the package's own sources rather than compared against
-//     a literal: four sites exist today and ADR-0179's automatic retry adds a
-//     fifth, so any integer written here would be stale on arrival. This exact
-//     counting failure has already shipped twice in this decision's history.
+//     a literal: four sites exist today and the automatic retry adds a fifth, so
+//     any integer written here would be stale on arrival. This exact counting
+//     failure has already shipped twice.
 //
 //   - The ring is BOUNDED at K = 16 and evicts the OLDEST. Mutation-verified:
 //     with the eviction block deleted, a 20-record walk leaves 20 ids.
@@ -93,7 +93,7 @@ func TestCloneStateDeepCopiesRecentCompensationCmdIDs(t *testing.T) {
 //
 // The site set is DERIVED by parsing the package's own non-test sources. No
 // count is written down: the assertion is a per-site implication, so the fifth
-// dispatch site ADR-0179 adds is covered the moment it is written, and this test
+// dispatch site is covered the moment it is written, and this test
 // fails if it is added without its ring append.
 func TestDispatchedCmdIDsAreDerivedFromEverySite(t *testing.T) {
 	const (
@@ -188,7 +188,7 @@ func manyCompensableDef(n int) *model.ProcessDefinition {
 // TestRecentCompensationCmdIDsRingIsBounded pins the K = 16 bound as OBSERVABLE
 // behaviour, not just a constant.
 //
-// The bound is not cosmetic. ADR-0175's operator verb retryStalledCompensation
+// The bound is not cosmetic. The operator verb retryStalledCompensation
 // sets a fresh ActiveCmdID per invocation with no cap, and the whole instance
 // state is re-marshalled every Step, so an unbounded slice grows without limit
 // under repeated operator retries. Measured with the eviction block deleted, this

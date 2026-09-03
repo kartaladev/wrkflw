@@ -97,7 +97,7 @@ CREATE TABLE t (
 				assert.Len(t, s.Columns, 2, "the CONSTRAINT clause is not a third column")
 				assert.Contains(t, s.Columns[atrest.ColumnKey{Table: "t", Column: "a"}].Keys, "PK")
 				assert.NotContains(t, s.Columns[atrest.ColumnKey{Table: "t", Column: "a"}].Keys, "FK",
-					"foreign keys are deliberately OUT of the keyed derivation (ADR-0187 D8; see E15)")
+					"foreign keys are deliberately OUT of the keyed derivation")
 			},
 		},
 		{
@@ -161,11 +161,11 @@ CREATE TABLE t (
 			},
 		},
 		{
-			// I2b (final review): a table-level CONSTRAINT spelling of UNIQUE is how
+			// A table-level CONSTRAINT spelling of UNIQUE is how
 			// production DDL usually declares it; before the fix this derived NO key
 			// at all (recognised by bodyClauseSkipPrefixes, unhandled by
 			// applyTableLevelKeyClause's switch, silently dropped).
-			name: "I2b: CONSTRAINT ... UNIQUE (...) re-dispatches to the UNIQUE key",
+			name: "CONSTRAINT ... UNIQUE (...) re-dispatches to the UNIQUE key",
 			src: `-- +goose Up
 CREATE TABLE t (
     e TEXT NOT NULL,
@@ -180,8 +180,8 @@ CREATE TABLE t (
 			},
 		},
 		{
-			// I2b: a table-level CONSTRAINT spelling of PRIMARY KEY, same gap.
-			name: "I2b: CONSTRAINT ... PRIMARY KEY (...) re-dispatches to the PK key",
+			// A table-level CONSTRAINT spelling of PRIMARY KEY, same gap.
+			name: "CONSTRAINT ... PRIMARY KEY (...) re-dispatches to the PK key",
 			src: `-- +goose Up
 CREATE TABLE t (
     g TEXT NOT NULL,
@@ -194,9 +194,9 @@ CREATE TABLE t (
 			},
 		},
 		{
-			// I2b: bare table-level KEY name (col) (MySQL's non-PRIMARY secondary-index
+			// A bare table-level KEY name (col) (MySQL's non-PRIMARY secondary-index
 			// shorthand) must be treated the same as INDEX name (col).
-			name: "I2b: bare KEY name (col) is treated as INDEX",
+			name: "bare KEY name (col) is treated as INDEX",
 			src: `-- +goose Up
 CREATE TABLE t (
     e TEXT NOT NULL,
@@ -209,9 +209,9 @@ CREATE TABLE t (
 			},
 		},
 		{
-			// I2b: FOREIGN KEY spelled via a named CONSTRAINT must still be
-			// deliberately excluded (D8/E15), not treated as unrecognised.
-			name: "I2b: CONSTRAINT ... FOREIGN KEY (...) stays excluded, not an error",
+			// FOREIGN KEY spelled via a named CONSTRAINT must still be
+			// deliberately excluded, not treated as unrecognised.
+			name: "CONSTRAINT ... FOREIGN KEY (...) stays excluded, not an error",
 			src: `-- +goose Up
 CREATE TABLE t (
     a TEXT NOT NULL,
@@ -225,12 +225,12 @@ CREATE TABLE t (
 			},
 		},
 		{
-			// I2b: a CONSTRAINT clause this parser cannot decompose must fail
-			// closed (ADR-0187 D11) rather than silently derive no key — the
+			// A CONSTRAINT clause this parser cannot decompose must fail
+			// closed rather than silently derive no key — the
 			// asymmetry the finding names: an UNRECOGNISED clause is already
 			// caught by the completeness guard, but a RECOGNISED-but-unhandled
 			// one (CONSTRAINT/KEY) was caught by nothing before this fix.
-			// I2b (final review), RE-FIXTURED after /code-review: a named
+			// RE-FIXTURED after /code-review: a named
 			// CONSTRAINT whose shape the parser cannot classify is still a parse
 			// error. The original fixture used CHECK, which was a defect rather
 			// than a feature — the UNNAMED "CHECK (a > 0)" silently injected a
@@ -239,7 +239,7 @@ CREATE TABLE t (
 			// TestParseSQL_BodyClauseClassification), so the fixture had to become
 			// a genuinely unknown shape or it could no longer fail for the reason
 			// it claims.
-			name: "I2b: an undecomposable CONSTRAINT clause is a parse error, not a silent no-op",
+			name: "an undecomposable CONSTRAINT clause is a parse error, not a silent no-op",
 			src: `-- +goose Up
 CREATE TABLE t (
     a INT NOT NULL,
@@ -252,9 +252,9 @@ CREATE TABLE t (
 			},
 		},
 		{
-			// M4 (final review): applyCreateIndex must fail closed on a malformed
+			// applyCreateIndex must fail closed on a malformed
 			// CREATE INDEX statement instead of returning silently.
-			name: "M4: CREATE INDEX with no ON clause is a parse error, not a silent no-op",
+			name: "CREATE INDEX with no ON clause is a parse error, not a silent no-op",
 			src: `-- +goose Up
 CREATE TABLE t (a TEXT);
 CREATE INDEX idx_bad;
@@ -264,7 +264,7 @@ CREATE INDEX idx_bad;
 			},
 		},
 		{
-			name: "M4: CREATE INDEX with no column list is a parse error, not a silent no-op",
+			name: "CREATE INDEX with no column list is a parse error, not a silent no-op",
 			src: `-- +goose Up
 CREATE TABLE t (a TEXT);
 CREATE INDEX idx_bad ON t;
@@ -274,15 +274,14 @@ CREATE INDEX idx_bad ON t;
 			},
 		},
 		{
-			// I3 (final review): fields[1] alone truncates a multi-word type at
-			// its first space.
+			// fields[1] alone truncates a multi-word type at its first space.
 			// ⚠ This was filed as "latent, verified absent from the corpus" and
-			// that premise was FALSE. The already-published SECURITY.md carried
+			// that premise was FALSE. The already-published document carried
 			// `BIGINT` for wrkflw_outbox.id on MySQL, where the DDL declares
 			// `BIGINT AUTO_INCREMENT` — a live truncation in the shipped
 			// document, found by diffing the regenerated file against a backup.
 			// This is a fix, not only a regression guard.
-			name: "I3: multi-word column types are captured in full, not truncated at the first space",
+			name: "multi-word column types are captured in full, not truncated at the first space",
 			src: `-- +goose Up
 CREATE TABLE t (
     a DOUBLE PRECISION,
@@ -351,8 +350,8 @@ func TestSchema_Tables(t *testing.T) {
 	}
 }
 
-// TestKeyedLowerBound_Postgres pins the postgres keyed census (ADR-0187
-// decision 8): 29 of the 87 columns are keyed, casbin_rule INCLUDED.
+// TestKeyedLowerBound_Postgres pins the postgres keyed census: 29 of the
+// 87 columns are keyed, casbin_rule INCLUDED.
 // The byClass map is the load-bearing assertion — a bare 29 would still
 // pass if the derivation keyed the wrong 29 columns. Earlier drafts of
 // this test skipped casbin_rule with `if k.Table == "casbin_rule" {
@@ -388,7 +387,7 @@ func TestKeyedLowerBound_Postgres(t *testing.T) {
 }
 
 // TestKeyedCountPerDialect pins keyed for all three dialects. keyed is
-// dialect-DEPENDENT (ADR-0187 decision 8, E10) even though class is
+// dialect-DEPENDENT even though class is
 // not — never assert only one dialect as "the" number.
 func TestKeyedCountPerDialect(t *testing.T) {
 	t.Parallel()
@@ -431,7 +430,7 @@ func TestKeyedIsDialectDependent(t *testing.T) {
 
 	my := schemas["mysql"].Columns[atrest.ColumnKey{Table: "wrkflw_outbox", Column: "status"}]
 	assert.NotContains(t, my.Keys, "index-predicate",
-		"mysql has no partial indexes; it folds the predicate into the key instead (E10)")
+		"mysql has no partial indexes; it folds the predicate into the key instead")
 }
 
 // TestParseSQL_StringLiteralsAndBodyBounds covers the two ways the reader used
@@ -489,8 +488,8 @@ CREATE TABLE t (
 CREATE TABLE t (a TEXT, b TEXT) WITH (fillfactor=70);
 `,
 			assert: func(t *testing.T, s atrest.Schema, err error) {
-				// Failing closed rather than ignoring the remainder is deliberate
-				// (ADR-0187 D11): Postgres's INHERITS (parent) is a trailing clause
+				// Failing closed rather than ignoring the remainder is
+				// deliberate: Postgres's INHERITS (parent) is a trailing clause
 				// that ADDS COLUMNS, so a silently-ignored remainder can under-report
 				// a security document's column census. No migration in this module
 				// carries one today, so the strictness costs nothing now.

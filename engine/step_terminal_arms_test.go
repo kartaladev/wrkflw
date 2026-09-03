@@ -1,6 +1,6 @@
 package engine_test
 
-// step_terminal_arms_test.go — backlog blocker 8, corrected scope.
+// step_terminal_arms_test.go — the terminal arm sweep, corrected scope.
 //
 // The blocker was FILED as "the forceTerminate → endInstance boundary sweep is
 // entirely uncovered". That is false: measured on this tree, engine is 93.0 %,
@@ -159,9 +159,9 @@ func TestForceTerminateCancelsEventGatewayArms(t *testing.T) {
 
 // TestEventGatewayArmIsNotATimerRecord is the vacuity guard for the CancelTimer
 // assertion above: it pins that an event-gateway timer arm lives ONLY in
-// s.ArmedEvents and contributes no row to s.Timers (ADR-0177 — s.Timers was once
-// read as the sole arm authority and reported "no armed timers" for this
-// source). If this ever stops holding, the CancelTimer assertion could be
+// s.ArmedEvents and contributes no row to s.Timers (s.Timers was once read as
+// the sole arm authority and reported "no armed timers" for this source). If
+// this ever stops holding, the CancelTimer assertion could be
 // satisfied by cancelAllTimers instead of the loop under test.
 func TestEventGatewayArmIsNotATimerRecord(t *testing.T) {
 	t.Parallel()

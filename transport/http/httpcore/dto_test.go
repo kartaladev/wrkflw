@@ -42,9 +42,9 @@ func TestMessageInputJSONTags(t *testing.T) {
 	}
 }
 
-// TestTaskDTOsIgnoreAStaleActorField pins the migration contract of ADR-0189: the
-// actor fields are GONE from the three task DTOs, and a body still carrying the
-// pre-ADR-0189 "actor"/"by" keys must DECODE CLEANLY with the value simply unread.
+// TestTaskDTOsIgnoreAStaleActorField pins the migration contract: the actor
+// fields are GONE from the three task DTOs, and a body still carrying the legacy
+// "actor"/"by" keys must DECODE CLEANLY with the value simply unread.
 //
 // A 400 here would buy no security — nothing reads the value — and would break
 // consumers' rollout windows. Executed on all three adapters: no DisallowUnknownFields
@@ -130,7 +130,7 @@ func TestResolveIncidentInputJSONTags(t *testing.T) {
 }
 
 // TestCompleteInputCarriesOutcomeAndNote pins the completion request body's wire
-// contract (ADR-0146): the outcome and note travel beside the output variables,
+// contract: the outcome and note travel beside the output variables,
 // so an actor's business disposition and remark are first-class rather than
 // smuggled through output by convention. Both are optional.
 func TestCompleteInputCarriesOutcomeAndNote(t *testing.T) {
@@ -145,7 +145,7 @@ func TestCompleteInputCarriesOutcomeAndNote(t *testing.T) {
 	cases := []testCase{
 		{
 			name: "outcome and note decode alongside output",
-			// ⚠ The body still carries "actor": that is the pre-ADR-0189 shape, kept here
+			// ⚠ The body still carries "actor": that is the legacy shape, kept here
 			// deliberately to pin that a lagging client's body still decodes cleanly.
 			body: `{"actor":{"id":"u-jane"},"outcome":"approve","note":"budget confirmed","output":{"amount":100}}`,
 			assert: func(t *testing.T, in httpcore.CompleteInput) {

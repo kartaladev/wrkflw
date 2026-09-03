@@ -1,6 +1,6 @@
 package runtime_test
 
-// processdriver_reverse_test.go — Task 5 (ADR-0109): facade tests for
+// processdriver_reverse_test.go — facade tests for
 // ProcessDriver.ReverseInstance. TestReverseInstance below is a table because
 // every case shares the exact same SUT call shape (driver.ReverseInstance(ctx,
 // def, id, opts...) -> (engine.InstanceState, error)) even though the per-case

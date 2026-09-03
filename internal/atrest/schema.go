@@ -1,8 +1,8 @@
 // Package atrest reads the repository's SQL migration files into a
 // per-dialect Schema: which tables and columns exist, their declared
 // types, and which are keyed (primary key, unique constraint, or
-// indexed). Downstream tooling (discovery, classification, the
-// SECURITY.md generator) consumes the Schema this package produces.
+// indexed). Downstream tooling (discovery, classification, the security
+// document generator) consumes the Schema this package produces.
 package atrest
 
 import (
@@ -20,7 +20,7 @@ type Class string
 // ColumnKey identifies a single column within a Schema. A bare column
 // name is not enough: exactly one column name in the schema carries two
 // different classes — wrkflw_human_task.claimed_by is a human principal
-// while wrkflw_call_links.claimed_by is a worker lease owner (E7) — so a
+// while wrkflw_call_links.claimed_by is a worker lease owner — so a
 // map[string]Column would merge them into one entry.
 type ColumnKey struct {
 	Table  string
@@ -88,8 +88,8 @@ func ColumnKeysWithPrefix(s Schema, prefix string) []ColumnKey {
 
 // gooseDownDirective marks the start of a migration's rollback script.
 // Everything from this line onward is not part of the schema the
-// migration produces and must not be parsed as one — see E14: Up/Down
-// are the only goose directives present in this repo's migration files.
+// migration produces and must not be parsed as one: Up/Down are the only
+// goose directives present in this repo's migration files.
 const gooseDownDirective = "-- +goose Down"
 
 // ParseSQL reads sqlText — the body of one goose migration file — and
@@ -125,11 +125,12 @@ func ParseSQL(dialect, sqlText string) (Schema, error) {
 				return Schema{}, fmt.Errorf("workflow-atrest: parse CREATE UNIQUE INDEX: %w", err)
 			}
 		default:
-			// Fail closed (ADR-0187 D11): a migration statement this parser
-			// does not recognise (e.g. a future ALTER TABLE) must never be
-			// silently skipped — a skip means its columns are invisible to
-			// every downstream at-rest classification and SECURITY.md stays
-			// green while the schema actually changed underneath it.
+			// Fail closed: a migration statement this parser does not
+			// recognise (e.g. a future ALTER TABLE) must never be silently
+			// skipped — a skip means its columns are invisible to every
+			// downstream at-rest classification and the generated security
+			// document stays green while the schema actually changed
+			// underneath it.
 			return Schema{}, fmt.Errorf("workflow-atrest: unrecognised statement: %s", statementSummary(stmt))
 		}
 	}
@@ -383,7 +384,7 @@ var columnTypeStopWords = map[string]bool{
 // columnType returns the declared type from fields — a column
 // declaration's whitespace-split tokens, with fields[0] being the column
 // name — as every token from fields[1] up to (not including) the first
-// columnTypeStopWords token, space-joined (I3, final review). fields[1]
+// columnTypeStopWords token, space-joined. fields[1]
 // alone truncates a multi-word type at its first space: "DOUBLE
 // PRECISION" -> "DOUBLE", "CHARACTER VARYING(255)" -> "CHARACTER",
 // "TIMESTAMP WITH TIME ZONE" -> "TIMESTAMP", "BIGINT UNSIGNED" ->
@@ -428,7 +429,7 @@ func parseCreateTable(stmt string, columns map[ColumnKey]Column) error {
 		return fmt.Errorf("unbalanced column list in CREATE TABLE %s", table)
 	}
 
-	// Fail closed on anything after the column list (ADR-0187 D11). Postgres's
+	// Fail closed on anything after the column list. Postgres's
 	// INHERITS (parent) is a trailing clause that ADDS COLUMNS, so silently
 	// ignoring the remainder could under-report the census of a security
 	// document. No migration in this module carries a trailing clause today
@@ -485,7 +486,7 @@ func parseCreateTable(stmt string, columns map[ColumnKey]Column) error {
 		// and wrkflw_call_links.child_instance_id in every dialect that
 		// declares them, plus wrkflw_human_task.task_id in SQLite ONLY
 		// (Postgres and MySQL spell that one as a table-level clause). This
-		// comment said "three" and ADR-0187 said "four"; grep says five.
+		// comment said "three" and the design said "four"; grep says five.
 		if hasKeywordFold(spaced, "PRIMARY") && hasKeywordFold(spaced, "KEY") {
 			col.Keys = appendKeyOnce(col.Keys, "PK")
 		}
@@ -506,12 +507,12 @@ func parseCreateTable(stmt string, columns map[ColumnKey]Column) error {
 // Postgres's EXCLUDE …; and a named CONSTRAINT wrapping any of them,
 // re-dispatched onto the same cases. FOREIGN, CHECK and EXCLUDE are recognised
 // (so they are never mistaken for a column) but deliberately produce NO key
-// annotation — the FOREIGN KEY exclusion is ADR-0187 D8, measured in E15: the
+// annotation — the FOREIGN KEY exclusion is deliberate and measured: the
 // schema's only foreign key is wrkflw_journal.instance_id, already keyed
 // through the table-level PRIMARY KEY, so excluding foreign keys changes no row
 // of today's output and is a decision rather than an accident.
 //
-// It fails closed (ADR-0187 D11) when a clause that can only be a table-level
+// It fails closed when a clause that can only be a table-level
 // constraint names a column this table has not declared: silently deriving no
 // key there is how an index-shaped fact disappears from a document whose whole
 // subject is which columns are keyed.
@@ -612,7 +613,7 @@ func markKey(columns map[ColumnKey]Column, table, column, keyName string) {
 // strings.ToUpper is not length-preserving in UTF-8, so a single non-ASCII rune
 // before ON or WHERE used to skew every later slice and silently lose the index.
 //
-// It fails closed (M4, final review, extended after /code-review) on a
+// It fails closed on a
 // malformed statement it cannot decompose — no ON clause, no column list, an
 // unbalanced one, or an unrecognised clause between the table name and the
 // column list — instead of returning silently. A missing WHERE clause is NOT

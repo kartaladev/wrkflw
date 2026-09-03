@@ -19,7 +19,7 @@ import (
 
 // TimerStore is the vendor-neutral, dialect-parametrised [kernel.TimerStore].
 // It reads armed timers from wrkflw_timers — written transactionally via the
-// standalone [kernel.TimerWriter] capability (ADR-0134). The read side is
+// standalone [kernel.TimerWriter] capability. The read side is
 // intentionally separate so the runtime scheduler can be constructed with just
 // the connection and dialect value, without carrying the full [Store].
 //
@@ -28,7 +28,7 @@ import (
 // codec for the next_run column is dialect-aware: Postgres and MySQL bind and
 // scan time.Time natively; SQLite stores TEXT written by [timeArg] as UTC
 // RFC3339 with a FIXED-WIDTH nine-digit fraction — never time.RFC3339Nano, whose
-// trimmed fraction does not sort lexicographically (ADR-0080, ADR-0151) — and
+// trimmed fraction does not sort lexicographically — and
 // reads it back via [parseTimeText]. The codec is gated on
 // [dialect.Dialect.TimestampsAsText] — NEVER compare [dialect.Dialect.Name]
 // to "sqlite" directly.
@@ -76,7 +76,7 @@ func NewTimerStore(conn any, d dialect.Dialect) (*TimerStore, error) {
 // ListArmed implements [kernel.TimerStore]. It returns all timers currently
 // present in wrkflw_timers, ordered by (next_run ASC, instance_id ASC,
 // timer_id ASC) for deterministic re-arm order on engine startup or
-// rehydration. FireAt is always UTC-normalised (ADR-0080).
+// rehydration. FireAt is always UTC-normalised.
 func (s *TimerStore) ListArmed(ctx context.Context) ([]kernel.ArmedTimer, error) {
 	q := s.querier()
 
@@ -106,7 +106,7 @@ func (s *TimerStore) ListArmed(ctx context.Context) ([]kernel.ArmedTimer, error)
 // ArmedTimer implements [kernel.TimerStore]. It reads the single wrkflw_timers
 // row for (instanceID, timerID) — a primary-key-exact lookup on every backend
 // (PRIMARY KEY (instance_id, timer_id)), so the timer-fire hot path no longer
-// scans the whole table to answer one recurrence question (ADR-0159).
+// scans the whole table to answer one recurrence question.
 //
 // A missing row is (zero, false, nil): not-found is a normal outcome, never an
 // error. err is reserved for genuine infrastructure failures, and the caller
@@ -148,7 +148,7 @@ func (s *TimerStore) ArmedTimer(ctx context.Context, instanceID, timerID string)
 // ListArmedPage returns one keyset-paginated page of armed timers, ordered by
 // (next_run ASC, instance_id ASC, timer_id ASC) — the same total order
 // [TimerStore.ListArmed] uses, which is what makes the three-column cursor a
-// valid resume point (ADR-0159).
+// valid resume point.
 //
 // filter.Cursor is the opaque token produced by [kernel.EncodeArmedTimerCursor]; an
 // empty cursor starts from the beginning, and the keyset predicate is then
@@ -229,16 +229,16 @@ func (s *TimerStore) ListArmedPage(ctx context.Context, filter kernel.ArmedTimer
 // stringify it non-ISO8601, the predicate then matches nothing, and every
 // listing truncates at one page with no error at all.
 //
-// Caveat on SQLite: [parseTimeText] deliberately still READS the pre-ADR-0151
+// Caveat on SQLite: [parseTimeText] deliberately still READS the legacy
 // trimmed RFC3339Nano encoding, but [timeArg] always WRITES the fixed-width
 // nine-digit form, and the two are not byte-comparable — stored "…09:00:00Z"
 // versus bound "…09:00:00.000000000Z" compares 'Z' (0x5A) against '.' (0x2E),
 // so the stored value sorts ABOVE the cursor and the row is served again. Such
 // a row at a page boundary repeats (and with Limit 1 does not terminate). Those
 // rows already mis-order under ListArmed's plain ORDER BY, so this is inherited
-// rather than introduced, and it is unreachable in practice: ADR-0151 predates
-// any tagged release. It is recorded because the codebase advertises legacy
-// readability and keyset paging is a consumer that claim does not cover.
+// rather than introduced, and it is unreachable in practice: the trimmed form
+// predates any tagged release. It is recorded because the codebase advertises
+// legacy readability and keyset paging is a consumer that claim does not cover.
 func (s *TimerStore) listArmedPageSQL(cursor string, fetch int) (string, []any, error) {
 	const baseSel = `
 		SELECT instance_id, def_id, def_version, timer_id, next_run, kind, trigger_payload
@@ -264,7 +264,7 @@ func (s *TimerStore) listArmedPageSQL(cursor string, fetch int) (string, []any, 
 
 // UpsertJob implements [kernel.TimerWriter]. It writes (or updates) spec's
 // wrkflw_timers row via the shared [upsertTimer] SQL, joining the ambient
-// ctx-transaction if one is present ([transaction.JoinOrBegin], ADR-0134) so
+// ctx-transaction if one is present ([transaction.JoinOrBegin]) so
 // the runtime JobStore can persist atomically with the state commit.
 //
 // NewTimerStore takes its own caller-supplied conn — nothing shares it
@@ -327,7 +327,7 @@ func (s *TimerStore) DeleteJob(ctx context.Context, instanceID, timerID string) 
 // wrkflw_timers row for timerID alone (no instanceID scope) via the shared
 // [deleteTimerByTimerID] SQL, joining the ambient ctx-transaction on the same
 // terms as [TimerStore.UpsertJob]. Engine timer ids are globally unique, so
-// this is unambiguous; the runtime JobStore's Delete(id) (Task 10) uses it
+// this is unambiguous; the runtime JobStore's Delete(id) uses it
 // when only the timer id is on hand.
 func (s *TimerStore) DeleteJobByTimerID(ctx context.Context, timerID string) error {
 	q, err := transaction.JoinOrBegin(ctx, s.conn)
@@ -354,7 +354,7 @@ func (s *TimerStore) DeleteJobByTimerID(ctx context.Context, timerID string) err
 
 // jobSpecToArmedTimer projects a [kernel.JobSpec] onto the [kernel.ArmedTimer]
 // shape [upsertTimer] persists — the two are field-for-field equivalent by
-// design (ADR-0134), so this is a straight copy.
+// design, so this is a straight copy.
 func jobSpecToArmedTimer(spec kernel.JobSpec) kernel.ArmedTimer {
 	return kernel.ArmedTimer{
 		InstanceID: spec.InstanceID,
@@ -396,10 +396,10 @@ func (s *TimerStore) statsNative(ctx context.Context, q database.Querier) (kerne
 }
 
 // statsText handles the Stats query for SQLite, where next_run is a fixed-width
-// RFC3339 TEXT column (ADR-0151). MIN(next_run) is therefore a correct
+// RFC3339 TEXT column. MIN(next_run) is therefore a correct
 // chronological minimum — the fixed width is what makes the TEXT comparison
 // order match time order. It is scanned into a *string and parsed via
-// [parseTimeText] (ADR-0080).
+// [parseTimeText].
 func (s *TimerStore) statsText(ctx context.Context, q database.Querier) (kernel.TimerStats, error) {
 	var armed int64
 	var nextStr *string
@@ -421,9 +421,8 @@ func (s *TimerStore) statsText(ctx context.Context, q database.Querier) (kernel.
 
 // scanArmedTimer reads one row from the query result into an [kernel.ArmedTimer].
 // The next_run column is handled via the time codec: TEXT-timestamp (SQLite) is
-// parsed from the fixed-width RFC3339 string (ADR-0151); native paths
-// (Postgres/MySQL) scan into
-// time.Time directly and are then normalised to UTC (ADR-0080). The
+// parsed from the fixed-width RFC3339 string; native paths (Postgres/MySQL)
+// scan into time.Time directly and are then normalised to UTC. The
 // trigger_payload column (JSONB/JSON/TEXT, nullable) is unmarshalled into a
 // [model.TriggerWire] and decoded back to a [schedule.TriggerSpec] via
 // [model.ReadTrigger] — the authoritative descriptor RehydrateTimers re-arms

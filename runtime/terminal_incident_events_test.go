@@ -1,6 +1,6 @@
 package runtime_test
 
-// terminal_incident_events_test.go — ADR-0164 Decision 3, pinned from OUTSIDE
+// terminal_incident_events_test.go — the incident sweep, pinned from OUTSIDE
 // the engine.
 //
 // endInstance's removeOrphanedIncidents sweep retires exactly the incidents
@@ -21,7 +21,7 @@ package runtime_test
 // while widening it to a wholesale `s.Incidents = nil` must fail the
 // surviving-token test. Neither mutation can satisfy both.
 //
-// The surviving-token case also pins ADR-0164's cross-instance consequence:
+// The surviving-token case also pins the sweep's cross-instance consequence:
 // terminalErr (runtime/processdriver_action.go) shares terminalEventErr's
 // cause-of-death allow-list and feeds kernel.CallOutcome.Err, which a child
 // hands its parent through SubInstanceFailed. Whatever the sweep leaves behind
@@ -95,13 +95,13 @@ func terminalPayloadError(t *testing.T, evs []kernel.OutboxEvent, topic string) 
 }
 
 // TestCancelOfIncidentInstanceReportsCancelledNotIncident pins the DROPPED-token
-// half of ADR-0164's incident sweep, from the consumer's side.
+// half of the incident sweep, from the consumer's side.
 //
 // handleCancelRequested's immediate branch nils s.Tokens, so the parked
 // incident's token is gone and endInstance retires the incident with it. The
 // terminal payload therefore falls through terminalEventErr's cause-of-death
 // scan to the FailInstance Err ("cancelled"), and the listing reports
-// IncidentCount==0. This is a deliberate, ADR-documented diagnostic loss — the
+// IncidentCount==0. This is a deliberate, documented diagnostic loss — the
 // concrete "downstream ledger refused the charge" no longer reaches the event —
 // and it had no test outside engine/ before this pin.
 func TestCancelOfIncidentInstanceReportsCancelledNotIncident(t *testing.T) {
@@ -139,7 +139,7 @@ func TestCancelOfIncidentInstanceReportsCancelledNotIncident(t *testing.T) {
 	require.Equal(t, engine.StatusTerminated, final.Status)
 
 	assert.Empty(t, final.Incidents,
-		"ADR-0164: cancel drops every token, so the incident it carried is retired with it")
+		"cancel drops every token, so the incident it carried is retired with it")
 	assert.Equal(t, "cancelled", terminalPayloadError(t, store.Events(), "instance.terminated"),
 		"with the incident swept, terminalEventErr falls through to the FailInstance Err")
 
@@ -220,7 +220,7 @@ func TestUnhandledErrorKeepsIncidentOfSurvivingToken(t *testing.T) {
 			"that survival is the entire premise of the narrow sweep")
 
 	require.Len(t, final.Incidents, 1,
-		"ADR-0164: the sweep is narrow — an incident whose token survives must be KEPT, "+
+		"the sweep is narrow — an incident whose token survives must be KEPT, "+
 			"not cleared wholesale")
 	assert.Equal(t, terminalIncidentErrText,
 		terminalPayloadError(t, store.Events(), "instance.failed"),

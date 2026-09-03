@@ -9,7 +9,7 @@ import (
 )
 
 // This file holds the pure, driver-independent start-node resolution helpers
-// used by the event-based-start subsystem (ADR-0121): messageStartNode,
+// used by the event-based-start subsystem: messageStartNode,
 // signalStartDefs, uniqueMessageStartDef, and timerStartDefs. Message-start
 // dedup is handled by a deterministic instance id (see messageStartInstanceID)
 // plus Store.Create's ErrInstanceExists, so no in-process correlation state is
@@ -46,7 +46,7 @@ func startEvents(def *model.ProcessDefinition) iter.Seq[event.StartEvent] {
 // latestPerID collapses defs to at most one definition per def.ID: the one with
 // the highest Version. It is the runtime counterpart of the model.Latest /
 // Qualifier{Version:0} "latest" convention, applied to event-based START
-// enumeration (ADR-0121): a MemDefinitionRegistry keeps every registered version
+// enumeration: a MemDefinitionRegistry keeps every registered version
 // so in-flight instances can still resume, but only the LATEST version of each id
 // starts NEW instances — a redeploy replaces the old version's start subscription
 // (Camunda semantics). Without this collapse a version bump would make a message
@@ -109,9 +109,9 @@ func messageStartNode(def *model.ProcessDefinition, name string) (nodeID string,
 
 // signalStartDefs returns every definition+node pair, across defs, whose
 // start event listens for the signal name. defs is first collapsed via
-// latestPerID so a superseded version never fans out a spurious instance
-// (ADR-0121); order then follows the surviving latest defs and each def's
-// StartNodes order.
+// latestPerID so a superseded version never fans out a spurious instance;
+// order then follows the surviving latest defs and each def's StartNodes
+// order.
 func signalStartDefs(defs []*model.ProcessDefinition, name string) []signalStartHit {
 	var hits []signalStartHit
 	for _, def := range latestPerID(defs) {
@@ -127,7 +127,7 @@ func signalStartDefs(defs []*model.ProcessDefinition, name string) []signalStart
 // uniqueMessageStartDef finds the definition (and its start node) whose
 // message-start name equals name, across defs. defs is first collapsed via
 // latestPerID so two retained versions of the same id resolve to a single
-// latest match rather than a false ambiguity (ADR-0121). count is the number of
+// latest match rather than a false ambiguity. count is the number of
 // matching def+node pairs found: 0 means no match, 1 means a unique match
 // (def and nodeID are populated), and >=2 means the name is ambiguous across
 // multiple definitions (def and nodeID are the zero value / empty in that
@@ -158,7 +158,7 @@ func uniqueMessageStartDef(defs []*model.ProcessDefinition, name string) (*model
 // timerStartDefs returns every definition+node pair, across defs, whose start
 // event carries a timer trigger (Timer.IsZero() == false), along with that
 // trigger. defs is first collapsed via latestPerID so a superseded version does
-// not arm a duplicate start timer (ADR-0121).
+// not arm a duplicate start timer.
 func timerStartDefs(defs []*model.ProcessDefinition) []timerStartHit {
 	var hits []timerStartHit
 	for _, def := range latestPerID(defs) {

@@ -1,7 +1,7 @@
 package processtest_test
 
-// ADR-0179 — a WALK-SCOPED incident must not suppress a park the harness can
-// still legitimately drive forward.
+// A WALK-SCOPED incident must not suppress a park the harness can still
+// legitimately drive forward.
 //
 // The engine now raises an engine.IncidentCompensationFailed on every failed
 // compensation action, for every consumer, with the retry policy switched OFF.
@@ -31,7 +31,7 @@ import (
 
 // armedTimerToken returns a token parked on a plain timer intermediate catch.
 // AwaitTimer is what makes engine.InstanceState.HasArmedTimers report true from a
-// hand-built literal (the token source of TimerWaiters, ADR-0177), and the
+// hand-built literal (the token source of TimerWaiters), and the
 // matching AwaitCommand is what makes that timer the PRIMARY park rather than a
 // secondary attachment — see processtest.primaryTimerPark.
 func armedTimerToken() engine.Token {
@@ -130,7 +130,7 @@ func compensationStallDetectedState(t *testing.T) engine.InstanceState {
 
 // compensationFailureUnderStallGuardState drives the saga to a walk whose first
 // compensation action FAILS with no retry policy configured, while stall
-// detection is ON. The walk then skips and continues (ADR-0034 Decision 4), so
+// detection is ON. The walk then skips and continues, so
 // the returned snapshot carries the walk-scoped
 // engine.IncidentCompensationFailed for the record just abandoned AND a freshly
 // armed engine.TimerCompensationStall for the record now in flight.
@@ -215,7 +215,7 @@ func invokedCommandID(t *testing.T, cmds []engine.Command, name string) string {
 }
 
 // TestClassifyWalkScopedIncidentDoesNotSuppressDrivableParks pins the rung
-// PREDICATE ADR-0179 changes: the incident rung fires only for an incident that
+// PREDICATE: the incident rung fires only for an incident that
 // genuinely parks the instance — a token in engine.TokenIncident, or an incident
 // naming a token — so a walk-scoped record falls through to the remaining rungs
 // instead of masking them.
@@ -402,10 +402,10 @@ func TestClassifyWalkScopedIncidentDoesNotSuppressDrivableParks(t *testing.T) {
 			},
 		},
 		{
-			// ADR-0175 PRESERVED. Its spec records "processtest.Classify reports
-			// ReasonIncident where it reported ReasonUnknown" as an intended
-			// consequence, and ReasonIncident's own doc told consumers to handle a
-			// stall there. An earlier revision of this rung regressed it to
+			// PRESERVED: "processtest.Classify reports ReasonIncident where it
+			// reported ReasonUnknown" is an intended consequence, and
+			// ReasonIncident's own doc tells consumers to handle a stall
+			// there. An earlier revision of this rung regressed it to
 			// reason="unknown" node="" (measured); the "no firable timer" disjunct
 			// is what keeps that promise.
 			name:  "a stall-detected compensation walk park still classifies as an incident",
@@ -447,13 +447,13 @@ func TestClassifyWalkScopedIncidentDoesNotSuppressDrivableParks(t *testing.T) {
 
 // TestHarnessDrivesPastAFailedCompensationAction is the end-to-end form, driven
 // through the shipped Harness and the shipped AutoTimers recipe with NO retry
-// policy configured — which is the point. ADR-0179's incident is raised for every
+// policy configured — which is the point. The incident is raised for every
 // consumer whether or not they opt into compensation retry, so this is the shape
 // that broke existing consumer harnesses.
 //
 // The definition compensates a completed activity mid-process and then parks on
 // an ordinary timer catch. The compensation action fails, the walk skips and
-// continues (ADR-0034 Decision 4), the process resumes, and the instance is left
+// continues, the process resumes, and the instance is left
 // parked on a timer while carrying one walk-scoped incident.
 func TestHarnessDrivesPastAFailedCompensationAction(t *testing.T) {
 	t.Parallel()
@@ -536,7 +536,7 @@ func walkScopedIncidentWithCommandWaitState(t *testing.T) engine.InstanceState {
 }
 
 // TestClassifyWalkScopedIncidentIsTheLowestRung is the truth table for the rung
-// SPLIT that closes the two code-review MEDIUMs on ADR-0179.
+// SPLIT that closes the two code-review MEDIUMs on the walk-scoped rung.
 //
 // The shipped rung was one predicate carrying a HasArmedTimers yield term, and
 // its POSITION — above signal, message, timer and async-child — was the defect
@@ -558,7 +558,7 @@ func walkScopedIncidentWithCommandWaitState(t *testing.T) engine.InstanceState {
 //   - "a command wait with NO armed timer": reason=incident node="charge".
 //   - The three "still" rows and the human-task row pass before AND after: they
 //     are the regression guards that the split moved only what it meant to move.
-//     The stall row in particular is ADR-0175's recorded consequence (c) and is
+//     The stall row in particular is a recorded, intended consequence and is
 //     why the walk-scoped rung sits ABOVE ReasonUnknown rather than being deleted.
 //   - "a command wait WITH a secondary timer" is a CHARACTERIZATION row, not a
 //     red one: measured reason=async-child before the split as well. Finding 3 is
@@ -587,10 +587,10 @@ func TestClassifyWalkScopedIncidentIsTheLowestRung(t *testing.T) {
 			},
 		},
 		{
-			// ADR-0175 consequence (c), and the reason the walk-scoped rung sits
-			// ABOVE ReasonUnknown rather than being deleted outright: with nothing
-			// else parked, the incident IS the most informative thing to report, and
-			// ReasonUnknown would be a silent retraction of what ADR-0175 shipped.
+			// A recorded, intended consequence, and the reason the walk-scoped rung
+			// sits ABOVE ReasonUnknown rather than being deleted outright: with
+			// nothing else parked, the incident IS the most informative thing to
+			// report, and ReasonUnknown would be a silent retraction of it.
 			name:  "a stalled walk with nothing else parked still classifies as an incident",
 			build: compensationStallDetectedState,
 			assert: func(t *testing.T, p processtest.Park) {
@@ -643,8 +643,8 @@ func TestClassifyWalkScopedIncidentIsTheLowestRung(t *testing.T) {
 
 				// The shipped signal handler matches on AwaitingSignals rather than on
 				// Reason, so it drove this park before the split too. What the split
-				// fixes is the harness that switches on Reason — the shape ADR-0166's
-				// own README recipe uses — which used to fall through to a reason it
+				// fixes is the harness that switches on Reason — the shape the
+				// README recipe uses — which used to fall through to a reason it
 				// has no case for and get ErrUnhandledPark.
 				h, err := processtest.New()
 				require.NoError(t, err)
@@ -688,7 +688,7 @@ func TestClassifyWalkScopedIncidentIsTheLowestRung(t *testing.T) {
 		},
 		{
 			// CHARACTERIZATION, not RED: measured async-child before the split too.
-			// See the function doc for why finding 3 is a coherence defect whose
+			// See the function doc for why this is a coherence defect whose
 			// observable outcome does not move.
 			name:  "a walk-scoped incident beside a SECONDARY timer parks as async-child",
 			build: walkScopedIncidentWithCommandWaitState,

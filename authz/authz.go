@@ -29,7 +29,7 @@ var ErrNotAuthorized = errors.New("workflow-authz: not authorized")
 // Actor is a principal that can act on human tasks.
 //
 // The JSON tags are the actor's wire contract: human-task audit records render
-// actors by faithful passthrough (ADR-0147), so the shape is defined once here
+// actors by faithful passthrough, so the shape is defined once here
 // rather than re-mapped by every view. There is no first-class username or
 // email — populate Attributes from your [ActorResolver] if you need them.
 type Actor struct {

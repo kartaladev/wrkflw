@@ -1,8 +1,8 @@
 package engine
 
-// step_compensation_retry_test.go — ADR-0179 Decisions 2, 3 and 7: a failed
-// compensation action is RE-DISPATCHED when the consumer opts in, after a
-// backoff timer of the new TimerCompensationRetry kind.
+// step_compensation_retry_test.go — a failed compensation action is
+// RE-DISPATCHED when the consumer opts in, after a backoff timer of the new
+// TimerCompensationRetry kind.
 //
 // White-box, for the same two reasons the sibling
 // step_compensation_failure_visibility_test.go gives, plus a third of its own:
@@ -53,9 +53,9 @@ func timerRecordsOfKind(s InstanceState, k TimerKind) []timerRecord {
 	return out
 }
 
-// TestFailedCompensationArmsARetryBackoff covers the DECISION half of ADR-0179
-// Decision 3: which failures take the retry branch and which fall through to the
-// skip-and-advance ADR-0034 Decision 4 has always done.
+// TestFailedCompensationArmsARetryBackoff covers the DECISION half of the retry
+// policy: which failures take the retry branch and which fall through to the
+// skip-and-advance the walk has always done.
 //
 // What makes each row fail today: the retry branch does not exist at all, so
 // EVERY row currently takes the advance path. The three fall-through rows are
@@ -107,7 +107,7 @@ func TestFailedCompensationArmsARetryBackoff(t *testing.T) {
 			},
 		},
 		{
-			name:      "no policy skips and advances, exactly as before ADR-0179",
+			name:      "no policy skips and advances, exactly as before retry existed",
 			policy:    nil,
 			retryable: true,
 			assert: func(t *testing.T, _ string, res StepResult) {
@@ -117,7 +117,7 @@ func TestFailedCompensationArmsARetryBackoff(t *testing.T) {
 				// it a guard rather than a smoke test — a stray ScheduleTimer or
 				// CancelTimer leaking into the default path would otherwise pass.
 				require.Len(t, res.Commands, 1,
-					"default-off must keep ADR-0034 Decision 4's command stream byte-for-byte")
+					"default-off must keep the skip-and-advance command stream byte-for-byte")
 				assert.Equal(t, "undo-alpha", invokeActionName(res.Commands))
 				assert.Empty(t, res.State.Timers, "and arms nothing")
 				assert.Empty(t, res.State.Compensating.RetryTimerID)
@@ -284,7 +284,7 @@ func TestCompensationRetryFiredRedispatchesUnderAFreshCommandID(t *testing.T) {
 				state, cmdID, timerID := driveToRetryBackoff(t, def, firedAt.Add(-time.Minute), retryOn)
 				// The walk finished under the timer: the cursor is the zero cursor and
 				// the status is back to running. Indexing cursorRecords with the stale
-				// NextIndex here is the ADR-0171 panic shape.
+				// NextIndex here is the panic shape.
 				state.Status = StatusRunning
 				state.Compensating = compensationCursor{}
 				return state, cmdID, timerID
@@ -298,7 +298,7 @@ func TestCompensationRetryFiredRedispatchesUnderAFreshCommandID(t *testing.T) {
 		{
 			name: "a vanished record source routes to the walk's finish rather than panicking",
 			setup: func(t *testing.T, _ *model.ProcessDefinition) (InstanceState, string, string) {
-				// A cursor persisted before ADR-0171 (no pinned Records) whose scope has
+				// A cursor persisted by an older version (no pinned Records) whose scope has
 				// since been closed: cursorRecords returns nothing while NextIndex says
 				// 1. records[NextIndex] panics inside the pure core on this shape.
 				state := InstanceState{
@@ -354,7 +354,7 @@ func TestCompensationRetryFiredRedispatchesUnderAFreshCommandID(t *testing.T) {
 }
 
 // TestRedeliveredActionFailedDuringBackoffDoesNotDoubleArm pins the idempotency
-// guard of ADR-0179 Decision 3.
+// guard on the retry branch.
 //
 // ⚠ Why the dispatched-id ring does NOT cover this: isBenignCompensationDuplicate
 // carries a `!= ActiveCmdID` term, and must — without it every normal reply would
@@ -384,7 +384,7 @@ func TestRedeliveredActionFailedDuringBackoffDoesNotDoubleArm(t *testing.T) {
 	assert.Len(t, res.State.Incidents, 1, "exactly one incident, not one per redelivery")
 	assert.Len(t, timerRecordsOfKind(res.State, TimerCompensationRetry), 1,
 		"exactly one armed backoff — two would dispatch the same record twice, the "+
-			"double-refund hazard ADR-0034's post-acceptance fix exists to prevent")
+			"double-refund hazard compensation exists to prevent")
 	assert.Equal(t, timerID, res.State.Compensating.RetryTimerID, "the same backoff")
 	assert.Equal(t, 1, res.State.Compensating.RetryAttempts,
 		"one attempt increment, not one per redelivery")
@@ -400,10 +400,9 @@ func twoAttemptRetry() StepOptions {
 	}
 }
 
-// TestCompensationRetryExhaustionSkipsAndContinues pins ADR-0179 Decision 7: on
-// exhaustion the walk SKIPS AND CONTINUES. It never parks — parking would
-// reverse ADR-0034's safety argument that a failed compensation never strands
-// the instance.
+// TestCompensationRetryExhaustionSkipsAndContinues pins that on exhaustion the
+// walk SKIPS AND CONTINUES. It never parks — parking would reverse the safety
+// argument that a failed compensation never strands the instance.
 //
 // What makes it fail before the budget check exists: measured, the second
 // failure armed a SECOND backoff (`i-comp-fail-tm2`) and dispatched nothing, so
@@ -434,19 +433,19 @@ func TestCompensationRetryExhaustionSkipsAndContinues(t *testing.T) {
 	assert.Equal(t, 0, res.State.Compensating.NextIndex, "it moved on to the alpha record")
 	// ⚠ This asserted TWO incidents ("one per failed dispatch, both kept") when it
 	// was written, one step before the incident lifecycle existed — which is the
-	// bound ADR-0179 Decision 6 explicitly REFUSES ("one per exhausted record, not
+	// bound the design explicitly REFUSES ("one per exhausted record, not
 	// one per attempt"). The re-dispatch now retires the superseded attempt's
 	// incident, so what survives here is the LAST attempt's alone. See
 	// TestCompensationFailedIncidentLifecycle, which pins all three directions.
 	require.Len(t, res.State.Incidents, 1,
-		"one incident per EXHAUSTED RECORD, not one per attempt (Decision 6)")
+		"one incident per EXHAUSTED RECORD, not one per attempt")
 	assert.Equal(t, IncidentCompensationFailed, res.State.Incidents[0].Kind)
 	assert.Equal(t, "undo-beta blew up again", res.State.Incidents[0].Error,
 		"and it is the attempt that exhausted the budget, not the first one")
 }
 
-// TestCompensationRetryBudgetIsPerRecord pins the reset ADR-0179 Decision 3
-// requires: RetryAttempts is zeroed wherever stepCompensationAdvance moves
+// TestCompensationRetryBudgetIsPerRecord pins the per-record reset:
+// RetryAttempts is zeroed wherever stepCompensationAdvance moves
 // NextIndex — the only advance site in the package (the other two NextIndex
 // writes, beginCompensation and startCompensationWalk, START a walk from a
 // cursor stepCompensationFinish has already zeroed).
@@ -494,7 +493,7 @@ func TestCompensationRetryBudgetIsPerRecord(t *testing.T) {
 }
 
 // TestNoStallIncidentDuringACompensationRetryBackoff pins the CANCEL half of
-// ADR-0179 Decision 3: the stall timer guarding the failed command is cancelled
+// the retry branch: the stall timer guarding the failed command is cancelled
 // when the retry backoff is armed. Its job is done — the action replied.
 //
 // What makes it fail against the naive (arm-without-cancel) design: the stall
@@ -548,14 +547,14 @@ func TestNoStallIncidentDuringACompensationRetryBackoff(t *testing.T) {
 }
 
 // TestArmedTimerVisibilityAcrossTheWalkScopedKinds is the mandatory end-to-end
-// control ADR-0179 Decision 4 requires: with a REAL backoff armed by this
+// control for armed-timer visibility: with a REAL backoff armed by this
 // package's own code, HasArmedTimers() must report true, so a harness drives the
 // park instead of reporting ErrUnhandledPark.
 //
 // ⚠ It is a CONTROL, not a red-first test: the predicate split
-// (firesOnDyingInstance / detectionOnly) shipped one step earlier, and P1-B could
-// only exercise it on a hand-built timerRecord — it explicitly deferred the
-// end-to-end case here. It is mutation-verified in the report instead (widen
+// (firesOnDyingInstance / detectionOnly) shipped one step earlier and could
+// only be exercised on a hand-built timerRecord, which deferred the end-to-end
+// case to here. It is mutation-verified instead (widen
 // detectionOnly to cover TimerCompensationRetry — the exact mistake the pre-fold
 // design made — and the first row goes red).
 //
@@ -610,7 +609,7 @@ func TestArmedTimerVisibilityAcrossTheWalkScopedKinds(t *testing.T) {
 				require.Empty(t, timerRecordsOfKind(state, TimerCompensationRetry))
 				assert.False(t, state.HasArmedTimers(),
 					"firing a detection deadline manufactures the very incident the "+
-						"window exists to detect (ADR-0175) — walk-scoped is NOT the filter")
+						"window exists to detect — walk-scoped is NOT the filter")
 			},
 		},
 	}
@@ -623,7 +622,7 @@ func TestArmedTimerVisibilityAcrossTheWalkScopedKinds(t *testing.T) {
 }
 
 // TestOperatorRetryDuringABackoffResetsTheRetryCursor is the regression guard for
-// the code-review HIGH on ADR-0179: retryStalledCompensation (ADR-0175's `retry`
+// a code-review HIGH: retryStalledCompensation (the operator `retry`
 // verb) rewrote cur.ActiveCmdID and left BOTH new cursor fields naming the
 // superseded attempt.
 //
@@ -698,15 +697,15 @@ func TestOperatorRetryDuringABackoffResetsTheRetryCursor(t *testing.T) {
 }
 
 // TestOperatorRetryRetiresTheSupersededFailureIncident is the second half of the
-// code-review HIGH on retryStalledCompensation: ADR-0175's `retry` verb retired
-// only the STALL kind, because it was written before IncidentCompensationFailed
-// existed and was never revisited when it did.
+// code-review HIGH on retryStalledCompensation: the operator `retry` verb
+// retired only the STALL kind, because it was written before
+// IncidentCompensationFailed existed and was never revisited when it did.
 //
-// ADR-0179 Decision 6 bounds the record at ONE PER EXHAUSTED RECORD, not one per
+// The design bounds the record at ONE PER EXHAUSTED RECORD, not one per
 // attempt, and retryFailedCompensation upholds that by retiring the superseded
 // attempt's incident as it re-dispatches. The operator verb re-dispatches the
 // same record under a fresh command id — the identical "this attempt is
-// superseded" event — so it owes the identical retirement. ADR-0175's verb has no
+// superseded" event — so it owes the identical retirement. That verb has no
 // cap, so without it the count grows without bound.
 //
 // What makes each row fail before the fix:
@@ -714,18 +713,18 @@ func TestOperatorRetryDuringABackoffResetsTheRetryCursor(t *testing.T) {
 //   - "two operator retries": retryStalledCompensation calls only
 //     retireCompensationStallIncidents, so each superseded attempt's
 //     IncidentCompensationFailed is left open. Measured before: 3 incidents
-//     (one per attempt) where Decision 6 promises 1.
+//     (one per attempt) where the bound promises 1.
 //   - "the exhaustion record survives": passes before AND after — it is the
 //     REGRESSION GUARD that the new retirement is scoped to the SUPERSEDED
 //     command id and not to the kind. Retiring by kind, or retiring after the
 //     cursor is overwritten, would delete the durable record of an
-//     unrecoverable compensation, which is the one outcome ADR-0179 exists to
-//     make visible.
+//     unrecoverable compensation, which is the one outcome this incident kind
+//     exists to make visible.
 func TestOperatorRetryRetiresTheSupersededFailureIncident(t *testing.T) {
 	at := time.Date(2026, 8, 17, 19, 0, 0, 0, time.UTC)
 
 	// failedIncidents returns the open IncidentCompensationFailed records, which is
-	// the quantity Decision 6 bounds — a stall record coexisting would otherwise
+	// the quantity that bound covers — a stall record coexisting would otherwise
 	// inflate a plain len(Incidents).
 	failedIncidents := func(s InstanceState) []Incident {
 		var out []Incident
@@ -737,7 +736,7 @@ func TestOperatorRetryRetiresTheSupersededFailureIncident(t *testing.T) {
 		return out
 	}
 
-	// operatorRetry applies ADR-0175's `retry` verb against the walk's active
+	// operatorRetry applies the operator `retry` verb against the walk's active
 	// command and returns the state plus the FRESH command id it re-dispatched
 	// under.
 	operatorRetry := func(t *testing.T, def *model.ProcessDefinition, s InstanceState, when time.Time, opt StepOptions) (InstanceState, string) {
@@ -778,15 +777,15 @@ func TestOperatorRetryRetiresTheSupersededFailureIncident(t *testing.T) {
 
 		open := failedIncidents(state)
 		require.Len(t, open, 1,
-			"ONE per record, not one per attempt — ADR-0179 Decision 6's bound, which "+
-				"ADR-0175's uncapped verb would otherwise grow without limit")
+			"ONE per record, not one per attempt — the bound, which the uncapped "+
+				"operator verb would otherwise grow without limit")
 		assert.Equal(t, cmdID, open[0].CommandID,
 			"and it is the LATEST attempt's record, not a stale one")
 	})
 
 	t.Run("the exhaustion record survives the retries that preceded it", func(t *testing.T) {
 		// MaxAttempts 2: the first failure of a record arms a backoff, the second
-		// exhausts the budget and the walk skips and advances (Decision 7). The
+		// exhausts the budget and the walk skips and advances. The
 		// operator retry in between zeroes RetryAttempts, so the budget genuinely
 		// restarts — which is what makes the exhaustion happen on a command the
 		// retirement has already had the chance to delete.
@@ -844,15 +843,16 @@ func cancelledTimerIDs(cmds []Command) []string {
 }
 
 // TestStallVerbsDisposeOfALiveRetryBackoff pins the interaction class the delivery
-// gate found a HIGH in: an ADR-0175 operator verb applied DURING an ADR-0179
+// gate found a HIGH in: an operator stall verb applied DURING a compensation
 // retry backoff. `retry` is covered by the two tests above; this is `skip` and
-// `abandon`, the two verbs no phase of ADR-0179 ever looked at.
+// `abandon`, the two verbs the retry work never looked at.
 //
 // ⚠ These verbs are correct INCIDENTALLY, not by design. Neither owns any cursor
 // or timer logic: `skip` delegates to stepCompensationAdvance and `abandon` to
-// stepCompensationFinish, and ADR-0179 happened to revise both. Nothing else pins
-// that, and the gate's own finding was that the ONE verb path with bespoke
-// handling (retryStalledCompensation) was never revisited when the ADR landed. So
+// stepCompensationFinish, and the retry work happened to revise both. Nothing
+// else pins that, and the gate's own finding was that the ONE verb path with
+// bespoke handling (retryStalledCompensation) was never revisited when retry
+// landed. So
 // the property under test is not "the verb does the right thing", it is "the
 // shared function it leans on still zeroes the cursor and cancels the backoff" —
 // which is why the mutations verifying these rows break the SHARED functions and
@@ -928,8 +928,8 @@ func TestStallVerbsDisposeOfALiveRetryBackoff(t *testing.T) {
 				assert.Equal(t, IncidentCompensationFailed, res.State.Incidents[0].Kind)
 				assert.Equal(t, failedCmdID, res.State.Incidents[0].CommandID,
 					"⚠ the skipped record's failure incident SURVIVES, by design: this is "+
-						"the exhaustion/skip route where the incident is the durable evidence "+
-						"(ADR-0179 Decision 6/7), unlike the retry routes that supersede it")
+						"the exhaustion/skip route where the incident is the durable evidence, "+
+						"unlike the retry routes that supersede it")
 			},
 		},
 		{
@@ -943,7 +943,7 @@ func TestStallVerbsDisposeOfALiveRetryBackoff(t *testing.T) {
 				assert.Equal(t, StatusTerminated, res.State.Status)
 				cur := res.State.Compensating
 				assert.Empty(t, cur.ActiveCmdID, "stepCompensationFinish zeroes the whole cursor")
-				assert.Empty(t, cur.RetryTimerID, "including both ADR-0179 fields")
+				assert.Empty(t, cur.RetryTimerID, "including both retry fields")
 				assert.Zero(t, cur.RetryAttempts)
 
 				assert.Empty(t, invokeActionName(res.Commands),

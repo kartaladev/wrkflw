@@ -5,7 +5,7 @@
 package flow
 
 // SequenceFlow is a directed edge between two nodes. Its JSON/YAML encoding is
-// snake_case, matching the single canonical definition wire (ADR-0144).
+// snake_case, matching the single canonical definition wire.
 type SequenceFlow struct {
 	ID        string `json:"id" yaml:"id"`
 	Source    string `json:"source" yaml:"source"`

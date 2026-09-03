@@ -13,7 +13,7 @@ import (
 
 // TestArmedTimerKeysetPredicate pins the three-column keyset predicate and its
 // deliberate per-dialect divergence. The shape is set by MEASUREMENT, not
-// symmetry (ADR-0159):
+// symmetry:
 //
 //   - Postgres and SQLite use a row value — one index seek on the full triple.
 //   - MySQL must NOT: its optimizer does not treat a row constructor as an

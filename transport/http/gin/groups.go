@@ -170,10 +170,10 @@ func (tr TaskRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOptio
 		}
 		var in httpcore.ClaimInput
 		// ⚠ The claim body is OPTIONAL, unlike complete's and reassign's.
-		// httpcore.ClaimInput has no fields left since ADR-0189 took the actor out
-		// of it, so a correctly migrated client sends NO body — which a required
-		// decode refuses with 400 "EOF" (MEASURED, before this change). An
-		// oversize body is still refused 413; see bindOptionalJSON.
+		// httpcore.ClaimInput has no fields left now that the actor no longer
+		// comes from the body, so a correctly migrated client sends NO body —
+		// which a required decode refuses with 400 "EOF" (MEASURED, before this
+		// change). An oversize body is still refused 413; see bindOptionalJSON.
 		if !bindOptionalJSON(cfg, gc, &in) {
 			return
 		}
@@ -250,7 +250,7 @@ func (tr TaskRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOptio
 // It implements httpcore.RouteCustomizer[gin.IRouter].
 // SECURITY: these routes have NO built-in authentication. Mount AdminRoutes only
 // onto a router group already protected by your auth middleware (admin-by-
-// composition, ADR-0095); otherwise the admin endpoints are exposed unauthenticated.
+// composition); otherwise the admin endpoints are exposed unauthenticated.
 type AdminRoutes struct {
 	// Svc provides ListInstances, ResolveIncident, and CancelInstance.
 	// Must not be nil.
@@ -329,7 +329,7 @@ func (ar AdminRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOpti
 			instanceID := gc.Param("id")
 			var in httpcore.ResolveCompensationStallInput
 			// Body is REQUIRED: command_id and disposition are both mandatory and
-			// neither may default (ADR-0175).
+			// neither may default.
 			if err := capBody(cfg, gc); err != nil {
 				writeErr(cfg, gc, err)
 				return

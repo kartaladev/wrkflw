@@ -25,7 +25,7 @@ type otherKindJob struct{ *timerJob }
 func (o *otherKindJob) Kind() scheduler.JobKind { return "other.kind" }
 func (o *otherKindJob) NextRun() time.Time      { return time.Time{} }
 
-// TestJobStoreSave locks jobStore.Save's real write path (ADR-0134 B1):
+// TestJobStoreSave locks jobStore.Save's real write path:
 // type-assert the incoming scheduler.ScheduledJob to recover its typed
 // kernel.JobSpec, guard against a foreign implementation or a job under a
 // foreign Kind, and upsert the full descriptor via the driver's TimerWriter.
@@ -206,7 +206,7 @@ func TestJobStoreDelete(t *testing.T) {
 
 // TestJobStoreDeleteTimer locks the runtime-internal deleteTimer helper: a
 // PK-exact delete by (instanceID, timerID) via TimerWriter.DeleteJob, used by
-// Task 11's Drive cancel path. It removes only the exact pair — a different
+// the Drive cancel path. It removes only the exact pair — a different
 // instance's row sharing the same timer id is left untouched — and is a
 // documented no-op when no TimerWriter is configured.
 func TestJobStoreDeleteTimer(t *testing.T) {

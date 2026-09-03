@@ -1,13 +1,7 @@
 package engine
 
-// step_terminal_dispatch_test.go — ADR-0165, Decision 2 ("Enforcement is a
-// single check in `dispatch`") read against Decision 4 ("The classification"):
-// the BEHAVIOURAL exhaustiveness table for that single terminal guard.
-//
-// (This previously cited "ADR-0165 §5.2". ADR-0165 numbers its Decision
-// subsections 1–6 and has no §5.2; its §5 is the payload-dependent carve-out,
-// which is not what this table covers. Heading names, not section numbers —
-// numbers rot exactly like line numbers do.)
+// step_terminal_dispatch_test.go — enforcement is a single check in `dispatch`;
+// this is the BEHAVIOURAL exhaustiveness table for that single terminal guard.
 //
 // Relationship to its sibling tables — three properties, deliberately not fused:
 //
@@ -80,10 +74,10 @@ package engine
 //     assert.Empty(res.State.Boundaries) as cover: its forceDef declares no
 //     boundary node, so that assertion cannot fail either.
 //
-// ⚠⚠ FIVE of those RED rows are masked TODAY by the per-handler guards that
-// Task 4 deletes: with only THIS guard disabled just 8 rows go RED. Do not read
-// that smaller number as "the other rows are decorative" — they become the sole
-// cover for their handlers the moment Task 4 lands. Task 1's
+// ⚠⚠ FIVE of those RED rows are masked TODAY by the per-handler guards that are
+// slated for deletion: with only THIS guard disabled just 8 rows go RED. Do not
+// read that smaller number as "the other rows are decorative" — they become the
+// sole cover for their handlers the moment those guards go.
 // step_terminal_policy_test.go carries the per-route reproductions; this table
 // carries the exhaustiveness property, so a 16th trigger, or a reclassified
 // existing one, cannot land without a row stating its outcome.
@@ -158,8 +152,8 @@ func survivorsDef() *model.ProcessDefinition {
 //
 //	start → svc(compensable) → after(compensable) → end(force termination)
 //
-// the ADR-0164 shape: driven to its end it leaves StatusTerminated with BOTH
-// compensation records intact.
+// the force-termination shape: driven to its end it leaves StatusTerminated with
+// BOTH compensation records intact.
 func compensableDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-terminal-dispatch-compensable", Version: 1,
@@ -311,7 +305,7 @@ func TestTerminalDispatchOutcomes(t *testing.T) {
 	runsHandler := func(t *testing.T, _ InstanceState, r StepResult, err error) {
 		t.Helper()
 		require.NoError(t, err,
-			"a plain full rollback is a legitimate admin action on a terminal instance (ADR-0164 carve-out)")
+			"a plain full rollback is a legitimate admin action on a terminal instance")
 		assert.Equal(t, StatusCompensating, r.State.Status,
 			"the compensation walk must actually start")
 		assert.NotEmpty(t, r.Commands,
@@ -341,7 +335,7 @@ func TestTerminalDispatchOutcomes(t *testing.T) {
 		"engine.HumanReassigned": refusedOn(rejectsWithError),
 		"engine.HumanCompleted":  refusedOn(rejectsWithError),
 		"engine.ResolveIncident": refusedOn(rejectsWithError),
-		// ADR-0175: the escape verbs act on a COMPENSATING instance. Once it is
+		// The escape verbs act on a COMPENSATING instance. Once it is
 		// terminal the walk is already over, so there is nothing left to escape and
 		// the operator must be told so rather than left believing it worked.
 		"engine.ResolveCompensationStall": refusedOn(rejectsWithError),

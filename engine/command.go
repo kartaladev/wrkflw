@@ -29,7 +29,7 @@ const (
 	// a failed action after its backoff (plus optional jitter) has elapsed.
 	TimerRetry
 	// TimerCompensationStall is a one-shot timer guarding a dispatched
-	// compensation action (ADR-0175). It fires when that action has not reported
+	// compensation action. It fires when that action has not reported
 	// back within StepOptions.CompensationStallAfter, and raising the resulting
 	// incident is the only way a stalled compensation walk becomes visible: such
 	// a walk holds no tokens and no other timers, so nothing else can wake it.
@@ -40,7 +40,7 @@ const (
 	TimerCompensationStall
 	// TimerCompensationRetry is a one-shot backoff timer between two dispatches of
 	// the SAME compensation record, after that record's action replied
-	// ActionFailed (ADR-0179). Like TimerCompensationStall it guards the walk
+	// ActionFailed. Like TimerCompensationStall it guards the walk
 	// rather than a token, but unlike it, it is forward work: it exists to
 	// re-dispatch, not merely to detect. That is the axis
 	// [TimerKind.firesOnDyingInstance] and [TimerKind.detectionOnly] split on —
@@ -236,8 +236,7 @@ type InvokeCancelAction struct {
 //     InstanceState.ArchivedCompensations keyed by the sub-process node ID via
 //     archiveCompensations before closeScope is called — the normal sub-process
 //     exit, both event-sub-process exits, and the two abnormal teardowns (error
-//     boundary, interrupting event sub-process) via cancelScopeSubtree
-//     (ADR-0039, ADR-0162).
+//     boundary, interrupting event sub-process) via cancelScopeSubtree.
 //     Archived records are merged into RootCompensations by consolidateArchiveIntoRoot
 //     when a compensation walk begins (CompensateRequested / cancel / error path).
 //   - Compensate{ScopeID, FromNode} remains RESERVED for future scope-targeted

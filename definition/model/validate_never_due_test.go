@@ -53,7 +53,7 @@ func neverDueWaitDef(spec schedule.TriggerSpec) *model.ProcessDefinition {
 // nestedDef wraps inner in a KindSubProcess node "sp" of an otherwise valid root
 // definition. It is the fixture that distinguishes a rule placed inside
 // validateStructure (which recurses) from one placed in Validate (which does
-// not) — see ADR-0182.
+// not).
 func nestedDef(inner *model.ProcessDefinition) *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p", Version: 1,
@@ -69,12 +69,12 @@ func nestedDef(inner *model.ProcessDefinition) *model.ProcessDefinition {
 	}
 }
 
-// TestValidate_RejectsNeverDueTrigger covers ADR-0182's authoring gate: a node
+// TestValidate_RejectsNeverDueTrigger covers the authoring gate: a node
 // whose timer or in-wait trigger is never due at ANY anchor is rejected by
 // model.Validate, at the root AND inside a nested sub-process. The
 // MUST-NOT-REJECT rows are the soundness guards — every one of them is
-// measurably due at some anchor, and rejecting any of them would be the
-// ADR-0165 inverted-predicate shape.
+// measurably due at some anchor, and rejecting any of them would invert
+// the predicate.
 func TestValidate_RejectsNeverDueTrigger(t *testing.T) {
 	t.Parallel()
 
@@ -158,7 +158,7 @@ func TestValidate_RejectsNeverDueTrigger(t *testing.T) {
 		},
 
 		// --- MUST NOT REJECT (soundness guards): every spec below is measurably
-		// due at some anchor. See spec §3.1.
+		// due at some anchor.
 		{
 			name: "root timer Monthly(12, [31]) is anchor-dependent and accepted",
 			def:  neverDueTimerDef(schedule.Monthly(12, []int{31})),

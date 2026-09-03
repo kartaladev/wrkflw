@@ -53,7 +53,7 @@ type TaskService struct {
 // [TaskService.RefreshCandidates] now classifies 422 through
 // httpcore.ClassifyError instead of falling through to a 500 with an empty body.
 // This module ships no HTTP route for RefreshCandidates, so that improvement is
-// realised only by a consumer who mounts one. See ADR-0165.
+// realised only by a consumer who mounts one.
 var ErrTaskNotOpen = engine.ErrTaskNotOpen
 
 // ErrNoActorResolver is returned by [TaskService.RefreshCandidates] when the
@@ -213,7 +213,7 @@ func (s *TaskService) Claim(ctx context.Context, taskID string, actor authz.Acto
 // issued, preventing a false From in the journal.
 //
 // An empty to is refused with [engine.ErrEmptyReassignTarget] before anything
-// else happens. [engine.Step] refuses the same shape (ADR-0183), but only after
+// else happens. [engine.Step] refuses the same shape, but only after
 // this method has already spent a store read and an authorization round-trip and
 // counted a "reassigned" metric for a reassignment that cannot occur.
 func (s *TaskService) Reassign(ctx context.Context, taskID string, from, to string, by authz.Actor) (engine.Trigger, error) {

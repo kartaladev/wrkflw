@@ -1,6 +1,6 @@
 package engine_test
 
-// step_cancel_dropped_test.go — ADR-0180 decision 2: the DROPPED cancel site
+// step_cancel_dropped_test.go — the DROPPED cancel site
 // reports ErrCancelNotApplicable, while the DEFERRED site keeps returning nil.
 //
 // The two sites are semantically different — "will not terminate at all" vs
@@ -8,7 +8,6 @@ package engine_test
 // the sentinel: a cancel racing an admin partial rollback returned err=<nil> with
 // zero commands, the state byte-identical to before it, and the "cancelled"
 // instance then resumed running.
-// See docs/specs/2026-08-13-engine-visibility-and-truthfulness.md §3b.
 
 import (
 	"testing"
@@ -89,7 +88,7 @@ func partialRollbackInFlight(t *testing.T) (engine.InstanceState, *model.Process
 //
 // It shares the dropped site with a partial rollback and must NOT share its
 // answer: this walk ends the instance, so a redundant cancel is idempotently
-// satisfied (ADR-0034's post-acceptance idempotent re-cancel).
+// satisfied (post-acceptance idempotent re-cancel).
 func terminalCancelWalkInFlight(t *testing.T) (engine.InstanceState, *model.ProcessDefinition) {
 	t.Helper()
 
@@ -119,10 +118,10 @@ func terminalCancelWalkInFlight(t *testing.T) (engine.InstanceState, *model.Proc
 	return res.State, def
 }
 
-// TestCancelOnAnInFlightWalkIsTruthful covers ADR-0180's two nil-returning cancel
-// sites in one table (the project's table-test rule: same SUT call, differing
-// inputs). The rows are the whole point — a single answer for both would be the
-// collapse the ADR forbids.
+// TestCancelOnAnInFlightWalkIsTruthful covers the two nil-returning cancel sites
+// in one table (the project's table-test rule: same SUT call, differing inputs).
+// The rows are the whole point — a single answer for both would be exactly the
+// collapse this file forbids.
 func TestCancelOnAnInFlightWalkIsTruthful(t *testing.T) {
 	t.Parallel()
 
@@ -152,7 +151,7 @@ func TestCancelOnAnInFlightWalkIsTruthful(t *testing.T) {
 			},
 			assert: func(t *testing.T, _ engine.InstanceState, res engine.StepResult, err error) {
 				require.NoError(t, err,
-					"a re-cancel of a walk that ALREADY terminates the instance is idempotent, not inapplicable (ADR-0034)")
+					"a re-cancel of a walk that ALREADY terminates the instance is idempotent, not inapplicable")
 				assert.Empty(t, res.Commands,
 					"the redundant cancel must still emit nothing — no second compensation walk")
 			},

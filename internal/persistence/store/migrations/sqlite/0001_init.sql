@@ -1,6 +1,6 @@
 -- +goose Up
 
--- Consolidated SQLite schema (ADR-0132). Single migration folding the former
+-- Consolidated SQLite schema. Single migration folding the former
 -- incremental set (0001 init + 0002 human_task + 0003 timers_trigger) into
 -- final-state CREATE statements. The logical schema converges with Postgres/
 -- MySQL (guarded by TestMigrationParity_LogicalSchemaConverges).
@@ -108,7 +108,7 @@ CREATE TABLE wrkflw_timers (
     PRIMARY KEY (instance_id, timer_id)
 );
 -- Composite keyset index over the full armed-timer sort key, so paged admin
--- listing seeks rather than scans (ADR-0159). It subsumes the single-column
+-- listing seeks rather than scans. It subsumes the single-column
 -- next_run index it replaces: next_run is its leading column, so ORDER BY
 -- next_run and MIN(next_run) still use it.
 CREATE INDEX wrkflw_timers_keyset_idx ON wrkflw_timers (next_run, instance_id, timer_id);
@@ -125,9 +125,9 @@ CREATE TABLE wrkflw_chain_links (
 );
 CREATE INDEX wrkflw_chain_links_successor_idx ON wrkflw_chain_links (successor_instance_id);
 
--- Human task state table (ADR-0098). eligibility/candidates/vars stored as TEXT
+-- Human task state table. eligibility/candidates/vars stored as TEXT
 -- (JSON serialised by the store layer); due_at nullable.
--- claim/completion carry the ADR-0148 audit as nullable TEXT JSON
+-- claim/completion carry the audit trail as nullable TEXT JSON
 -- ({actor, timestamp} / {actor, timestamp, outcome?, note?}); NULL means the
 -- lifecycle event has not happened. claimed_by is the application-maintained
 -- scalar projection of claim.actor.id that keeps AssignedTo's lookup indexed.

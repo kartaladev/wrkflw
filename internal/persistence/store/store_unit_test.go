@@ -42,7 +42,7 @@ func TestMapConflictPassThrough(t *testing.T) {
 
 // TestTimeArgDialect asserts the write-side time codec: SQLite formats to a
 // fixed-width RFC3339 UTC string with nine fractional digits (julianday-compatible
-// and lexicographically sortable, ADR-0080/ADR-0151); Postgres and MySQL bind the
+// and lexicographically sortable); Postgres and MySQL bind the
 // time.Time natively.
 func TestTimeArgDialect(t *testing.T) {
 	// A non-UTC instant to prove UTC normalization on the SQLite path. The

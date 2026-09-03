@@ -5,7 +5,7 @@ package engine_test
 // destroy the walk's scope by structurally different mechanisms (a sibling's
 // normal end event vs. an error boundary on the enclosing sub-process), need
 // different definitions, and stop at different points — the drain cases run to
-// instance completion, the boundary case stops at a documented ADR-0171 bound.
+// instance completion, the boundary case stops at a documented bound.
 
 import (
 	"strings"
@@ -33,7 +33,7 @@ var scopeDrainT0 = time.Date(2026, 8, 10, 9, 0, 0, 0, time.UTC)
 // service tasks in order, then forks into a scope-wide compensation throw and a
 // sibling user task. Both branches end at the sub-process's own end events, so
 // completing the user task DRAINS the scope while the throw's compensation walk
-// is still in flight (ADR-0171).
+// is still in flight.
 //
 // The number of compensable tasks is the case dimension: two records make the
 // walk advance to a second record after the drain, one record makes it finish
@@ -144,13 +144,12 @@ func compensationInvokeNames(cmds []engine.Command) []string {
 	return out
 }
 
-// TestCompensationWalkSurvivesSiblingDrainingItsScope pins ADR-0171: a sibling
+// TestCompensationWalkSurvivesSiblingDrainingItsScope pins that a sibling
 // branch reaching its scope's end event while a compensation throw walk is in
 // flight must not destroy the walk.
 //
 // What makes each case fail before the fix (measured on
-// fix/compensation-walk-and-mid-delivery-terminal at the ADR-0168/0169/0170
-// bundle commit):
+// fix/compensation-walk-and-mid-delivery-terminal before it landed):
 //   - "two records, walk advances after the drain": the scope's Compensations
 //     were nil'd by archiveCompensations, and stepCompensationAdvance indexed the
 //     resulting empty slice — `panic: runtime error: index out of range [0] with
@@ -251,7 +250,7 @@ func TestCompensationWalkSurvivesSiblingDrainingItsScope(t *testing.T) {
 				engine.StepOptions{})
 			require.NoError(t, err, "the sibling's drain must not fail")
 			require.Equal(t, engine.StatusCompensating, res.State.Status,
-				"ADR-0168: the drain must not complete the instance over the outstanding walk")
+				"the drain must not complete the instance over the outstanding walk")
 			require.Equal(t, walkCmd, res.State.Compensating.ActiveCmdID,
 				"the drain must leave the in-flight walk's command untouched")
 
@@ -321,10 +320,10 @@ func errorBoundaryTeardownDef() *model.ProcessDefinition {
 }
 
 // TestCompensationWalkKeepsItsRecordsWhenAnErrorBoundaryTearsDownItsScope is the
-// case that makes ADR-0171's PIN load-bearing on its own. The scope-exit hold
-// cannot help here: an error boundary must fire, so its teardown of the walk's
-// scope cannot be deferred. Only the snapshot taken at walk start keeps the
-// remaining record reachable.
+// case that makes the walk-start snapshot load-bearing on its own. The
+// scope-exit hold cannot help here: an error boundary must fire, so its
+// teardown of the walk's scope cannot be deferred. Only the snapshot taken at
+// walk start keeps the remaining record reachable.
 //
 // What makes the undoA assertion fail without the pin: cursorRecords falls back
 // to the live read, the closed scope resolves to nil, and the bounds check then
@@ -377,11 +376,11 @@ func TestCompensationWalkKeepsItsRecordsWhenAnErrorBoundaryTearsDownItsScope(t *
 	// The walk's finish then RECOVERS instead of stranding. This assertion
 	// replaces the "KNOWN LIMITATION" this test used to pin — a
 	// require.EqualError on `workflow-engine: defForScope: unknown scope
-	// "bteardown-s1"`, which every subsequent Step also returned. ADR-0171's
-	// hold cannot help here (a boundary must fire, so its teardown cannot be
-	// deferred), so the recovery lives at the resume instead: the resume into
-	// the destroyed scope is DROPPED, and the boundary's own target — already
-	// running in the parent scope — carries the instance forward.
+	// "bteardown-s1"`, which every subsequent Step also returned. The
+	// scope-exit hold cannot help here (a boundary must fire, so its teardown
+	// cannot be deferred), so the recovery lives at the resume instead: the
+	// resume into the destroyed scope is DROPPED, and the boundary's own target
+	// — already running in the parent scope — carries the instance forward.
 	res, err = engine.Step(ctx, def, res.State,
 		engine.NewActionCompleted(scopeDrainT0.Add(5*time.Second), res.State.Compensating.ActiveCmdID, nil),
 		engine.StepOptions{})
@@ -398,7 +397,7 @@ func TestCompensationWalkKeepsItsRecordsWhenAnErrorBoundaryTearsDownItsScope(t *
 }
 
 // interruptingESPTeardownDef puts a live compensation THROW walk inside a
-// sub-process scope P and then destroys P from a route the ADR-0171 hold does
+// sub-process scope P and then destroys P from a route the scope-exit hold does
 // not cover: a nested INTERRUPTING event sub-process declared in P.
 //
 //	root: start → outer(sub-process) → end
@@ -467,10 +466,10 @@ func interruptingESPTeardownDef() *model.ProcessDefinition {
 	}
 }
 
-// TestCompensationWalkSurvivesNestedEventSubprocessTearingDownItsResumeScope is
-// the F3 reproduction: a nested interrupting event sub-process closes the scope
-// a live throw walk resumes into, through the one closeScope call site that
-// consults no hold.
+// TestCompensationWalkSurvivesNestedEventSubprocessTearingDownItsResumeScope
+// reproduces the resume-scope teardown defect: a nested interrupting event
+// sub-process closes the scope a live throw walk resumes into, through the one
+// closeScope call site that consults no hold.
 //
 // What makes it fail without the recovery: applyFinish placed the resume token
 // in the pruned scope, drive's first defForScope failed, and EVERY subsequent

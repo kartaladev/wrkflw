@@ -1,6 +1,6 @@
 package engine_test
 
-// step_compensation_throw_test.go — Phase 3: compensation throw event.
+// step_compensation_throw_test.go — compensation throw event.
 //
 // Tests the KindCompensationThrowEvent (event.NewCompensateThrow) with a
 // targeted CompensateRef: it runs the archived sub-process compensations in
@@ -8,9 +8,8 @@ package engine_test
 // execution), and deletes the archive entry (single ownership — no
 // double-compensation). All tests are strict RED-first per the TDD discipline.
 //
-// Design ref: docs/specs/2026-06-23-scope-targeted-compensation-design.md §2.2
-// ADR: 0039, 0120 (targeted throw migrated off IntermediateThrowEvent onto the
-// dedicated CompensationThrowEvent kind)
+// The targeted throw was migrated off IntermediateThrowEvent onto the dedicated
+// CompensationThrowEvent kind.
 
 import (
 	"testing"
@@ -427,12 +426,12 @@ func TestNoDoubleCompensationAfterThrowAndCancel(t *testing.T) {
 // intentionally NOT modified — it regresses the existing behaviour unchanged.
 // Here we add a quick smoke-test that exercises the cancel path WITH archived
 // compensations (no throw before cancel) to ensure consolidateArchiveIntoRoot
-// still works in the cancel path after Phase 3 changes.
+// still works in the cancel path after the throw-event changes.
 
 // TestCancelWithArchivedCompensationsStillConsolidates asserts that when
 // ArchivedCompensations has entries (no prior throw), CancelRequested consolidates
-// them into the root walk and compensates them — the Phase 3 changes must not
-// disturb Phase 2's consolidation in beginCompensation.
+// them into the root walk and compensates them — the throw-event changes must
+// not disturb consolidation in beginCompensation.
 func TestCancelWithArchivedCompensationsStillConsolidates(t *testing.T) {
 	at := time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
 	// Use compensableSubThenRootDef from step_compensation_test.go:
@@ -475,7 +474,7 @@ func TestCancelWithArchivedCompensationsStillConsolidates(t *testing.T) {
 		"cancel walk must emit cancel-inner from consolidated archive")
 }
 
-// ── (f) B1 fix: cancel mid throw-walk must not double-compensate ─────────────
+// ── (f) cancel mid throw-walk must not double-compensate ─────────────────────
 
 // cancelMidThrowDef returns a process definition:
 //
@@ -525,7 +524,8 @@ func cancelMidThrowDef() *model.ProcessDefinition {
 	}
 }
 
-// TestCancelMidThrowWalkDoesNotDoubleCompensate is the regression test for B1.
+// TestCancelMidThrowWalkDoesNotDoubleCompensate is the regression test for
+// double-compensation when a cancel arrives mid throw-walk.
 // It drives: start → complete rootSvc → complete inner-svc → sub exits → compThrow fires
 // (StatusCompensating, emits cancel-inner). Then CancelRequested arrives MID-WALK
 // (before cancel-inner's ActionCompleted). Then cancel-inner's ActionCompleted arrives
@@ -584,14 +584,14 @@ func TestCancelMidThrowWalkDoesNotDoubleCompensate(t *testing.T) {
 	require.NotNil(t, throwCancelCmd, "throw walk must emit InvokeAction{cancel-inner}")
 
 	// Step 4: CancelRequested arrives MID-WALK (before cancel-inner's ActionCompleted).
-	// The B1 bug: without the fix, beginCompensation runs again, consolidates the
+	// The bug: without the fix, beginCompensation runs again, consolidates the
 	// archive (still containing "sub") into RootCompensations, and re-emits cancel-inner.
 	cancelAt := at.Add(3 * time.Second)
 	r4, err := engine.Step(t.Context(), def, r3.State,
 		engine.NewCancelRequested(cancelAt),
 		engine.StepOptions{})
 	require.NoError(t, err)
-	// With the B1 fix: PendingCancel=true, still StatusCompensating, no second
+	// With the fix: PendingCancel=true, still StatusCompensating, no second
 	// cancel-inner emitted. The state must still be compensating (throw walk not done).
 	// (We collect InvokeActions across ALL steps at the end to count.)
 
@@ -623,9 +623,10 @@ func TestCancelMidThrowWalkDoesNotDoubleCompensate(t *testing.T) {
 		}
 	}
 
-	// B1 invariant: cancel-inner must be invoked exactly once (throw walk only).
+	// No-double-compensation invariant: cancel-inner must be invoked exactly once
+	// (throw walk only).
 	assert.Equal(t, 1, cancelInnerCount,
-		"cancel-inner must be invoked EXACTLY once (B1: no double-compensation)")
+		"cancel-inner must be invoked EXACTLY once (no double-compensation)")
 
 	// No-under-compensation invariant: cancel-root must be invoked exactly once (deferred cancel).
 	assert.Equal(t, 1, cancelRootCount,

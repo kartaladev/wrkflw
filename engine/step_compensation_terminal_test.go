@@ -1,7 +1,7 @@
 package engine_test
 
-// step_compensation_terminal_test.go — ADR-0165 Phase 4.2: what a
-// CompensateRequested does when it reaches an ALREADY-TERMINAL instance, now
+// step_compensation_terminal_test.go — what a CompensateRequested does when it
+// reaches an ALREADY-TERMINAL instance, now
 // that stepCompensateRequested's own resume guard is gone and dispatch's single
 // structural guard is the only one left.
 //
@@ -13,8 +13,8 @@ package engine_test
 //     stepCompensateRequested's pure trigger-SHAPE guards reject them exactly as
 //     before.
 //     ⚠ Both guards were ALREADY pinned before this file, by
-//     TestCompensateRequested_ResetVarsWithoutReverseNode (ADR-0109 T6) and
-//     TestCompensateRequested_RestoreTargetVarsWithoutToNode (FU#1) in
+//     TestCompensateRequested_ResetVarsWithoutReverseNode and
+//     TestCompensateRequested_RestoreTargetVarsWithoutToNode in
 //     reverse_instance_test.go — but both drive a RUNNING instance. What was
 //     unpinned, and is what these two rows add, is the same shapes on a
 //     TERMINAL one: that dispatch's new guard does not swallow a shape defect,
@@ -31,22 +31,22 @@ package engine_test
 //     ARCHIVED under a closed sub-process scope — and is refused when there is
 //     not.
 //
-// ⚠ ADR-0165 Decision 5's predicate was INVERTED as written, and the correction
-// is recorded here because the rows are what enforce it. The ADR prescribed
-// refusing a plain full rollback when the instance is terminal AND compensation
-// records SURVIVE, on the stated premise that with no surviving records it
-// "still walks". Measurement inverted both halves:
+// ⚠ The guard's predicate was INVERTED as originally written, and the
+// correction is recorded here because the rows are what enforce it. The
+// original predicate refused a plain full rollback when the instance is
+// terminal AND compensation records SURVIVE, on the stated premise that with no
+// surviving records it "still walks". Measurement inverted both halves:
 //
 //   - WITH records the rollback is a real walk, dispatching the compensation
 //     InvokeActions one at a time — precisely the "compensating a finished
 //     instance whose records are still present is a legitimate admin action"
-//     ADR-0164 carved out, and what TestTerminalResumeGuard/plain_full_rollback_allowed
+//     carve-out, and what TestTerminalResumeGuard/plain_full_rollback_allowed
 //     and TestTerminalDispatchOutcomes/engine.CompensateRequested already assert.
 //   - WITHOUT records there is no walk at all: beginCompensation finds nothing
 //     and finishes immediately, re-stamping the terminal status, discarding any
 //     surviving token and overwriting EndedAt, for zero compensation benefit.
 //
-// The decision's INTENT — refuse the rollback in the case where it harms without
+// The INTENT — refuse the rollback in the case where it harms without
 // compensating — was audited and stands; only its expression was wrong, so the
 // implemented guard uses the corrected predicate. See stepCompensateRequested
 // and hasCompensationRecordsToWalk.
@@ -186,8 +186,8 @@ func driveToTerminalWithArchivedOnlyRecords(t *testing.T, def *model.ProcessDefi
 }
 
 // TestCompensateRequestedOnTerminalInstance pins every CompensateRequested shape
-// against an already-terminal instance after ADR-0165 removed
-// stepCompensateRequested's own resume guard.
+// against an already-terminal instance now that stepCompensateRequested's own
+// resume guard is gone.
 //
 // No `ctx` case modifier (table-test skill rule 3): engine.Step documents ctx as
 // carrying no cancellation semantics — it is used only for trace-correlated
@@ -297,7 +297,8 @@ func TestCompensateRequestedOnTerminalInstance(t *testing.T) {
 			},
 		},
 		{
-			// Carve-out #1, and the case ADR-0165 Decision 5 would have rejected.
+			// The admin carve-out, and the case the inverted predicate would have
+			// rejected.
 			name:  "plain_full_rollback_with_surviving_records_walks",
 			state: withRecords,
 			trigger: func() engine.CompensateRequested {
@@ -305,7 +306,7 @@ func TestCompensateRequestedOnTerminalInstance(t *testing.T) {
 			},
 			assert: func(t *testing.T, before engine.InstanceState, r engine.StepResult, err error) {
 				require.NoError(t, err,
-					"compensating a finished instance whose records survive is a legitimate admin action (ADR-0164 carve-out #1)")
+					"compensating a finished instance whose records survive is a legitimate admin action")
 				require.Len(t, before.RootCompensations, 2,
 					"precondition: this row is only meaningful while records survive")
 				assert.Equal(t, engine.StatusCompensating, r.State.Status,
@@ -315,8 +316,8 @@ func TestCompensateRequestedOnTerminalInstance(t *testing.T) {
 			},
 		},
 		{
-			// The route ADR-0165 Decision 5 exists to close, with its predicate
-			// corrected to the case that actually does harm.
+			// The route the guard exists to close, with its predicate corrected
+			// to the case that actually does harm.
 			//
 			// ⚠ Why this guard is worth its weight, recorded because the evidence
 			// is otherwise lost with the behaviour it removed: BEFORE the guard,

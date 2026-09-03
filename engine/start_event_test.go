@@ -1,6 +1,6 @@
 package engine_test
 
-// start_event_test.go — black-box tests for Task 2 (ADR-0121): the engine
+// start_event_test.go — black-box tests for the engine
 // multi-start seam. StartInstance.StartNodeID tells handleStartInstance which
 // start node to seed; empty resolves the definition's sole manual (trigger-less,
 // caller-driven) start, and a definition with no manual start yields
@@ -123,7 +123,7 @@ func TestHandleStartInstanceResolvesNode(t *testing.T) {
 
 // TestNewStartInstance_DefaultsEmptyStartNodeID verifies that the two-arg
 // NewStartInstance constructor leaves StartNodeID at its zero value ("") — the
-// empty-node-id-resolves-manual-start path (ADR-0121).
+// empty-node-id-resolves-manual-start path.
 func TestNewStartInstance_DefaultsEmptyStartNodeID(t *testing.T) {
 	trg := engine.NewStartInstance(time.Unix(0, 0), nil)
 	assert.Empty(t, trg.StartNodeID)

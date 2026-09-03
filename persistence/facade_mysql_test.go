@@ -114,7 +114,7 @@ func TestNewMySQLTimerStore_ListArmed(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create the instance bare, then arm a timer through the TimerWriter
-	// capability (ADR-0134) — NewMySQLTimerStore's returned kernel.TimerStore is
+	// capability — NewMySQLTimerStore's returned kernel.TimerStore is
 	// backed by *store.TimerStore, which also implements kernel.TimerWriter.
 	now := time.Unix(1700000000, 0).UTC()
 	fireAt := now.Add(time.Hour)

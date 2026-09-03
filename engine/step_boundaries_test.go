@@ -297,7 +297,7 @@ func TestNonInterruptingMessageBoundarySpawnsParallelToken(t *testing.T) {
 	assert.True(t, nodeIDs["work"], "host token must still be at work")
 	assert.True(t, nodeIDs["notify-svc"], "new token must be at notify-svc")
 	require.Len(t, r2.State.Boundaries, 1,
-		"non-interrupting boundary stays armed after firing (repeatable, ADR-0124)")
+		"non-interrupting boundary stays armed after firing (repeatable)")
 
 	// Step 2b: a SECOND "notify" delivery fires the still-armed boundary AGAIN,
 	// spawning another parallel token (BPMN non-interrupting is repeatable).
@@ -346,7 +346,7 @@ func nonInterruptingRecurringTimerBoundaryDef() *model.ProcessDefinition {
 }
 
 // TestNonInterruptingRecurringTimerBoundaryRepeatsAndCancelsOnHostEnd verifies the
-// timer-trigger arm of the repeatable non-interrupting change (ADR-0124): a
+// timer-trigger arm of the repeatable non-interrupting change: a
 // recurring-timer boundary fires on each of two TimerFired deliveries (same
 // TimerID) — spawning two parallel tokens with the arm surviving — and the
 // surviving arm is CANCELLED when the host completes (the latent gocron-job leak

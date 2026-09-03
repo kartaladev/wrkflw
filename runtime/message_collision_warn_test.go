@@ -2,7 +2,7 @@ package runtime
 
 // message_collision_warn_test.go — white-box (package runtime) test that
 // syncMsgWaiters emits a WARN when two RUNNING instances park awaiting the SAME
-// (message, correlationKey), surfacing the 1:1-invariant violation (ADR-0125).
+// (message, correlationKey), surfacing the 1:1-invariant violation.
 // Delivery stays point-to-point: exactly one instance receives the message.
 
 import (

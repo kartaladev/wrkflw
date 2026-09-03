@@ -25,7 +25,7 @@
 //     the timer boundary → escalation path.
 //
 // A *clockwork.FakeClock drives both the engine and the gocron-backed scheduler
-// (ADR-0003) so the example is deterministic and runs instantly. Because the
+// so the example is deterministic and runs instantly. Because the
 // gocron scheduler fires on its own executor goroutine, a done channel signalled
 // from the escalation path makes the observation deterministic:
 // schedule → Advance → <-done → assert.
@@ -95,7 +95,7 @@ func main() {
 		}),
 	})
 
-	// Fake clock shared by the engine and the scheduler (ADR-0003).
+	// Fake clock shared by the engine and the scheduler.
 	startAt := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
 	clk := clockwork.NewFakeClockAt(startAt)
 	sched, err := scheduler.NewScheduler(scheduler.WithClock(clk))
@@ -109,7 +109,7 @@ func main() {
 	}
 
 	// The driver resolves a correlated instance's definition from its own
-	// snapshot via the registry, so the definition must be registered (ADR-0121).
+	// snapshot via the registry, so the definition must be registered.
 	reg := kernel.NewMemDefinitionRegistry()
 	if err := reg.Register(def); err != nil {
 		log.Fatal("register:", err)

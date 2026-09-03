@@ -227,7 +227,7 @@ func indexNames(t *testing.T, query func(sqlText string) ([]string, error), sqlT
 
 // TestMigrationTimersKeysetIndex asserts every backend carries the composite
 // keyset index the paged armed-timer read seeks on, and no longer carries the
-// single-column next_run index it replaces (ADR-0159).
+// single-column next_run index it replaces.
 //
 // This must FAIL LOUDLY rather than skip when the index is absent. goose keys
 // by version and stores no checksum, so an in-place edit of 0001_init.sql never
@@ -371,7 +371,7 @@ const (
 // tables. An index added to one dialect's 0001_init.sql and forgotten on the
 // other two is otherwise invisible: the logical-schema guardrail above compares
 // columns, not indexes, so a backend silently loses the seek the engine's hot
-// path depends on (ADR-0159 is exactly that failure mode, caught late).
+// path depends on (that failure mode has happened before, caught late).
 //
 // NAMES ONLY. Index COLUMN LISTS diverge on purpose and must not be compared:
 // Postgres expresses wrkflw_outbox_dead_idx and wrkflw_call_links_pending_idx

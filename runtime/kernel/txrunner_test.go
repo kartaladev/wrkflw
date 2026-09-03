@@ -18,7 +18,7 @@ var _ kernel.TxRunner = (*kernel.MemInstanceStore)(nil)
 // assertions can tell "fn's own error propagated" apart from a wrapped one.
 var errBoom = errors.New("boom")
 
-// TestMemInstanceStoreRunInTx covers ADR-0134's sequencing-only Mem contract:
+// TestMemInstanceStoreRunInTx covers the sequencing-only Mem contract:
 // RunInTx is exactly `fn(ctx)` — no rollback. A Create performed by fn stays
 // applied even when fn returns an error afterwards (mem has no undo).
 func TestMemInstanceStoreRunInTx(t *testing.T) {

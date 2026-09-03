@@ -183,10 +183,10 @@ func WithDefaultRetryPolicy(p model.RetryPolicy) Option {
 // timer/deadline durations, correlation keys — to d of wall-clock time. A runaway or
 // hostile expression then aborts with [expreval.ErrEvalTimeout] instead of
 // stalling the driver loop and every sibling instance behind it (the DoS the
-// audit flagged; ADR-0049).
+// audit flagged).
 //
-// This is the explicit, per-driver opt-in for untrusted definitions
-// (ADR-0049/0056). DETERMINISM TRADE-OFF: enabling the guard makes the engine's
+// This is the explicit, per-driver opt-in for untrusted definitions.
+// DETERMINISM TRADE-OFF: enabling the guard makes the engine's
 // expression evaluation wall-clock-dependent, so a timed-out result is no longer
 // reproducible on replay. Enable it only when you must evaluate UNTRUSTED
 // definitions; trusted-definition deployments should leave it off (the default)
@@ -210,7 +210,7 @@ func WithExpressionTimeout(d time.Duration) Option {
 // A nil evaluator is ignored (the default pure evaluator remains in effect).
 // DETERMINISM: supplying an evaluator whose results depend on wall-clock time
 // (e.g. one built with expreval.WithTimeout(d>0)) trades deterministic replay for
-// that behaviour — an explicit consumer choice (ADR-0056).
+// that behaviour — an explicit consumer choice.
 //
 // WithConditionEvaluator and [WithExpressionTimeout] set the same field; the last
 // option wins.
@@ -224,7 +224,7 @@ func WithConditionEvaluator(eval engine.ConditionEvaluator) Option {
 
 // WithClock sets the time source the ProcessDriver uses to stamp triggers,
 // step-duration metrics, and armed-timer times. Default: clockwork.NewRealClock().
-// A nil clock is ignored. Inject a fake clock in tests for determinism (ADR-0138).
+// A nil clock is ignored. Inject a fake clock in tests for determinism.
 func WithClock(clk clockwork.Clock) Option {
 	return func(driver *ProcessDriver) {
 		if clk != nil {
@@ -277,7 +277,7 @@ func WithShutdownTimeout(d time.Duration) Option {
 
 // WithCompensationStallTimeout bounds how long a dispatched compensation action
 // may go without reporting back before the engine raises a walk-scoped stall
-// incident (ADR-0175). Zero — the default — disables detection entirely, adding
+// incident. Zero — the default — disables detection entirely, adding
 // no timer and leaving every command stream byte-identical.
 //
 // A stalled compensation walk is both stuck and INVISIBLE: it advances only on a
@@ -298,10 +298,10 @@ func WithCompensationStallTimeout(d time.Duration) Option {
 }
 
 // WithCompensationRetryPolicy makes a compensation action that reports back
-// [engine.ActionFailed] be RE-DISPATCHED after a backoff instead of skipped
-// (ADR-0179). Without this option retry is disabled — the default — and the
-// command stream keeps ADR-0034 Decision 4's skip-and-advance timing exactly;
-// only the always-on WARN and the IncidentCompensationFailed record are new.
+// [engine.ActionFailed] be RE-DISPATCHED after a backoff instead of skipped.
+// Without this option retry is disabled — the default — and the command stream
+// keeps the skip-and-advance timing exactly; only the always-on WARN and the
+// IncidentCompensationFailed record are new.
 //
 // The attempt budget is PER COMPENSATION RECORD and is zeroed whenever the walk
 // advances to the next one, so a walk draining ten records gives each of them
@@ -311,10 +311,9 @@ func WithCompensationStallTimeout(d time.Duration) Option {
 // [action.IsRetryable]) and the policy's NonRetryableErrors does not match the
 // error text — the same two tests the forward token path applies.
 //
-// ⚠ On exhaustion the walk SKIPS AND CONTINUES; it never parks (ADR-0179
-// Decision 7). Parking would reverse ADR-0034's safety argument that a failed
-// compensation must not strand the instance. The incident is the durable record
-// that it happened.
+// ⚠ On exhaustion the walk SKIPS AND CONTINUES; it never parks. Parking would
+// reverse the safety rule that a failed compensation must not strand the
+// instance. The incident is the durable record that it happened.
 //
 // ⚠ MaxAttempts == 0 means UNLIMITED, matching the engine's token-retry
 // convention. It is not a way to disable retry — leaving the option unset is.

@@ -113,7 +113,7 @@ func TestCloneStateCarriesCompensatingOutcomeFields(t *testing.T) {
 }
 
 // TestCloneStateDeepCopiesCompensatingRecords asserts that cloneState produces
-// an independent copy of the cursor's PINNED record source (ADR-0171).
+// an independent copy of the cursor's PINNED record source.
 //
 // Records is the cursor's only non-scalar field, so the InstanceState struct
 // copy that carries every other field correctly would leave the clone sharing
@@ -305,8 +305,8 @@ func TestConsolidateArchiveIntoRootNoopOnEmptyArchive(t *testing.T) {
 // TaskByID
 // ---------------------------------------------------------------------------
 
-// TestTaskByID covers ADR-0152: a task id is an identity, so an empty one names
-// no task. The fixture plants a task with an empty TaskID so the empty-key case
+// TestTaskByID pins that a task id is an identity, so an empty one names no
+// task. The fixture plants a task with an empty TaskID so the empty-key case
 // fails without the guard.
 func TestTaskByID(t *testing.T) {
 	t.Parallel()

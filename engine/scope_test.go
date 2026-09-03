@@ -126,7 +126,7 @@ func TestCloseScopeIsNoOpForMissing(t *testing.T) {
 // TestCloseScopeCascadesToDescendants asserts closeScope removes the target
 // scope AND every descendant scope reachable via the ParentID chain, leaves
 // unrelated scopes intact, and is idempotent (closing an absent/already-closed
-// scope is a safe no-op). (ADR-0130)
+// scope is a safe no-op).
 func TestCloseScopeCascadesToDescendants(t *testing.T) {
 	t.Parallel()
 

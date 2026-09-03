@@ -1,6 +1,6 @@
 package engine_test
 
-// step_scope_drain_test.go — ADR-0162: the scope SUBTREE, not the scope, is the
+// step_scope_drain_test.go: the scope SUBTREE, not the scope, is the
 // unit of a DRAIN check.
 //
 // The sub-process drain checks used to enumerate DIRECT children only, and the
@@ -210,8 +210,7 @@ func TestGrandchildScopeBlocksSubprocessDrain(t *testing.T) {
 
 // ── Fixture: root-level interrupting event sub-process over a nested scope ────
 
-// eventSubprocessOverNestedScopeDef builds ADR-0162's event-sub-process
-// topology:
+// eventSubprocessOverNestedScopeDef builds the event-sub-process topology:
 //
 //	root: start → host(UserTask) → root-end
 //	      [root-level INTERRUPTING event sub-process "esp", signal "boom"]
@@ -290,8 +289,8 @@ func eventSubprocessOverNestedScopeDef(espCompensable bool) *model.ProcessDefini
 }
 
 // TestEventSubprocessExitBlocksOnChildScope reproduces the permanent wedge at
-// the one closeScope call site with no descendant check at all. The topology
-// is ADR-0162's: an event sub-process whose body is
+// the one closeScope call site with no descendant check at all. The topology is
+// an event sub-process whose body is
 // start(signal) → fork ⇒ { A: SubProcess "inner"[…UserTask…], B: end }.
 // Branch A opens scope D under the event sub-process's own scope C — a direct
 // child, sufficient here because :283 had no check at all — while branch B
@@ -356,10 +355,8 @@ func TestEventSubprocessExitBlocksOnChildScope(t *testing.T) {
 }
 
 // TestEventSubprocessNormalExitArchivesCompensations pins the archiving half of
-// B3. Compensable work completed inside ANY event sub-process was dropped on its
-// NORMAL exit, because :283 closes without archiving — defect 4 on the very path
-// ADR-0162's defect-4 argument used as its counter-example ("had it exited
-// normally, both would refund").
+// the fix. Compensable work completed inside ANY event sub-process was dropped
+// on its NORMAL exit, because :283 closes without archiving.
 func TestEventSubprocessNormalExitArchivesCompensations(t *testing.T) {
 	t.Parallel()
 
@@ -566,8 +563,8 @@ func espOutlivingEnclosingScopeDef() *model.ProcessDefinition {
 	}
 }
 
-// TestNestedEventSubprocessExitArchivesEnclosingScope pins the second archive
-// ADR-0162 adds: exitNestedEventSubprocessScope closes the ENCLOSING scope, and
+// TestNestedEventSubprocessExitArchivesEnclosingScope pins the second archive:
+// exitNestedEventSubprocessScope closes the ENCLOSING scope, and
 // without archiving first, compensable work that scope completed before the event
 // sub-process outlived it is dropped. It is the same defect as the :283 one, on
 // the scope the event sub-process prunes rather than on its own.
@@ -706,7 +703,7 @@ func nestedEventSubprocessBesideBusySiblingDef() *model.ProcessDefinition {
 }
 
 // TestNestedEventSubprocessExitBlocksOnBusySiblingSubtree pins the widened drain
-// check in exitNestedEventSubprocessScope — the third of ADR-0162's three
+// check in exitNestedEventSubprocessScope — the third of the three
 // replaced direct-children scans. The wedge is the same one the other two
 // produce: the sibling scope's own token count is zero because the live token
 // sits in ITS child, so the enclosing scope was closed out from under it.
@@ -931,7 +928,7 @@ func TestEventSubprocessDrainGuardDoesNotHaltMicroDrive(t *testing.T) {
 //     exitNestedEventSubprocessScope closes it.
 //
 // All three must produce the same compensation record; only the first did before
-// the /code-review gate on ADR-0162.
+// the /code-review gate.
 func enclosingCompensationDef(espStart model.Node) *model.ProcessDefinition {
 	fulfilNodes := []model.Node{
 		event.NewStart("fulfil-start"),
@@ -975,7 +972,7 @@ func enclosingCompensationDef(espStart model.Node) *model.ProcessDefinition {
 }
 
 // TestSubProcessExitRecordsItsOwnCompensation pins the gap the /code-review gate
-// found in ADR-0162: exitNestedEventSubprocessScope closes the ENCLOSING
+// found: exitNestedEventSubprocessScope closes the ENCLOSING
 // sub-process's scope and resumes in the grandparent along the same shape as
 // exitRegularSubprocessScope, but omitted the one step that records the enclosing
 // sub-process node's OWN CompensateAction. With that step missing the sub-process

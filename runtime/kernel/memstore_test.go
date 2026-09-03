@@ -38,7 +38,7 @@ func TestMemStoreCreateDuplicate(t *testing.T) {
 
 	// A second Create for the same instance id must not silently overwrite; it
 	// returns the typed ErrInstanceExists so callers (the Chainer) can treat a
-	// duplicate start as a no-op (ADR-0045).
+	// duplicate start as a no-op.
 	_, err = ms.Create(t.Context(), step("dup", "b"))
 	require.ErrorIs(t, err, kernel.ErrInstanceExists)
 

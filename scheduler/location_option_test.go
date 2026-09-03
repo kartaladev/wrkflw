@@ -13,7 +13,7 @@ import (
 
 // TestNativeScheduler_WithLocation proves that the façade's WithLocation
 // option threads through to the internal gocron engine's location-resolved
-// NextRun, as surfaced by Scheduled (ADR-0136). It mirrors
+// NextRun, as surfaced by Scheduled. It mirrors
 // TestNativeSchedulerCalendarTriggers's setup (no explicit Start — the first
 // Schedule auto-starts) but goes through scheduler.NewScheduler +
 // scheduler.WithLocation instead of exercising the internal package directly.
@@ -61,7 +61,7 @@ func TestNativeScheduler_WithLocation(t *testing.T) {
 			// Scheduled(ctx, id) re-fetches gocron's LIVE NextRun, which
 			// respects WithLocation — so the +3 case reads the loc-resolved
 			// (correct) instant, i.e. 06:00 UTC. Schedule()'s own return value
-			// now resolves in the same location too (ADR-0137) — see
+			// now resolves in the same location too — see
 			// TestNativeScheduler_ScheduleReturnMatchesLocation.
 			sj, err := s.Scheduled(t.Context(), "daily-9am")
 			require.NoError(t, err)
@@ -72,7 +72,7 @@ func TestNativeScheduler_WithLocation(t *testing.T) {
 
 // TestNativeScheduler_LocationMethod proves that Location() reports the
 // resolved effective timezone: time.UTC by default, or the WithLocation value
-// when one is configured (ADR-0137).
+// when one is configured.
 func TestNativeScheduler_LocationMethod(t *testing.T) {
 	plusThree := time.FixedZone("plusThree", 3*60*60)
 
@@ -100,13 +100,13 @@ func TestNativeScheduler_LocationMethod(t *testing.T) {
 	}
 }
 
-// TestNativeScheduler_ScheduleReturnMatchesLocation proves the core ADR-0137
+// TestNativeScheduler_ScheduleReturnMatchesLocation proves the core
 // convergence property: Schedule()'s returned NextRun is computed against the
 // same location the live gocron engine resolves at-times in, so the
 // Schedule()-return value equals what Scheduled() (the live surface) reports.
-// Before ADR-0137, Schedule() always resolved against UTC, so the two
+// Schedule() once always resolved against UTC, so the two
 // diverged whenever WithLocation set a non-UTC zone. It is also the
-// correctness oracle for ADR-0140 (interval-aware calendarNext first fire):
+// correctness oracle for the interval-aware calendarNext first fire:
 // the interval>1 and large-interval rows prove the pure Schedule()-return
 // value matches the live gocron NextRun, not just the interval==1 case.
 func TestNativeScheduler_ScheduleReturnMatchesLocation(t *testing.T) {
@@ -122,7 +122,7 @@ func TestNativeScheduler_ScheduleReturnMatchesLocation(t *testing.T) {
 
 	cases := []testCase{
 		{
-			name:  "interval=1 daily resolves in non-UTC location (ADR-0137 baseline)",
+			name:  "interval=1 daily resolves in non-UTC location (baseline)",
 			start: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 			opts:  []scheduler.Option{scheduler.WithLocation(plusThree)},
 			trig:  scheduler.Daily(1, scheduler.ClockTime{Hour: 9}),
@@ -135,7 +135,7 @@ func TestNativeScheduler_ScheduleReturnMatchesLocation(t *testing.T) {
 			},
 		},
 		{
-			name:  "daily interval=2 past current day converges with live gocron (ADR-0140)",
+			name:  "daily interval=2 past current day converges with live gocron",
 			start: time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC), // past the day's 09:00
 			trig:  scheduler.Daily(2, scheduler.ClockTime{Hour: 9}),
 			assert: func(t *testing.T, sj scheduler.ScheduledJob) {
@@ -144,7 +144,7 @@ func TestNativeScheduler_ScheduleReturnMatchesLocation(t *testing.T) {
 			},
 		},
 		{
-			name:  "weekly interval=2 multi-weekday past current week converges with live gocron (ADR-0140)",
+			name:  "weekly interval=2 multi-weekday past current week converges with live gocron",
 			start: time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC), // Wednesday, past this week's 09:00
 			trig:  scheduler.Weekly(2, []time.Weekday{time.Monday, time.Wednesday}, scheduler.ClockTime{Hour: 9}),
 			assert: func(t *testing.T, sj scheduler.ScheduledJob) {
@@ -153,7 +153,7 @@ func TestNativeScheduler_ScheduleReturnMatchesLocation(t *testing.T) {
 			},
 		},
 		{
-			name:  "monthly interval=3 day-31 skip-month past current day converges with live gocron (ADR-0140)",
+			name:  "monthly interval=3 day-31 skip-month past current day converges with live gocron",
 			start: time.Date(2026, 1, 31, 10, 0, 0, 0, time.UTC), // past the day's 09:00
 			trig:  scheduler.Monthly(3, []int{31}, scheduler.ClockTime{Hour: 9}),
 			assert: func(t *testing.T, sj scheduler.ScheduledJob) {
@@ -162,13 +162,13 @@ func TestNativeScheduler_ScheduleReturnMatchesLocation(t *testing.T) {
 			},
 		},
 		{
-			name:  "monthly large interval exercises the scaled scan bound (ADR-0140 audit F1)",
+			name:  "monthly large interval exercises the scaled scan bound",
 			start: time.Date(2026, 1, 28, 10, 0, 0, 0, time.UTC), // past the day's 09:00
 			trig:  scheduler.Monthly(100, []int{28}, scheduler.ClockTime{Hour: 9}),
 			assert: func(t *testing.T, sj scheduler.ScheduledJob) {
 				// interval=100 months is ~8.3 years, past the unscaled 5-year
-				// scan bound (maxCalendarScanDays); without the F1 scale fix
-				// the pure path reports ok=false while gocron still fires.
+				// scan bound (maxCalendarScanDays); without the interval scaling
+				// the pure path would report ok=false while gocron still fires.
 				assert.True(t, sj.NextRun().Equal(time.Date(2034, 5, 28, 9, 0, 0, 0, time.UTC)),
 					"want 2034-05-28 09:00 UTC, got %s", sj.NextRun())
 			},

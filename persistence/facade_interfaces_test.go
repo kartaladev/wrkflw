@@ -14,8 +14,8 @@ import (
 
 // TestOpenPostgresReturnsInterface verifies that OpenPostgres accepts exactly
 // (ctx, pool) — no variadic Option — and returns a persistence.Store interface
-// (not a concrete *postgres.Store). This is the ADR-0008 requirement: the public
-// façade must expose stable port/interface types, never internal concrete types.
+// (not a concrete *postgres.Store). The public façade must expose stable
+// port/interface types, never internal concrete types.
 func TestOpenPostgresReturnsInterface(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.RunTestDatabase(t)
@@ -69,7 +69,7 @@ func TestNewRelayReturnsInterface(t *testing.T) {
 
 // TestNewDeduperReturnsInterface verifies that NewDeduper returns a
 // persistence.Deduper interface value (not a *postgres.Deduper) and that a Seen
-// call through the interface works end-to-end (ADR-0008, ADR-0018).
+// call through the interface works end-to-end.
 func TestNewDeduperReturnsInterface(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.RunTestDatabase(t)
@@ -100,7 +100,7 @@ func TestNewDeduperReturnsInterface(t *testing.T) {
 
 // TestNewRelayDLQAdminViaFacade verifies that the DLQ admin methods
 // (ListDeadLettered, Redrive) are accessible through the persistence.Relay
-// interface returned by persistence.NewRelay (ADR-0008).
+// interface returned by persistence.NewRelay.
 func TestNewRelayDLQAdminViaFacade(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.RunTestDatabase(t)

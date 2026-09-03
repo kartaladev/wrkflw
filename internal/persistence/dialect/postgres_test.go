@@ -254,7 +254,7 @@ func TestPostgresOutboxStatsQuery(t *testing.T) {
 }
 
 // TestPostgresTimestampsCapabilities verifies the timestamp-codec flag and the
-// three lister-query methods added in Task 9.
+// three lister-query methods.
 func TestPostgresTimestampsCapabilities(t *testing.T) {
 	t.Parallel()
 

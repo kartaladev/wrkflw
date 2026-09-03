@@ -10,24 +10,24 @@ package store_test
 // interchangeable for this fixture:
 //
 //   - SQLite carries the SQLite-only half. next_run is TEXT there, so it is the
-//     only backend where the pre-ADR-0151 trimmed encoding exists at all, and
+//     only backend where the legacy trimmed encoding exists at all, and
 //     the only one where the threshold is a lexicographic comparison. It is also
 //     pure Go, so the bulk of the coverage costs no container.
 //   - Postgres has its own test below. ⚠ It is NOT excluded by the fixture:
 //     next_run is TIMESTAMPTZ with no CHECK, and timestamptz reaches back to
-//     4713 BC, so a zero next_run stores fine (ADR-0176 measurements §4:
-//     "postgres accepted"). It is also the primary production backend and the
-//     one where the pre-ADR-0176 orphan population actually lives, so the
-//     destructive DELETE must be exercised there and not merely assumed to
-//     generalise through dialect.Rebind.
+//     4713 BC, so a zero next_run stores fine (measured: postgres accepted). It
+//     is also the primary production backend and the one where the legacy
+//     orphan population actually lives, so the destructive DELETE must be
+//     exercised there and not merely assumed to generalise through
+//     dialect.Rebind.
 //   - MySQL is the only backend that genuinely cannot hold the fixture: it
 //     rejects a zero next_run outright under default strict mode (Error 1292,
-//     ADR-0176 measurements §4), so its orphan population is empty and the sweep
-//     is a no-op there. There is nothing to seed and nothing to assert.
+//     measured), so its orphan population is empty and the sweep is a no-op
+//     there. There is nothing to seed and nothing to assert.
 //
 // An earlier revision of this comment claimed SQLite was "the only backend that
-// can hold the fixture at all". That was false — it contradicted this bundle's
-// own spec §2.2 — and it argued against the Postgres coverage below.
+// can hold the fixture at all". That is false — Postgres holds it too, as
+// measured above — and it argued against the Postgres coverage below.
 
 import (
 	"context"
@@ -47,7 +47,7 @@ import (
 
 // textTimeLayout mirrors the unexported store constant of the same name: the
 // fixed-width nine-digit-fraction RFC3339 encoding SQLite timestamp columns are
-// written in (ADR-0151). Declared locally because package store cannot be
+// written in. Declared locally because package store cannot be
 // imported by an in-package test file here — internal/dbtest imports store, so
 // a `package store` test that used dbtest would be an import cycle.
 const textTimeLayout = "2006-01-02T15:04:05.000000000Z07:00"
@@ -82,17 +82,17 @@ func armedInstanceIDs(ctx context.Context, t *testing.T, db *sql.DB) []string {
 	return ids
 }
 
-// TestPrunerReclaimNeverDueTimers pins the orphan sweep of ADR-0181: rows whose
+// TestPrunerReclaimNeverDueTimers pins the orphan sweep: rows whose
 // next_run is sub-epoch AND whose trigger_kind is recurring are reclaimed, and
 // nothing else is.
 //
 // Every seeded row is load-bearing:
 //   - the three fixed-width orphans are the population the sweep exists for;
 //   - orphan-legacy-trimmed is what fails if the predicate is written as
-//     `next_run = <zero>` instead of a threshold — the pre-ADR-0151 trimmed
+//     `next_run = <zero>` instead of a threshold — the legacy trimmed
 //     encoding is not byte-equal to the fixed-width zero, so equality deletes 4
-//     of 5 and reports success (ADR-0181 measurement);
-//   - control-past-recurring is ADR-0134's regression guard: an expired but
+//     of 5 and reports success (measured);
+//   - control-past-recurring is a regression guard: an expired but
 //     still-armed recurring row. It guards the THRESHOLD clause — measured, it
 //     dies when the epoch sentinel is replaced by a wall-clock cutoff, and
 //     survives every widening of the trigger_kind IN-list (at 2020 it is not
@@ -157,8 +157,8 @@ func TestPrunerReclaimNeverDueTimers(t *testing.T) {
 	assert.Zero(t, again, "second sweep")
 }
 
-// TestPrunerNeverDueStats pins ADR-0181's promise that reclaiming an orphan
-// frees TimerStats.NextFireAt. An orphan sorts first in the keyset index, so
+// TestPrunerNeverDueStats pins that reclaiming an orphan frees
+// TimerStats.NextFireAt. An orphan sorts first in the keyset index, so
 // MIN(next_run) reports 0001-01-01 and the operator-facing "next timer fires
 // at" reading is pinned there for as long as the row exists.
 func TestPrunerNeverDueStats(t *testing.T) {
@@ -195,7 +195,7 @@ func TestPrunerNeverDueStats(t *testing.T) {
 }
 
 // TestPrunerReclaimNeverDueTimersPostgres runs the orphan sweep against the
-// primary production backend. Postgres is where the pre-ADR-0176 orphan
+// primary production backend. Postgres is where the legacy orphan
 // population actually lives, so the destructive DELETE is exercised here rather
 // than assumed to generalise from SQLite through dialect.Rebind — a regression
 // in the ?→$n rewrite or in the epoch bind would otherwise ship undetected.

@@ -127,10 +127,10 @@ func oversizeBody(cfg httpcore.CustomizeConfig[fiberlib.Router], c fiberlib.Ctx)
 //
 // ⚠ Optional is not unbounded. Skipping the cap here because the payload is
 // ignorable would leave one route decoding an arbitrarily large body into
-// memory, which is the exact hole ADR-0186's cap exists to close — and the
+// memory, which is the exact hole the cap exists to close — and the
 // decompression accounting in [oversizeBody] applies unchanged.
 //
-// Only the claim route uses this: ADR-0189 emptied httpcore.ClaimInput, so a
+// Only the claim route uses this: httpcore.ClaimInput is empty, so a
 // correctly-migrated client sends NO body at all and requiring one would answer
 // 400 (MEASURED before this helper existed: "workflow-httpcore: bad input:
 // bind from body: unexpected end of JSON input"). CompleteInput and

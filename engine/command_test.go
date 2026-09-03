@@ -227,7 +227,7 @@ func TestTimerRetryDistinctAndStringable(t *testing.T) {
 }
 
 // TestTimerCompensationStallDistinctAndStringable asserts that
-// TimerCompensationStall (ADR-0175) is distinct from every other TimerKind and
+// TimerCompensationStall is distinct from every other TimerKind and
 // has its own String() case.
 //
 // It needs its OWN test, mirroring TestTimerRetryDistinctAndStringable above,
@@ -255,7 +255,7 @@ func TestTimerCompensationStallDistinctAndStringable(t *testing.T) {
 }
 
 // TestTimerCompensationRetryDistinctAndStringable asserts that
-// TimerCompensationRetry (ADR-0179) is distinct from every other TimerKind, has
+// TimerCompensationRetry is distinct from every other TimerKind, has
 // its own String() case, and is appended last.
 //
 // It mirrors TestTimerCompensationStallDistinctAndStringable for the same reason

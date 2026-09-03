@@ -151,8 +151,8 @@ func TestActivityRoundTrip(t *testing.T) {
 	}
 }
 
-// TestUserTaskManualWireRoundTrip verifies UserTask.Manual (ADR-0118) survives
-// a JSON wire round-trip (ToWire -> NodeWire -> FromWire).
+// TestUserTaskManualWireRoundTrip verifies UserTask.Manual survives a JSON
+// wire round-trip (ToWire -> NodeWire -> FromWire).
 func TestUserTaskManualWireRoundTrip(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "d", Version: 1,
@@ -178,8 +178,8 @@ func TestUserTaskManualWireRoundTrip(t *testing.T) {
 }
 
 // TestUserTaskManualImmediateWireRoundTrip verifies UserTask.ManualImmediate
-// (ADR-0118) survives a JSON wire round-trip (ToWire -> NodeWire -> FromWire)
-// alongside Manual.
+// survives a JSON wire round-trip (ToWire -> NodeWire -> FromWire) alongside
+// Manual.
 func TestUserTaskManualImmediateWireRoundTrip(t *testing.T) {
 	def := &model.ProcessDefinition{
 		ID: "d", Version: 1,
@@ -200,7 +200,7 @@ func TestUserTaskManualImmediateWireRoundTrip(t *testing.T) {
 }
 
 // TestUserTaskOutcomeWireRoundTrip verifies the completion-outcome declaration
-// (ADR-0146) survives a JSON wire round-trip under its snake_case keys.
+// survives a JSON wire round-trip under its snake_case keys.
 func TestUserTaskOutcomeWireRoundTrip(t *testing.T) {
 	t.Parallel()
 

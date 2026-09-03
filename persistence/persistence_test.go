@@ -1,6 +1,6 @@
 // Package persistence_test is the black-box end-to-end test for the consumer-facing
 // persistence façade. It drives a real runtime.ProcessDriver against a Postgres container
-// to prove that Tasks 1–8 compose correctly on real Postgres.
+// to prove the façade composes correctly on real Postgres.
 package persistence_test
 
 import (

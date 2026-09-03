@@ -1,11 +1,11 @@
 package engine_test
 
-// step_clone_history_test.go — backlog 114. cloneState's History deep copy
+// step_clone_history_test.go — cloneState's History deep copy
 // (engine/step_state.go, the `s.History = append([]NodeVisit(nil), st.History...)`
 // line) was load-bearing and COMPLETELY untested: the whole engine package stayed
 // green when it was replaced by a shallow assignment.
 //
-// It is the line backlog 73 invites you to delete — 73 measures every Step as
+// It is the line a performance pass invites you to delete: every Step is already
 // O(entire state) and this copy is the obvious cost. Deleting it under a green
 // suite ships silent state corruption, which is what this file exists to stop.
 //

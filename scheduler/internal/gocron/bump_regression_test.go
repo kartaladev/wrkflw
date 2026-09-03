@@ -13,7 +13,7 @@ import (
 )
 
 // TestBumpRegression_OneShotFiresExactlyOnce locks the WithLimitedRuns(1)
-// semantics of a one-shot timer across the gocron v2.22.0 bump (ADR-0135):
+// semantics of a one-shot timer across the gocron v2.22.0 bump:
 // exactly one fire, and NextRun reports the timer as consumed (gone)
 // afterwards. This characterizes CURRENT behaviour under v2.21.2 first (a
 // regression lock, not a red-cycle symbol) so the bump can be verified to
@@ -33,7 +33,7 @@ func TestBumpRegression_OneShotFiresExactlyOnce(t *testing.T) {
 	// Liveness canary: RECURRING, because the claim under test is "no SECOND
 	// fire" and a scheduler that stopped delivering altogether satisfies that
 	// too. The canary must reach its own second tick inside the same window in
-	// which the one-shot must stay at one. See liveness_test.go (backlog 44).
+	// which the one-shot must stay at one. See liveness_test.go.
 	canary := newFireCanary(t, s, "bump-t1-canary", sched.Every(time.Minute))
 
 	// MANDATORY barrier: wait until gocron armed BOTH timers before advancing,

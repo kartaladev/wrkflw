@@ -1,6 +1,6 @@
 package engine_test
 
-// step_subprocess_multistart_test.go — regression for ADR-0121 fix F2: an
+// step_subprocess_multistart_test.go — multi-start regression: an
 // embedded sub-process must be entered INLINE at its MANUAL (trigger-less)
 // start, even when an event-triggered start precedes it in the nested
 // definition's node order. The old innerStarts[0] pick would enter the
@@ -62,7 +62,8 @@ func subProcessManualAfterEventStartDef() *model.ProcessDefinition {
 	}
 }
 
-// TestEmbeddedSubProcessEntersManualStartNotEventStart is the F2 regression.
+// TestEmbeddedSubProcessEntersManualStartNotEventStart is the multi-start
+// regression.
 func TestEmbeddedSubProcessEntersManualStartNotEventStart(t *testing.T) {
 	at := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
 	def := subProcessManualAfterEventStartDef()

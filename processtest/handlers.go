@@ -105,7 +105,7 @@ func CompleteTasksWith(svc *task.TaskService, decide DecideTaskFunc) ParkHandler
 
 // armFireLog records, per instance, the node ids a handler has already delivered
 // its name against, so an ARM-derived delivery repeats only where it has not
-// already fired (ADR-0166 D4).
+// already fired.
 //
 // It keys on WHICH nodes are parked, not on how many waiters exist. An arm's true
 // identity is unreachable — the arm slices on [engine.InstanceState] have

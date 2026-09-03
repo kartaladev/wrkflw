@@ -14,7 +14,7 @@ import (
 )
 
 // ExampleNeverDueTimerReclaimer shows how a consumer reaches the orphan
-// never-due timer sweep (ADR-0181). Every pruner constructor returns the
+// never-due timer sweep. Every pruner constructor returns the
 // [persistence.Pruner] interface, which deliberately does not carry
 // ReclaimNeverDueTimers — widening it would break consumers who implement it —
 // so the capability is reached by type assertion.

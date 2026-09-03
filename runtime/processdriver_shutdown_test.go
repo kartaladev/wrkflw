@@ -142,7 +142,7 @@ func TestProcessDriverShutdown(t *testing.T) {
 // the drain wait also surfaces the deadline, so this test asserts the observable Shutdown
 // contract (prompt return + ctx error) rather than isolating the scheduler-close path — a
 // slow-closing OWNED scheduler cannot be constructed in a unit test (a consumer-injected
-// slow scheduler is never registered in the ShutdownGroup, ADR-0054). Stable across
+// slow scheduler is never registered in the ShutdownGroup). Stable across
 // repeated runs: the already-expired ctx wins the close/drain selects in practice.
 func TestShutdownHonoursCtxDeadline(t *testing.T) {
 	driver, err := runtime.NewProcessDriver()

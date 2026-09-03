@@ -9,7 +9,7 @@ import (
 )
 
 // PublicState returns a projection of st carrying only the fields classified public,
-// widened by d (ADR-0190).
+// widened by d.
 //
 // # Why it BUILDS rather than copies
 //

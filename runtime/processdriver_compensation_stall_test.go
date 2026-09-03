@@ -1,6 +1,6 @@
 package runtime_test
 
-// ADR-0175 — the runtime surface for stall detection and the three escape verbs.
+// The runtime surface for stall detection and the three escape verbs.
 
 import (
 	"context"

@@ -1,6 +1,6 @@
 package engine_test
 
-// step_eventsubprocess_multistart_test.go — regression for ADR-0121 fix F3: an
+// step_eventsubprocess_multistart_test.go — multi-start regression: an
 // event sub-process arm must be built from the EVENT-TRIGGERED start of its
 // nested definition, not from StartNodes()[0]. Once multi-start became legal,
 // a manual start at index 0 would make the old code record a dead arm (empty
@@ -64,7 +64,7 @@ func espManualBeforeEventStartDef() *model.ProcessDefinition {
 	}
 }
 
-// TestEventSubprocessArmsFromEventStartNotIndexZero is the F3 regression: the arm
+// TestEventSubprocessArmsFromEventStartNotIndexZero pins that the arm
 // is recorded from the event-triggered start (Signal "cancel"), and firing that
 // signal enters the ESP at the event start's path, not the manual start's.
 func TestEventSubprocessArmsFromEventStartNotIndexZero(t *testing.T) {

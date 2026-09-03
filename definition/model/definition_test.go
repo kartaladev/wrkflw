@@ -183,7 +183,7 @@ func TestNodeSubProcessField(t *testing.T) {
 
 // TestNodeEventTriggeredSubProcessField asserts that an event sub-process — a
 // KindSubProcess node whose nested Subprocess has an event-triggered inner
-// start — round-trips correctly (ADR-0122).
+// start — round-trips correctly.
 func TestNodeEventTriggeredSubProcessField(t *testing.T) {
 	nested := &model.ProcessDefinition{
 		ID:      "event-nested-proc",

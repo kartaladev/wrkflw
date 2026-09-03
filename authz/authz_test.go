@@ -276,7 +276,7 @@ func TestCloneActors(t *testing.T) {
 }
 
 // TestActorJSONWireShape pins the actor's wire form to {id, roles, attributes}.
-// The human-task audit renders actors by faithful passthrough (ADR-0147), so the
+// The human-task audit renders actors by faithful passthrough, so the
 // actor type itself carries the wire contract rather than each view re-mapping it.
 // Empty roles and attributes are omitted so an ID-only actor stays compact.
 func TestActorJSONWireShape(t *testing.T) {

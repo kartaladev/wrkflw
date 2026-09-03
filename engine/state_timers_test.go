@@ -1,7 +1,7 @@
 package engine
 
 // state_timers_test.go — white-box tests for the timer lookup/sweep helpers.
-// Covers ADR-0152: an empty identity key matches no record.
+// Covers the rule that an empty identity key matches no record.
 //
 // Every empty-key case plants a record HOLDING the empty value, so the test
 // genuinely reproduces the wildcard and fails if the guard is removed.
@@ -69,7 +69,7 @@ func TestCancelTimersByTaskID(t *testing.T) {
 			},
 		},
 		{
-			// ADR-0152, the live defect. TimerRetry records carry no TaskID, so an
+			// The live defect. TimerRetry records carry no TaskID, so an
 			// empty key swept every retry in the instance — including retries owned
 			// by tokens in sibling scopes, wedging them in TokenWaiting forever.
 			name: "empty task key cancels nothing",
@@ -85,7 +85,7 @@ func TestCancelTimersByTaskID(t *testing.T) {
 			},
 		},
 		{
-			// Backlog 3b. cancelTimersWhere assigned a freshly make()d slice
+			// cancelTimersWhere assigned a freshly make()d slice
 			// unconditionally, so sweeping the LAST record turned a nil Timers
 			// table into an empty non-nil one — `"timers": null` became
 			// `"timers": []` on the persisted snapshot. cancelCompensationWalkTimers
@@ -241,7 +241,7 @@ func TestRemoveTimer(t *testing.T) {
 			},
 		},
 		{
-			// Backlog 3b, the removal half: removeTimer assigned a freshly
+			// The removal half: removeTimer assigned a freshly
 			// make()d slice unconditionally, so dropping the only record left an
 			// empty non-nil table and flipped the persisted snapshot from
 			// `"timers": null` to `"timers": []`.
@@ -253,7 +253,7 @@ func TestRemoveTimer(t *testing.T) {
 			},
 		},
 		{
-			// Backlog 3b, the no-op half: a miss against an ALREADY-nil table
+			// The no-op half: a miss against an ALREADY-nil table
 			// still materialised an empty slice, so a removeTimer that removed
 			// nothing at all changed the wire shape.
 			name:      "a miss against a nil table leaves it nil",

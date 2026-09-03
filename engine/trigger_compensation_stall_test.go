@@ -1,6 +1,6 @@
 package engine_test
 
-// ADR-0175 — the ResolveCompensationStall trigger's shape.
+// The ResolveCompensationStall trigger's shape.
 //
 // Three operator verbs ride ONE trigger rather than three, following the
 // admin-trigger idiom CompensateRequested already sets (one type, several

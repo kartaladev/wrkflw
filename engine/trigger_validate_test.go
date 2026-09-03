@@ -1,6 +1,6 @@
 package engine
 
-// trigger_validate_test.go — ADR-0152: Step rejects a trigger whose identity key
+// trigger_validate_test.go — Step rejects a trigger whose identity key
 // is empty, rather than letting it reach the state lookups.
 
 import (
@@ -58,7 +58,7 @@ func TestValidateTriggerKey(t *testing.T) {
 
 		// EXEMPTIONS — empty here is documented, meaningful, and must be accepted.
 		// TimerFired is exempt because TestTimerFiredStaleTokenIsNoop pins an
-		// empty TimerID as a clean no-op (ADR-0152).
+		// empty TimerID as a clean no-op.
 		{name: "TimerFired with empty TimerID stays a clean no-op", trigger: NewTimerFired(at, ""), assert: accepts},
 		{name: "StartInstance with empty StartNodeID resolves the manual start", trigger: NewStartInstance(at, nil), assert: accepts},
 		{name: "CompensateRequested with empty ToNode means full rollback", trigger: NewCompensateRequested(at, ""), assert: accepts},
@@ -78,7 +78,7 @@ func TestValidateTriggerKey(t *testing.T) {
 // allTriggerVariants returns one value of every variant of the sealed Trigger
 // interface, all stamped at. It is the single list that drives every
 // exhaustiveness property the engine asserts over triggers: this file's
-// classification check and TestTriggerTerminalPolicies' policy table (ADR-0165).
+// classification check and TestTriggerTerminalPolicies' policy table.
 // Adding a variant without adding it here fails the codec's own exhaustiveness
 // test too.
 func allTriggerVariants(at time.Time) []Trigger {
@@ -120,7 +120,7 @@ func TestValidateTriggerKindsAreExhaustive(t *testing.T) {
 	//
 	// It also pins logKey, which nothing else does: an accessor with no log
 	// attribute name would make dispatch's terminal guard emit the identity value
-	// under the empty key (ADR-0165).
+	// under the empty key.
 	assertKeyRowSound := func(t *testing.T, set, name string, k triggerKey, trg Trigger) {
 		t.Helper()
 		assert.NotPanics(t, func() { k.read(trg) },
@@ -142,7 +142,7 @@ func TestValidateTriggerKindsAreExhaustive(t *testing.T) {
 			assertKeyRowSound(t, "validatedTriggerKinds", name, k, trg)
 		case exempt && ex.key.read != nil:
 			// ⚠ Exempt rows are NOT exempt from this check. They gained optional
-			// identity accessors in ADR-0165 so dispatch's terminal guard can log
+			// identity accessors so dispatch's terminal guard can log
 			// timer_id and friends, and those accessors carry the SAME unchecked
 			// type assertion — but they were unreachable here while this loop did
 			// `if !validated { continue }`, which is how a mis-paired exempt row
@@ -171,7 +171,7 @@ func TestStepRejectsEmptyTriggerKey(t *testing.T) {
 	t.Parallel()
 
 	// A token parked on a signal WOULD be resumed by an empty-name broadcast
-	// before ADR-0152. Assert it did not move.
+	// without the guard. Assert it did not move.
 	before := InstanceState{
 		Status: StatusRunning,
 		Tokens: []Token{{ID: "tokActive", State: TokenActive, NodeID: "n1"}},

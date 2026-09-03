@@ -115,8 +115,8 @@ func cancellableDef() *model.ProcessDefinition {
 	}
 }
 
-// TestNodeVisitCloseKind pins the close reason recorded on a node visit
-// (ADR-0145): abnormal closes name why the visit ended, and every NORMAL
+// TestNodeVisitCloseKind pins the close reason recorded on a node visit:
+// abnormal closes name why the visit ended, and every NORMAL
 // advance — including gateway forks, joins, and sub-process entry — leaves it
 // unset so a consumer can treat a present close_kind as "something went
 // sideways here".

@@ -1,6 +1,6 @@
 package engine_test
 
-// state_timer_waiters_test.go — ADR-0177. InstanceState.TimerWaiters() is the
+// state_timer_waiters_test.go — InstanceState.TimerWaiters() is the
 // single authority enumerating EVERY timer arm an instance holds: the token
 // await (Token.AwaitTimer), the three arm families, and the s.Timers record
 // table. Before it existed, HasArmedTimers() read s.Timers alone and reported
@@ -142,8 +142,8 @@ func eventSubprocessTimerArmDef() *model.ProcessDefinition {
 }
 
 // deadlineRecordDef is the CONTROL source: a user-task deadline, the one arm
-// kind that already lands in s.Timers and that HasArmedTimers() saw before
-// ADR-0177. Without it the other four rows could pass by everything being empty.
+// kind that already lands in s.Timers and the only one HasArmedTimers() once
+// saw. Without it the other four rows could pass by everything being empty.
 //
 //	start → work[UserTask, deadline "3h" → flow "escalate"] → end
 func deadlineRecordDef() *model.ProcessDefinition {
@@ -175,7 +175,7 @@ func startParkedState(t *testing.T, def *model.ProcessDefinition) engine.Instanc
 	return res.State
 }
 
-// TestTimerWaiters covers ADR-0177's five timer-arm sources, one per row. Each
+// TestTimerWaiters covers the five timer-arm sources, one per row. Each
 // row's definition declares a REAL arm node, and each asserts the whole
 // TimerWaiter — TimerID, Kind, NodeID and TokenID — so a row cannot pass on a
 // half-populated result.
@@ -282,8 +282,8 @@ func TestTokenAwaitTimerIsSetOnPlainIntermediateCatch(t *testing.T) {
 		"dual-write: AwaitCommand keeps the timer id so path-5 dispatch is untouched")
 }
 
-// TestTokenAwaitTimerIsClearedOnResume is the audit's CRITICAL case, and the one
-// that decides whether ADR-0177 works or inverts.
+// TestTokenAwaitTimerIsClearedOnResume is the CRITICAL case, and the one that
+// decides whether the token-await source works or inverts.
 //
 // A set-only AwaitTimer stays populated after the timer fires, so the resumed
 // token keeps naming a timer that no longer exists: TimerWaiters() reports a
@@ -319,14 +319,14 @@ func TestTokenAwaitTimerIsClearedOnResume(t *testing.T) {
 	assert.False(t, res.State.HasArmedTimers(), "nothing is armed once the catch has fired")
 }
 
-// TestHasArmedTimersSeesEveryArmSource is the behavioural point of ADR-0177.
-// Before it, HasArmedTimers() read s.Timers alone and measured FALSE for the
+// TestHasArmedTimersSeesEveryArmSource is the behavioural point of the widening.
+// Previously HasArmedTimers() read s.Timers alone and measured FALSE for the
 // boundary, event-gateway, event-sub-process and plain-intermediate-catch
 // sources — four of five — so a harness reported "no armed timers" for an
 // instance that was waiting on exactly one.
 //
-// The deadline row is the control that already passed; the stall row is
-// ADR-0175's exclusion, which the widening must not lose: a compensation-stall
+// The deadline row is the control that already passed; the stall row is the
+// detection-only exclusion, which the widening must not lose: a compensation-stall
 // record is a DETECTION deadline, and firing it manufactures the incident the
 // window exists to detect.
 func TestHasArmedTimersSeesEveryArmSource(t *testing.T) {
@@ -384,14 +384,14 @@ func TestHasArmedTimersSeesEveryArmSource(t *testing.T) {
 	}
 }
 
-// TestTimerTokenWaitersRehydrationLimit pins ADR-0177's KNOWN LIMITATION and,
+// TestTimerTokenWaitersRehydrationLimit pins the KNOWN LIMITATION and,
 // in the same table, the assertion that makes the pin worth having.
 //
 // The limitation: an instance parked on a plain intermediate-catch timer BEFORE
 // AwaitTimer shipped has no value for it in its stored row, so after rehydration
 // the source stays invisible until the arm is re-created. Backfilling it would
-// mean recognising a timer id by its shape — the id-sniffing ADR-0152 forbids
-// and this ADR rejected.
+// mean recognising a timer id by its shape — the id-sniffing this repo
+// forbids.
 //
 // ⚠ The pin row alone is near-vacuous: it is falsified ONLY by a backfill
 // implemented inside TimerTokenWaiters, and a backfill done in a migration or
@@ -402,7 +402,7 @@ func TestHasArmedTimersSeesEveryArmSource(t *testing.T) {
 func TestTimerTokenWaitersRehydrationLimit(t *testing.T) {
 	t.Parallel()
 
-	// The shape a pre-ADR-0177 build persisted: the timer id lives in
+	// The shape an older build persisted: the timer id lives in
 	// AwaitCommand and nowhere else.
 	rehydrated := func() engine.InstanceState {
 		return engine.InstanceState{

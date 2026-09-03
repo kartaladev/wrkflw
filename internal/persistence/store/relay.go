@@ -34,14 +34,14 @@ import (
 //   - SQLite (SupportsSkipLocked=false): plain SELECT … LIMIT n under the
 //     single-writer contract — no concurrent relay is expected.
 //
-// Per-row isolation (ADR-0017): each claimed row's outcome is recorded
+// Per-row isolation: each claimed row's outcome is recorded
 // independently. A successful Publish marks only that row published; a failed
 // Publish increments retry_count and advances next_attempt_at by a capped
 // exponential backoff. A row reaching MaxDeliveryAttempts is moved to
 // status='dead'. A poison row never blocks healthy peers in the same batch.
 //
-// Run polls on the configured interval. For Task 18, a nil wake channel is
-// already wired into the select — the notifier-wake path is a clean addition.
+// Run polls on the configured interval. A nil wake channel is already wired
+// into the select — the notifier-wake path is a clean addition.
 type Relay struct {
 	conn    any
 	d       dialect.Dialect
@@ -134,7 +134,7 @@ func WithRelayBackoff(base, maxInterval time.Duration) RelayOption {
 // WithRelayNotifier injects a [dialect.Notifier] so [Relay.Run] wakes on
 // database notifications (Postgres LISTEN/NOTIFY) in addition to the poll
 // ticker. The poll interval remains active as a fallback for missed
-// notifications, restarts, and multi-worker fan-out (ADR-0022).
+// notifications, restarts, and multi-worker fan-out.
 //
 // Only the (pgx, Postgres) combination provides a meaningful implementation
 // ([NewPgxNotifier]). For MySQL and SQLite, omit this option or pass nil;
@@ -468,7 +468,7 @@ func (r *Relay) drainUntilEmpty(ctx context.Context) error {
 // starts a listenLoop goroutine that calls notifier.Listen and forwards each
 // database notification as an immediate drain trigger. The poll ticker remains
 // active as a fallback for missed notifications, restarts, and multi-worker
-// fan-out (ADR-0022).
+// fan-out.
 //
 // When no Notifier is present (MySQL, SQLite, or poll-only Postgres), the wake
 // channel is nil and the select falls through to the ticker only — pure

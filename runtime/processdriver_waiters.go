@@ -24,11 +24,10 @@ func (driver *ProcessDriver) syncWaiters(st engine.InstanceState) {
 
 // syncSignalBus reconciles st's signal awaits with the SignalBus, if one is
 // configured. The authoritative set of signal names the instance can be woken by
-// comes from the engine's st.SignalWaiters() (ADR-0123/0154), so the runtime
-// never has to know which constructs contribute — deliberately no enumeration is
-// repeated here, because a stale list at this layer is exactly what hid the
-// missing boundary and gateway arms until ADR-0154. This is a no-op when
-// driver.sigbus is nil.
+// comes from the engine's st.SignalWaiters(), so the runtime never has to know
+// which constructs contribute — deliberately no enumeration is repeated here,
+// because a stale list at this layer is exactly what hid the missing boundary
+// and gateway arms. This is a no-op when driver.sigbus is nil.
 func (driver *ProcessDriver) syncSignalBus(st engine.InstanceState) {
 	if driver.sigbus == nil {
 		return
@@ -36,7 +35,7 @@ func (driver *ProcessDriver) syncSignalBus(st engine.InstanceState) {
 	var awaiting []string
 	if !st.Status.IsTerminal() {
 		// A terminal instance awaits nothing. A repeatable non-interrupting root
-		// event-sub arm can still be present in a terminal snapshot (ADR-0124), so
+		// event-sub arm can still be present in a terminal snapshot, so
 		// leaving its subscription would misroute a later broadcast to a dead
 		// instance; drop all subscriptions by syncing an empty set.
 		awaiting = st.SignalWaiters()
@@ -48,9 +47,9 @@ func (driver *ProcessDriver) syncSignalBus(st engine.InstanceState) {
 // current state of st. It removes stale entries for the instance, then
 // re-registers every (name, key) the instance can be woken by, as reported by the
 // engine's single authority st.MessageWaiters() — token message-catch awaits,
-// armed message boundaries (host parks on a task, not the message — ADR-0053),
-// event-based-gateway message arms, and message-triggered event sub-process arms
-// (ADR-0123). Consolidating the per-construct enumeration in the engine is what
+// armed message boundaries (host parks on a task, not the message),
+// event-based-gateway message arms, and message-triggered event sub-process
+// arms. Consolidating the per-construct enumeration in the engine is what
 // keeps a future message construct from being silently forgotten here.
 func (driver *ProcessDriver) syncMsgWaiters(st engine.InstanceState) {
 	driver.msgMu.Lock()
@@ -66,8 +65,8 @@ func (driver *ProcessDriver) syncMsgWaiters(st engine.InstanceState) {
 	// A terminal instance awaits nothing: registering a waiter for it would
 	// misroute a later delivery (e.g. swallow a message that should start a fresh
 	// message-start instance). A repeatable non-interrupting root event-sub arm can
-	// still be present in the terminal snapshot, so this guard is required
-	// (ADR-0124); it also retroactively closes the same gap for a never-fired arm.
+	// still be present in the terminal snapshot, so this guard is required; it
+	// also retroactively closes the same gap for a never-fired arm.
 	if st.Status.IsTerminal() {
 		return
 	}
@@ -80,7 +79,7 @@ func (driver *ProcessDriver) syncMsgWaiters(st engine.InstanceState) {
 		// ambiguous — a modeling error for a keyed await, inherently ambiguous for a
 		// keyless one. Messages are point-to-point (fan-out is the signal model), so
 		// the engine does not invent multi-delivery; it surfaces the ambiguity with a
-		// WARN and proceeds with the existing last-writer-wins overwrite (ADR-0125).
+		// WARN and proceeds with the existing last-writer-wins overwrite.
 		if existing, ok := driver.msgWaiters[k]; ok && existing != st.InstanceID {
 			driver.obs.tel.Logger.LogAttrs(context.Background(), slog.LevelWarn,
 				"runtime: ambiguous message correlation: two instances await the same (message, correlationKey); delivery is 1:1 so only one will receive it — use a unique correlation key",

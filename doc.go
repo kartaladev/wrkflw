@@ -74,10 +74,10 @@
 // # Supporting ports and façades
 //
 //   - persistence  The persistence façade over the neutral SQL store: OpenPostgres,
-//     OpenMySQL, and OpenSQLite backends (Postgres/MySQL/SQLite dialects, ADR-0081/0082).
+//     OpenMySQL, and OpenSQLite backends (Postgres/MySQL/SQLite dialects).
 //     Provides InstanceStore, CachingInstanceStore, CachingTaskStore, Relay, CallLinkStore,
 //     TimerStore, ChainLinkStore, Lister, DefinitionStore, and their constructors.
-//     Hot-path caching is default-on on the DurableProvider constructors (ADR-0099).
+//     Hot-path caching is default-on on the DurableProvider constructors.
 //   - persistence/cache  Neutral cache port: Cache, ValueCache, Provider, Codec[V].
 //     Four swappable adapter subpackages: persistence/cache/hotcache (samber/hot, default),
 //     persistence/cache/ottercache (maypok86/otter, in-memory), persistence/cache/rediscache
@@ -90,9 +90,9 @@
 //     the abstraction). Provides the gocron-backed Scheduler; the in-memory
 //     MemScheduler test double lives in the processtest harness package.
 //   - observability Metrics, traces, and slog wiring at the runtime boundary.
-//   - (clockwork)  Time abstraction: [github.com/jonboulle/clockwork.Clock]
-//     (ADR-0138) is injected directly into every stateful component — no local
-//     wrapper package. Default: clockwork.NewRealClock(); inject a fake clock
+//   - (clockwork)  Time abstraction: [github.com/jonboulle/clockwork.Clock] is
+//     injected directly into every stateful component — no local wrapper
+//     package. Default: clockwork.NewRealClock(); inject a fake clock
 //     (clockwork.NewFakeClock) in tests. Engine and runtime never read the wall
 //     clock directly.
 //

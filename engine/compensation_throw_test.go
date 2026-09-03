@@ -1,6 +1,6 @@
 package engine_test
 
-// compensation_throw_test.go — ADR-0120: dedicated CompensationThrowEvent
+// compensation_throw_test.go — dedicated CompensationThrowEvent
 // (model.KindCompensationThrowEvent). Exercises the new engine strategy for
 // BOTH a scope-wide throw (empty CompensateRef — the throwing scope's completed
 // compensable activities, reverse order, throw-then-continue) and a targeted
@@ -12,8 +12,6 @@ package engine_test
 //
 // engine.Step is a pure, context-free function; the table form below therefore
 // omits the table-test skill's ctx modifier (there is no context to cancel).
-//
-// ADR: 0120
 
 import (
 	"testing"
@@ -106,7 +104,7 @@ func driveToScopeWideThrow(t *testing.T, def *model.ProcessDefinition, instID st
 
 // driveToScopeWideThrowWithOptions is driveToScopeWideThrow with the caller's
 // StepOptions applied to every Step, so a test can exercise the throw walk's
-// first dispatch under a non-default policy (e.g. ADR-0175's stall window).
+// first dispatch under a non-default policy (e.g. a stall window).
 func driveToScopeWideThrowWithOptions(t *testing.T, def *model.ProcessDefinition, instID string, at time.Time, opt engine.StepOptions) engine.StepResult {
 	t.Helper()
 
@@ -471,7 +469,7 @@ func TestCompensationThrowScopeWideBreadth(t *testing.T) {
 // walk is in flight, appending undoC to RootCompensations at an index above the
 // walk's drained prefix. A compensate-once finish that nils the whole list would
 // silently discard undoC; it must instead clear only the drained prefix and
-// retain undoC for a later cancel (ADR-0120 review A1).
+// retain undoC for a later cancel.
 func siblingRecordMidWalkDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "a1-proc", Version: 1,
@@ -497,9 +495,10 @@ func siblingRecordMidWalkDef() *model.ProcessDefinition {
 	}
 }
 
-// TestScopeWideThrowRetainsSiblingRecordAppendedMidWalk reproduces ADR-0120
-// review A1: a compensable sibling activity that completes DURING a scope-wide
-// throw walk appends a compensation record above the walk's drained range. The
+// TestScopeWideThrowRetainsSiblingRecordAppendedMidWalk covers the mid-walk
+// sibling case: a compensable sibling activity that completes DURING a
+// scope-wide throw walk appends a compensation record above the walk's drained
+// range. The
 // throw's compensate-once finish must clear only the records it actually drained,
 // leaving the sibling's record compensable by a later cancel — never silently
 // destroyed.
@@ -606,7 +605,7 @@ func TestScopeWideThrowRetainsSiblingRecordAppendedMidWalk(t *testing.T) {
 		"undoC must not be silently lost: retained in RootCompensations or compensated by the later cancel")
 }
 
-// ── (C1) Dead-end scope-wide throw must NOT consume the archive ───────────────
+// ── Dead-end scope-wide throw must NOT consume the archive ────────────────────
 
 // deadEndScopeWideAfterSubProcessDef returns:
 //
@@ -616,7 +615,7 @@ func TestScopeWideThrowRetainsSiblingRecordAppendedMidWalk(t *testing.T) {
 // `rb` has no outgoing flow (dead-end), so it must NOT start a walk. It must also
 // NOT consolidate/consume the archive: a dead-end throw that never compensates
 // must leave ArchivedCompensations["sub"] intact so a later targeted throw or a
-// cancel can still run those records (ADR-0120 review C1).
+// cancel can still run those records.
 func deadEndScopeWideAfterSubProcessDef() *model.ProcessDefinition {
 	nested := &model.ProcessDefinition{
 		ID: "c1-nested", Version: 1,
@@ -644,11 +643,10 @@ func deadEndScopeWideAfterSubProcessDef() *model.ProcessDefinition {
 	}
 }
 
-// TestScopeWideDeadEndThrowDoesNotConsumeArchive reproduces ADR-0120 review C1: a
-// dead-end scope-wide throw must not start a walk, must not terminate the
-// instance, and must NOT consolidate/consume ArchivedCompensations. Also anchors
-// review altitude4 (FIX 6): a dead-end scope-wide throw auto-advances / parks
-// per the defensive guard rather than terminating.
+// TestScopeWideDeadEndThrowDoesNotConsumeArchive pins that a dead-end
+// scope-wide throw must not start a walk, must not terminate the instance, and
+// must NOT consolidate/consume ArchivedCompensations. It also pins that such a
+// throw auto-advances / parks per the defensive guard rather than terminating.
 func TestScopeWideDeadEndThrowDoesNotConsumeArchive(t *testing.T) {
 	at := time.Date(2026, 7, 10, 14, 0, 0, 0, time.UTC)
 	def := deadEndScopeWideAfterSubProcessDef()
@@ -675,12 +673,12 @@ func TestScopeWideDeadEndThrowDoesNotConsumeArchive(t *testing.T) {
 
 	// The archive must be intact — the dead-end throw did NOT consolidate it away.
 	require.Contains(t, r2.State.ArchivedCompensations, "sub",
-		"dead-end scope-wide throw must leave ArchivedCompensations[\"sub\"] intact (C1)")
+		"dead-end scope-wide throw must leave ArchivedCompensations[\"sub\"] intact")
 	require.Len(t, r2.State.ArchivedCompensations["sub"], 1,
 		"the archived sub-process compensation record must survive an un-committed throw")
 }
 
-// ── (altitude3) Scope-wide throw from a sub-process scope stays in its scope ───
+// ── Scope-wide throw from a sub-process scope stays in its scope ───────────────
 
 // subScopeThrowDef returns a root process whose sub-process fires a scope-wide
 // throw from INSIDE its own live scope:
@@ -691,7 +689,7 @@ func TestScopeWideDeadEndThrowDoesNotConsumeArchive(t *testing.T) {
 //
 // rootSvc records undo-root at the ROOT scope. Inside the sub-process, innerSvc
 // records undo-inner at the SUB scope, then a scope-wide throw fires while that
-// scope is still live. ADR-0120's throwing-scope + no-enclosing-propagation rule
+// scope is still live. The throwing-scope + no-enclosing-propagation rule
 // requires the throw to compensate ONLY the sub-scope's undo-inner — never the
 // enclosing root's undo-root — and to resume forward within the sub-scope.
 func subScopeThrowDef() *model.ProcessDefinition {
@@ -727,7 +725,7 @@ func subScopeThrowDef() *model.ProcessDefinition {
 	}
 }
 
-// TestScopeWideThrowFromSubProcessScopeStaysInScope verifies ADR-0120's
+// TestScopeWideThrowFromSubProcessScopeStaysInScope verifies the
 // throwing-scope semantics for a NON-root scope: a scope-wide throw fired from a
 // token inside a live sub-process compensates only that sub-scope's own completed
 // compensable activities and leaves the enclosing root scope's records intact,

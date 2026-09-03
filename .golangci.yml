@@ -9,7 +9,7 @@ issues:
 linters:
   default: standard   # errcheck, govet, ineffassign, staticcheck, unused
   enable:
-    # Security & correctness hardening (ADR-0077).
+    # Security & correctness hardening.
     - gosec      # SAST: integer overflow, weak rng, SQL formatting, etc.
     - bodyclose  # ensure HTTP response bodies are closed
     - errorlint  # require errors.Is/As and %w-wrapping

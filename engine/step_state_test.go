@@ -1,7 +1,7 @@
 package engine
 
 // step_state_test.go — white-box tests for the token and visit lookup helpers.
-// Covers ADR-0152. Each empty-key case plants a record holding the empty value.
+// Each empty-key case plants a record holding the empty value.
 
 import (
 	"testing"
@@ -41,7 +41,7 @@ func TestTokenAwaiting(t *testing.T) {
 			},
 		},
 		{
-			// Before ADR-0152 this returned tokSig, the first parked token whose
+			// Previously this returned tokSig, the first parked token whose
 			// AwaitCommand is "" — a signal-parked token, not a command one.
 			name:  "empty command id matches no token",
 			cmdID: "",
@@ -79,7 +79,7 @@ func TestTokenIDsAwaitingSignal(t *testing.T) {
 			},
 		},
 		{
-			// Before ADR-0152 this returned every token NOT awaiting a signal —
+			// Previously this returned every token NOT awaiting a signal —
 			// a SignalReceived{Name: ""} resumed them all.
 			name:   "empty signal name matches no token",
 			signal: "",

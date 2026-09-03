@@ -1,10 +1,7 @@
 package runtime_test
 
-// scope_compensation_test.go — Task 4: runtime e2e for compensation throw event
+// scope_compensation_test.go — runtime e2e for compensation throw event
 // (scope-targeted compensation).
-//
-// Design: docs/specs/2026-06-23-scope-targeted-compensation-design.md
-// ADR: 0039
 //
 // Verifies end-to-end (through the public ProcessDriver + MemInstanceStore + service-action
 // catalog) that a process with a completed compensable sub-process, followed by
@@ -70,7 +67,7 @@ func scopeCompensationDef() *model.ProcessDefinition {
 }
 
 // TestCompensationThrowRunsSubProcessCompensationE2E is the runtime e2e for
-// scope-targeted compensation (ADR-0039, Task 4).
+// scope-targeted compensation.
 //
 // Asserts:
 //  1. "book" is invoked when the sub-process runs.

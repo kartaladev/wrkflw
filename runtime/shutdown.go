@@ -14,7 +14,7 @@ type ShutdownFunc func(ctx context.Context) error
 
 // ShutdownGroup aggregates the teardown of a set of long-running components and
 // resource holders into a single, ordered, error-collecting [ShutdownGroup.Shutdown]
-// call (ADR-0054).
+// call.
 //
 // The library deliberately does NOT own goroutine startup: a consumer starts the
 // Run(ctx) workers (relay, call notifier, chainer runner, …) themselves and stops

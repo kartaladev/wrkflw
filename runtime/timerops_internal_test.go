@@ -26,7 +26,7 @@ import (
 func noRecurring(string) (bool, bool) { return false, true }
 
 // undeterminable is an armedRecurring lookup that cannot answer — the store
-// failed. The fired timer must be left alone (ADR-0159).
+// failed. The fired timer must be left alone.
 func undeterminable(string) (bool, bool) { return false, false }
 
 // timerOpsDef is a minimal definition carrier for timerJobsFor (which only
@@ -39,8 +39,8 @@ func timerOpsDef() *model.ProcessDefinition {
 	}
 }
 
-// TestTimerJobsFor covers the single derivation site for timer side-effects
-// (ADR-0134): ScheduleTimer commands become Manual timerJobs whose
+// TestTimerJobsFor covers the single derivation site for timer side-effects:
+// ScheduleTimer commands become Manual timerJobs whose
 // spec.NextRun is the converted trigger's Next(now) in UTC (subsuming the
 // retired nextRunFor — including the UTC and original-instant guarantees);
 // CancelTimer commands and consumed TimerFired triggers become PK-exact
@@ -92,7 +92,7 @@ func TestTimerJobsFor(t *testing.T) {
 			},
 		},
 		{
-			name:    "cron arm persists the REAL next occurrence (ADR-0134 closes the interim zero-NextRun gap)",
+			name:    "cron arm persists the REAL next occurrence (closes the interim zero-NextRun gap)",
 			cmds:    []engine.Command{engine.ScheduleTimer{TimerID: "t1", Trigger: schedule.Cron("0 9 * * *"), Kind: engine.TimerIntermediate}},
 			trg:     engine.NewStartInstance(at, nil),
 			armedFn: noRecurring,
@@ -156,7 +156,7 @@ func TestTimerJobsFor(t *testing.T) {
 			assert: func(t *testing.T, arms []*timerJob, cancels []cancelKey) {
 				assert.Empty(t, arms)
 				assert.Empty(t, cancels,
-					"a failed recurrence lookup must never cancel: that would permanently disarm a recurring job (ADR-0159)")
+					"a failed recurrence lookup must never cancel: that would permanently disarm a recurring job")
 			},
 		},
 		{
@@ -220,12 +220,12 @@ func TestTimerJobsFor(t *testing.T) {
 	}
 }
 
-// BenchmarkArmedTimerRecurring measures the N→1 read reduction ADR-0159 claims,
+// BenchmarkArmedTimerRecurring measures the N→1 read reduction of the point read,
 // over a kernel.MemTimerStore holding N armed timers.
 //
 //   - point-lookup runs the production armedTimerRecurring: one map lookup, flat
 //     in N.
-//   - list-armed-scan runs legacyArmedRecurring, the pre-ADR-0159 algorithm, over
+//   - list-armed-scan runs legacyArmedRecurring, the superseded algorithm, over
 //     the SAME store: MemTimerStore.ListArmed allocates and sorts the whole armed
 //     set (O(N log N)) before the linear search finds one row. The SQL store pays
 //     N rows plus N trigger decodes for the same answer.
@@ -339,8 +339,8 @@ func (s scriptedTimerStore) ArmedTimer(context.Context, string, string) (kernel.
 // timerRef is one (instanceID, timerID) pair a store double was asked for.
 type timerRef struct{ instanceID, timerID string }
 
-// corruptSiblingTimerStore reproduces the store state ADR-0159 was written
-// against: wrkflw_timers holds one row the driver cannot scan, alongside the
+// corruptSiblingTimerStore reproduces the store state the point read was
+// written against: wrkflw_timers holds one row the driver cannot scan, alongside the
 // perfectly readable row the fire path actually wants. The SQL TimerStore's
 // ListArmed aborts on the FIRST unscannable row anywhere in the table
 // (internal/persistence/store/timerstore.go, the scanArmedTimer error path), so
@@ -386,7 +386,7 @@ func (s *corruptSiblingTimerStore) reads() []timerRef {
 	return slices.Clone(s.pointReads)
 }
 
-// legacyArmedRecurring reproduces the PRE-ADR-0159 recurrence lookup verbatim: a
+// legacyArmedRecurring reproduces the SUPERSEDED recurrence lookup verbatim: a
 // full ListArmed scan, a linear search for the (instanceID, timerID) pair, and
 // a single boolean in which every failure collapses to "not recurring" — which
 // timerJobsFor reads as "cancel the fired timer".
@@ -408,7 +408,7 @@ func legacyArmedRecurring(ctx context.Context, store kernel.TimerStore, instance
 }
 
 // TestCorruptSiblingRowDoesNotDisarmFiredRecurringTimer pins the behaviour delta
-// ADR-0159 buys beyond the N→1 read count.
+// the point read buys beyond the N→1 read count.
 //
 // Before: the fire path answered recurrence with ListArmed, which aborts on the
 // first unscannable row ANYWHERE in wrkflw_timers. One corrupt row therefore
@@ -445,7 +445,7 @@ func TestCorruptSiblingRowDoesNotDisarmFiredRecurringTimer(t *testing.T) {
 
 	cases := []testCase{
 		{
-			name: "PRE-ADR-0159 ListArmed scan: the corrupt sibling disarms the recurring timer",
+			name: "legacy ListArmed scan: the corrupt sibling disarms the recurring timer",
 			lookup: func(ctx context.Context, _ *ProcessDriver, store *corruptSiblingTimerStore) func(string) (bool, bool) {
 				return func(timerID string) (bool, bool) {
 					return legacyArmedRecurring(ctx, store, "i1", timerID), true
@@ -453,12 +453,12 @@ func TestCorruptSiblingRowDoesNotDisarmFiredRecurringTimer(t *testing.T) {
 			},
 			assert: func(t *testing.T, store *corruptSiblingTimerStore, cancels []cancelKey) {
 				assert.Equal(t, []cancelKey{{instanceID: "i1", timerID: "rec-1"}}, cancels,
-					"the regression this ADR removes: a failed scan collapsed to non-recurring, so the fire cancelled a recurring timer")
+					"the regression the point read removes: a failed scan collapsed to non-recurring, so the fire cancelled a recurring timer")
 				assert.Equal(t, 1, store.scanCount(), "the old algorithm scanned the whole armed set on every fire")
 			},
 		},
 		{
-			name: "ADR-0159 point read: the fired recurring timer survives the corrupt sibling",
+			name: "point read: the fired recurring timer survives the corrupt sibling",
 			lookup: func(ctx context.Context, driver *ProcessDriver, _ *corruptSiblingTimerStore) func(string) (bool, bool) {
 				return func(timerID string) (bool, bool) {
 					return driver.armedTimerRecurring(ctx, "i1", timerID)
@@ -467,7 +467,7 @@ func TestCorruptSiblingRowDoesNotDisarmFiredRecurringTimer(t *testing.T) {
 			assert: func(t *testing.T, store *corruptSiblingTimerStore, cancels []cancelKey) {
 				assert.Empty(t, cancels,
 					"a corrupt sibling row must not disarm the fired recurring timer")
-				assert.Zero(t, store.scanCount(), "the fire path must never scan the armed set (ADR-0159)")
+				assert.Zero(t, store.scanCount(), "the fire path must never scan the armed set")
 				assert.Equal(t, []timerRef{{"i1", "rec-1"}}, store.reads(),
 					"exactly one primary-key-exact read, for the timer that fired")
 			},
@@ -489,7 +489,7 @@ func TestCorruptSiblingRowDoesNotDisarmFiredRecurringTimer(t *testing.T) {
 	}
 }
 
-// TestArmedTimerRecurring pins the three-state contract introduced by ADR-0159.
+// TestArmedTimerRecurring pins the three-state contract.
 // The load-bearing case is the store error: it must report UNDETERMINABLE, not
 // "non-recurring", because non-recurring means timerJobsFor cancels the fired
 // timer — so collapsing an error would let one connection blip permanently
@@ -561,7 +561,7 @@ func TestArmedTimerRecurring(t *testing.T) {
 				assert.False(t, recurring, "another instance's recurring timer must not answer for this one")
 				assert.Equal(t, []timerRef{{"i1", "t1"}}, keyedStore.reads(),
 					"the fired timer's own key must reach the store, once")
-				assert.Zero(t, keyedStore.scanCount(), "the fire path must never scan the armed set (ADR-0159)")
+				assert.Zero(t, keyedStore.scanCount(), "the fire path must never scan the armed set")
 			},
 		},
 		{

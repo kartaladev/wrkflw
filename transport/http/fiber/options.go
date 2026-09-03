@@ -48,8 +48,7 @@ func WithMaxBodyBytes(n int64) httpcore.CustomizeOption[fiberlib.Router] {
 // for fiber.Router. It overrides how the AUTHENTICATED principal of a
 // human-task request is resolved. fn == nil restores the default, which reads
 // the actor a consumer's authentication middleware placed on the request
-// context with authz.ContextWithActor and refuses with 401 when nothing did
-// (ADR-0189).
+// context with authz.ContextWithActor and refuses with 401 when nothing did.
 //
 // ⚠ The alias is not sugar — the generic httpcore.WithRequestActor CANNOT be
 // called without spelling the router type out, because R appears only in its

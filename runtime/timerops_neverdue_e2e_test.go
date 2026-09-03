@@ -38,8 +38,8 @@ func neverDueTimerDef(trig schedule.TriggerSpec) *model.ProcessDefinition {
 	}
 }
 
-// TestDriveDoesNotWedgeOnALivelockingTimerArm is the ADR-0176 regression test
-// for a whole-process availability defect in shipped code: arming
+// TestDriveDoesNotWedgeOnALivelockingTimerArm is the regression test for a
+// whole-process availability defect in shipped code: arming
 // Monthly(12, []int{31}) while the scheduler's clock sits in a month with no
 // 31st made gocron v2.22.0's monthlyJob.next spin forever inside gocron's
 // single selectNewJob goroutine, so EVERY job's arm, cancel and rehydrate in
@@ -130,7 +130,7 @@ func (s *clockAdvancingStore) Create(ctx context.Context, step kernel.AppliedSte
 // ⚠ The window is small in production but the consequence is total, and the
 // re-check does not eliminate it: the scheduler still reads the clock once
 // more, after this check. It narrows the window from "the whole commit" to a
-// few instructions. Documented as a residual in ADR-0176.
+// few instructions.
 func TestDriveDoesNotWedgeWhenTheClockCrossesTheGuard(t *testing.T) {
 	ctx := t.Context()
 

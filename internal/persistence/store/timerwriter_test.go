@@ -37,7 +37,7 @@ func seedTimerWriterInstance(t *testing.T, s *store.Store, id string, at time.Ti
 // TestTimerWriterUpsertJobDescriptorRoundTrip verifies that UpsertJob persists
 // all 8 wrkflw_timers columns (instance_id, timer_id, next_run, kind, def_id,
 // def_version, trigger_kind, trigger_payload) and that ListArmed reconstructs
-// an equal ArmedTimer — including a real non-zero engine.TimerKind (ADR-0134
+// an equal ArmedTimer — including a real non-zero engine.TimerKind (the
 // TimerWriter capability).
 func TestTimerWriterUpsertJobDescriptorRoundTrip(t *testing.T) {
 	base := time.Date(2026, 7, 23, 9, 0, 0, 0, time.UTC)
@@ -84,7 +84,7 @@ func TestTimerWriterUpsertJobDescriptorRoundTrip(t *testing.T) {
 
 // TestTimerWriterDeleteJob verifies both delete paths: DeleteJob (scoped by
 // instanceID+timerID) and DeleteJobByTimerID (timerID alone — engine timer ids
-// are globally unique, so a bare lookup is unambiguous; Task 10's
+// are globally unique, so a bare lookup is unambiguous; the runtime
 // JobStore.Delete(id) uses this form).
 func TestTimerWriterDeleteJob(t *testing.T) {
 	base := time.Date(2026, 7, 23, 10, 0, 0, 0, time.UTC)
@@ -135,7 +135,7 @@ func TestTimerWriterDeleteJob(t *testing.T) {
 	}
 }
 
-// TestTimerWriterAtomicWithCommit verifies same-tx atomicity (ADR-0134):
+// TestTimerWriterAtomicWithCommit verifies same-tx atomicity:
 // inside store.RunInTx, a Store.Commit and a TimerStore.UpsertJob both join
 // the ambient handle; when fn errors after both calls, NEITHER write
 // persists — the state commit and the durable job descriptor rise and fall

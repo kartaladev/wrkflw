@@ -9,7 +9,7 @@ import (
 // BroadcastSignal publishes a signal with the given name and payload to every
 // process instance currently awaiting it, through the [signal.SignalBus] the
 // driver owns, and additionally STARTS one new instance per registered
-// definition whose start event listens for name (ADR-0121). It is the signal
+// definition whose start event listens for name. It is the signal
 // counterpart to [ProcessDriver.DeliverMessage]: a consumer broadcasts through
 // the driver facade rather than holding and reaching into the bus directly.
 //
@@ -31,7 +31,7 @@ import (
 // than aborting the rest of the fan-out.
 func (driver *ProcessDriver) BroadcastSignal(ctx context.Context, name string, payload map[string]any) error {
 	// Reject once draining, before the empty-name no-op, so a drained driver refuses
-	// even a would-be no-op (strict quiescence, D1).
+	// even a would-be no-op (strict quiescence).
 	release, ok := driver.admit()
 	if !ok {
 		return ErrDriverShuttingDown

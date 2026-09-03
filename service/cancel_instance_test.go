@@ -35,7 +35,7 @@ func cancelDef() *model.ProcessDefinition {
 }
 
 // cancelSagaDef returns a saga whose admin PARTIAL rollback makes a cancel
-// inapplicable (ADR-0180): start → a (undoA) → b (undoB) → wait → end.
+// inapplicable: start → a (undoA) → b (undoB) → wait → end.
 func cancelSagaDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID:      "cancel-saga",
@@ -144,7 +144,7 @@ func TestCancelInstance(t *testing.T) {
 			},
 		},
 		{
-			// ADR-0180: a cancel the engine DROPPED must not answer 200. The
+			// A cancel the engine DROPPED must not answer 200. The
 			// instance is alive, nothing happened, and the operator has to learn it.
 			name: "dropped cancel returns ErrConflict",
 			assert: func(t *testing.T, svc *service.ProcessEngine) {

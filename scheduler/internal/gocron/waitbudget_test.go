@@ -10,14 +10,14 @@ import "time"
 //
 // It replaces per-site literals of 1–3 s. Those made
 // TestGocronScheduleJobTriggers/"At (past-due) fires immediately" fail under
-// full-suite -race contention while passing -count=25 in isolation (backlog 42):
+// full-suite -race contention while passing -count=25 in isolation:
 // that job fires via gocron.OneTimeJobStartImmediately on a REAL-time goroutine,
 // so the fake clock does not bound it and one second of wall time is a bet on
 // machine load rather than an assertion about the code.
 //
 // ⚠ Deliberately NOT used for Never (require.Never OR assert.Never). A Never
 // budget is an observation window paid in full on every GREEN run, so raising it
-// is pure cost (ADR-0184 §4).
+// is pure cost.
 //
 // ⚠ SIZED AGAINST THE BINARY, NOT THE SITE. go test's default timeout is 600s
 // per binary and these sites are predominantly SERIAL (2 of the 31 run under

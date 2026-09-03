@@ -1,6 +1,6 @@
 package persistence_test
 
-// scheduler_locker_db_test.go — backlog 34.
+// scheduler_locker_db_test.go — real-database coverage for the scheduler locker.
 //
 // persistence.NewPostgresSchedulerLocker / NewMySQLSchedulerLocker and the
 // poolSchedulerLocker.Lock / poolSchedulerLock.Unlock they return were at 0.0 %
@@ -9,12 +9,12 @@ package persistence_test
 // single-session bridge through an in-memory fake, which cannot observe whether
 // the advisory lock is really session-scoped and really per-key.
 //
-// Per Golang rule #8 the point is the hot path, not the percentage: these tests
-// drive real contention between two sessions rather than padding the number with
-// the eight MySQLWith… option setters that are also at 0.0 %.
+// The point is the hot path, not the percentage: these tests drive real
+// contention between two sessions rather than padding the number with the eight
+// MySQLWith… option setters that are also at 0.0 %.
 //
 // ⚠ Needs Docker: advisory locks are a Postgres/MySQL capability. SQLite omits
-// the Locker capability interface entirely (ADR-0082), so there is no SQLite leg.
+// the Locker capability interface entirely, so there is no SQLite leg.
 
 import (
 	"database/sql"

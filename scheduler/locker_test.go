@@ -17,7 +17,7 @@ import (
 // persistence-backed neutral Locker down to gocron: a timer whose advisory lock is
 // already held elsewhere is skipped, while an uncontended timer fires normally.
 // The Locker reuses the engine's Postgres advisory-lock SQL via the persistence
-// bridge — no lock code lives in the scheduler package (ADR-0102).
+// bridge — no lock code lives in the scheduler package.
 func TestSchedulerWithDistributedTimerLock(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	ctx := t.Context()

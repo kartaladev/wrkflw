@@ -13,7 +13,7 @@ import (
 )
 
 // TestPrunerFacade verifies the public persistence.Pruner surfaces every
-// time-cutoff pruner over a real database (ADR-0052). Each method deletes only
+// time-cutoff pruner over a real database. Each method deletes only
 // the eligible old row and reports the count.
 func TestPrunerFacade(t *testing.T) {
 	t.Parallel()
@@ -147,8 +147,8 @@ func TestPruner_PruneTimers_ThroughInterface(t *testing.T) {
 	assert.Equal(t, 1, remaining, "post-cutoff timer must survive")
 }
 
-// TestNeverDueTimerReclaimerCapability pins the reachability decision of
-// ADR-0181: the orphan sweep must be callable from consumer wiring.
+// TestNeverDueTimerReclaimerCapability pins the reachability decision: the
+// orphan sweep must be callable from consumer wiring.
 //
 // Every public pruner constructor returns the persistence.Pruner *interface*,
 // and internal/persistence/store is unimportable by a consumer, so a method
@@ -164,8 +164,8 @@ func TestPruner_PruneTimers_ThroughInterface(t *testing.T) {
 // staying disjoint) must survive.
 //
 // SQLite is the backend here because it is the only one that can hold the
-// fixture: MySQL rejects a zero next_run outright (Error 1292, ADR-0176
-// measurements §4), and it is container-free (dbtest.RunTestSQLite, pure Go).
+// fixture: MySQL rejects a zero next_run outright (Error 1292), and it is
+// container-free (dbtest.RunTestSQLite, pure Go).
 func TestNeverDueTimerReclaimerCapability(t *testing.T) {
 	t.Parallel()
 
@@ -173,7 +173,7 @@ func TestNeverDueTimerReclaimerCapability(t *testing.T) {
 	db := dbtest.RunTestSQLite(t)
 
 	// Fixed-width nine-digit-fraction RFC3339 — the encoding SQLite timestamp
-	// columns are written in (ADR-0151).
+	// columns are written in.
 	const textTimeLayout = "2006-01-02T15:04:05.000000000Z07:00"
 	zero := time.Time{}.UTC().Format(textTimeLayout)
 

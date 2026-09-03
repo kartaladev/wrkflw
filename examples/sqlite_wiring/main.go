@@ -82,7 +82,7 @@ func run(logger *slog.Logger) error {
 	defer stopWorkers()
 
 	// shutdown aggregates every resource holder; Shutdown closes them in reverse
-	// registration order and joins errors (ADR-0054).
+	// registration order and joins errors.
 	var shutdown runtime.ShutdownGroup
 
 	// --- SQLite database connection ---
@@ -278,17 +278,17 @@ func run(logger *slog.Logger) error {
 	stdlib.Mount(mux, svc,
 		// DEMO ONLY, and deliberately OFF BY DEFAULT.
 		//
-		// ADR-0189 made the human-task verbs refuse an unauthenticated caller. This
+		// The human-task verbs refuse an unauthenticated caller. This
 		// example is about durable wiring, not authentication, so it offers a constant
 		// actor — but only when WRKFLW_DEMO_INSECURE_ACTOR=1 is set explicitly.
 		//
 		// ⚠ The env gate is the point. Unset, this resolver refuses and the task routes
 		// answer 401, so copy-pasting this file into a real deployment FAILS CLOSED
 		// instead of silently authenticating every caller as a manager — which is
-		// precisely the self-asserted-actor hole ADR-0189 exists to close.
+		// precisely the self-asserted-actor hole this seam exists to close.
 		//
 		// A real deployment resolves the actor from a VERIFIED credential in its own
-		// middleware and calls authz.ContextWithActor; see SECURITY.md and
+		// middleware and calls authz.ContextWithActor; see
 		// examples/authenticated_tasks, which verifies a bearer token.
 		stdlib.WithRequestActor(func(context.Context) (authz.Actor, error) {
 			if os.Getenv("WRKFLW_DEMO_INSECURE_ACTOR") != "1" {

@@ -371,14 +371,14 @@ func reminderDef() *model.ProcessDefinition {
 }
 
 // TestInWaitReminderRepeatsUntilCompletion verifies the full reminder lifecycle
-// AFTER Plan 2 Task 1 moved recurrence to the scheduler (native recurring trigger,
+// AFTER recurrence moved to the scheduler (native recurring trigger,
 // no engine reschedule):
 //  1. Entering a user task with WaitEvery emits AwaitHuman + ScheduleTimer(Deadline) + ScheduleTimer(InWait).
 //     The in-wait timer carries a RECURRING Every(1h) trigger — armed ONCE.
 //  2. Each TimerFired for the in-wait reminder emits InvokeAction("remind") ONLY,
 //     and NO new ScheduleTimer: native scheduler recurrence re-delivers TimerFired
 //     on the same timer id (repeated-fire behavior is the scheduler's job, covered
-//     in Plan 2 Tasks 2–4 scheduler tests — not the engine's anymore).
+//     in the scheduler tests — not the engine's anymore).
 //  3. Token does not move; task remains Unclaimed/Claimed; the reminder record persists.
 //  4. Fire the reminder twice to confirm the SAME id keeps re-delivering without re-arm.
 //  5. HumanCompleted emits CancelTimer for the (single) reminder timer + the deadline.
@@ -536,9 +536,9 @@ func TestInWaitReminderRepeatsUntilCompletion(t *testing.T) {
 
 // TestInWaitReminderNoActionEmitsNothingOnFire verifies that when WaitEvery is
 // set but WaitAction is empty, a reminder fire emits NO InvokeAction (no action
-// configured) AND — after Plan 2 Task 1 — NO new ScheduleTimer (recurrence is native
-// to the scheduler; the engine armed the recurring timer once at entry and does not
-// reschedule per fire). This proves the action field is genuinely optional and that
+// configured) AND NO new ScheduleTimer (recurrence is native to the scheduler;
+// the engine armed the recurring timer once at entry and does not reschedule
+// per fire). This proves the action field is genuinely optional and that
 // the engine no longer owns re-arming.
 func TestInWaitReminderNoActionEmitsNothingOnFire(t *testing.T) {
 	// Use a definition with WaitEvery but no WaitAction.

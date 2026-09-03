@@ -16,7 +16,7 @@ var ErrBadArmedTimerCursor = errors.New("workflow-runtime: malformed armed-timer
 // armed-timer cursor string. time.Time's JSON form is lossless, so the
 // envelope carries full nanosecond precision without any layout choice of its
 // own — the fixed-width text encoding a TEXT-timestamp backend needs belongs
-// at the SQL bind, not here (ADR-0159).
+// at the SQL bind, not here.
 type armedTimerCursorPayload struct {
 	Kind       string    `json:"kind"`
 	NextRun    time.Time `json:"next_run"`
@@ -83,7 +83,7 @@ func DecodeArmedTimerCursor(cursor string) (nextRun time.Time, instanceID, timer
 	// family: base64 framing, DisallowUnknownFields (plain json.Unmarshal
 	// silently ignores fields it does not recognise, which is what lets a
 	// foreign cursor through as a zero-ish triple), and rejection of trailing
-	// data after the payload (ADR-0160).
+	// data after the payload.
 	var p armedTimerCursorPayload
 	if err := decodeCursorInto(cursor, &p); err != nil {
 		return time.Time{}, "", "", fmt.Errorf("%w: %w", ErrBadArmedTimerCursor, err)
@@ -92,7 +92,7 @@ func DecodeArmedTimerCursor(cursor string) (nextRun time.Time, instanceID, timer
 		return time.Time{}, "", "", fmt.Errorf("%w: not an armed-timer cursor", ErrBadArmedTimerCursor)
 	}
 	// A cursor is always minted from a real row, and an armed timer can have
-	// neither an empty instance id nor an empty timer id (ADR-0152), so empty
+	// neither an empty instance id nor an empty timer id, so empty
 	// here means the payload was fabricated or truncated. Rejecting matters
 	// because an empty pair is the LOWEST key: it would match the whole table.
 	if p.InstanceID == "" || p.TimerID == "" {

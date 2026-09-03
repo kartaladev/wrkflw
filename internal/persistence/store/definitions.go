@@ -38,7 +38,7 @@ type DefinitionStore struct {
 	conn    any // *pgxpool.Pool or *sql.DB
 	dialect dialect.Dialect
 	// clk is the time source for the created_at stamp written by
-	// [DefinitionStore.PutDefinition] (ADR-0138).
+	// [DefinitionStore.PutDefinition].
 	clk clockwork.Clock
 }
 
@@ -47,7 +47,7 @@ type DefinitionStore struct {
 type DefinitionOption func(*DefinitionStore)
 
 // WithDefinitionClock overrides the clock used for the created_at stamp written
-// by [DefinitionStore.PutDefinition] (ADR-0138). The default is
+// by [DefinitionStore.PutDefinition]. The default is
 // [clockwork.NewRealClock]. A nil clock is ignored (the default is kept).
 //
 // Reachable off-module only through its facade forwarder,
@@ -112,7 +112,7 @@ func (ds *DefinitionStore) querier(ctx context.Context) database.Querier {
 // def.ID and def.Version must be non-empty / non-zero; the database schema
 // enforces uniqueness on (def_id, version).
 //
-// created_at is read from the store's [clockwork.Clock] (ADR-0138; override it
+// created_at is read from the store's [clockwork.Clock] (override it
 // with [WithDefinitionClock]). The column is set on first insert only — the
 // conflict-update clause touches only the definition column — so re-inserts
 // preserve the original creation timestamp.

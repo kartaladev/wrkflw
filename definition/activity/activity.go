@@ -39,7 +39,7 @@ type UserTask struct {
 	CompletionValidation validate.ValidationStrategy
 	// Manual, when true, marks this UserTask as a manual task: it completes on a
 	// bare trigger (no payload/form-data) and must not carry CompletionValidation.
-	// Eligibility is still honored if set. See ADR-0118. This deliberately
+	// Eligibility is still honored if set. This deliberately
 	// diverges from strict BPMN Manual Task (which has no execution semantics /
 	// auto-completes): a manual task here keeps a durable "someone confirmed this"
 	// checkpoint.
@@ -47,7 +47,7 @@ type UserTask struct {
 	// ManualImmediate, meaningful only when Manual is true, selects the manual
 	// completion mode: false (default) waits for a bare completion trigger; true
 	// auto-completes the task on entry (a documentation marker) — the engine
-	// records a completed task for audit and advances without waiting. See ADR-0118.
+	// records a completed task for audit and advances without waiting.
 	ManualImmediate bool
 	// Outcomes is the optional set of completion outcomes this task accepts
 	// (e.g. "approve", "reject"). Empty means unconstrained: a completion may
@@ -55,7 +55,7 @@ type UserTask struct {
 	// ways: a completion whose outcome is outside the set is rejected with
 	// engine.ErrInvalidOutcome, and a completion carrying NO outcome is rejected
 	// with engine.ErrOutcomeRequired — declaring a set makes the outcome
-	// mandatory. Set via WithOutcomes. See ADR-0146.
+	// mandatory. Set via WithOutcomes.
 	Outcomes []string
 	// ExposeOutcome opts into publishing the chosen completion outcome as the
 	// process variable "<node id>_outcome", so downstream gateways can route on
@@ -63,13 +63,13 @@ type UserTask struct {
 	// Requires a non-empty Outcomes: publishing a completer-supplied string into
 	// the variable space demands a declared, closed value domain, so Build
 	// rejects exposure without one (model.ErrOutcomeExposureWithoutOutcomes).
-	// Set via WithExposeOutcome. See ADR-0146.
+	// Set via WithExposeOutcome.
 	ExposeOutcome bool
 	// OutcomeVariable names the process variable the chosen completion outcome
 	// is published as, taking precedence over ExposeOutcome's convention. Empty
 	// means no explicit name. Like ExposeOutcome it requires a non-empty
 	// Outcomes (model.ErrOutcomeExposureWithoutOutcomes).
-	// Set via WithOutcomeVariable. See ADR-0146.
+	// Set via WithOutcomeVariable.
 	OutcomeVariable string
 }
 
@@ -157,7 +157,7 @@ func NewServiceTask(id string, opts ...ServiceTaskOption) model.Node {
 // NewUserTask constructs a UserTask. Eligibility is optional and set via
 // WithEligibleRoles / WithEligiblePrivileges / WithEligibleExpr; with
 // none set, the engine gate is open (authorization defers to the transport
-// layer). See ADR-0117.
+// layer).
 func NewUserTask(id string, opts ...UserTaskOption) model.Node {
 	u := UserTask{Base: model.NewBase(id, "")}
 	for _, o := range opts {

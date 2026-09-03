@@ -386,7 +386,7 @@ func TestNewProcessDriverAlwaysSucceeds(t *testing.T) {
 }
 
 // TestDriverEngineIDsUseInjectedGenerator verifies the driver threads its id
-// generator into the engine (ADR-0149): every id the engine mints — tokens and
+// generator into the engine: every id the engine mints — tokens and
 // human tasks here — comes from the generator, not from the engine's
 // instance-derived fallback counter. A consumer-supplied generator (the seam
 // used for deterministic tests) must win over the xid default.
@@ -412,7 +412,7 @@ func TestDriverEngineIDsUseInjectedGenerator(t *testing.T) {
 
 // TestDriverEngineIDsDefaultToXID verifies the DEFAULT driver (no generator
 // injected) mints opaque xid-shaped engine ids rather than the engine's
-// "<instance>-tN" fallback (ADR-0149).
+// "<instance>-tN" fallback.
 func TestDriverEngineIDsDefaultToXID(t *testing.T) {
 	driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t), humanTaskWiring())
 

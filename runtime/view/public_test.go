@@ -268,8 +268,8 @@ func TestPublicState_CategoriesAreIndependent(t *testing.T) {
 			},
 		},
 		{
-			// The operator escape hatch: ADR-0175's active_command_id and incident ids
-			// reach the wire on /snapshot alone, and no category restored them.
+			// The operator escape hatch: active_command_id and incident ids reach the
+			// wire on /snapshot alone, and no category restored them.
 			name: "operations restores the compensation cursor and incident ids",
 			set:  authz.NewDisclosureSet(authz.DiscloseOperations),
 			assert: func(t *testing.T, got engine.InstanceState) {
@@ -288,7 +288,7 @@ func TestPublicState_CategoriesAreIndependent(t *testing.T) {
 				}
 				if got.Compensating.ActiveCmdID != "cmd-1" {
 					t.Error("DiscloseOperations must restore the compensation cursor id — " +
-						"it is what makes a wedged instance recoverable (ADR-0175)")
+						"it is what makes a wedged instance recoverable")
 				}
 				// ⚠ Records[].Input is a FIFTH variables snapshot; FinalErr is the same
 				// string as PendingFinalErr, which is withheld under every category.

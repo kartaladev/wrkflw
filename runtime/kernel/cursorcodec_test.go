@@ -22,7 +22,7 @@ const validInstancePayload = `{"started_at":"2026-07-30T09:00:00Z","instance_id"
 // TestDecodeCursorInto covers the shared strict decoder that both cursor
 // families delegate to. Each case names the single guard it is meant to trip;
 // a case that trips a different guard would pass for the wrong reason and
-// certify nothing (ADR-0160).
+// certify nothing.
 func TestDecodeCursorInto(t *testing.T) {
 	t.Parallel()
 
@@ -56,7 +56,7 @@ func TestDecodeCursorInto(t *testing.T) {
 			},
 		},
 		{
-			// Defect 4 (ADR-0160). json.Decoder.Decode reads only the FIRST JSON
+			// json.Decoder.Decode reads only the FIRST JSON
 			// value and ignores whatever follows, where the json.Unmarshal it
 			// replaces rejects it. Without this guard the "hardened" decoder is
 			// strictly weaker than the code it supersedes on this axis.
@@ -97,7 +97,7 @@ func TestDecodeCursorInto(t *testing.T) {
 }
 
 // TestDecodeArmedTimerCursorRejectsTrailingData is a regression test for a
-// defect in the SHIPPED ADR-0159 cursor, found by ADR-0160's audit: the decoder
+// defect in the SHIPPED armed-timer cursor, found by an audit: the decoder
 // accepted a valid payload with a second JSON value appended, returning
 // err=<nil> and the first value's contents. It is asserted separately from the
 // codec table because it exercises the public armed-timer entry point rather

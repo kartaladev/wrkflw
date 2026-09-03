@@ -126,7 +126,7 @@ func openMigrator(ctx context.Context, dialect, dsn string) (persistence.Migrato
 		if err != nil {
 			return nil, func() {}, err
 		}
-		db.SetMaxOpenConns(1) // SQLite is single-writer (ADR-0082)
+		db.SetMaxOpenConns(1) // SQLite is single-writer
 		m, err := persistence.NewSQLiteMigrator(db)
 		if err != nil {
 			_ = db.Close()

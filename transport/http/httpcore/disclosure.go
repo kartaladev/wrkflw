@@ -8,16 +8,16 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/view"
 )
 
-// identified reports whether the request carries a REAL principal (ADR-0190).
+// identified reports whether the request carries a REAL principal.
 //
 // ⚠ It resolves through the CONFIGURED resolver, not [authz.ActorFromContext]. Nothing in
-// transport/http ever calls authz.ContextWithActor — ADR-0189 hands the actor to the
+// transport/http ever calls authz.ContextWithActor — the actor reaches the
 // endpoints as an ARGUMENT — so a context-keyed check is always false, and every
 // authenticated caller would be projected. That is the "everyone blind" outcome this whole
 // posture exists to avoid, and it was measured: a claim returned 200 while the context
 // carried no actor at all.
 //
-// ⚠ It requires a non-empty Actor.ID — a STRICTER test than ADR-0189's isZeroActor, and
+// ⚠ It requires a non-empty Actor.ID — a STRICTER test than isZeroActor, and
 // deliberately so. That guard answers "may this actor ACT", and it blesses the kiosk
 // claimant {ID:"", Roles:["kiosk"]} on purpose (humantask/validate.go). This one answers
 // "may this caller SEE EVERYTHING", and an actor with no ID is unattributable: there is
@@ -29,8 +29,8 @@ import (
 // anonymous caller. Caught by the kiosk case in TestDisclosingMapper_ProjectsWhenUnidentified.
 //
 // ⚠ It never surfaces an error. A failed or absent identity means "project", never 401:
-// ADR-0190 Decision 1 keeps these routes reachable, and turning an unidentified read into a
-// refusal would be the authentication this library declines to implement.
+// these routes stay reachable, and turning an unidentified read into a refusal
+// would be the authentication this library declines to implement.
 func identified(ctx context.Context, resolve RequestActorFunc) bool {
 	if resolve == nil {
 		return false
@@ -42,7 +42,7 @@ func identified(ctx context.Context, resolve RequestActorFunc) bool {
 // DisclosingMapper returns an instance mapper that projects the state for a caller the
 // transport could not identify, and passes it through untouched for one it could.
 //
-// It is the single decision point for ADR-0190's disclosure posture. Adapters build one per
+// It is the single decision point for the disclosure posture. Adapters build one per
 // request and pass it wherever they would have passed cfg.InstanceMapper, so the six
 // mapper-taking endpoints need no signature change and cannot each decide differently.
 //

@@ -8,7 +8,7 @@ import (
 )
 
 // ResolveCompensationStall applies an operator's escape from a compensation walk
-// whose dispatched action stopped reporting back (ADR-0175): retry re-dispatches
+// whose dispatched action stopped reporting back: retry re-dispatches
 // the stalled record, skip gives up on it and advances the walk, and abandon
 // ends the walk and terminates the instance.
 //

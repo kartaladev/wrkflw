@@ -22,7 +22,7 @@ func nestAttr(depth int) map[string]any {
 	return m
 }
 
-// TestHumanTaskStoreActorAttributeDepth proves ADR-0189's attribute depth bound
+// TestHumanTaskStoreActorAttributeDepth proves the attribute depth bound
 // against a REAL store rather than against the guard itself.
 //
 // ⚠ This test exists because two earlier versions of that guard were validated only

@@ -1,17 +1,17 @@
 package engine_test
 
-// ADR-0173, scope-wide branch: what a compensation walk OWNS when a scope
-// teardown that cannot be deferred destroys its scope mid-walk.
+// Scope-wide branch: what a compensation walk OWNS when a scope teardown that
+// cannot be deferred destroys its scope mid-walk.
 //
-// ADR-0171 gave such a walk a pinned record SOURCE so it survives the teardown.
-// It left ownership open: the teardown copied the walk's own records into
+// A pinned record SOURCE lets such a walk survive the teardown, but it left
+// ownership open: the teardown copied the walk's own records into
 // ArchivedCompensations, and the finish's clearRecordsPrefix then no-opped on the
 // destroyed scope — so a later walk re-ran them. Compensation actions are nowhere
 // required to be idempotent.
 //
 // The fixtures below reuse errorBoundaryTeardownDef and interruptingESPTeardownDef
-// from step_compensation_scope_drain_test.go, which are the two teardown routes
-// ADR-0171 documented. ⚠ A THIRD exists and gets its own fixture here
+// from step_compensation_scope_drain_test.go, which are the two previously
+// documented teardown routes. ⚠ A THIRD exists and gets its own fixture here
 // (teardownNestedDef): cancelScopeSubtree archives every DESCENDANT scope, so an
 // ancestor teardown reaches a nested walk's own scope.
 
@@ -37,7 +37,7 @@ type teardownBodyOpts struct {
 	saga []string
 	// siblingSaga, when non-empty, names a compensable task the SIBLING branch
 	// completes mid-walk — a record appended to the scope ABOVE the prefix the
-	// walk committed to (ADR-0120 review A1), which must survive the teardown.
+	// walk committed to, which must survive the teardown.
 	siblingSaga string
 	// terminateAfterRecovery routes the boundary's recovery branch into a
 	// force-termination end event, abandoning the walk before it finishes.
@@ -122,7 +122,7 @@ func teardownDef(o teardownBodyOpts) *model.ProcessDefinition {
 // ("inner"), with its own compensable work in the enclosing scope ("outer") and
 // the error boundary on outer. The boundary's teardown therefore reaches the
 // walk's scope through cancelScopeSubtree's DESCENDANT loop, not through the
-// scope it names — the third route, on the call site ADR-0173's first draft
+// scope it names — the third route, on the call site an earlier draft
 // asserted "names scopes this walk does not own".
 //
 // outer carries TWO compensable records deliberately: with one, dropping the
@@ -230,9 +230,9 @@ func drainWalk(t *testing.T, def *model.ProcessDefinition, res engine.StepResult
 	return res
 }
 
-// TestTeardownMidWalkCompensatesEachRecordExactlyOnce is T1, T5, T9 and T10 — the
-// four scope-wide routes, each driven to a LATER walk and asserted on what that
-// later walk re-dispatches.
+// TestTeardownMidWalkCompensatesEachRecordExactlyOnce covers the four scope-wide
+// routes, each driven to a LATER walk and asserted on what that later walk
+// re-dispatches.
 //
 // What makes each row fail on main (measured):
 //   - "boundary teardown, later cancel": re-dispatched=[undoB undoA] — both records
@@ -384,15 +384,14 @@ func TestTeardownMidWalkCompensatesEachRecordExactlyOnce(t *testing.T) {
 	}
 }
 
-// TestTeardownMidWalkLeavesTheRemainderWhenTheWalkIsABANDONED is T4 and T12.
-//
-// The walk's records are dropped from the archive as it DISPATCHES them, not at
-// its finish, so a walk abandoned in between leaves exactly what it never ran.
-// A force-termination end event (ADR-0119) is the measured abandonment route:
+// TestTeardownMidWalkLeavesTheRemainderWhenTheWalkIsABANDONED asserts that the
+// walk's records are dropped from the archive as it DISPATCHES them, not at its
+// finish, so a walk abandoned in between leaves exactly what it never ran.
+// A force-termination end event is the measured abandonment route:
 // forceTerminate deliberately runs no compensation, and endInstance clears the
 // cursor.
 //
-// ⚠ The "advances into the head first" row is the one that refuted ADR-0173's
+// ⚠ The "advances into the head first" row is the one that refuted the
 // first design, which removed the window only at the finish. On main it yields
 // [undoC undoB undoA]; on that first design [undoB undoA] — undoB twice, because
 // the walk dispatched it AND left it archived.
@@ -486,22 +485,23 @@ func TestTeardownMidWalkLeavesTheRemainderWhenTheWalkIsABANDONED(t *testing.T) {
 	}
 }
 
-// TestTeardownMidWalkLeavesAPreADR0171CursorAlone is T11 — the audit's Critical.
+// TestTeardownMidWalkLeavesALegacyCursorAlone covers the legacy cursor shape
+// that carries no pinned record snapshot.
 //
-// A cursor persisted before ADR-0171 carries no pinned snapshot, so it CANNOT
+// A cursor persisted by an older version carries no pinned snapshot, so it CANNOT
 // dispatch the head a teardown would park: cursorRecords falls back to a live read
 // the teardown just nilled, and stepCompensationAdvance's bounds check routes the
 // walk straight to its finish. Partitioning on its behalf would delete records
-// nobody ever runs — the exact loss ADR-0173 rejects its simpler alternative for.
+// nobody ever runs — the exact loss the simpler alternative was rejected for.
 //
 // So such a walk is left ENTIRELY alone and keeps main's behaviour, double-run
-// included. That is a deliberate bound (spec §7.3), not an oversight, and this
+// included. That is a deliberate bound, not an oversight, and this
 // test exists so nobody closes it by widening the predicate.
 //
 // It goes RED the moment `len(cur.Records) > 0` is dropped from
 // scopeWideWalkDraining: the head is then parked and consumed, and the admin
 // rollback recovers nothing.
-func TestTeardownMidWalkLeavesAPreADR0171CursorAlone(t *testing.T) {
+func TestTeardownMidWalkLeavesALegacyCursorAlone(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
@@ -523,9 +523,9 @@ func TestTeardownMidWalkLeavesAPreADR0171CursorAlone(t *testing.T) {
 	}
 	require.Equal(t, []string{"undoB"}, dispatched, "control: the walk dispatched its first record")
 
-	// The round-trip through a row written before ADR-0171: no pinned Records.
-	// ADR-0171's own bounds-check comment names this state as reachable after a
-	// process restart.
+	// The round-trip through a row written by an older version: no pinned Records.
+	// stepCompensationAdvance's bounds check names this state as reachable after
+	// a process restart.
 	st := res.State
 	st.Compensating.Records = nil
 	require.NotEmpty(t, st.Compensating.ScopeID, "control: the cursor still names its scope")
@@ -555,14 +555,14 @@ func TestTeardownMidWalkLeavesAPreADR0171CursorAlone(t *testing.T) {
 			"pre-existing defect this delivery deliberately does NOT close for legacy cursors")
 }
 
-// TestNestedEventSubprocessTeardownLeavesNothingToRollBack is T2: the SECOND
+// TestNestedEventSubprocessTeardownLeavesNothingToRollBack covers the SECOND
 // non-deferrable teardown route. A nested interrupting event sub-process closes
 // the enclosing scope through exitNestedEventSubprocessScope, which consults no
 // hold, and the instance then reaches a terminal state.
 //
 // On main the walk's already-dispatched record survives in the archive onto the
 // COMPLETED instance, and an admin rollback is admitted precisely BECAUSE it does
-// — hasCompensationRecordsToWalk sees it (ADR-0164 carve-out #1) — and re-runs
+// — hasCompensationRecordsToWalk sees it — and re-runs
 // undoA. Measured there: `archive={outer=[undoA]}`, `re-dispatched=[undoA]`.
 //
 // With ownership settled there is genuinely nothing left, so the same rollback is
@@ -603,7 +603,7 @@ func TestNestedEventSubprocessTeardownLeavesNothingToRollBack(t *testing.T) {
 	var dispatched []string
 	res = drainWalk(t, def, res, next, &dispatched)
 	require.Equal(t, engine.StatusCompleted, res.State.Status,
-		"control: the instance reaches a terminal state (ADR-0171's dropped-resume recovery)")
+		"control: the instance reaches a terminal state (dropped-resume recovery)")
 	assert.Empty(t, dispatched, "control: the walk had nothing further to dispatch")
 	assert.Nil(t, res.State.ArchivedCompensations,
 		"the record the walk already ran must not survive onto the terminal instance")
@@ -657,7 +657,7 @@ func TestCancelArrivingMidWalkAfterATeardownRunsEachRecordOnce(t *testing.T) {
 	require.NotEmpty(t, res.State.Compensating.TeardownArchiveKey,
 		"control: the teardown parked the un-dispatched head under a window")
 
-	// Cancel MID-WALK: deferred, not applied (ADR-0039's PendingCancel protocol).
+	// Cancel MID-WALK: deferred, not applied (the PendingCancel protocol).
 	res, err = engine.Step(ctx, def, res.State,
 		engine.NewCancelRequested(next()), engine.StepOptions{})
 	require.NoError(t, err)

@@ -1,11 +1,11 @@
 package engine_test
 
-// step_harvest_walk_entry_test.go — ADR-0174, the two compensation-walk ENTRY points
+// step_harvest_walk_entry_test.go — the two compensation-walk ENTRY points
 // that reach `beginCompensation` without passing either of the patched dying-instance
 // sites, found by `/code-review` at the delivery gate.
 //
-// Both were collateral damage from deleting the bundle's original Decision 4. That
-// decision harvested inside `beginCompensation` itself, which the rule-#9 audit killed
+// Both were collateral damage from deleting the original blanket harvest. That
+// harvest ran inside `beginCompensation` itself, and was killed
 // because it also fired for ALREADY-TERMINAL legacy rows (re-running compensations an
 // abandoned walk had dispatched) and for RESUMING walks. Deleting it wholesale removed
 // two harvests that were neither: an admin rollback on a LIVE instance, and the
@@ -73,7 +73,7 @@ func TestAdminRollbackOnALiveInstanceHarvestsOnlyWhenItTerminates(t *testing.T) 
 
 	cases := []testCase{
 		{
-			// FINDING 2. A plain full rollback TERMINATES, so it must compensate the
+			// A plain full rollback TERMINATES, so it must compensate the
 			// work completed inside the still-open sub-process. On `main` — and on this
 			// bundle before the gate fix — it dispatched NOTHING, flipped the instance
 			// to terminated, and only then did endInstance archive the record, so a
@@ -128,10 +128,10 @@ func TestAdminRollbackOnALiveInstanceHarvestsOnlyWhenItTerminates(t *testing.T) 
 	}
 }
 
-// TestDeferredCancelRemainderWalkHarvestsTheSiblingScope covers FINDING 1: the
+// TestDeferredCancelRemainderWalkHarvestsTheSiblingScope covers the
 // deferred-cancel re-entry into beginCompensation from applyFinish.
 //
-// ADR-0170 defers a CancelRequested that arrives while a RESUMING walk is in flight,
+// A CancelRequested that arrives while a RESUMING walk is in flight is deferred,
 // recording PendingCancel; when that walk finishes, applyFinish re-enters
 // beginCompensation "over the remainder" and terminates. That re-entry passed neither
 // patched site, so a sibling scope's completed compensable work was never compensated —
@@ -180,7 +180,7 @@ func TestDeferredCancelRemainderWalkHarvestsTheSiblingScope(t *testing.T) {
 	require.Equal(t, []string{"undoB"}, actionsOf(sb.Compensations),
 		"fixture: subB's record must be LIVE in its own open scope")
 
-	// An operator cancel arrives mid-walk. ADR-0170 defers it.
+	// An operator cancel arrives mid-walk. It is deferred.
 	r = step(t, r.State, engine.NewCancelRequested(at))
 	require.True(t, r.State.PendingCancel, "fixture: the cancel must have been DEFERRED, not applied")
 	require.Equal(t, engine.StatusCompensating, r.State.Status, "fixture: the walk continues")

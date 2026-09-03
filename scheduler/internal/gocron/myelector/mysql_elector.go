@@ -24,7 +24,7 @@ var ErrNotLeader = errors.New("workflow-scheduling: not the timer leader")
 
 // defaultHeartbeatInterval is how often a leader re-validates that its dedicated
 // connection (and thus its advisory lock) is still alive. It bounds the residual
-// split-brain window to at most one interval (ADR-0061). Five seconds keeps the
+// split-brain window to at most one interval. Five seconds keeps the
 // re-validation cheap while closing the window promptly.
 const defaultHeartbeatInterval = 5 * time.Second
 
@@ -47,12 +47,12 @@ const defaultMySQLElectorKey = "workflow-scheduling:timer-leader-mysql"
 // GET_LOCK / RELEASE_ALL_LOCKS call and must never return it to the pool.
 //
 // IsLeader is sticky: once leadership is held, it returns nil from an in-memory
-// flag without a DB round-trip. A background heartbeat (ADR-0061) periodically
-// pings the dedicated connection; on failure (conn severed → MySQL auto-releases
+// flag without a DB round-trip. A background heartbeat periodically pings the
+// dedicated connection; on failure (conn severed → MySQL auto-releases
 // the lock) it steps down so the next IsLeader re-attempts acquisition.
 //
-// The Elector is the single-leader ALTERNATIVE to the load-balanced Locker
-// (ADR-0050): use one or the other, never both (see ADR-0059).
+// The Elector is the single-leader ALTERNATIVE to the load-balanced Locker:
+// use one or the other, never both.
 //
 // Mirror of [PostgresElector] translated to MySQL; options and lifecycle are
 // intentionally parallel to avoid a shared-struct refactor that could regress
@@ -68,8 +68,8 @@ type MySQLElector struct {
 	closed   bool
 
 	// onAcquire, if set, is invoked each time this elector transitions to leader
-	// (Option A, ADR-0072). Runs in a wg-tracked goroutine on bgCtx so Close waits
-	// for it and coalesces overlapping invocations via acquiring flag.
+	// Runs in a wg-tracked goroutine on bgCtx so Close waits for it and
+	// coalesces overlapping invocations via acquiring flag.
 	onAcquire func(context.Context)
 	acquiring bool
 
@@ -116,8 +116,8 @@ func WithMySQLElectorClock(clk clockwork.Clock) MySQLElectorOption {
 
 // WithMySQLHeartbeatInterval overrides how often a leader re-validates its
 // dedicated connection (default: [defaultHeartbeatInterval]). It bounds the
-// residual split-brain window to at most one interval (ADR-0061). A non-positive
-// value is ignored.
+// residual split-brain window to at most one interval. A non-positive value is
+// ignored.
 func WithMySQLHeartbeatInterval(d time.Duration) MySQLElectorOption {
 	return func(e *MySQLElector) {
 		if d > 0 {
@@ -132,7 +132,7 @@ func WithMySQLHeartbeatInterval(d time.Duration) MySQLElectorOption {
 // background context cancelled when Close is called; Close waits for it to
 // return. Overlapping invocations from rapid step-down/re-acquire cycles are
 // coalesced. Wire it to ProcessDriver.RehydrateTimers to re-arm persisted timers on a
-// new leader after failover (Option A, ADR-0072). A nil value is ignored.
+// new leader after failover. A nil value is ignored.
 func WithMySQLOnLeadershipAcquired(fn func(context.Context)) MySQLElectorOption {
 	return func(e *MySQLElector) {
 		if fn != nil {

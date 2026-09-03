@@ -48,7 +48,7 @@ type ProcessDriver struct {
 	// construction (NewProcessDriver) by type-asserting the WithTimerStore
 	// value. nil when no TimerStore is configured, or when the configured
 	// TimerStore does not implement kernel.TimerWriter — either way jobStore's
-	// Save/Delete/deleteTimer become documented no-ops (ADR-0134 B1).
+	// Save/Delete/deleteTimer become documented no-ops.
 	timerWriter kernel.TimerWriter
 	// jobStore is the runtime's scheduler.JobStore for timerJobKind, held as a
 	// concrete field (not just registered by thunk on the scheduler) so other
@@ -77,7 +77,7 @@ type ProcessDriver struct {
 
 	// compensationStallAfter bounds how long a dispatched COMPENSATION action may
 	// go without reporting back before the engine raises a stall incident against
-	// the walk (ADR-0175). Zero disables detection and is the default.
+	// the walk. Zero disables detection and is the default.
 	//
 	// It is deliberately separate from actionTimeout, which bounds an in-process
 	// invocation and converts a hang into an ActionFailed that self-heals the
@@ -87,9 +87,9 @@ type ProcessDriver struct {
 	compensationStallAfter time.Duration
 
 	// compensationRetryPolicy makes a COMPENSATION action that reports back
-	// ActionFailed be re-dispatched after a backoff instead of skipped
-	// (ADR-0179). nil disables retry and is the default, keeping ADR-0034
-	// Decision 4's skip-and-advance behaviour byte-for-byte.
+	// ActionFailed be re-dispatched after a backoff instead of skipped. nil
+	// disables retry and is the default, keeping the skip-and-advance
+	// behaviour byte-for-byte.
 	//
 	// It is deliberately separate from defaultRetryPolicy, which governs the
 	// FORWARD path: that one is a three-tier chain (action > node > default) and
@@ -103,7 +103,7 @@ type ProcessDriver struct {
 	// default) the engine uses its pure, wall-clock-free package-global evaluator,
 	// preserving deterministic replay. A long-lived evaluator is held here so its
 	// compile cache is reused across steps. Set via [WithExpressionTimeout] or
-	// [WithConditionEvaluator] (ADR-0056).
+	// [WithConditionEvaluator].
 	conditionEval engine.ConditionEvaluator
 
 	// logOpt, tpOpt, mpOpt are staged observability options collected by the
@@ -129,7 +129,7 @@ type ProcessDriver struct {
 	// that is waiting on it. Message catch events are 1:1 (each correlation key
 	// routes to exactly one instance), so a simple map suffices. A violation of
 	// that 1:1 contract — two running instances awaiting the same (name, key) — is
-	// WARN-logged by syncMsgWaiters before the last-writer-wins overwrite (ADR-0125);
+	// WARN-logged by syncMsgWaiters before the last-writer-wins overwrite;
 	// delivery stays point-to-point (fan-out is the signal model).
 	msgWaiters map[msgKey]string
 
@@ -179,7 +179,7 @@ type ProcessDriver struct {
 //   - Store: [kernel.NewMemInstanceStore] — a transactional in-memory instance
 //     store suitable for single-process and test deployments. Override via
 //     [WithInstanceStore] to supply a persistent SQL-backed store.
-//   - Time source: [clockwork.NewRealClock]. Override via [WithClock] (ADR-0138).
+//   - Time source: [clockwork.NewRealClock]. Override via [WithClock].
 //
 // Optional capabilities are supplied via functional options; the full set of
 // With* functions returning [Option] is (see each for details):
@@ -225,7 +225,7 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 	// kernel.NewMemTimerStore() through that option — MemTimerStore implements
 	// TimerWriter). A TimerStore that does not implement it (or none at all)
 	// leaves timerWriter nil, and jobStore's write path degrades to a
-	// documented no-op (ADR-0134 B1).
+	// documented no-op.
 	if tw, ok := driver.timerStore.(kernel.TimerWriter); ok {
 		driver.timerWriter = tw
 	}
@@ -262,7 +262,7 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 		driver.sched = sched
 		driver.ownedScheduler = sched
 		// Close the owned scheduler through its context-aware shutdown so Shutdown's ctx
-		// actually bounds the scheduler drain (audit Finding 3): CloseWithContext delegates
+		// actually bounds the scheduler drain: CloseWithContext delegates
 		// to gocron's ShutdownWithContext, which stops dispatch immediately and waits for
 		// running jobs bounded by ctx (returning ctx.Err() on expiry) — no manual close-race
 		// goroutine, so nothing is left running on the timeout path.
@@ -340,7 +340,7 @@ func (driver *ProcessDriver) Shutdown(ctx context.Context) error {
 	driver.draining.Store(true)
 	driver.gateMu.Unlock()
 
-	// Apply the WithShutdownTimeout fallback iff ctx carries no deadline (ADR-0133).
+	// Apply the WithShutdownTimeout fallback iff ctx carries no deadline.
 	ctx, cancel := driver.effectiveShutdownCtx(ctx)
 	defer cancel()
 
@@ -473,7 +473,7 @@ func (driver *ProcessDriver) Drive(ctx context.Context, def *model.ProcessDefini
 		// def has ONLY event-triggered start events (message/signal/timer) — Drive
 		// always asks for the manual/"none" start via an empty StartNodeID, so wrap
 		// the engine's sentinel once with a friendly hint at the event entry points
-		// that DO work (ADR-0121). Wrapped with %w so errors.Is(err,
+		// that DO work. Wrapped with %w so errors.Is(err,
 		// engine.ErrNoManualStart) still holds for the caller.
 		err = fmt.Errorf("workflow-runtime: definition %s has no manual start; use an event entry point (DeliverMessage / BroadcastSignal / timer start): %w", def.ID, err)
 	}
@@ -486,7 +486,7 @@ func (driver *ProcessDriver) Drive(ctx context.Context, def *model.ProcessDefini
 	return out, err
 }
 
-// createAtNode starts a new instance seeded at a specific start node (ADR-0121)
+// createAtNode starts a new instance seeded at a specific start node
 // and drives it through deliverLoop, exactly like Drive but for an explicit start
 // node rather than the definition's manual start. When instanceID is empty a
 // fresh id is minted via the driver's id generator (signal/timer starts); a
@@ -672,15 +672,15 @@ func (driver *ProcessDriver) deliverLoop(
 			DefaultRetryPolicy:  driver.defaultRetryPolicy,
 			OverrideRetryPolicy: driver.overrideRetryPolicy(def, st, t),
 			Evaluator:           driver.conditionEval,
-			// ADR-0175: zero disables stall detection, and zero is the default, so an
+			// Zero disables stall detection, and zero is the default, so an
 			// unconfigured driver's command stream is unchanged.
 			CompensationStallAfter: driver.compensationStallAfter,
-			// ADR-0179: nil disables compensation retry, and nil is the default, so an
+			// nil disables compensation retry, and nil is the default, so an
 			// unconfigured driver's command stream is unchanged.
 			CompensationRetryPolicy: driver.compensationRetryPolicy,
 			// One id strategy for the whole product surface: the same generator
 			// that mints instance ids also names the tokens, tasks, commands,
-			// timers, incidents, and scopes the engine creates (ADR-0149).
+			// timers, incidents, and scopes the engine creates.
 			// idgen.Generator satisfies engine.IDGenerator structurally, so the
 			// engine core never imports the runtime.
 			IDGenerator: driver.idgen,
@@ -697,7 +697,7 @@ func (driver *ProcessDriver) deliverLoop(
 		// Reject a contradictory task projection before this iteration's commit.
 		// Pure and cheap, so it runs ahead of resolveHumanCandidates' resolver I/O:
 		// there is no point paying for a group lookup on a step that cannot be
-		// committed (ADR-0183).
+		// committed.
 		if verr := validateTaskCommands(res.Commands); verr != nil {
 			span.RecordError(verr)
 			span.SetStatus(codes.Error, verr.Error())
@@ -705,10 +705,10 @@ func (driver *ProcessDriver) deliverLoop(
 			return st, verr
 		}
 		// Resolve human-task candidates BEFORE the snapshot is captured below, so
-		// the committed state carries the eligible actors the instance view renders
-		// (ADR-0147 amendment #1). The view is a pure projection over the persisted
-		// snapshot, and perform() runs only AFTER the commit, so resolving there
-		// would be invisible to every later reader.
+		// the committed state carries the eligible actors the instance view
+		// renders. The view is a pure projection over the persisted snapshot, and
+		// perform() runs only AFTER the commit, so resolving there would be
+		// invisible to every later reader.
 		//
 		// Failing here aborts the step before THIS ITERATION's commit — not before
 		// anything is committed: this is a `for len(queue) > 0` loop and perform
@@ -717,7 +717,7 @@ func (driver *ProcessDriver) deliverLoop(
 		// than the post-commit alternative, whose commit lands first. ⚠ The earlier
 		// wording here claimed a resolver outage "can no longer leave a committed
 		// instance parked on a task that was never written to the task store"; that
-		// is false and was measured false (ADR-0183) — a resolver failure on a later
+		// is false and was measured false — a resolver failure on a later
 		// iteration does exactly that.
 		if rerr := driver.resolveHumanCandidates(stepCtx, &st, res.Commands); rerr != nil {
 			span.RecordError(rerr)
@@ -773,7 +773,7 @@ func (driver *ProcessDriver) deliverLoop(
 		// survive its fire (the native scheduler re-arms it) rather than be
 		// consumed. It is called lazily — timerJobsFor only invokes it for a
 		// TimerFired trigger — and performs ONE primary-key-exact read, not a
-		// scan of the armed set (ADR-0159).
+		// scan of the armed set.
 		//
 		// Its second return value distinguishes "the store says this timer is
 		// one-shot" from "the store could not answer": the latter leaves the
@@ -795,11 +795,11 @@ func (driver *ProcessDriver) deliverLoop(
 			appliedStep.NewCallLink = firstCallLink
 		}
 
-		// DIRECT-SAVE (ADR-0134): durable timer writes ride the runtime's own
-		// jobStore INSIDE the state-commit transaction; the scheduler is NEVER
-		// called inside commitFn — it is touched post-commit only, so the commit
-		// survives the ADR-0133 shutdown-drain window and works identically with
-		// a consumer-injected scheduler.
+		// DIRECT-SAVE: durable timer writes ride the runtime's own jobStore
+		// INSIDE the state-commit transaction; the scheduler is NEVER called
+		// inside commitFn — it is touched post-commit only, so the commit
+		// survives the shutdown-drain window and works identically with a
+		// consumer-injected scheduler.
 		var armed []*scheduledTimerJob
 		commitFn := func(txCtx context.Context) error {
 			var cerr error
@@ -833,7 +833,7 @@ func (driver *ProcessDriver) deliverLoop(
 			err = tx.RunInTx(ctx, commitFn)
 		} else {
 			// Store without the TxRunner capability: each write self-commits —
-			// documented degraded atomicity, matching pre-ADR-0134 behaviour.
+			// documented degraded atomicity, matching the pre-direct-save behaviour.
 			err = commitFn(ctx)
 		}
 		if err != nil {
@@ -852,7 +852,7 @@ func (driver *ProcessDriver) deliverLoop(
 		// durable arm survives in the timer store and rehydrates on next boot.
 		for _, sj := range armed {
 			if sj.NextRun().IsZero() {
-				// ADR-0176 re-check. timerJobsFor evaluated the arm guard at
+				// Re-check. timerJobsFor evaluated the arm guard at
 				// the step's clock reading, BEFORE the transaction; this
 				// instant was re-derived from the same trigger inside it. A
 				// calendar trigger's answer is anchor-dependent, so one can be

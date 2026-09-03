@@ -82,7 +82,7 @@ func unmarshalInstanceEntry(b []byte) (instanceEntry, error) {
 }
 
 // CachingInstanceStore is a write-through, ownership-gated cache in front of a
-// durable [kernel.InstanceStore] (ADR-0020). It is correct ONLY when each cached
+// durable [kernel.InstanceStore]. It is correct ONLY when each cached
 // instance has exactly one writing process, which the [kernel.InstanceOwnership]
 // port guarantees: only owned instances are cached/served; a non-owned instance
 // bypasses the cache and reads the backing store every time. The cache evicts an
@@ -100,7 +100,7 @@ func unmarshalInstanceEntry(b []byte) (instanceEntry, error) {
 // SINGLE-REPLICA ONLY. AlwaysOwn unconditionally reports ownership, so two
 // replicas both caching the same instance would each serve their own stale
 // snapshot and could fire a routing decision and its side-effects before the
-// version-CAS rejected the write — a stale-read footgun (ADR-0020, ADR-0054).
+// version-CAS rejected the write — a stale-read footgun.
 // For ANY multi-replica deployment use a real lease —
 // [persistence.NewAdvisoryLockOwnership] — so only the owning replica caches an
 // instance. As a guard, [NewCachingInstanceStore] logs a one-time Warn when it is
@@ -182,7 +182,7 @@ func NewCachingInstanceStore(backing kernel.InstanceStore, owner kernel.Instance
 	for _, o := range opts {
 		o(c)
 	}
-	// Single-replica footgun guard (ADR-0054): AlwaysOwn unconditionally grants
+	// Single-replica footgun guard: AlwaysOwn unconditionally grants
 	// ownership, so caching under it is correct only when this process is the sole
 	// writer. Warn once at construction so a multi-replica misconfiguration is
 	// visible in logs; the safe alternative is a real lease
@@ -225,7 +225,7 @@ func (c *CachingInstanceStore) lockFor(id string) func() {
 // fn), the id is recorded so a subsequent rollback can evict it — a put made
 // while a joined write's own Commit is a no-op (the outer RunInTx owns the
 // real commit/rollback decision) would otherwise poison the cache with a value
-// the database never durably committed (ADR-0134 Task 8 audit BLOCKER).
+// the database never durably committed.
 func (c *CachingInstanceStore) put(ctx context.Context, id string, state engine.InstanceState, version kernel.Version) {
 	_ = c.codec.Set(ctx, id, instanceEntry{State: state, Version: version}, c.ttl)
 	if tt := txTouchedFrom(ctx); tt != nil {
@@ -306,7 +306,7 @@ func (c *CachingInstanceStore) Commit(ctx context.Context, expected kernel.Versi
 // now-possibly-stale cached entry. Consumers using a CachingInstanceStore MUST
 // relinquish ownership through THIS method (not the bare
 // [kernel.InstanceOwnership]), or a re-acquired instance may serve stale state
-// until its TTL expires (ADR-0020).
+// until its TTL expires.
 //
 // The eviction is performed before forwarding to owner.Release so the cache entry
 // is gone even if the underlying Release call errors.
@@ -327,7 +327,7 @@ func (c *CachingInstanceStore) Entries(ctx context.Context, id string) ([]engine
 }
 
 // RunInTx forwards the [kernel.TxRunner] capability to the backing store when
-// it has one (ADR-0134). Without it, RunInTx degrades to a bare fn(ctx) call —
+// it has one. Without it, RunInTx degrades to a bare fn(ctx) call —
 // the same sequencing-only contract [kernel.MemInstanceStore.RunInTx] offers,
 // so a consumer wiring the wrapper over a non-transactional backing still gets
 // a compiling, non-panicking call.

@@ -93,7 +93,7 @@ func TestAsyncCallActivityParentParks(t *testing.T) {
 		"parent must be StatusRunning (parked) when child is async and parks")
 
 	// The child id is derived from the call command's id, which the driver's
-	// IDGenerator mints (ADR-0149) and is opaque — resolve it through the call
+	// IDGenerator mints and is opaque — resolve it through the call
 	// link the parent recorded rather than predicting an id shape.
 	children, childrenErr := cl.ChildrenOf(ctx, parentID)
 	require.NoError(t, childrenErr)

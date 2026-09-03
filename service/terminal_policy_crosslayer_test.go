@@ -23,7 +23,7 @@ import (
 	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
-// ── ADR-0165 cross-layer pins: sentinel identity from engine to HTTP status ───
+// ── Cross-layer pins: sentinel identity from engine to HTTP status ────────────
 //
 // The two tests below drive DIFFERENT service methods (ResolveIncident and
 // RefreshTaskCandidates) over structurally different fixtures — one needs a
@@ -105,7 +105,7 @@ func newIncidentFixture(t *testing.T, ctx context.Context, instanceID string) in
 }
 
 // TestResolveIncidentOnTerminalInstanceMapsTo422 pins the end-to-end sentinel
-// identity for ResolveIncident (ADR-0165). ResolveIncident is classified
+// identity for ResolveIncident. ResolveIncident is classified
 // rejectWithError: an admin clearing an incident is a synchronous external
 // caller who must be told the operation was refused, not silently ignored.
 //
@@ -135,7 +135,7 @@ func TestResolveIncidentOnTerminalInstanceMapsTo422(t *testing.T) {
 				// The sentinel chain, asserted link by link: a %v anywhere on the
 				// runtime→service path breaks exactly these three.
 				assert.ErrorIs(t, err, engine.ErrInstanceTerminal,
-					"the specific ADR-0165 sentinel must survive every wrap")
+					"the specific sentinel must survive every wrap")
 				assert.ErrorIs(t, err, engine.ErrInvalidTransition,
 					"the classification parent must survive — this is the arm httpcore matches on")
 				assert.False(t, errors.Is(err, service.ErrConflict),
@@ -184,8 +184,8 @@ func TestResolveIncidentOnTerminalInstanceMapsTo422(t *testing.T) {
 	}
 }
 
-// TestRefreshTaskCandidatesOnClosedTaskMapsTo422 pins the bug ADR-0165 fixed by
-// aliasing runtime/task.ErrTaskNotOpen to engine.ErrTaskNotOpen.
+// TestRefreshTaskCandidatesOnClosedTaskMapsTo422 pins the bug fixed by aliasing
+// runtime/task.ErrTaskNotOpen to engine.ErrTaskNotOpen.
 //
 // Before this delivery task.ErrTaskNotOpen was a standalone errors.New that
 // wrapped nothing: it matched no arm of httpcore.ClassifyError and fell through
@@ -225,7 +225,7 @@ func TestRefreshTaskCandidatesOnClosedTaskMapsTo422(t *testing.T) {
 					"the alias is what carries the classification parent that produces the 422")
 
 				assert.Equal(t, http.StatusUnprocessableEntity, status,
-					"before ADR-0165 this fell through to a 500")
+					"this used to fall through to a 500")
 				assert.Equal(t, "conflict_state", body.Error)
 				assert.NotEmpty(t, body.Message,
 					"the 500 fallback body has no message at all; that opacity is the bug")

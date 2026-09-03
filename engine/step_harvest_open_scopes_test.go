@@ -1,9 +1,9 @@
 package engine_test
 
-// step_harvest_open_scopes_test.go — ADR-0174: a dying instance harvests its open
+// step_harvest_open_scopes_test.go — a dying instance harvests its open
 // scopes' compensation records into the archive, then closes those scopes.
 //
-// The route driven here is the one ADR-0162 names explicitly as still leaving a
+// The route driven here is the one known to still leave a
 // zombie: a force-termination end event fired INSIDE a sub-process. It is
 // scope-agnostic and ends the whole instance, so the instance dies while the
 // sub-process scope is still open and holding the record for a compensable activity
@@ -139,7 +139,7 @@ func TestDyingInstanceHarvestsOpenScopes(t *testing.T) {
 			// T3. The record must reach the archive under the SUB-PROCESS NODE's id,
 			// which is the key a normal scope exit would have used — scope identity
 			// has to survive an abnormal exit too, or scope-targeted compensation
-			// (ADR-0039) silently stops working for these instances.
+			// silently stops working for these instances.
 			name:        "a_force_termination_inside_a_sub_process_archives_the_record_under_its_node_id",
 			compensable: true,
 			assert: func(t *testing.T, before, after engine.InstanceState) {
@@ -157,7 +157,7 @@ func TestDyingInstanceHarvestsOpenScopes(t *testing.T) {
 			},
 		},
 		{
-			// T4. The zombie half of the invariant, and ADR-0162's deferred promise.
+			// T4. The zombie half of the invariant.
 			name:        "the_terminal_snapshot_carries_no_open_scope",
 			compensable: true,
 			assert: func(t *testing.T, _, after engine.InstanceState) {
@@ -170,7 +170,7 @@ func TestDyingInstanceHarvestsOpenScopes(t *testing.T) {
 		{
 			// T8. Separates "archived nothing" from "did not run": with no record the
 			// harvest must be a no-op that creates no empty archive key — a `{}` where
-			// `null` belongs is the persisted-shape wart ADR-0173 normalised away.
+			// `null` belongs is the persisted-shape wart that was normalised away.
 			name:        "an_open_scope_holding_no_records_still_closes_and_archives_nothing",
 			compensable: false,
 			assert: func(t *testing.T, before, after engine.InstanceState) {
@@ -226,12 +226,12 @@ func TestDyingInstanceHarvestsOpenScopes(t *testing.T) {
 //
 // On `main` this same rollback is REFUSED with "nothing left to compensate", because the
 // only copy of the record is stranded in the open scope and hasCompensationRecordsToWalk
-// reads RootCompensations + ArchivedCompensations only (M1). The harvest is what puts the
+// reads RootCompensations + ArchivedCompensations only. The harvest is what puts the
 // record where that predicate can see it, and consolidateArchiveIntoRoot is what carries
 // it from there into the walk's record set.
 //
 // ⚠ RESTRICTED to the force-termination route DELIBERATELY, and it is the only route on
-// which this test is satisfiable at all. The spec's audited draft demanded all three
+// which this test is satisfiable at all. An earlier audited draft demanded all three
 // dying-instance routes; that was unsatisfiable. Post-fix the unhandled-error and cancel
 // routes leave the instance StatusCompensating, not terminal: a rollback delivered
 // mid-walk is swallowed by stepCompensateRequested's in-flight guard (0 commands, no
@@ -257,8 +257,8 @@ func TestAdminRollbackWalksAfterEndInstanceOnlyTermination(t *testing.T) {
 	require.True(t, after.Status.IsTerminal(), "control: the instance must have died")
 
 	// A plain full rollback — ReverseNode "" and no ResetVars/RestoreTargetVars — which is
-	// the one CompensateRequested shape allowOnTerminal waves through (ADR-0164 carve-out
-	// #1). Any resume-shaped rollback would be refused by dispatch for carrying resume
+	// the one CompensateRequested shape allowOnTerminal waves through. Any
+	// resume-shaped rollback would be refused by dispatch for carrying resume
 	// intent, which says nothing about the harvest.
 	rb, err := engine.Step(t.Context(), def, after,
 		engine.NewCompensateRequested(harvestT0.Add(3*time.Second), ""), engine.StepOptions{})
@@ -270,5 +270,5 @@ func TestAdminRollbackWalksAfterEndInstanceOnlyTermination(t *testing.T) {
 		"the walk must actually start, not be silently swallowed")
 	assert.Equal(t, []string{"undo-inner"}, invokedActionNames(rb.Commands),
 		"the walk must dispatch the harvested record's compensation action — "+
-			"asserted by NAME, not by command count, because the count is fixture-dependent (M3)")
+			"asserted by NAME, not by command count, because the count is fixture-dependent")
 }

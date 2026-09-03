@@ -16,7 +16,7 @@ import (
 // package. It returns a BARE error: each family wraps the result in its own
 // sentinel ([ErrBadCursor], [ErrBadArmedTimerCursor]) at its own call site, so
 // that what a sentinel can mean stays readable in one file instead of being
-// split between the family and this helper (ADR-0160).
+// split between the family and this helper.
 //
 // Three guards, each load-bearing:
 //
@@ -70,7 +70,7 @@ func decodeCursorInto(cursor string, dst any) error {
 //
 // It exists so no caller can accidentally reintroduce the defect this package
 // shipped with: discarding the marshal error and returning the empty string,
-// which IS the first-page sentinel (ADR-0160).
+// which IS the first-page sentinel.
 func encodeCursorPayload(p any) (string, error) {
 	b, err := json.Marshal(p)
 	if err != nil {

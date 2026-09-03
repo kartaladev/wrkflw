@@ -49,7 +49,7 @@ func WithPgxNotifierLogger(l *slog.Logger) PgxNotifierOption {
 }
 
 // WithPgxNotifierClock overrides the [clockwork.Clock] used for the reconnect
-// backoff wait (ADR-0138). Default: [clockwork.NewRealClock]. Inject a
+// backoff wait. Default: [clockwork.NewRealClock]. Inject a
 // [clockwork.FakeClock] in tests for deterministic, sleep-free reconnect
 // backoff assertions.
 func WithPgxNotifierClock(c clockwork.Clock) PgxNotifierOption {
@@ -70,7 +70,7 @@ func WithPgxNotifierClock(c clockwork.Clock) PgxNotifierOption {
 // slog.Default() so existing zero-option callers compile unchanged.
 //
 // Pass [WithPgxNotifierClock] to drive the reconnect backoff wait from a
-// [clockwork.Clock] other than the default [clockwork.NewRealClock] (ADR-0138)
+// [clockwork.Clock] other than the default [clockwork.NewRealClock]
 // — e.g. a [clockwork.FakeClock] in tests.
 func NewPgxNotifier(pool *pgxpool.Pool, opts ...PgxNotifierOption) dialect.Notifier {
 	n := &pgxNotifier{
@@ -93,10 +93,10 @@ func NewPgxNotifier(pool *pgxpool.Pool, opts ...PgxNotifierOption) dialect.Notif
 //     relay cannot receive push wakeups, negating the low-latency benefit of
 //     LISTEN/NOTIFY. Polling remains active as the fallback throughout.
 //   - Context-cancellable: the sleep is implemented as a select on
-//     cancelCtx.Done() and n.clk.After (ADR-0138), so cancellation is never
+//     cancelCtx.Done() and n.clk.After, so cancellation is never
 //     delayed by the backoff window.
 //   - Notification gap is safe: any NOTIFY emitted while the notifier is
-//     reconnecting is covered by the Relay's poll ticker (ADR-0022). The notifier
+//     reconnecting is covered by the Relay's poll ticker. The notifier
 //     never needs to "catch up" missed notifications; the outbox query re-reads
 //     all due pending rows on each drain.
 //
@@ -105,7 +105,7 @@ func NewPgxNotifier(pool *pgxpool.Pool, opts ...PgxNotifierOption) dialect.Notif
 const pgxNotifierReconnectBackoff = 500 * time.Millisecond
 
 // waitBackoff blocks for [pgxNotifierReconnectBackoff] (routed through n.clk
-// so tests can drive it deterministically with a clockwork.FakeClock — ADR-0138),
+// so tests can drive it deterministically with a clockwork.FakeClock),
 // returning early with ctx.Err() if ctx is cancelled first.
 func (n *pgxNotifier) waitBackoff(ctx context.Context) error {
 	select {
@@ -138,7 +138,7 @@ func (n *pgxNotifier) waitBackoff(ctx context.Context) error {
 // error), the goroutine releases the bad connection, sleeps a bounded backoff,
 // re-acquires a fresh connection, re-issues LISTEN, and continues — all without
 // closing or replacing the wake channel. The Relay's poll ticker covers any
-// notification gap during the reconnect window (ADR-0022).
+// notification gap during the reconnect window.
 func (n *pgxNotifier) Listen(ctx context.Context, channel string) (<-chan struct{}, func(), error) {
 	// Perform the initial acquire + LISTEN synchronously so the caller knows
 	// immediately if the pool is exhausted or the LISTEN command is rejected.

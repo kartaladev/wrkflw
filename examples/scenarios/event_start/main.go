@@ -1,4 +1,4 @@
-// Package main demonstrates event-based start events (ADR-0121): a definition's
+// Package main demonstrates event-based start events: a definition's
 // start event can itself listen for a signal or a correlated message, so an
 // EXTERNAL trigger — not a caller's Drive call — creates the instance.
 //
@@ -86,7 +86,7 @@ func main() {
 	}
 
 	// Both definitions must be registered so the driver can enumerate
-	// signal-start matches for BroadcastSignal's fan-out (ADR-0121); no
+	// signal-start matches for BroadcastSignal's fan-out; no
 	// SignalBus is needed for that path since there are no already-running
 	// instances to resume.
 	reg := kernel.NewMemDefinitionRegistry()
@@ -102,7 +102,7 @@ func main() {
 		log.Fatal("runner:", err)
 	}
 
-	fmt.Println("--- Order Fulfillment: Event-Based Start (ADR-0121) ---")
+	fmt.Println("--- Order Fulfillment: Event-Based Start ---")
 
 	// One external signal fans out to start BOTH definitions — the publisher
 	// names only the signal, never payment or shipment directly.

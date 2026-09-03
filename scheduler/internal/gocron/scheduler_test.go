@@ -273,8 +273,8 @@ func TestGocronScheduler_Behaviour(t *testing.T) {
 // WithTracerProvider and WithMeterProvider are accepted by NewGocronScheduler
 // and that the scheduler constructs and operates correctly with those
 // options. The scheduler emits no spans in this track (parity-only); it does
-// emit job-run metrics through the injected MeterProvider (ADR-0134
-// production item ①) — see TestGocronScheduler_MonitorStatus in
+// emit job-run metrics through the injected MeterProvider — see
+// TestGocronScheduler_MonitorStatus in
 // monitor_test.go for that coverage. This test only confirms no panics and
 // continued correct operation with the options wired in.
 func TestGocronScheduler_WithTracerAndMeterProvider(t *testing.T) {

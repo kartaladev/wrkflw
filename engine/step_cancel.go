@@ -12,7 +12,7 @@ import (
 // gateway token, AwaitCommand prefixed "evtgw:") its armed events, and the open human
 // task the token is parked on — retires the incidents raised against the token, and
 // consumes the token. Returns the CancelTimer commands produced by the sweep plus, when
-// a human task was closed, the UpdateTask that reconciles the task store (ADR-0163).
+// a human task was closed, the UpdateTask that reconciles the task store.
 func cancelTokenWaits(s *InstanceState, tok *Token, at time.Time, closeKind CloseKind) []Command {
 	var cmds []Command
 	// Cancel deadline/reminder timers for this token (UserTask case).
@@ -26,7 +26,7 @@ func cancelTokenWaits(s *InstanceState, tok *Token, at time.Time, closeKind Clos
 	if strings.HasPrefix(tok.AwaitCommand, "evtgw:") {
 		cmds = appendCancelTimers(cmds, s.removeArmedEventsForGateway(tok.ID))
 	}
-	// An open human task is a wait attached to this token (ADR-0163).
+	// An open human task is a wait attached to this token.
 	// AwaitCommand is the taskID for a UserTask (set by userTaskStrategy.enter
 	// in step_nodes.go) and a command ID otherwise, where TaskByID returns nil —
 	// the same assumption cancelTimersByTaskID already makes above, so this is
@@ -44,14 +44,14 @@ func cancelTokenWaits(s *InstanceState, tok *Token, at time.Time, closeKind Clos
 	// terminated instance with nothing left to resolve.
 	//
 	// Scoped to the paths that cancel a TOKEN — this function's call sites — and
-	// deliberately NOT "on every path" (ADR-0163). Four terminal transitions end
+	// deliberately NOT "on every path". Four terminal transitions end
 	// an instance without coming through here: forceTerminate (step_nodes.go) and
 	// handleCancelRequested's immediate-termination branch (step_triggers.go) drop
 	// every token wholesale, while handleUnhandledError's immediate-failure branch
 	// (step_errors.go) and handleSubInstanceFailed's tail (step_triggers.go) end
 	// the instance with its tokens still in place. All four now route through
 	// endInstance, whose removeOrphanedIncidents retires the incidents whose token
-	// is gone (ADR-0164, delivery 2b, audit finding C1) — token linkage, not a
+	// is gone — token linkage, not a
 	// wholesale clear, so the two sites that keep their tokens keep their incidents.
 	s.removeIncidentsForToken(tok.ID)
 
@@ -66,13 +66,12 @@ func cancelTokenWaits(s *InstanceState, tok *Token, at time.Time, closeKind Clos
 // scopes, retires their event-sub-process arms, archives their compensation
 // records, and returns the commands produced by the sweep: CancelTimer for
 // retired arms and timers, and UpdateTask for human tasks retired with their
-// token (ADR-0163 — cancelTokenWaits gained that in Phase 1, after this plan
-// was first drafted; corrected 2026-08-03 on the Task 3 review).
+// token.
 //
 // It does NOT close the scopes. The caller decides: the interrupting
 // event-sub-process path keeps the enclosing scope open so the drain code can
 // detect its children (and calls closeScopeDescendants), while the error-boundary
-// path calls closeScope on the whole subtree (ADR-0162).
+// path calls closeScope on the whole subtree.
 //
 // scopeID may be "" — the implicit root scope — in which case the doomed set is
 // the entire instance. That is the correct reading for a root-level interrupting

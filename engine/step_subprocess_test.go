@@ -425,7 +425,7 @@ func callActivityWithParallelUserTaskDef() *model.ProcessDefinition {
 	}
 }
 
-// TestCallActivitySubInstanceFailedCancelsOutstandingTimers (Fix 3 assertion):
+// TestCallActivitySubInstanceFailedCancelsOutstandingTimers:
 //
 // A parent definition has both a parallel user-task (with deadline timer) and a
 // call-activity branch. When StartInstance drives, both branches start:
@@ -521,7 +521,7 @@ func TestSubInstanceFailedUnknownCommandID(t *testing.T) {
 //
 // boundaryErrorCode is the boundary's ErrorCode ("" == catch-all). Used to verify
 // that SubInstanceFailed routes to a parent error boundary attached to the
-// call-activity node when the child's error code matches (ADR-0128), instead of
+// call-activity node when the child's error code matches, instead of
 // unconditionally failing the parent.
 func callActivityWithBoundaryDef(boundaryErrorCode string) *model.ProcessDefinition {
 	return &model.ProcessDefinition{
@@ -543,7 +543,7 @@ func callActivityWithBoundaryDef(boundaryErrorCode string) *model.ProcessDefinit
 	}
 }
 
-// TestSubInstanceFailedRoutesToParentBoundary is the ADR-0128 regression test: a
+// TestSubInstanceFailedRoutesToParentBoundary is the regression test: a
 // SubInstanceFailed is semantically an error thrown at the call-activity node that
 // spawned the child. When the call-activity node carries a boundary error event
 // whose ErrorCode matches the child's error, the engine must route to it (like
@@ -653,11 +653,11 @@ func TestSubInstanceFailedRoutesToParentBoundary(t *testing.T) {
 //	      call ALSO has an attached boundary timer "bnd-timer" → escalate → end-escalate
 //
 // Definition validation allows a CallActivity to host more than one attached
-// boundary event (KindCallActivity is a valid boundary host, ADR-0128's
+// boundary event (KindCallActivity is a valid boundary host, and the
 // findDirectBoundary predicate only inspects the ERROR boundary). Used by
-// TestSubInstanceFailedBoundaryRoutingCancelsSiblingBoundaryArms (C8 finding
-// 2 regression): a matched error boundary must not leak a sibling boundary
-// arm recorded against the same host token.
+// TestSubInstanceFailedBoundaryRoutingCancelsSiblingBoundaryArms: a matched
+// error boundary must not leak a sibling boundary arm recorded against the same
+// host token.
 func callActivityWithBoundaryAndTimerDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-call-bnd-timer", Version: 1,
@@ -683,9 +683,9 @@ func callActivityWithBoundaryAndTimerDef() *model.ProcessDefinition {
 	}
 }
 
-// TestSubInstanceFailedBoundaryRoutingCancelsSiblingBoundaryArms is the C8
-// review-finding-2 regression test: when a SubInstanceFailed routes to a
-// matched error boundary on the call-activity node (ADR-0128), the consume
+// TestSubInstanceFailedBoundaryRoutingCancelsSiblingBoundaryArms is the
+// sibling-arm regression test: when a SubInstanceFailed routes to a
+// matched error boundary on the call-activity node, the consume
 // callback must ALSO cancel the host's OTHER boundary arms — mirroring the
 // ActionFailed direct-boundary path (propagateError's Step 1, fed by
 // handleActionFailed's preCmds via removeBoundaryArmsForHost) — so a sibling
@@ -746,7 +746,7 @@ func TestSubInstanceFailedBoundaryRoutingCancelsSiblingBoundaryArms(t *testing.T
 		"the sibling boundary arm must be removed from state, not just cancelled on the wire")
 }
 
-// ---- Inner-scope topology tests (Task 6) ----
+// ---- Inner-scope topology tests ----
 
 // boundaryTimerInsideSubProcessDef builds:
 //

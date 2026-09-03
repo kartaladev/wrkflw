@@ -1,8 +1,8 @@
 package persistence_test
 
 // pool_stats_test.go covers persistence.NewPoolStatsCollector and
-// persistence.NewPostgresPoolStatsCollector (backlog 112: DB pool saturation is
-// invisible — no db.Stats()/pool.Stat() call site existed anywhere in the module).
+// persistence.NewPostgresPoolStatsCollector: DB pool saturation was invisible —
+// no db.Stats()/pool.Stat() call site existed anywhere in the module.
 //
 // The *sql.DB variant is container-free (dbtest.RunTestSQLite is pure Go); the
 // pgxpool variant uses the shared dbtest.RunTestDatabase helper.

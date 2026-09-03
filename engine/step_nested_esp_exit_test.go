@@ -1,6 +1,6 @@
 package engine_test
 
-// step_nested_esp_exit_test.go — backlog 15. Two things inside
+// step_nested_esp_exit_test.go — two things inside
 // exitNestedEventSubprocessScope (engine/step_nodes.go) were uncovered, and the
 // function's own comment says so, having measured both ablations:
 //
@@ -13,7 +13,7 @@ package engine_test
 //
 // The arm retirement is the whole reason that call exists: an event-sub-process
 // arm outliving the scope it belongs to is a leaked scheduler job. The conjunct
-// is ADR-0168's rule that an outstanding compensation walk blocks completion.
+// is the rule that an outstanding compensation walk blocks completion.
 //
 // Both tests below are pins on already-correct code, so neither can produce an
 // honest RED by being written. Both are instead MUTATION-verified against the
@@ -201,7 +201,7 @@ func TestNestedEventSubprocessExitRetiresEnclosingScopeArms(t *testing.T) {
 // TestNestedEventSubprocessRootExitBlockedByLiveCompensationWalk pins the
 // `&& c.s.Compensating.ActiveCmdID == ""` conjunct: at the root-grandparent
 // completion block, an outstanding compensation walk must prevent the instance
-// from completing (ADR-0168).
+// from completing.
 //
 // What makes it fail: deleting that conjunct. The instance then reaches
 // StatusCompleted with a walk still in flight — the walk's own ActionCompleted

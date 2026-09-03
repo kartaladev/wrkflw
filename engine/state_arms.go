@@ -9,13 +9,13 @@ import "slices"
 // (arm.TimerID, arm.Signal, ...) works unchanged via Go's field-promotion
 // rules, and so json.Marshal/Unmarshal of the enclosing arm type is
 // byte-identical to the pre-embed shape (an anonymous embedded struct's
-// fields are promoted into the parent JSON object — see ADR-0131 and the
-// parity test in state_arms_wire_test.go). At most one of the four fields is
+// fields are promoted into the parent JSON object — see the parity test in
+// state_arms_wire_test.go). At most one of the four fields is
 // non-empty for a given arm (timer XOR signal XOR message) — EXCEPT an
 // error-boundary arm (armBoundaries, step_boundaries.go:38-70), which carries
 // none of the four fields set at all. The lookup helpers below (armByTimer /
 // armBySignal / armByMessage) must therefore treat an empty identity key as
-// matching NO arm (ADR-0152), not as a wildcard for "the error-boundary arm".
+// matching NO arm, not as a wildcard for "the error-boundary arm".
 type triggerMatch struct {
 	// TimerID is the scheduled timer id for timer arms (empty for signal/message arms).
 	TimerID string
@@ -171,24 +171,23 @@ func appendCancelTimers(cmds []Command, timerIDs []string) []Command {
 // scopes — and clears the corresponding state.
 //
 // It is the sweep for EVERY terminal transition — normal completion included.
-// Since ADR-0164 every terminal site routes through endInstance, which calls it
+// Every terminal site routes through endInstance, which calls it
 // unconditionally, so a completed instance no longer carries live arms, timers
 // or boundaries.
 //
-// ⚠ Do not restate that as a COUNT. This comment said "all eight terminal sites"
-// and ADR-0164 says it in three places; there were eight when it was written and
-// ten on 2026-08-20, and nothing noticed for eleven ADRs. The checkable property
+// ⚠ Do not restate that as a COUNT. This comment said "all eight terminal
+// sites"; there were eight when it was written and ten on 2026-08-20, and
+// nothing noticed for a long stretch of changes. The checkable property
 // is that endInstance is the ONLY writer of a terminal Status — pinned by
 // TestEndInstanceIsTheSoleTerminalStatusWriter, which re-derives the set from
 // source on every run instead of trusting a number in prose.
 //
-// This deliberately narrows an ADR-0124 corollary. That ADR reasoned a
-// repeatable non-interrupting root event-sub arm surviving into a terminal
-// snapshot was harmless, because the runtime refuses to hold correlation waiters
-// for terminal instances and the fire path is status-guarded; the arm is now
-// retired at completion instead, so the condition never arises. ADR-0124's
-// actual decision — non-interrupting arms are repeatable rather than one-shot —
-// is unaffected.
+// This deliberately narrows an earlier corollary: a repeatable non-interrupting
+// root event-sub arm surviving into a terminal snapshot was reasoned harmless,
+// because the runtime refuses to hold correlation waiters for terminal instances
+// and the fire path is status-guarded; the arm is now retired at completion
+// instead, so the condition never arises. The rule that non-interrupting arms
+// are repeatable rather than one-shot is unaffected.
 //
 // Keeping it as one definition means a newly added arm family is retired across
 // all the terminal paths at once.
@@ -213,7 +212,7 @@ func (b *boundaryArm) matchPtr() *triggerMatch                 { return &b.trigg
 func (e *eventTriggeredSubprocessArm) matchPtr() *triggerMatch { return &e.triggerMatch }
 
 // armByTimer returns a pointer to the first arm whose embedded TimerID equals
-// timerID, or nil. An empty timerID matches no arm (ADR-0152): arms of other
+// timerID, or nil. An empty timerID matches no arm: arms of other
 // kinds — and error-boundary arms, which carry NO non-empty match field at all
 // (step_boundaries.go:38-70) — would otherwise all match.
 func armByTimer[T any, PT armMatchable[T]](arms []T, timerID string) *T {
@@ -258,10 +257,10 @@ type eventSubArmID struct {
 
 // armIDsBySignal returns the IDENTITY of every arm whose embedded signal name
 // equals name, in slice (definition-scan) order, with duplicate identities
-// collapsed to their FIRST occurrence. An empty name matches no arm (ADR-0152) —
+// collapsed to their FIRST occurrence. An empty name matches no arm —
 // defence in depth, since validateTriggerKey already rejects one at Step entry.
 //
-// ADR-0158. Three properties are load-bearing and each has a test:
+// Three properties are load-bearing and each has a test:
 //
 //   - IDENTITIES, NOT POINTERS. removeArmsWhere reallocates the backing array and
 //     the per-family wrappers assign it over the field, so a pointer captured
@@ -272,7 +271,7 @@ type eventSubArmID struct {
 //     is silently dropped too.
 //
 //   - NO SORT. Arms are emitted in declaration order. A per-family sort on
-//     NonInterrupting was specified by an earlier draft of ADR-0158 and refuted by
+//     NonInterrupting was specified by an earlier draft and refuted by
 //     execution in BOTH directions: whether an earlier arm's effects are
 //     destroyable depends on the arm's BODY (parks / completes / terminates), not
 //     on its interrupting flag, so no flag-based sort is correct in general.
@@ -318,14 +317,14 @@ func armIDsBySignal[T any, PT armMatchable[T], ID comparable](arms []T, name str
 }
 
 // armByID returns a pointer to the FIRST arm whose identity equals id, or nil
-// when no arm carries it. It is the re-resolution half of ADR-0158's
+// when no arm carries it. It is the re-resolution half of
 // snapshot-then-fire-each: a snapshotted identity is re-resolved immediately
 // before its arm fires, and skipped when this returns nil.
 //
 // ⚠ EXISTENCE CHECK ONLY. Re-resolution must never be used to select the NEXT
-// arm to fire. A non-interrupting arm deliberately stays armed after firing
-// (ADR-0124), so a loop that re-scanned for "the next match" would find the same
-// arm forever — the non-terminating shape ADR-0158 rejected.
+// arm to fire. A non-interrupting arm deliberately stays armed after firing, so
+// a loop that re-scanned for "the next match" would find the same arm forever —
+// the non-terminating shape this design rejects.
 //
 // "First wins" is the same tie-break armIDsBySignal applies when de-duplicating,
 // and the two must agree: colliding arms are NOT interchangeable (measured
@@ -341,8 +340,8 @@ func armByID[T any, ID comparable](arms []T, id ID, identity func(*T) ID) *T {
 }
 
 // armByMessage returns a pointer to the first arm whose embedded Message equals
-// name and MessageKey equals correlationKey, or nil. An empty name matches no arm
-// (ADR-0152). correlationKey is deliberately NOT guarded: an empty key means
+// name and MessageKey equals correlationKey, or nil. An empty name matches no
+// arm. correlationKey is deliberately NOT guarded: an empty key means
 // "uncorrelated" and must keep matching an arm whose MessageKey is also empty.
 // See armByTimer for the pointer-aliasing contract.
 func armByMessage[T any, PT armMatchable[T]](arms []T, name, correlationKey string) *T {
@@ -439,7 +438,7 @@ func (s *InstanceState) armedEventByTimer(timerID string) *armedEvent {
 }
 
 // armedEventByID re-resolves a snapshotted gateway-arm identity. An empty
-// GatewayToken names no arm (ADR-0152), matching removeArmedEventsForGateway.
+// GatewayToken names no arm, matching removeArmedEventsForGateway.
 func (s *InstanceState) armedEventByID(id gatewayArmID) *armedEvent {
 	if id.GatewayToken == "" {
 		return nil
@@ -467,7 +466,7 @@ func (s *InstanceState) armedEventByMessage(name, correlationKey string) *armedE
 // matches the given token ID, returning the TimerIDs of any timer-arm entries so
 // the caller can emit CancelTimer commands for them.
 func (s *InstanceState) removeArmedEventsForGateway(gatewayToken string) []string {
-	// An empty gateway token names no arm (ADR-0152).
+	// An empty gateway token names no arm.
 	if gatewayToken == "" {
 		return nil
 	}
@@ -485,7 +484,7 @@ func (s *InstanceState) boundaryArmByTimer(timerID string) *boundaryArm {
 }
 
 // boundaryArmByID re-resolves a snapshotted boundary-arm identity. An empty
-// HostToken names no arm (ADR-0152), matching removeBoundaryArmsForHost.
+// HostToken names no arm, matching removeBoundaryArmsForHost.
 func (s *InstanceState) boundaryArmByID(id boundaryArmID) *boundaryArm {
 	if id.HostToken == "" {
 		return nil
@@ -513,7 +512,7 @@ func (s *InstanceState) boundaryArmByMessage(name, correlationKey string) *bound
 // hostToken, returning the TimerIDs of any timer-boundary arms so the caller
 // can emit CancelTimer commands for them.
 func (s *InstanceState) removeBoundaryArmsForHost(hostToken string) []string {
-	// An empty host token names no arm (ADR-0152).
+	// An empty host token names no arm.
 	if hostToken == "" {
 		return nil
 	}

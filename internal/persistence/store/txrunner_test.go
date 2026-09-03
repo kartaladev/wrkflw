@@ -19,8 +19,8 @@ import (
 // store-internal error.
 var errRunInTxBoom = errors.New("run in tx: boom")
 
-// TestStoreRunInTx is the 3-dialect conformance suite for Store.RunInTx
-// (ADR-0134, Task 8): the commit path, the fn-error rollback path, and the
+// TestStoreRunInTx is the 3-dialect conformance suite for Store.RunInTx: the
+// commit path, the fn-error rollback path, and the
 // rollback-only-by-a-joined-participant path (never a silent nil).
 func TestStoreRunInTx(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {

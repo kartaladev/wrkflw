@@ -46,8 +46,8 @@ func TestProbeUTCPassesOnMySQL(t *testing.T) {
 // TestProbeUTCPassesOnSQLite verifies the SQLite probe path passes on an
 // in-process SQLite database opened directly (no Docker required). The test
 // imports modernc.org/sqlite as a blank driver import in this test file only;
-// that import does not appear in non-test code so the extraction constraint
-// (ADR-0079) is not violated.
+// that import does not appear in non-test code so the extraction constraint is
+// not violated.
 func TestProbeUTCPassesOnSQLite(t *testing.T) {
 	dir := t.TempDir()
 	dsn := "file:" + filepath.Join(dir, "probe.db") + "?_pragma=journal_mode(WAL)"

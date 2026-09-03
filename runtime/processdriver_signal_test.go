@@ -125,7 +125,7 @@ func countCompletedInstances(t *testing.T, store *kernel.MemInstanceStore) int {
 }
 
 // TestBroadcastSignalFanOut verifies BroadcastSignal's signal-start fan-out
-// create (ADR-0121): on top of resuming parked waiters through the SignalBus, it
+// create: on top of resuming parked waiters through the SignalBus, it
 // creates one new instance per registered definition whose start event listens
 // for the broadcast signal name — and the relaxed nil-sigbus guard, which now
 // only errors when there is neither a bus nor any signal-start match.

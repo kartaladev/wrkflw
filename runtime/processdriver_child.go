@@ -23,7 +23,7 @@ type callDepthKey struct{}
 // processdriver_action.go): "<parentInstanceID>-sub-<suffix>", where <suffix> is
 // the bare command-sequence counter ("c3") when the engine minted the command id
 // from its built-in counter, and a fixed-length digest of the command id when an
-// IDGenerator minted an opaque one (xid/uuid — ADR-0149). Either way the suffix
+// IDGenerator minted an opaque one (xid/uuid). Either way the suffix
 // is short and constant-length, so growth is O(depth) rather than O(2^depth) and
 // each level adds a fixed number of characters. A total length cap folds a
 // runaway derivation, so depth 64 is bounded well inside the instance_id column.

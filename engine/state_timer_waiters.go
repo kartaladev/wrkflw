@@ -9,7 +9,7 @@ package engine
 // copy, carrying no engine internals. Unlike a message waiter it needs a Kind,
 // because timers of different kinds mean different things to a consumer, and a
 // NodeID/TokenID pair, because a timer arm's owner is not recoverable from its
-// id (ADR-0152 forbids parsing meaning out of an identity).
+// id (parsing meaning out of an identity is forbidden).
 type TimerWaiter struct {
 	// TimerID is the scheduled timer id, as emitted in [ScheduleTimer].
 	TimerID string
@@ -27,11 +27,11 @@ type TimerWaiter struct {
 }
 
 // firesOnDyingInstance reports whether a timer of this kind must still be
-// delivered to an instance that spawns no new work. It is the exemption
-// ADR-0178's dying-instance guard consults: a timer belonging to a compensation
-// WALK is not forward work the guard exists to suppress, and the walks that
-// TERMINATE are exactly the ones an operator most needs to see wedged
-// (ADR-0175) or rolled back to completion (ADR-0179).
+// delivered to an instance that spawns no new work. It is the exemption the
+// dying-instance guard consults: a timer belonging to a compensation WALK is
+// not forward work the guard exists to suppress, and the walks that TERMINATE
+// are exactly the ones an operator most needs to see wedged or rolled back to
+// completion.
 //
 // It is the one place that exemption is defined, so a future walk-scoped kind is
 // added here rather than at the guard.
@@ -47,12 +47,12 @@ func (k TimerKind) firesOnDyingInstance() bool {
 // that something has not happened, as opposed to being work the instance is
 // waiting to do. [InstanceState.HasArmedTimers] excludes such a timer: firing a
 // compensation-stall deadline manufactures the very incident the detection
-// window exists to detect (ADR-0175), so a harness must not treat it as
+// window exists to detect, so a harness must not treat it as
 // drivable.
 //
 // ⚠ Walk-scoped does not imply detection-only, which is why this is a separate
-// predicate from [TimerKind.firesOnDyingInstance] rather than one boolean
-// (ADR-0179). Both compensation kinds belong to the walk, but the retry timer is
+// predicate from [TimerKind.firesOnDyingInstance] rather than one boolean. Both
+// compensation kinds belong to the walk, but the retry timer is
 // forward work — it exists to RE-DISPATCH the failed compensation action, not
 // merely to notice it failed. Answering this question with the walk-scoped one
 // would hide a live backoff from every consumer's test harness, which then
@@ -63,10 +63,9 @@ func (k TimerKind) detectionOnly() bool {
 
 // TimerRecordWaiters returns a waiter for every timer RECORD in s.Timers —
 // deadline, in-wait/reminder, retry, compensation-stall and compensation-retry
-// timers, the five kinds the engine tracks in its own bookkeeping table
-// (ADR-0179 added the fifth). It is the only source whose entries carry a kind
-// other than [TimerIntermediate], and the only one
-// [InstanceState.HasArmedTimers] saw before ADR-0177.
+// timers, the five kinds the engine tracks in its own bookkeeping table. It is
+// the only source whose entries carry a kind other than [TimerIntermediate],
+// and the only one [InstanceState.HasArmedTimers] once saw.
 //
 // It reports every record unfiltered, INCLUDING the detection-only stall kind:
 // filtering is HasArmedTimers' job, not this one's.
@@ -117,7 +116,7 @@ func (s *InstanceState) TimerArmedEventWaiters() []TimerWaiter {
 
 // TimerEventSubprocessWaiters returns a waiter for every armed
 // TIMER-triggered event sub-process arm. TokenID is always empty: such an arm
-// is keyed to its enclosing scope, not to any token (ADR-0122/0123), so the
+// is keyed to its enclosing scope, not to any token, so the
 // instance can hold one while carrying no token at that node at all.
 //
 // Signal and message arms contribute no entries. The result preserves
@@ -134,10 +133,10 @@ func (s *InstanceState) TimerEventSubprocessWaiters() []TimerWaiter {
 // counterpart of the Token.AwaitSignal/AwaitMessage scans inside
 // [InstanceState.SignalWaiters] and [InstanceState.MessageWaiters].
 //
-// ⚠ KNOWN LIMITATION (ADR-0177). A token parked on such a timer BEFORE
-// AwaitTimer shipped has no value in its stored row, so after rehydration it
-// yields no waiter until the arm is re-created. Backfilling it here would mean
-// recognising a timer id by its shape, which ADR-0152 forbids. A downgrade to a
+// ⚠ KNOWN LIMITATION. A token parked on such a timer BEFORE AwaitTimer
+// shipped has no value in its stored row, so after rehydration it yields no
+// waiter until the arm is re-created. Backfilling it here would mean
+// recognising a timer id by its shape, which is forbidden. A downgrade to a
 // build without the field has the same effect: persistence is whole-state
 // json.Marshal, so an unknown field is silently dropped.
 //
@@ -165,8 +164,8 @@ func (s *InstanceState) TimerTokenWaiters() []TimerWaiter {
 // event-based-gateway timer arms, timer-triggered event sub-process arms, and
 // the s.Timers record table. It is the single authority a runtime or harness
 // mirrors — a future timer construct extends only this method, not every call
-// site (the discipline ADR-0123 established for [InstanceState.MessageWaiters]
-// and [InstanceState.SignalWaiters]).
+// site (the same discipline as [InstanceState.MessageWaiters] and
+// [InstanceState.SignalWaiters]).
 //
 // It enumerates EVERYTHING, including walk-scoped kinds; filtering is the
 // caller's decision, exactly as SignalWaiters leaves de-duplication to its

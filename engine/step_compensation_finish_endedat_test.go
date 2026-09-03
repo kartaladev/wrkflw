@@ -1,13 +1,13 @@
 package engine_test
 
-// step_compensation_finish_endedat_test.go — T3 (ADR-0109 hardening) regression.
+// step_compensation_finish_endedat_test.go — EndedAt regression.
 //
 // The unified-resume refactor of stepCompensationFinish (finishPlan/applyFinish)
 // clears s.EndedAt on EVERY resume outcome (throw-resume, partial-rollback,
 // full-reverse). Before the refactor only the full-reverse branch cleared it,
 // so a partial-rollback or throw-resume that finished with a stale EndedAt left
-// a Running instance carrying an end timestamp — an invariant violation
-// (finding #4). These cases hand-inject a stale EndedAt onto a mid-walk state
+// a Running instance carrying an end timestamp — an invariant violation.
+// These cases hand-inject a stale EndedAt onto a mid-walk state
 // and prove the resume clears it.
 
 import (

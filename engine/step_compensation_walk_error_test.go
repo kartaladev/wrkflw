@@ -16,8 +16,8 @@ import (
 
 var walkErrorT0 = time.Date(2026, 8, 9, 9, 0, 0, 0, time.UTC)
 
-// walkVsUncaughtErrorDef builds the ADR-0170 reproduction: a compensable service
-// task, then a parallel fork into THREE user-task branches.
+// walkVsUncaughtErrorDef builds the uncaught-error-mid-walk reproduction: a
+// compensable service task, then a parallel fork into THREE user-task branches.
 //
 //	start → svcSaga(doA/undoA) → fork ⇒
 //	  A: taskA → endTaskA ;  bndA(signal s1, interrupting) → rb(CompensateThrow) → endA
@@ -125,8 +125,8 @@ func driveWalkThenUncaughtError(t *testing.T, def *model.ProcessDefinition) (eng
 	return r3, r4, walkCmd
 }
 
-// TestUncaughtErrorDoesNotRestartInFlightCompensationWalk pins ADR-0170's
-// step-level half: an unhandled error arriving while a compensation walk is in
+// TestUncaughtErrorDoesNotRestartInFlightCompensationWalk pins the step-level
+// half: an unhandled error arriving while a compensation walk is in
 // flight does not start a second walk, and does not touch the live cursor at
 // all. The walk in flight IS the rollback; the error is recorded as the pending
 // terminal outcome the walk's finish must apply.
@@ -139,7 +139,7 @@ func driveWalkThenUncaughtError(t *testing.T, def *model.ProcessDefinition) (eng
 // so the cursor assertion and the per-step undoA count both go RED there.
 //
 // The DEFERRAL assertions below replace the cursor-conversion assertions this
-// test carried when ADR-0170 first shipped (stamping FinalStatus/FinalErr and
+// test originally carried (stamping FinalStatus/FinalErr and
 // clearing ResumeNode/ResumeScope in place). That shape converted the live walk
 // into this error's rollback and so inherited its record source, stranding —
 // and, for a targeted throw, erasing — every record outside it. See
@@ -181,7 +181,7 @@ func TestUncaughtErrorDoesNotRestartInFlightCompensationWalk(t *testing.T) {
 		"the error's code must not be stamped on the live walk's cursor")
 
 	// The deferral itself: the outcome rides on the instance, not the cursor, and
-	// is consumed by applyFinish when this walk drains (ADR-0039's PendingCancel
+	// is consumed by applyFinish when this walk drains (the PendingCancel
 	// protocol, generalized to carry a terminal outcome).
 	require.True(t, r4.State.PendingCancel,
 		"the error must be deferred behind the live walk")
@@ -205,8 +205,8 @@ func TestUncaughtErrorDoesNotRestartInFlightCompensationWalk(t *testing.T) {
 		"branch C's human task must be cancelled, not left completable; cmds=%#v", r4.Commands)
 }
 
-// TestUncaughtErrorMidWalkFailsInstanceOnWalkFinish is the other half of
-// ADR-0170, and the one that matters most: driven to its end, the instance must
+// TestUncaughtErrorMidWalkFailsInstanceOnWalkFinish is the other half of the
+// pair, and the one that matters most: driven to its end, the instance must
 // report the failure rather than success.
 //
 // Measured on unpatched engine/step_errors.go: completing the (clobbered) cursor

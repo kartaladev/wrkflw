@@ -10,7 +10,7 @@ import (
 // doc comments instruct — must type-assert to service.TimerAdmin. Nothing in
 // production code pins that assertion, so a signature drift in TimerAdmin would
 // degrade to a runtime ok == false and an admin route that silently fails to
-// register, with no compile error anywhere (ADR-0159).
+// register, with no compile error anywhere.
 //
 // This assertion IS the test: it breaks the build of the persistence test binary
 // the moment *store.TimerStore stops satisfying the port. There is deliberately

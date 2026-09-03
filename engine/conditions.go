@@ -31,13 +31,13 @@ type ConditionEvaluator interface {
 // deterministic and the cache is referentially transparent, so using a shared
 // instance does not affect Step's determinism.
 //
-// The wall-clock evaluation guard (expreval.WithTimeout, ADR-0049) is explicitly
+// The wall-clock evaluation guard (expreval.WithTimeout) is explicitly
 // DISABLED here: the engine core must stay wall-clock-free and side-effect-free
-// (locked invariant, ADR-0003), so the default Step never spawns the guard's
+// (a locked invariant), so the default Step never spawns the guard's
 // goroutine/timer.
 //
 // A consumer that needs the DoS guard for in-engine evaluation supplies its own
-// timeout-capable [ConditionEvaluator] via [StepOptions.Evaluator] (ADR-0056);
+// timeout-capable [ConditionEvaluator] via [StepOptions.Evaluator];
 // that is an explicit opt-in trading the deterministic-replay guarantee for DoS
 // protection.
 var conditions = expreval.New(expreval.WithTimeout(0))

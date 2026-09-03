@@ -350,7 +350,7 @@ func TestHumanCompletedAdvancesAndAudits(t *testing.T) {
 	assert.Equal(t, humantask.Completed, r2.State.Tasks[0].State)
 
 	// The CLOSED visit for "approve" links to the completed task, which is where
-	// the completion audit (who/when/outcome) lives (ADR-0145). Using the closed
+	// the completion audit (who/when/outcome) lives. Using the closed
 	// visit is unambiguous even if the same node is visited more than once.
 	var approveVisit *engine.NodeVisit
 	for i := range r2.State.History {
@@ -380,11 +380,10 @@ func TestHumanCompletedAdvancesAndAudits(t *testing.T) {
 // state does not — which is a state conflict, not a missing task. Reporting 404
 // for a task the store still holds would be actively misleading.
 //
-// ⚠ What makes this test able to fail: ADR-0165 Phase 5 briefly moved
+// ⚠ What makes this test able to fail: an earlier pass briefly moved
 // HumanCompleted to humantask.ErrTaskNotFound, and a first pass at this
 // convergence moved the other three with it; every row then failed the ErrorIs
-// assertion. Phase 6.4 converged the other way instead. See ADR-0165's
-// correction block.
+// assertion. The convergence went the other way instead.
 //
 // The instance is RUNNING, so dispatch's terminal guard is not involved — this is
 // purely the "no such task record" key.
@@ -489,7 +488,7 @@ func TestHumanCompletedMissingTaskRecordErrors(t *testing.T) {
 }
 
 // TestUserTaskVisitCarriesTaskID verifies the open node visit for a parked
-// user task links to the minted human task (ADR-0145), so the rendered history
+// user task links to the minted human task, so the rendered history
 // can resolve the actor/outcome from the task record rather than duplicating it.
 func TestUserTaskVisitCarriesTaskID(t *testing.T) {
 	at := time.Date(2026, 6, 21, 9, 0, 0, 0, time.UTC)
@@ -515,7 +514,7 @@ func TestUserTaskVisitCarriesTaskID(t *testing.T) {
 	}
 }
 
-// TestHumanTaskAuditRecording verifies the ADR-0146/0147 audit trail the engine
+// TestHumanTaskAuditRecording verifies the audit trail the engine
 // stamps onto the HumanTask: a claim records the full claiming actor and the
 // trigger's occurrence time, a reassignment overwrites that claim, and a
 // completion records the completing actor, time, outcome and note. These are the
@@ -625,7 +624,7 @@ func TestHumanTaskAuditRecording(t *testing.T) {
 }
 
 // TestHumanCandidatesResolved verifies the trigger that carries the runtime's
-// resolved candidate actors into the committed snapshot (ADR-0147). The engine
+// resolved candidate actors into the committed snapshot. The engine
 // core cannot resolve candidates itself — resolution is I/O — so the runtime
 // resolves and feeds the result back as a trigger, exactly as it does for a
 // completed service action.
@@ -830,7 +829,7 @@ func TestHumanCandidatesResolvedIsolation(t *testing.T) {
 // HumanReassigned whose To names no actor, and does so before it touches any
 // state. Reassignment moves the claim from one actor to another; an empty To
 // would mint a Claimed task with an empty claimant — invisible to AssignedTo
-// (no claimant to match) and to ClaimableBy (not Unclaimed). See ADR-0183.
+// (no claimant to match) and to ClaimableBy (not Unclaimed).
 //
 // The non-empty control row is what stops the guard passing by refusing
 // everything. Step is deliberately not context-sensitive (its doc: ctx "carries

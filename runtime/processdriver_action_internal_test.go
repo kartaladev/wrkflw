@@ -13,7 +13,7 @@ import (
 // id from its parent id and the StartSubInstance command id. Both id shapes the
 // engine can mint are exercised: the built-in per-instance counter
 // ("<instance>-c<N>", used when no IDGenerator is injected) and an opaque
-// generator id (xid/uuid, what the runtime injects by default — ADR-0149).
+// generator id (xid/uuid, what the runtime injects by default).
 func TestChildInstanceIDFor(t *testing.T) {
 	t.Parallel()
 
@@ -138,8 +138,8 @@ func TestChildInstanceIDForIsDeterministic(t *testing.T) {
 	assert.NotEqual(t, first, other, "distinct commands of one parent must not collide")
 }
 
-// TestChildInstanceIDForBoundedAcrossNesting is the ADR-0149 regression: with an
-// opaque (hyphen-free) command id the old derivation embedded the WHOLE command
+// TestChildInstanceIDForBoundedAcrossNesting is the id-growth regression: with
+// an opaque (hyphen-free) command id the old derivation embedded the WHOLE command
 // id, so each nesting level grew the child id by ~25 characters and a chain far
 // shallower than maxCallDepth overflowed a VARCHAR(255) instance_id column with
 // an opaque driver error instead of the guarded depth failure. Growth per level

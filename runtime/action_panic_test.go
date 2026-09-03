@@ -57,7 +57,7 @@ func TestProcessDriverRecoversActionPanic(t *testing.T) {
 
 // TestProcessDriverRecoversCancelActionPanic asserts that a panicking cancel action is
 // recovered and logged best-effort — CancelInstance must still succeed and reach
-// StatusTerminated (ADR-0028: cancellation reports success regardless).
+// StatusTerminated — cancellation reports success regardless.
 func TestProcessDriverRecoversCancelActionPanic(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	cat := action.NewCatalog(map[string]action.Action{

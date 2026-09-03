@@ -46,7 +46,7 @@ func seedRelayTickRow(t *testing.T, db *sql.DB, d dialect.Dialect, dedup string,
 }
 
 // TestRelay_TickIsClockDriven proves Run's poll ticker is routed through the
-// injected clock (ADR-0138): under a clockwork.FakeClock, no wall time
+// injected clock: under a clockwork.FakeClock, no wall time
 // passes, so only fc.Advance(poll) — not real time — can make the row that is
 // due only after one poll interval get claimed and published.
 func TestRelay_TickIsClockDriven(t *testing.T) {

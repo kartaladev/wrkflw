@@ -72,7 +72,7 @@ func NewHarness(t testing.TB, defs ...*model.ProcessDefinition) (*Harness, servi
 
 	// NewMapDefinitionRegistry indexes each definition under both its short ("id")
 	// and versioned ("id:version") keys internally. The driver resolves a
-	// correlated instance's definition from this registry (ADR-0121), so it is
+	// correlated instance's definition from this registry, so it is
 	// wired into the driver as well as the service facade.
 	reg := kernel.NewMapDefinitionRegistry(defs...)
 

@@ -1,6 +1,6 @@
 package engine_test
 
-// step_harvest_ordering_test.go — ADR-0174 Decision 3: endInstance harvests its open
+// step_harvest_ordering_test.go — endInstance harvests its open
 // scopes BEFORE clearing the compensation cursor.
 //
 // This is the ONLY test that can see that ordering, and the ordering is the difference
@@ -13,8 +13,8 @@ package engine_test
 // which clears no cursor and closes no scope. A walk's own finish CANNOT be used —
 // stepCompensationFinish zeroes s.Compensating one call up, so there both orderings
 // compute an identical result and the test could not fail. That was the defect the
-// rule-#9 audit found in this test's first specification, and it is the same
-// "recomputes identically" trap ADR-0173's delivery shipped.
+// audit found in this test's first specification, and it is the same
+// "recomputes identically" trap an earlier delivery shipped.
 //
 // The walk must also be ADVANCED at least one step before the kill, because it is the
 // window's OFFSET (NextIndex) that moves, not its count: with NextIndex still at its
@@ -147,7 +147,7 @@ func TestForceTerminationMidWalkArchivesOnlyTheUndispatchedRemainder(t *testing.
 	// endInstance with a live cursor.
 	r = step(t, r.State, engine.NewActionCompleted(at, holdID, nil))
 	require.True(t, r.State.Status.IsTerminal(), "fixture: the force-termination end must have run")
-	assert.Nil(t, r.State.Scopes, "the terminal snapshot carries no open scope (ADR-0174)")
+	assert.Nil(t, r.State.Scopes, "the terminal snapshot carries no open scope")
 
 	// undoC was dispatched AND completed; undoB was dispatched. Only undoA is still
 	// owed, so only undoA may survive into the archive.

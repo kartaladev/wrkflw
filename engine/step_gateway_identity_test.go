@@ -1,6 +1,6 @@
 package engine_test
 
-// step_gateway_identity_test.go — backlog 74. resolveGatewayWin used to locate
+// step_gateway_identity_test.go — resolveGatewayWin used to locate
 // the parked event-gateway token by the STRING "evtgw:"+ae.GatewayToken via
 // InstanceState.tokenAwaiting, which returns the FIRST token whose AwaitCommand
 // equals that string. Token.AwaitCommand also carries consumer-supplied ids

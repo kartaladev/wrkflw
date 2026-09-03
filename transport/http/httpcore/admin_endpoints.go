@@ -99,10 +99,11 @@ func AdminListInstances(ctx context.Context, svc service.Service, q ListInstance
 // ResolveIncident resolves an open incident on a process instance, optionally
 // granting additional execution attempts via in.AddAttempts. Returns (200,
 // InstanceView, nil) on success.
-// ⚠ mapper carries the adapter's per-request disclosure decision (ADR-0190). These three
+// ⚠ mapper carries the adapter's per-request disclosure decision. These three
 // admin endpoints render instance state through NewInstanceView DIRECTLY, bypassing
-// mapInstance — a fourth render mechanism that no earlier draft of that record counted, and
-// which therefore stayed fully open while the six mapInstance sites were being closed.
+// mapInstance — a fourth render mechanism that an earlier draft of the disclosure work
+// did not count, and which therefore stayed fully open while the six mapInstance sites
+// were being closed.
 func ResolveIncident(ctx context.Context, svc service.Service, instanceID, incidentID string, in ResolveIncidentInput, mapper func(engine.InstanceState) any) (int, any, error) {
 	pi, err := svc.ResolveIncident(ctx, service.ResolveIncidentRequest{
 		InstanceID:  instanceID,
@@ -330,10 +331,10 @@ type timerItemView struct {
 // TotalCount and NextFireAt are table-wide aggregates, present only when the
 // request asked for them (total=true); they are pointers so an ordinary paged
 // request omits them entirely rather than reporting a zero total that would
-// read as "no timers" beside a non-empty page (ADR-0159).
+// read as "no timers" beside a non-empty page.
 //
-// The field is `total_count`, matching [adminListResponse], and NOT the
-// pre-ADR-0159 `count`. That is deliberate: `count` used to equal len(items)
+// The field is `total_count`, matching [adminListResponse], and NOT the legacy
+// `count`. That is deliberate: `count` used to equal len(items)
 // because the endpoint returned the whole table, and it now means the table
 // total instead. Renaming makes the semantic change visible to a consumer
 // rather than silently reinterpreting a field they already parse.
@@ -350,7 +351,7 @@ type timerListResponse struct {
 //
 // The listing is paged rather than whole-table: the armed-timer population is
 // unbounded, and an admin endpoint that reads all of it is a denial-of-service
-// vector against the operator's own database (ADR-0159). A malformed q.Cursor
+// vector against the operator's own database. A malformed q.Cursor
 // propagates kernel.ErrBadArmedTimerCursor, which [ClassifyError] maps to 400 so an
 // operator sees the mistake instead of silently restarting at page one.
 //
@@ -489,7 +490,7 @@ func AdminInstanceLineage(ctx context.Context, a service.LineageAdmin, instanceI
 }
 
 // ResolveCompensationStall applies an operator's escape from a compensation walk
-// whose dispatched action stopped reporting back (ADR-0175). Returns (200,
+// whose dispatched action stopped reporting back. Returns (200,
 // InstanceView, nil) on success.
 //
 // ⚠ AUTHORIZATION. retry re-executes a named remote action and abandon is

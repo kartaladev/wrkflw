@@ -16,7 +16,7 @@ import (
 
 // TestRunTaskStoreConformance runs the exported conformance suite against every
 // TaskStore this module bundles. It is the positive leg: each of these stores
-// upholds the Upsert contract (ADR-0183), so the suite must report no failure.
+// upholds the Upsert contract, so the suite must report no failure.
 // The negative leg — that a non-conforming store is actually CAUGHT — lives in
 // taskstoreconformance_internal_test.go, where a recorder captures the failures
 // instead of propagating them to this suite.

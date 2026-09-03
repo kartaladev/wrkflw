@@ -25,8 +25,7 @@ import (
 // discard it today, and each is safe to. Do not read the signature as a fix —
 // read it as making the distinction EXPRESSIBLE (and pinned, by
 // step_compensation_closed_scope_test.go) for the caller that one day needs it.
-// The reasons, per caller — measured 2026-08-20 and recorded in
-// docs/plans/sweep-evidence/fix-review-engine-ok-return.md:
+// The reasons, per caller — measured 2026-08-20:
 //
 //   - beginCompensation passes the untyped const "" — resolvable by construction.
 //   - the scope-wide compensation throw (step_nodes.go) cannot be REACHED with a
@@ -40,8 +39,8 @@ import (
 //     empty slice, and the four consumers of an empty cursorRecords result
 //     (stepCompensationAdvance's bounds disjunct, retryStalledCompensation,
 //     retryFailedCompensation, step_triggers.go's failedNodeID lookup) route to
-//     the walk's FINISH or to an empty node id either way — which is what
-//     ADR-0171 prescribes for a vanished source and is trivially right for an
+//     the walk's FINISH or to an empty node id either way — which is the
+//     prescribed handling for a vanished source and is trivially right for an
 //     open empty one. Executed: an unpinned cursor over an open-empty scope and
 //     over an absent scope produce DeepEqual StepResults (state and commands)
 //     through both the advance and the retry entry points.
@@ -49,7 +48,7 @@ import (
 //     writing it back is itself a no-op for a scope that is gone.
 //
 // If ok is ever wanted for visibility rather than control flow — a "this walk's
-// record source vanished" signal — that is backlog 133, not this signature.
+// record source vanished" signal — that is separate work, not this signature.
 func compensationRecordsForScope(s *InstanceState, scopeID string) ([]CompensationRecord, bool) {
 	if scopeID == "" {
 		return s.RootCompensations, true
@@ -64,12 +63,12 @@ func compensationRecordsForScope(s *InstanceState, scopeID string) ([]Compensati
 // cursorRecords returns the CompensationRecord slice for the current compensation
 // walk described by cur.
 //
-// A pinned source (cur.Records, set by startCompensationWalk — ADR-0171) wins:
+// A pinned source (cur.Records, set by startCompensationWalk) wins:
 // it is a snapshot taken at walk start, so the walk keeps iterating the records
 // it committed to even if a sibling branch destroys the live source underneath
 // it. The live reads below remain for the walks that do not pin — the
 // beginCompensation family — and for a throw cursor deserialized from a row
-// written before ADR-0171, whose Records is nil.
+// written by an older version, whose Records is nil.
 func cursorRecords(s *InstanceState, cur compensationCursor) []CompensationRecord {
 	if cur.Records != nil {
 		return cur.Records
@@ -160,16 +159,16 @@ func stepCompensateRequested(ctx context.Context, def *model.ProcessDefinition, 
 	// rollback TERMINATE branch (ReverseNode == "" takes no reverse branch),
 	// silently discarding ResetVars and terminating the instance instead of
 	// resuming it — the engine-level twin of the WithTargetNode("") footgun
-	// already guarded at the runtime facade (ADR-0109 hardening, finding #5).
+	// already guarded at the runtime facade.
 	// Checked first, ahead of the two state-dependent guards below — the
 	// in-flight-walk check and the terminal nothing-to-compensate check — because
 	// it is a pure trigger-shape validation independent of s.Status. That
 	// ordering is what makes the minimal malformed shapes keep reporting the
-	// shape error even on a terminal instance (ADR-0165).
+	// shape error even on a terminal instance.
 	if t.ResetVars && t.ReverseNode == "" {
 		return StepResult{}, fmt.Errorf("workflow-engine: ResetVars requires ReverseNode (use NewReverseToStart)")
 	}
-	// Sibling guard (F1.2, FU#1): reject a malformed trigger that expresses
+	// Sibling guard: reject a malformed trigger that expresses
 	// target-reverse variable-restore intent (RestoreTargetVars) without a
 	// target node (ToNode) to look the snapshot up on. RestoreTargetVars
 	// restores Variables to ToNode's own start-of-visit snapshot (the Input
@@ -205,14 +204,13 @@ func stepCompensateRequested(ctx context.Context, def *model.ProcessDefinition, 
 	}
 	// The one terminal condition that is NOT a property of the trigger, and so
 	// cannot live in terminalPolicy: refuse a plain full rollback on a terminal
-	// instance when there is nothing left to compensate (ADR-0165 Decision 5,
-	// predicate corrected during implementation).
+	// instance when there is nothing left to compensate.
 	//
 	// dispatch has already refused every resume-shaped rollback by the time
 	// control reaches here, so on a terminal instance this can only be the plain
-	// full rollback allowOnTerminal waves through. ADR-0164 carve-out #1 keeps
-	// working: with records to walk, compensating a finished instance is a
-	// legitimate admin action and the walk proceeds untouched.
+	// full rollback allowOnTerminal waves through. With records to walk,
+	// compensating a finished instance is a legitimate admin action and the walk
+	// proceeds untouched.
 	//
 	// Without them the walk is not merely pointless, it is destructive:
 	// beginCompensation finds no eligible record and goes straight to
@@ -222,11 +220,9 @@ func stepCompensateRequested(ctx context.Context, def *model.ProcessDefinition, 
 	// death moves. No compensation action is emitted in exchange, and the caller
 	// is told nothing.
 	//
-	// ⚠ Decision 5 as written in ADR-0165 had this predicate INVERTED — it
-	// refused the walk when records survive and admitted it when they do not,
-	// on the assumption that "no records" meant "nothing happens". Measurement
-	// showed the opposite on both halves. The decision's intent stands; only its
-	// expression was wrong.
+	// ⚠ Do NOT invert this predicate. Refusing the walk when records survive and
+	// admitting it when they do not assumes "no records" means "nothing
+	// happens"; measurement showed the opposite on both halves.
 	//
 	// The refusal is an error, not a silent drop, because the only caller that
 	// can still reach this path is an explicit admin action: CancelRequested was
@@ -253,7 +249,7 @@ func stepCompensateRequested(ctx context.Context, def *model.ProcessDefinition, 
 	s.Status = StatusCompensating
 	// A rollback that resumes execution (full reverse, or a partial rollback to a
 	// target node) is a reverse; a walk that just compensates and terminates is a
-	// plain compensation (ADR-0145).
+	// plain compensation.
 	closeKind := CloseKindCompensated
 	if t.ReverseNode != "" || t.ToNode != "" || t.RestoreTargetVars {
 		closeKind = CloseKindReversed
@@ -262,7 +258,7 @@ func stepCompensateRequested(ctx context.Context, def *model.ProcessDefinition, 
 	// the open scopes still hold — otherwise work completed inside a live sub-process
 	// is invisible to the walk, and the operator's rollback dispatches nothing while
 	// endInstance archives the record a moment later, so only a SECOND rollback
-	// actually compensates it (ADR-0174, found by /code-review at the gate).
+	// actually compensates it.
 	//
 	// ⚠ Gated on the walk terminating, and that gate is load-bearing. A full reverse
 	// and a partial rollback both RESUME, leaving the sub-process scope alive; hoisting
@@ -300,7 +296,7 @@ type compensationOutcome struct {
 	FinalStatus Status
 	FinalErr    string
 	// ReverseNode/ReverseResetVars carry the ReverseInstance full-reverse
-	// intent (ADR-0109): when ReverseNode is non-empty, a FULL-rollback finish
+	// intent: when ReverseNode is non-empty, a FULL-rollback finish
 	// resumes at ReverseNode (StatusRunning) — optionally resetting Variables
 	// to StartVariables via ReverseResetVars — instead of terminating. All
 	// cancel/error/throw callers leave both zero so their terminate behaviour
@@ -308,12 +304,12 @@ type compensationOutcome struct {
 	ReverseNode      string
 	ReverseResetVars bool
 	// CloseKind is why the in-flight tokens are being torn down, stamped on
-	// every visit this walk closes (ADR-0145): CloseKindInstanceCancelled for a
+	// every visit this walk closes: CloseKindInstanceCancelled for a
 	// cancel, CloseKindErrored for a terminal error, CloseKindReversed for a
 	// ReverseInstance rollback, CloseKindCompensated for a plain administrative
 	// compensation walk.
 	CloseKind CloseKind
-	// RestoreTargetVars carries the FU#1 target-reverse intent (ADR-0116):
+	// RestoreTargetVars carries the target-reverse intent:
 	// when true (only the NewReverseToNode path sets it, always alongside a
 	// non-empty ToNode), the PARTIAL-rollback finish restores Variables to
 	// ToNode's start-of-visit snapshot. Cancel/error/throw/admin/full-reverse
@@ -462,24 +458,24 @@ func beginCompensation(ctx context.Context, def *model.ProcessDefinition, s *Ins
 // cancelCompensationWalkTimers removes every outstanding WALK-SCOPED timer
 // record — both TimerCompensationStall and TimerCompensationRetry — and returns
 // a CancelTimer for each, so the scheduler is never left holding a timer for a
-// walk that has moved on (ADR-0175, widened to the retry kind by ADR-0179).
+// walk that has moved on.
 //
 // The membership question is [TimerKind.firesOnDyingInstance], which is where
 // "this kind belongs to a compensation WALK rather than to the instance's
 // forward work" is defined — so a future walk-scoped kind joins this sweep by
 // being added there, not here. ⚠ It is deliberately NOT
 // [TimerKind.detectionOnly]: that predicate answers whether a harness may fire
-// the timer, and the retry kind answers it the other way (ADR-0179 Decision 4).
+// the timer, and the retry kind answers it the other way.
 //
 // Widening it is what stops a retry record outliving its walk. Measured before:
 // a two-record RESUMING walk finished with `leakedTimerRecords=2` and emitted no
 // CancelTimer, and stepCompensationFinish had already zeroed the cursor — so
-// each orphan later fired against compensationCursor{}, the shape ADR-0171
-// documents as having panicked in the pure core. (A TERMINATE finish hid this:
+// each orphan later fired against compensationCursor{}, a shape that has
+// panicked in the pure core. (A TERMINATE finish hid this:
 // endInstance's cancelAllTimers sweeps every record regardless of kind.)
 //
 // It sweeps by KIND rather than by key. The records carry Token: "" and an empty
-// key names no record (ADR-0152), so neither cancelTimersForToken nor
+// key names no record, so neither cancelTimersForToken nor
 // cancelTimersByTaskID can ever reach one — this is the only SELECTIVE sweep
 // that does. ⚠ Not the only remover: cancelAllTimers reaches one by taking
 // everything, but only on a terminal transition, and removeTimer reaches one
@@ -489,8 +485,8 @@ func beginCompensation(ctx context.Context, def *model.ProcessDefinition, s *Ins
 // common case, and the one that keeps detection genuinely free when disabled.
 // Rebuilding unconditionally would turn a nil Timers into an empty slice, and
 // s.Timers is marshalled into the persisted snapshot: every stored row's
-// `timers` would flip from null to [] on a walk that armed nothing (the
-// stored-shape drift ADR-0174 hit with Scopes).
+// `timers` would flip from null to [] on a walk that armed nothing — the same
+// stored-shape drift Scopes hit.
 //
 // ⚠ The early return is not a third filter to widen — it is DERIVED from the
 // emit loop below it (cmds == nil iff that loop matched nothing), so widening
@@ -533,10 +529,10 @@ func cancelCompensationWalkTimers(s *InstanceState) []Command {
 //
 // Its ARM half is a no-op when detection is disabled (pol.stallAfter == 0, the
 // default), which is what keeps every existing command stream byte-identical.
-// Its CANCEL half runs unconditionally, and since ADR-0179 that half also
-// retires the retry backoff of the command this dispatch supersedes: every
-// dispatch site calls this, so an advance out of a live backoff sweeps the
-// orphan here rather than leaving it armed until the walk's finish.
+// Its CANCEL half runs unconditionally, and that half also retires the retry
+// backoff of the command this dispatch supersedes: every dispatch site calls
+// this, so an advance out of a live backoff sweeps the orphan here rather than
+// leaving it armed until the walk's finish.
 //
 // ⚠ At beginCompensation this MUST be called after s.cancelAllTimers(), which
 // sets s.Timers to nil — an earlier arm is silently discarded.
@@ -571,11 +567,11 @@ func armCompensationStallTimer(s *InstanceState, pol stepPolicy, nodeID string) 
 
 // armCompensationRetryTimer decides whether the compensation record currently in
 // flight is to be RE-DISPATCHED after a backoff rather than skipped, and when it
-// is, arms the TimerCompensationRetry that will do it (ADR-0179 Decision 3).
+// is, arms the TimerCompensationRetry that will do it.
 //
 // It returns (commands, true) when the retry branch is taken — the caller must
-// then return WITHOUT advancing the walk — and (nil, false) when it is not, which
-// is every case ADR-0034 Decision 4 already covered: no policy configured (the
+// then return WITHOUT advancing the walk — and (nil, false) when it is not,
+// which is every case the skip path already covered: no policy configured (the
 // default), a non-retryable failure, an error the policy names non-retryable.
 //
 // nodeID is the failed record's node; errMsg and retryable come from the
@@ -596,14 +592,13 @@ func armCompensationRetryTimer(s *InstanceState, pol stepPolicy, nodeID, errMsg 
 	// that model.RetryPolicy documents as UNLIMITED and Normalize deliberately
 	// preserves.
 	//
-	// ⚠ Exhaustion does NOT park the walk (ADR-0179 Decision 7): the caller falls
-	// through to stepCompensationAdvance and the record is skipped, exactly as
-	// ADR-0034 Decision 4 has always done. The incident is the durable record that
-	// it happened.
+	// ⚠ Exhaustion does NOT park the walk: the caller falls through to
+	// stepCompensationAdvance and the record is skipped, exactly as the skip path
+	// has always done. The incident is the durable record that it happened.
 	//
 	// ⚠ MaxElapsed is not evaluated. A walk holds no token of its own, so there is
 	// no per-attempt start timestamp to measure against — cursor.StartedAt is the
-	// WALK's start and is deliberately never restamped (ADR-0175 decision 5).
+	// WALK's start and is deliberately never restamped.
 	if eff.MaxAttempts != 0 && cur.RetryAttempts+1 >= eff.MaxAttempts {
 		return nil, false
 	}
@@ -632,13 +627,13 @@ func armCompensationRetryTimer(s *InstanceState, pol stepPolicy, nodeID, errMsg 
 	// CompensationEscape{Retry} race against the scheduled retry, because
 	// handleResolveCompensationStall accepts the same still-active command id.
 	//
-	// ⚠ The two lines must not be swapped, and since cancelCompensationWalkTimers
-	// was widened to every walk-scoped kind (ADR-0179 Decision 3, plan P1 step 10)
-	// that is now LOAD-BEARING rather than merely prudent: an arm written ABOVE
-	// the cancel is swept by it, so no retry record survives the call and the
-	// retry never fires at all. Mutation-verified by swapping the two statements —
-	// the whole package went red, where the same swap was observationally
-	// equivalent while the sweep still filtered strictly on TimerCompensationStall.
+	// ⚠ The two lines must not be swapped. Now that cancelCompensationWalkTimers
+	// sweeps every walk-scoped kind, that is LOAD-BEARING rather than merely
+	// prudent: an arm written ABOVE the cancel is swept by it, so no retry record
+	// survives the call and the retry never fires at all. Mutation-verified by
+	// swapping the two statements — the whole package went red, where the same
+	// swap was observationally equivalent while the sweep still filtered strictly
+	// on TimerCompensationStall.
 	cmds := cancelCompensationWalkTimers(s)
 	timerID := s.nextTimerID()
 	s.Timers = append(s.Timers, timerRecord{
@@ -684,12 +679,12 @@ func stepCompensationAdvance(ctx context.Context, def *model.ProcessDefinition, 
 	cur := s.Compensating
 	// Retire the stall incident for the command we are advancing PAST, before the
 	// cursor is recomputed below — after it, cur.ActiveCmdID names the NEXT
-	// command and nothing would match (ADR-0175).
+	// command and nothing would match.
 	//
 	// Every route by which a walk moves on funnels through here: a late
-	// ActionCompleted, a late ActionFailed (best-effort skip, ADR-0034 Decision 4)
-	// and the `skip` verb. Putting the sweep in handleActionCompleted instead
-	// would silently miss the other two.
+	// ActionCompleted, a late ActionFailed (best-effort skip) and the `skip`
+	// verb. Putting the sweep in handleActionCompleted instead would silently
+	// miss the other two.
 	s.retireCompensationStallIncidents(cur.ActiveCmdID)
 	// Use cursorRecords so a pinned throw walk reads its snapshot, an unpinned
 	// throw walk reads its archive, and admin/cancel/error walks read the live
@@ -708,9 +703,9 @@ func stepCompensationAdvance(ctx context.Context, def *model.ProcessDefinition, 
 	// Check if next record is within the eligible range.
 	// Eligible: nextIdx >= 0 AND nextIdx > toNodeIdx (i.e. the record is AFTER ToNode).
 	//
-	// nextIdx >= len(records) is the third disjunct (ADR-0171): a record source
-	// that vanished or shrank under the cursor must route HERE, to the walk's
-	// finish, and never to the index expression below. It is unreachable for a
+	// nextIdx >= len(records) is the third disjunct: a record source that
+	// vanished or shrank under the cursor must route HERE, to the walk's finish,
+	// and never to the index expression below. It is unreachable for a
 	// walk this build started — startCompensationWalk pins the source, and
 	// beginCompensation's own source is RootCompensations, which no scope
 	// teardown can nil — but it IS reachable for a walk that was already in
@@ -734,9 +729,9 @@ func stepCompensationAdvance(ctx context.Context, def *model.ProcessDefinition, 
 	cmdID := s.nextCommandID()
 	cur.NextIndex = nextIdx
 	cur.ActiveCmdID = cmdID
-	// The retry budget is PER RECORD (ADR-0179 Decision 3), and this is the only
-	// site in the package where NextIndex ADVANCES — the other two writers,
-	// beginCompensation and startCompensationWalk, start a walk from the cursor
+	// The retry budget is PER RECORD, and this is the only site in the package
+	// where NextIndex ADVANCES — the other two writers, beginCompensation and
+	// startCompensationWalk, start a walk from the cursor
 	// stepCompensationFinish has already zeroed. Measured without this reset: the
 	// second record was skipped outright with zero retries and the walk TERMINATED
 	// (status terminated, FailInstance{cancelled}, no backoff armed), because the
@@ -749,7 +744,7 @@ func stepCompensationAdvance(ctx context.Context, def *model.ProcessDefinition, 
 	cur.RetryAttempts = 0
 	cur.RetryTimerID = ""
 	s.Compensating = cur
-	// Hand ownership of this record over as it is dispatched (ADR-0173), so a walk
+	// Hand ownership of this record over as it is dispatched, so a walk
 	// ABANDONED before its finish — a force-termination end event is the measured
 	// route — leaves behind exactly the records it never ran. Written AFTER the
 	// cursor assignment above because it updates the cursor's own window count.
@@ -783,20 +778,20 @@ type finishPlan struct {
 	// targeted throw and partial RETAIN their records. A scope-wide throw also sets
 	// it (see scopeWideThrow below for the prefix-only variant).
 	doClearRecords bool
-	// scopeWideThrow marks a SCOPE-WIDE compensation-throw finish (ADR-0120). When
-	// set alongside doClearRecords, only the drainedCount leading records of
+	// scopeWideThrow marks a SCOPE-WIDE compensation-throw finish. When set
+	// alongside doClearRecords, only the drainedCount leading records of
 	// clearScope (the prefix the walk actually drained) are cleared instead of the
 	// whole list — so a record a still-running sibling appended mid-walk survives
-	// and stays compensable by a later cancel (review A1). Only the scope-wide
-	// throw branch sets it; every other clearing plan nils the whole scope list.
+	// and stays compensable by a later cancel. Only the scope-wide throw branch
+	// sets it; every other clearing plan nils the whole scope list.
 	scopeWideThrow bool
 	// drainedCount is the number of leading records a scope-wide throw walk drained
 	// (its StartRecordCount). Used only when scopeWideThrow is set.
 	drainedCount int
-	// archiveWindowKey / Offset / Count carry the TEARDOWN WINDOW off the cursor
-	// (ADR-0173): the records a mid-walk scope teardown parked in the archive on
-	// this walk's behalf. consumeDispatchedRecord normally empties it as the walk
-	// dispatches, so by the finish Count is 0; these exist for the residue a walk
+	// archiveWindowKey / Offset / Count carry the TEARDOWN WINDOW off the cursor:
+	// the records a mid-walk scope teardown parked in the archive on this walk's
+	// behalf. consumeDispatchedRecord normally empties it as the walk dispatches,
+	// so by the finish Count is 0; these exist for the residue a walk
 	// that stopped short of its own records leaves — a ToNode boundary, or a
 	// source that shrank. Set only on the scopeWideThrow branch.
 	archiveWindowKey    string
@@ -805,31 +800,31 @@ type finishPlan struct {
 	// resetVars resets Variables to StartVariables (full-reverse with reset only).
 	resetVars bool
 	// restoreVars, when non-nil, replaces Variables with a copy of this snapshot on
-	// resume — the target node's start-of-visit Input for a target reverse (FU#1,
-	// ADR-0116). nil (the default) leaves Variables untouched. Mutually exclusive
-	// with resetVars by construction: a full-reverse (resetVars) never carries a
-	// ToNode, and a target reverse (restoreVars) never carries a ReverseNode.
+	// resume — the target node's start-of-visit Input for a target reverse. nil
+	// (the default) leaves Variables untouched. Mutually exclusive with resetVars
+	// by construction: a full-reverse (resetVars) never carries a ToNode, and a
+	// target reverse (restoreVars) never carries a ReverseNode.
 	restoreVars map[string]any
 	// deleteArchive is the throw-walk ArchivedCompensations key to delete on finish
 	// ("" = none) — single-ownership consume semantics.
 	deleteArchive string
 	// archiveConsumed marks a throw walk that handed each record's ownership over
-	// AS IT DISPATCHED it (ADR-0173), i.e. one with a pinned record source. Its
-	// deleteArchive slot therefore holds only records it never ran, and the finish
-	// must delete the key only when the slot is empty. False for a cursor
-	// persisted before ADR-0171, which pinned nothing, consumed nothing, and keeps
-	// the original whole-key delete.
+	// AS IT DISPATCHED it, i.e. one with a pinned record source. Its deleteArchive
+	// slot therefore holds only records it never ran, and the finish must delete
+	// the key only when the slot is empty. False for a cursor
+	// persisted by an older version, which pinned nothing, consumed nothing, and
+	// keeps the original whole-key delete.
 	archiveConsumed bool
 	// popDeferred re-activates exactly one deferred compensation throw (throw walk
-	// only — ADR-0071 serialization).
+	// only — walk serialization).
 	popDeferred bool
 	// consumePendingCancel makes a cancel that arrived mid-walk preempt the resume
 	// and terminate instead. The throw walk (preserving the prior throw-walk
-	// protocol) and the full-reverse walk (ADR-0109 hardening, finding #2) set it;
-	// the partial-rollback resume keeps resuming.
+	// protocol) and the full-reverse walk set it; the partial-rollback resume
+	// keeps resuming.
 	consumePendingCancel bool
-	// rearmRootESP re-arms ROOT-scope event sub-processes (ADR-0109 hardening,
-	// finding #1) via armEventTriggeredSubprocesses(def, s, "", at, eval), mirroring
+	// rearmRootESP re-arms ROOT-scope event sub-processes via
+	// armEventTriggeredSubprocesses(def, s, "", at, eval), mirroring
 	// handleStartInstance's own arm-then-drive sequence. Only the full-reverse
 	// resume AT ROOT SCOPE sets this: beginCompensation does not sweep
 	// s.EventTriggeredSubprocesses when a walk starts, so without a full reverse a
@@ -852,15 +847,14 @@ type finishPlan struct {
 // through the incident path.
 //
 // ⚠ That "never from persisted or external input" clause is load-bearing, and
-// ADR-0173 nearly broke it: the teardown window it added is read off the
-// PERSISTED cursor, so a corrupt row carrying a count with no key would have
-// tripped the assertion below and panicked in the consumer's process.
-// normalizeTeardownWindow sanitizes the window at the cursor read for exactly
-// that reason — keep new plan fields sourced from persisted state going through
-// it, or this function stops being a programming-bug detector and becomes an
-// input validator that crashes. stepCompensationFinish calls this once the
-// plan for the walk's outcome is fully built, before handing it to
-// applyFinish.
+// the teardown window nearly broke it: it is read off the PERSISTED cursor, so
+// a corrupt row carrying a count with no key would have tripped the assertion
+// below and panicked in the consumer's process. normalizeTeardownWindow
+// sanitizes the window at the cursor read for exactly that reason — keep new
+// plan fields sourced from persisted state going through it, or this function
+// stops being a programming-bug detector and becomes an input validator that
+// crashes. stepCompensationFinish calls this once the plan for the walk's
+// outcome is fully built, before handing it to applyFinish.
 func (p finishPlan) validate() {
 	if p.resetVars && p.restoreVars != nil {
 		panic("workflow-engine: finishPlan invariant violated: resetVars and restoreVars are mutually exclusive")
@@ -871,8 +865,8 @@ func (p finishPlan) validate() {
 	if !p.resume && p.scopeWideThrow {
 		panic("workflow-engine: finishPlan invariant violated: a terminate plan (resume=false) must never set scopeWideThrow")
 	}
-	// ADR-0173: a teardown window count without the key it indexes into would
-	// silently address nothing.
+	// A teardown window count without the key it indexes into would silently
+	// address nothing.
 	//
 	// ⚠ The converse is NOT an invariant, and asserting it panicked the suite: the
 	// USUAL finish carries a non-empty key with a ZERO count, because
@@ -903,9 +897,9 @@ func clearRecords(s *InstanceState, scopeID string) {
 // throw drains exactly the prefix [0 .. n-1] that existed at walk start, so it
 // clears only that prefix (compensate-once) while retaining any record a still-
 // running sibling appended mid-walk at index >= n — that record is genuinely
-// uncompensated and must stay compensable by a later cancel/rollback (ADR-0120
-// review A1). n is clamped to the current slice length (defensive): if the list
-// shrank, everything is cleared. A fresh backing slice is allocated for the
+// uncompensated and must stay compensable by a later cancel/rollback. n is
+// clamped to the current slice length (defensive): if the list shrank,
+// everything is cleared. A fresh backing slice is allocated for the
 // retained tail so the drained records are released for GC and no stale element
 // aliases the old array.
 func clearRecordsPrefix(s *InstanceState, scopeID string, n int) {
@@ -930,9 +924,9 @@ func clearRecordsPrefix(s *InstanceState, scopeID string, n int) {
 }
 
 // retainedRecordPrefix returns a COPY of scopeID's records [0 .. n-1] — the ones
-// a reverse-order walk never reached. It is abandon's record disposition
-// (ADR-0175): the walk dispatches from the END of the slice downward, so index n
-// is the record it stalled on and everything below n is untouched work.
+// a reverse-order walk never reached. It is abandon's record disposition: the
+// walk dispatches from the END of the slice downward, so index n is the record
+// it stalled on and everything below n is untouched work.
 //
 // n <= 0 retains nothing; n >= len retains everything. It returns nil rather
 // than an empty slice when nothing is retained, matching clearRecords.
@@ -978,7 +972,7 @@ func lastCompensationRecordByNode(records []CompensationRecord, nodeID string) *
 }
 
 // popOneDeferredThrow re-activates exactly ONE deferred compensation throw token
-// (ADR-0071 serialization). The caller has already cleared the cursor, so the
+// (walk serialization). The caller has already cleared the cursor, so the
 // subsequent drive re-enters the throw handler for that token via the normal
 // walk-start path. Popping one-per-finish keeps at most one walk in flight; any
 // further deferred throws stay queued and drain as each walk completes. No-op
@@ -1001,7 +995,7 @@ func popOneDeferredThrow(s *InstanceState) {
 //     resume Running at ResumeNode in ResumeScope, pop one deferred throw, drive.
 //   - toNode != "" (partial rollback via CompensateRequested): resume Running at
 //     toNode (records RETAINED), drive.
-//   - ReverseNode != "" (ReverseInstance full-reverse, ADR-0109): clear records,
+//   - ReverseNode != "" (ReverseInstance full-reverse): clear records,
 //     optionally reset Variables to StartVariables, resume Running at ReverseNode,
 //     drive.
 //   - otherwise (full rollback): apply the cursor's terminal FinalStatus
@@ -1028,7 +1022,7 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 	resumeScope := cur.ResumeScope
 	startRecordCount := cur.StartRecordCount
 	// A pinned record source is what makes this walk's incremental consuming
-	// (ADR-0173) trustworthy; see finishPlan.archiveConsumed.
+	// trustworthy; see finishPlan.archiveConsumed.
 	archiveConsumed := len(cur.Records) > 0
 	windowKey, windowOffset, windowCount := normalizeTeardownWindow(
 		cur.TeardownArchiveKey, cur.TeardownArchiveOffset, cur.TeardownArchiveCount)
@@ -1038,17 +1032,16 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 	// Clear the cursor — compensation walk is done.
 	s.Compensating = compensationCursor{}
 
-	// Retire the walk's own timers here — the stall guard and, since ADR-0179, any
-	// retry backoff still armed — so all five walk modes are covered by one line
-	// (ADR-0175). Only a TERMINATING finish reaches cancelAllTimers, via
-	// endInstance; a finish that RESUMES — the four modes throw-targeted,
-	// throw-scope-wide, partial rollback and full reverse, less whichever of them
-	// a deferred cancel flips to terminating (see [compensationCursor.walkTerminates])
-	// — never touches s.Timers, so without this
-	// the record leaks onto a Running instance and the scheduler keeps a timer
-	// with nothing left to guard. Worse for the retry kind than for the stall
-	// kind: the cursor is zeroed two lines above, so a leaked retry record fires
-	// against compensationCursor{}.
+	// Retire the walk's own timers here — the stall guard and any retry backoff
+	// still armed — so all five walk modes are covered by one line. Only a
+	// TERMINATING finish reaches cancelAllTimers, via endInstance; a finish that
+	// RESUMES — the four modes throw-targeted, throw-scope-wide, partial rollback
+	// and full reverse, less whichever of them a deferred cancel flips to
+	// terminating (see [compensationCursor.walkTerminates]) — never touches
+	// s.Timers, so without this the record leaks onto a Running instance and the
+	// scheduler keeps a timer with nothing left to guard. Worse for the retry
+	// kind than for the stall kind: the cursor is zeroed two lines above, so a
+	// leaked retry record fires against compensationCursor{}.
 	//
 	// ⚠ The position relative to applyFinish is NOT load-bearing, and an earlier
 	// revision of this comment claimed it was. Measured by moving the call below
@@ -1070,14 +1063,13 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 		// cancel arriving mid-walk preempts the resume and terminates
 		// (consumePendingCancel).
 		//
-		// ⚠ This said "a second throw to the same ref finds len == 0 and no-ops",
-		// which ADR-0173 NARROWS: the walk now consumes only the records it
-		// dispatched, so a sibling that re-entered the same sub-process node
-		// mid-walk leaves its own record in the slot and the second throw
-		// COMPENSATES it. That is the point — the whole-key delete was destroying a
-		// genuinely uncompensated record (ADR-0120 review A1's rule, which the
-		// scope-wide branch already honoured). The no-op still holds for the case
-		// the sentence was written about: a second throw with nothing new archived.
+		// ⚠ NOT "a second throw to the same ref finds len == 0 and no-ops": the walk
+		// consumes only the records it dispatched, so a sibling that re-entered the
+		// same sub-process node mid-walk leaves its own record in the slot and the
+		// second throw COMPENSATES it. That is the point — a whole-key delete
+		// destroys a genuinely uncompensated record, which the scope-wide branch
+		// already honoured. The no-op still holds for a second throw with nothing
+		// new archived.
 		plan = finishPlan{
 			resume:               true,
 			resumeAt:             resumeNode,
@@ -1088,9 +1080,9 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 			consumePendingCancel: true,
 		}
 		if cur.walkMode() == walkThrowScopeWide {
-			// Scope-wide compensate throw (ADR-0120): the drained records came from
-			// the throwing scope's LIVE list (RootCompensations or a sub-scope's
-			// Compensations), not an archive entry. Clear them here (compensate-once)
+			// Scope-wide compensate throw: the drained records came from the throwing
+			// scope's LIVE list (RootCompensations or a sub-scope's Compensations),
+			// not an archive entry. Clear them here (compensate-once)
 			// so a second throw or a later cancel/rollback cannot re-run the
 			// already-run compensations. A targeted throw (walkThrowTargeted) instead
 			// deletes only its archive entry above and RETAINS RootCompensations,
@@ -1100,8 +1092,7 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 			// list: a compensable sibling running concurrently (throw-then-continue
 			// leaves siblings live) can append a fresh record ABOVE that prefix during
 			// the walk. That record is genuinely uncompensated and must survive for a
-			// later cancel/rollback — nilling the whole list would silently lose it
-			// (review A1).
+			// later cancel/rollback — nilling the whole list would silently lose it.
 			plan.doClearRecords = true
 			plan.clearScope = scopeID
 			plan.scopeWideThrow = true
@@ -1116,9 +1107,9 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 		// No double-compensation risk — consolidateArchiveIntoRoot already drained
 		// the archive into RootCompensations (single ownership).
 		//
-		// FU#1 (ADR-0116): a target reverse (RestoreTargetVars, set only by
-		// NewReverseToNode) additionally restores Variables to toNode's own
-		// start-of-visit snapshot — the Input on toNode's most-recent compensation
+		// A target reverse (RestoreTargetVars, set only by NewReverseToNode)
+		// additionally restores Variables to toNode's own start-of-visit
+		// snapshot — the Input on toNode's most-recent compensation
 		// record (records are RETAINED on a partial finish, so the record is still
 		// present here). A raw admin CompensateRequested leaves RestoreTargetVars
 		// false and keeps the current variables.
@@ -1132,12 +1123,12 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 			}
 		}
 	case walkReverse:
-		// Full reverse (ADR-0109): clear the scope's records (as full rollback
-		// does), optionally reset Variables, resume at ReverseNode. Re-arm root
+		// Full reverse: clear the scope's records (as full rollback does),
+		// optionally reset Variables, resume at ReverseNode. Re-arm root
 		// event sub-processes when the walk was rooted at scope "" (today the
 		// only case: NewReverseToStart always targets the root scope) — see
 		// finishPlan.rearmRootESP. A cancel arriving mid-walk preempts the resume
-		// and terminates (consumePendingCancel), mirroring the throw walk — Fork B.
+		// and terminates (consumePendingCancel), mirroring the throw walk.
 		plan = finishPlan{
 			resume:               true,
 			resumeAt:             reverseNode,
@@ -1171,16 +1162,16 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 
 // applyPlanRecordClearing performs a finishPlan's record clearing: a scope-wide
 // throw (scopeWideThrow) clears only the drainedCount-length prefix it consumed,
-// retaining any sibling-appended record (review A1); every other clearing plan
-// nils the whole scope list. No-op when doClearRecords is false.
+// retaining any sibling-appended record; every other clearing plan nils the
+// whole scope list. No-op when doClearRecords is false.
 func applyPlanRecordClearing(s *InstanceState, plan finishPlan) {
 	if !plan.doClearRecords {
 		return
 	}
 	if plan.scopeWideThrow {
 		clearRecordsPrefix(s, plan.clearScope, plan.drainedCount)
-		// Remove whatever survives of the teardown window (ADR-0173). Normally
-		// nothing does: consumeDispatchedRecord empties it as the walk dispatches.
+		// Remove whatever survives of the teardown window. Normally nothing does:
+		// consumeDispatchedRecord empties it as the walk dispatches.
 		// A walk that stops short of its own records — a ToNode boundary, or a
 		// record source that shrank under it — leaves a residue, and it belongs to
 		// this walk, not to the next one. Highest index first, so each removal
@@ -1202,14 +1193,14 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 	// Throw-walk archive consume (single ownership). No-op for other plans
 	// (deleteArchive == "").
 	if plan.deleteArchive != "" && s.ArchivedCompensations != nil {
-		// A walk that consumed its slot as it dispatched (ADR-0173) has already
-		// removed everything it drained, so whatever is left is a record it never
-		// ran — a sibling's mid-walk re-entry of the same sub-process node, which
+		// A walk that consumed its slot as it dispatched has already removed
+		// everything it drained, so whatever is left is a record it never ran — a
+		// sibling's mid-walk re-entry of the same sub-process node, which
 		// accumulates into this one slot. Deleting the key regardless was the
 		// defect: measured, the second visit's record was destroyed uncompensated
 		// and the deferred throw popped at finish found an empty slot.
 		//
-		// A cursor persisted before ADR-0171 pinned no snapshot, so it read the
+		// A cursor persisted by an older version pinned no snapshot, so it read the
 		// slot LIVE and consumed nothing; the whole-key delete stays its correct
 		// single-ownership consume.
 		if !plan.archiveConsumed || len(s.ArchivedCompensations[plan.deleteArchive]) == 0 {
@@ -1217,9 +1208,9 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 		}
 	}
 
-	// A cancel — or an unhandled error (ADR-0170) — that arrived mid-walk preempts
-	// the resume: the walk's target is already compensated (and, for a throw,
-	// removed from the archive above), so a full walk over the REMAINING records
+	// A cancel — or an unhandled error — that arrived mid-walk preempts the
+	// resume: the walk's target is already compensated (and, for a throw, removed
+	// from the archive above), so a full walk over the REMAINING records
 	// cannot double-run it. Terminate.
 	if plan.resume && plan.consumePendingCancel && s.PendingCancel {
 		s.PendingCancel = false
@@ -1255,23 +1246,23 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 		// (archiveKey != "") deleted its archive above (deleteArchive) and RETAINS
 		// RootCompensations — those are genuinely-uncompensated outer records the
 		// cancel walk must still compensate (doClearRecords == false, skipped here).
-		// A SCOPE-WIDE throw walk (archiveKey == "", ADR-0120) instead compensated
-		// the snapshot it pinned of the throwing scope's own records, so — like the
+		// A SCOPE-WIDE throw walk (archiveKey == "") instead compensated the
+		// snapshot it pinned of the throwing scope's own records, so — like the
 		// full-reverse walk — it clears that scope's live list here
-		// (doClearRecords == true). It clears ONLY the drained
-		// prefix (scopeWideThrow, review A1): the re-issued beginCompensation then
+		// (doClearRecords == true). It clears ONLY the drained prefix
+		// (scopeWideThrow): the re-issued beginCompensation then
 		// compensates any sibling record appended mid-walk and terminates
 		// (FailInstance{"cancelled"}, StatusTerminated) — the correct compensate-once
 		// outcome that preserves the sibling record. A full-reverse walk
 		// compensated ALL of RootCompensations and clears the whole list the same way.
 		applyPlanRecordClearing(s, plan)
 		s.Status = StatusCompensating
-		// This re-entry is a TERMINAL walk (a deferred cancel, or a deferred unhandled
-		// error — ADR-0170), so it is a dying-instance transition and harvests what the
-		// open scopes still hold. Without this the deferred cancel terminated AROUND a
+		// This re-entry is a TERMINAL walk (a deferred cancel, or a deferred
+		// unhandled error), so it is a dying-instance transition and harvests what
+		// the open scopes still hold. Without this the deferred cancel terminated AROUND a
 		// sibling scope's completed compensable work: measured invoked=[], status
 		// terminated, with undoB merely archived afterwards by endInstance and therefore
-		// unreachable until a second rollback (ADR-0174, found by /code-review).
+		// unreachable until a second rollback.
 		//
 		// Placed AFTER applyPlanRecordClearing so the finishing walk's own drained prefix
 		// is already gone: harvesting first would re-archive records this walk dispatched.
@@ -1291,14 +1282,14 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 	// Every resume clears EndedAt: a Running instance must never carry an end
 	// timestamp. Load-bearing after a reverse; defensive for throw/partial (a
 	// non-terminal instance never has EndedAt set post-hardening) — one cheap
-	// assignment that keeps the invariant true on all resume paths (finding #4).
+	// assignment that keeps the invariant true on all resume paths.
 	s.EndedAt = nil
 	if plan.resetVars {
 		s.Variables = copyVars(s.StartVariables)
 	} else if plan.restoreVars != nil {
-		// Target reverse (FU#1, ADR-0116): restore the resume target's
-		// start-of-visit snapshot. copyVars protects the retained compensation
-		// record's Input map from later mutation by the resumed instance.
+		// Target reverse: restore the resume target's start-of-visit snapshot.
+		// copyVars protects the retained compensation record's Input map from
+		// later mutation by the resumed instance.
 		s.Variables = copyVars(plan.restoreVars)
 	}
 	// The resume target's scope can be GONE by the time the walk drains. Only a
@@ -1306,7 +1297,7 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 	// walkReverse always resume at the root scope), and a throw resumes past
 	// itself, so sibling branches keep running and can destroy that scope
 	// underneath the walk. exitSubprocessScope holds its own exit for exactly
-	// this reason (ADR-0171), but it is not the only route: an error boundary on
+	// this reason, but it is not the only route: an error boundary on
 	// the enclosing sub-process must fire, so its teardown cannot be deferred,
 	// and exitNestedEventSubprocessScope closes the ENCLOSING scope when a nested
 	// event sub-process is the last thing running inside it — neither consults
@@ -1334,8 +1325,8 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 	// A dropped resume can leave NOTHING running — a deferred throw is the only
 	// other thing that can put a token back, and there may be none. Completing
 	// here is the same decision the scope exit that pruned the scope would have
-	// taken had the cursor been clear: ADR-0168 only DEFERS that completion until
-	// the walk drains, and this is where it drains. Without it the instance sits
+	// taken had the cursor been clear: that completion is only DEFERRED until the
+	// walk drains, and this is where it drains. Without it the instance sits
 	// Running with no token and no route to any terminal state.
 	//
 	// Guarded on resumeDropped, not on the token count alone: every other resume
@@ -1371,8 +1362,8 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 // to StatusTerminated, clear the walk's records, then hand the terminal
 // transition to endInstance — which stamps the status and EndedAt, reconciles the
 // human-task projection (a parked UserTask on a sibling branch must not be left
-// open once the instance terminates — ADR-0088/0089), emits FailInstance when a
-// finalErr is set, and cancels outstanding timers/arms/boundaries. Command list
+// open once the instance terminates), emits FailInstance when a finalErr is
+// set, and cancels outstanding timers/arms/boundaries. Command list
 // and ordering are unchanged from the pre-refactor terminate branch; only the
 // record clearing moved ahead of the status assignment, which it never read.
 func applyTerminate(s *InstanceState, plan finishPlan, at time.Time) StepResult {
@@ -1385,12 +1376,12 @@ func applyTerminate(s *InstanceState, plan finishPlan, at time.Time) StepResult 
 	// so this nils the whole scope list as before; routed through the shared helper
 	// for a single clearing path. It reads only finishPlan fields and never inspects
 	// s.Status, so running it BEFORE the status assignment that moved into
-	// endInstance is behaviour-preserving (ADR-0164).
+	// endInstance is behaviour-preserving.
 	applyPlanRecordClearing(s, plan)
 
 	// endInstance's cursor clear is REDUNDANT here — stepCompensationFinish already
 	// zeroed s.Compensating one call up — and deliberately not special-cased: one
-	// unconditional terminal path is the point (ADR-0164).
+	// unconditional terminal path is the point.
 	var terminal Command
 	if plan.finalErr != "" {
 		terminal = FailInstance{Err: plan.finalErr}
@@ -1400,7 +1391,7 @@ func applyTerminate(s *InstanceState, plan finishPlan, at time.Time) StepResult 
 }
 
 // handleResolveCompensationStall applies one of the three operator escapes from
-// a stalled compensation walk (ADR-0175).
+// a stalled compensation walk.
 //
 // Guards first, all three shared by every verb:
 //
@@ -1413,8 +1404,8 @@ func applyTerminate(s *InstanceState, plan finishPlan, at time.Time) StepResult 
 // refusal logging keeps the record in one style.
 //
 // A terminal instance never reaches here — dispatch's structural guard returns
-// ErrInstanceTerminal first (ADR-0165), which is why the walk-in-flight check
-// below can be about the CURSOR rather than about liveness.
+// ErrInstanceTerminal first, which is why the walk-in-flight check below can be
+// about the CURSOR rather than about liveness.
 func handleResolveCompensationStall(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t ResolveCompensationStall, pol stepPolicy) (StepResult, error) {
 	cur := s.Compensating
 	if s.Status != StatusCompensating || cur.ActiveCmdID == "" {
@@ -1463,12 +1454,12 @@ func handleResolveCompensationStall(ctx context.Context, def *model.ProcessDefin
 // move: this is the same record, tried again.
 func retryStalledCompensation(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, cur compensationCursor, at time.Time, pol stepPolicy) (StepResult, error) {
 	records := cursorRecords(s, cur)
-	// Retry needs its OWN bounds check. ADR-0171's third disjunct in
+	// Retry needs its OWN bounds check. The third disjunct in
 	// stepCompensationAdvance guards NextIndex-1, not NextIndex, so it says
 	// nothing about the index retry is about to read — and a naive
 	// records[cur.NextIndex] PANICS inside the pure core (measured: len(records)=0
-	// at NextIndex=1, on a pre-ADR-0171 cursor whose record source vanished under
-	// it after a restart).
+	// at NextIndex=1, on an unpinned cursor persisted by an older version whose
+	// record source vanished under it after a restart).
 	if cur.NextIndex < 0 || cur.NextIndex >= len(records) {
 		// The source shrank or vanished: there is nothing left to retry, so route
 		// to the walk's finish exactly as a completed advance would. The finish
@@ -1486,19 +1477,18 @@ func retryStalledCompensation(ctx context.Context, def *model.ProcessDefinition,
 	//
 	// BOTH walk-scoped kinds, not just the stall. This verb re-dispatches the same
 	// record under a fresh command id, which is the identical "this attempt is
-	// superseded" event retryFailedCompensation retires for — and ADR-0179
-	// Decision 6 bounds the failure record at ONE PER EXHAUSTED RECORD, not one
-	// per attempt. Since ADR-0175's verb has no cap, retiring only the stall kind
-	// grows the count without bound: measured, three open
-	// IncidentCompensationFailed records after two operator retries, one naming
-	// each superseded command.
+	// superseded" event retryFailedCompensation retires for — and the failure
+	// record is bounded at ONE PER EXHAUSTED RECORD, not one per attempt. Since
+	// this verb has no cap, retiring only the stall kind grows the count without
+	// bound: measured, three open IncidentCompensationFailed records after two
+	// operator retries, one naming each superseded command.
 	//
 	// ⚠ Scoped to cur.ActiveCmdID, never to the kind. The record raised by the
 	// FINAL failure is the durable evidence of an unrecoverable compensation, and
 	// no re-dispatch supersedes it — armCompensationRetryTimer declines once the
-	// budget is spent and the walk skips and continues (Decision 7), so nothing
-	// retires it. A kind-wide sweep here would delete the one outcome ADR-0179
-	// exists to make visible.
+	// budget is spent and the walk skips and continues, so nothing retires it. A
+	// kind-wide sweep here would delete the one outcome
+	// IncidentCompensationFailed exists to make visible.
 	//
 	// ⚠ Deliberately NOT mirrored into the bounds-check branch above. That branch
 	// routes to the walk's FINISH because the record source vanished — no retry
@@ -1509,8 +1499,8 @@ func retryStalledCompensation(ctx context.Context, def *model.ProcessDefinition,
 	s.retireCompensationFailedIncidents(cur.ActiveCmdID)
 	cmdID := s.nextCommandID()
 	cur.ActiveCmdID = cmdID
-	// Reset the ADR-0179 retry cursor alongside ActiveCmdID. This verb can arrive
-	// DURING a live backoff — armCompensationRetryTimer arms one and leaves the
+	// Reset the retry cursor alongside ActiveCmdID. This verb can arrive DURING a
+	// live backoff — armCompensationRetryTimer arms one and leaves the
 	// same command active, which is exactly the state this function's own guards
 	// accept — and armCompensationStallTimer's cancel half below sweeps every
 	// walk-scoped record, the retry backoff included. Leaving RetryTimerID naming
@@ -1531,17 +1521,17 @@ func retryStalledCompensation(ctx context.Context, def *model.ProcessDefinition,
 	cur.RetryTimerID = ""
 	s.Compensating = cur
 	// Deliberately NOT consumeDispatchedRecord: ownership of this record
-	// transferred at the ORIGINAL dispatch (ADR-0173). Consuming it again would
-	// shrink the walk's teardown window a second time for one record.
+	// transferred at the ORIGINAL dispatch. Consuming it again would shrink the
+	// walk's teardown window a second time for one record.
 	s.recordCompensationDispatch(cmdID)
 	cmds := []Command{compensationInvoke(rec, cmdID)}
 	cmds = append(cmds, armCompensationStallTimer(s, pol, rec.NodeID)...)
 	return StepResult{State: *s, Commands: cmds}, nil
 }
 
-// retryFailedCompensation is the TimerCompensationRetry fire handler (ADR-0179
-// Decision 2): the backoff armed after an ActionFailed has elapsed, so the
-// record the walk still has in flight is re-dispatched under a FRESH command id.
+// retryFailedCompensation is the TimerCompensationRetry fire handler: the
+// backoff armed after an ActionFailed has elapsed, so the record the walk still
+// has in flight is re-dispatched under a FRESH command id.
 // The cursor's NextIndex does not move — this is the same record, tried again.
 //
 // ⚠ It is a NEW function and deliberately not a generalisation of
@@ -1558,10 +1548,10 @@ func retryStalledCompensation(ctx context.Context, def *model.ProcessDefinition,
 //   - CommandID no longer matches ActiveCmdID: a LATE fire against a command the
 //     walk has already moved past. Drop the record, no-op.
 //   - NextIndex out of range for the record source: the source shrank or vanished
-//     (a cursor persisted before ADR-0171, whose live-read fallback now returns
-//     nothing). Route to the walk's finish, as retryStalledCompensation does —
-//     records[NextIndex] on that shape PANICS inside the pure engine core, i.e.
-//     in the consumer's process.
+//     (a cursor persisted by an older version, whose live-read fallback now
+//     returns nothing). Route to the walk's finish, as retryStalledCompensation
+//     does — records[NextIndex] on that shape PANICS inside the pure engine core,
+//     i.e. in the consumer's process.
 //
 // RetryAttempts is deliberately left alone: it was incremented when the backoff
 // was ARMED, and it counts attempts for THIS record until the walk advances past
@@ -1586,11 +1576,11 @@ func retryFailedCompensation(ctx context.Context, def *model.ProcessDefinition, 
 	// observes for the stall kind, for the same reason.
 	//
 	// The attempt this incident describes is superseded by the dispatch two lines
-	// down, so keeping it would accumulate one incident PER ATTEMPT. What ADR-0179
-	// Decision 6 promises is one per exhausted record: the LAST attempt's incident
-	// is never retired here, because no further re-dispatch happens once the
-	// budget is spent (armCompensationRetryTimer returns false and the walk skips
-	// and continues instead).
+	// down, so keeping it would accumulate one incident PER ATTEMPT. What is owed
+	// is one per exhausted record: the LAST attempt's incident is never retired
+	// here, because no further re-dispatch happens once the budget is spent
+	// (armCompensationRetryTimer returns false and the walk skips and continues
+	// instead).
 	s.retireCompensationFailedIncidents(cur.ActiveCmdID)
 	cmdID := s.nextCommandID()
 	cur.ActiveCmdID = cmdID
@@ -1600,9 +1590,9 @@ func retryFailedCompensation(ctx context.Context, def *model.ProcessDefinition, 
 	cur.RetryTimerID = ""
 	s.Compensating = cur
 	// Deliberately NOT consumeDispatchedRecord, for the reason retryStalledCompensation
-	// gives: ownership of this record transferred at the ORIGINAL dispatch
-	// (ADR-0173), and consuming it again would shrink the walk's teardown window a
-	// second time for one record.
+	// gives: ownership of this record transferred at the ORIGINAL dispatch, and
+	// consuming it again would shrink the walk's teardown window a second time
+	// for one record.
 	s.recordCompensationDispatch(cmdID)
 	cmds := []Command{compensationInvoke(r, cmdID)}
 	cmds = append(cmds, armCompensationStallTimer(s, pol, r.NodeID)...)
@@ -1646,8 +1636,8 @@ func abandonCompensationWalk(ctx context.Context, def *model.ProcessDefinition, 
 	// green run as "redundant" and said so in this comment. It was untested, not
 	// redundant. Without the call an abandoned walk terminates carrying a stale
 	// "compensation action stalled" record, which incident_count, the service/
-	// audit view and every reader of InstanceState.Incidents then report. (Before
-	// ADR-0179 that record also reached runtime/outbox.go's terminalEventErr and
+	// audit view and every reader of InstanceState.Incidents then report. (That
+	// record once also reached runtime/outbox.go's terminalEventErr and
 	// processdriver_action.go's terminalErr as the published cause of death; both
 	// now go through the causeOfDeathIncident allow-list, which admits
 	// IncidentAction only.)
@@ -1657,7 +1647,7 @@ func abandonCompensationWalk(ctx context.Context, def *model.ProcessDefinition, 
 	// ⚠ Abandon does NOT run applyFinish's consumePendingCancel path: walkAdmin's
 	// finishPlan sets resume:false and leaves consumePendingCancel unset, and
 	// applyFinish gates that branch on plan.resume. A PendingCancel is therefore
-	// left set on the terminated instance. ADR-0175 claimed abandon discharges the
+	// left set on the terminated instance. Abandon does NOT discharge the
 	// deferred-cancel deadlock; it cannot — PendingCancel is only ever stamped on
 	// walks that RESUME, which abandon refuses. Skip is that verb.
 	res, err := stepCompensationFinish(ctx, def, s, cur.ToNode, at, pol)

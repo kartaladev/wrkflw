@@ -34,7 +34,7 @@ func WithMaxPending(n int64) RelayBacklogOption {
 
 // RelayBacklogCheck is a readiness probe that queries the outbox table statistics
 // and reports unhealthy when the dead or pending row counts exceed configured
-// thresholds (ADR-0054). It structurally satisfies the httpcore.HealthCheck contract
+// thresholds. It structurally satisfies the httpcore.HealthCheck contract
 // (Name + Check), so a consumer registers it with stdlib.MountHealth:
 //
 //	stdlib.MountHealth(mux, persistence.NewRelayBacklogCheck(relay))

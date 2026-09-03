@@ -1,11 +1,11 @@
 package persistence_test
 
-// sqlite_dsn_test.go — backlog 117: ADR-0082 documented a mattn/go-sqlite3 DSN
-// (`_busy_timeout=5000`) that the pinned pure-Go driver `modernc.org/sqlite`
-// silently ignores, and every consumer-facing godoc example omitted the busy
-// timeout altogether. Per backlog 109's measurement, a SQLite pool with no busy
-// timeout fails 174–195 of 200 concurrent operations, so an inert timeout in the
-// canonical example is the dangerous half of that combination.
+// sqlite_dsn_test.go — the mattn/go-sqlite3 DSN form (`_busy_timeout=5000`)
+// this package once documented is silently ignored by the pinned pure-Go driver
+// `modernc.org/sqlite`, and every consumer-facing godoc example omitted the busy
+// timeout altogether. Measured: a SQLite pool with no busy timeout fails 174–195
+// of 200 concurrent operations, so an inert timeout in the canonical example is
+// the dangerous half of that combination.
 //
 // These tests derive the DSNs from the documents themselves, so the guard cannot
 // drift away from the text it protects. Container-free: modernc.org/sqlite is
@@ -48,7 +48,7 @@ func readBusyTimeout(t *testing.T, dsnQuery string) int {
 	return ms
 }
 
-// TestSQLiteDSNSyntaxOnPinnedDriver executes the premise behind backlog 117: on
+// TestSQLiteDSNSyntaxOnPinnedDriver executes the premise: on
 // modernc.org/sqlite only the `_pragma=name(value)` form has any effect, and the
 // mattn/go-sqlite3 `_busy_timeout=` form is accepted and silently ignored.
 //
@@ -154,40 +154,7 @@ func TestDocumentedSQLiteDSNsSetBusyTimeout(t *testing.T) {
 			assert.Positive(t, readBusyTimeout(t, d.query),
 				"documented DSN %q leaves PRAGMA busy_timeout at 0 on modernc.org/sqlite; "+
 					"a consumer copying it gets the configuration measured to fail "+
-					"174–195 of 200 concurrent operations (backlog 109)", d.query)
+					"174–195 of 200 concurrent operations", d.query)
 		})
 	}
-}
-
-// TestADR0082UsesPinnedDriverPragmaSyntax asserts ADR-0082's DSN section names
-// the parameter form the pinned driver actually honours.
-//
-// What makes it fail before the fix: docs/adr/0082-sqlite-backend.md:38-41 lists
-// `_journal_mode=WAL`, `_busy_timeout=5000` and `_foreign_keys=on` — all three
-// are mattn/go-sqlite3 syntax, inert on modernc.org/sqlite.
-func TestADR0082UsesPinnedDriverPragmaSyntax(t *testing.T) {
-	t.Parallel()
-
-	raw, err := os.ReadFile(filepath.Join("..", "docs", "adr", "0082-sqlite-backend.md"))
-	require.NoError(t, err)
-
-	// Only the NORMATIVE text is checked: blockquote lines carry the amendment
-	// note, which must be free to quote the superseded (wrong) syntax.
-	var normative []string
-	for _, line := range strings.Split(string(raw), "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), ">") {
-			continue
-		}
-		normative = append(normative, line)
-	}
-	body := strings.Join(normative, "\n")
-	require.Contains(t, body, "### 1. Driver and DSN",
-		"control: the DSN section must still be present in the non-blockquote text")
-
-	for _, mattn := range []string{"_busy_timeout=", "_journal_mode=", "_foreign_keys="} {
-		assert.NotContains(t, body, mattn,
-			"ADR-0082 prescribes mattn/go-sqlite3 syntax %q, which modernc.org/sqlite ignores silently", mattn)
-	}
-	assert.Contains(t, body, "_pragma=busy_timeout(5000)",
-		"ADR-0082 must document the busy timeout in the form the pinned driver honours")
 }

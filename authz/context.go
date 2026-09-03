@@ -11,8 +11,8 @@ type actorContextKey struct{}
 // of the current request.
 //
 // Authentication middleware calls this; the HTTP transport reads it and reads the
-// actor from nowhere else (ADR-0189). Before that record the transport built the
-// actor from the request body, so any caller could choose their own roles.
+// actor from nowhere else. Previously the transport built the actor from the
+// request body, so any caller could choose their own roles.
 //
 // It is a plain function on purpose: any middleware in any framework can call it
 // with no DI container and no interface to implement.
@@ -31,7 +31,7 @@ func ContextWithActor(ctx context.Context, a Actor) context.Context {
 //
 // ok is false when nothing authenticated the request. Callers must treat that as a
 // REFUSAL, never as a licence to proceed with the zero Actor: the transport turns it
-// into 401 (ADR-0189).
+// into 401.
 //
 // The returned actor is cloned on the way OUT as well as in, so one caller mutating
 // what it received cannot change what the next caller reads. ⚠ The same one-level

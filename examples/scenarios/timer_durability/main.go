@@ -3,7 +3,7 @@
 // The scenario proves that an intermediate catch timer, once persisted to a
 // SQL store, survives a "process restart" and fires on the resumed driver
 // without any manual RehydrateTimers call — the scheduler self-rehydrates on
-// Start via the ADR-0102 WithJobStore thunk.
+// Start via the WithJobStore thunk.
 //
 // Flow:
 //
@@ -25,7 +25,7 @@
 //     fired after restart; instance completed". Remove the DB file.
 //
 // A *clockwork.FakeClock is shared by both driver generations and both
-// schedulers (ADR-0003), so a single Advance drives timer firing without
+// schedulers, so a single Advance drives timer firing without
 // real clock waiting. The DB is a real on-disk SQLite file, which is why the
 // timer row genuinely survives the driver teardown.
 //

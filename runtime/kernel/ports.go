@@ -16,7 +16,7 @@ var ErrInstanceNotFound = errors.New("workflow-runtime: instance not found")
 
 // ErrInstanceExists is returned by Store.Create when an instance with the same
 // id already exists. It lets a caller distinguish a duplicate start from a real
-// failure — process-instance chaining (ADR-0045) treats it as "already started"
+// failure — process-instance chaining treats it as "already started"
 // (a clean no-op ack) under at-least-once terminal-event delivery.
 var ErrInstanceExists = errors.New("workflow-runtime: instance already exists")
 
@@ -53,10 +53,10 @@ type AppliedStep struct {
 	Trigger engine.Trigger
 	Events  []OutboxEvent
 	// NewCallLink, when non-nil, records a parent↔child call link atomically with
-	// this step (set on the child's first Create). ADR-0025.
+	// this step (set on the child's first Create).
 	NewCallLink *CallLink
 	// CallOutcome, when non-nil, flips THIS instance's call link to terminal
-	// atomically with this step (set on the child's terminal Commit). ADR-0025.
+	// atomically with this step (set on the child's terminal Commit).
 	CallOutcome *CallOutcome
 }
 

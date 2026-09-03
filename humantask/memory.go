@@ -34,7 +34,7 @@ func NewMemTaskStore() *MemTaskStore {
 func (s *MemTaskStore) Upsert(_ context.Context, t HumanTask) error {
 	// Validate before storing: this fake backs the reference wiring and much of the
 	// suite, so staying permissive would let a test green-light a shape the SQL
-	// store rejects (ADR-0183).
+	// store rejects.
 	if err := Validate(t); err != nil {
 		return err
 	}

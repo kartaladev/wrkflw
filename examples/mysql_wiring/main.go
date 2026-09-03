@@ -14,9 +14,9 @@
 //
 // The scheduler is wired with a MySQL-backed leader elector (built from
 // scheduler/backend/mysql and passed via scheduler.WithElector) so exactly one
-// replica runs timer fires across a multi-replica deployment (ADR-0059, ADR-0072,
-// ADR-0102). The on-leadership-acquired callback rehydrates persisted timers on
-// the new leader so timers armed at runtime are not lost on failover (Option A).
+// replica runs timer fires across a multi-replica deployment. The
+// on-leadership-acquired callback rehydrates persisted timers on the new leader
+// so timers armed at runtime are not lost on failover.
 package main
 
 import (
@@ -74,7 +74,7 @@ func run(logger *slog.Logger) error {
 	defer stopWorkers()
 
 	// shutdown aggregates every resource holder; Shutdown closes them in reverse
-	// registration order and joins errors (ADR-0054).
+	// registration order and joins errors.
 	var shutdown runtime.ShutdownGroup
 
 	// --- MySQL database connection ---
@@ -171,10 +171,10 @@ func run(logger *slog.Logger) error {
 	// --- Scheduler with MySQL leader elector (single-leader timer firing) ---
 	// We capture driver in a closure; it is assigned after scheduler construction.
 	// The closure reads driver at call time (after assignment below), so this
-	// forward-reference pattern is safe (mirrors the doc example for Option A).
+	// forward-reference pattern is safe.
 	//
 	// The MySQL-backed leader elector is built from the DB-specific backend package
-	// and passed to the neutral scheduling façade via WithElector (ADR-0102). The
+	// and passed to the neutral scheduling façade via WithElector. The
 	// façade closes it (io.Closer) on scheduler.Close, so no separate closer needed.
 	elector, eerr := mysqlbackend.NewElector(workerCtx, db,
 		mysqlbackend.WithOnLeadershipAcquired(func(ctx context.Context) {
@@ -262,17 +262,17 @@ func run(logger *slog.Logger) error {
 	stdlib.Mount(mux, svc,
 		// DEMO ONLY, and deliberately OFF BY DEFAULT.
 		//
-		// ADR-0189 made the human-task verbs refuse an unauthenticated caller. This
+		// The human-task verbs refuse an unauthenticated caller. This
 		// example is about durable wiring, not authentication, so it offers a constant
 		// actor — but only when WRKFLW_DEMO_INSECURE_ACTOR=1 is set explicitly.
 		//
 		// ⚠ The env gate is the point. Unset, this resolver refuses and the task routes
 		// answer 401, so copy-pasting this file into a real deployment FAILS CLOSED
 		// instead of silently authenticating every caller as a manager — which is
-		// precisely the self-asserted-actor hole ADR-0189 exists to close.
+		// precisely the self-asserted-actor hole this seam exists to close.
 		//
 		// A real deployment resolves the actor from a VERIFIED credential in its own
-		// middleware and calls authz.ContextWithActor; see SECURITY.md and
+		// middleware and calls authz.ContextWithActor; see
 		// examples/authenticated_tasks, which verifies a bearer token.
 		stdlib.WithRequestActor(func(context.Context) (authz.Actor, error) {
 			if os.Getenv("WRKFLW_DEMO_INSECURE_ACTOR") != "1" {

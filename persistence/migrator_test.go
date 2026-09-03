@@ -75,7 +75,7 @@ func TestMigrator_FacadeLifecycle_SQLite(t *testing.T) {
 	require.NoError(t, m.Up(ctx))
 	v, err := m.Version(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), v) // single consolidated migration (ADR-0132)
+	assert.Equal(t, int64(1), v) // single consolidated migration
 
 	st, err := m.Status(ctx)
 	require.NoError(t, err)
@@ -129,7 +129,7 @@ func TestMigrator_Postgres_Introspection(t *testing.T) {
 	require.NoError(t, m.Up(ctx))
 	v, err := m.Version(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), v, "Postgres migration head is 1 (consolidated, ADR-0132)")
+	assert.Equal(t, int64(1), v, "Postgres migration head is 1 (consolidated)")
 
 	pending, err := m.HasPending(ctx)
 	require.NoError(t, err)
@@ -150,7 +150,7 @@ func TestMigrator_MySQL_Introspection(t *testing.T) {
 
 	v, err := m.Version(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), v, "MySQL migration head is 1 (consolidated, ADR-0132)")
+	assert.Equal(t, int64(1), v, "MySQL migration head is 1 (consolidated)")
 
 	pending, err := m.HasPending(ctx)
 	require.NoError(t, err)

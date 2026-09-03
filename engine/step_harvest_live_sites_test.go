@@ -1,6 +1,6 @@
 package engine_test
 
-// step_harvest_live_sites_test.go — ADR-0174, the two sites where the harvest runs
+// step_harvest_live_sites_test.go — the two sites where the harvest runs
 // while the instance is still alive and may yet hand itself to a compensation walk:
 // handleUnhandledError and handleCancelRequested.
 //
@@ -100,8 +100,8 @@ func TestDyingInstanceCompensatesOpenScopeRecords(t *testing.T) {
 
 	cases := []testCase{
 		{
-			// T1. On main: cmds carries FailInstance and NO InvokeAction — the walk
-			// ADR-0034 intends is skipped because the predicate at step_errors.go:253
+			// On main: cmds carries FailInstance and NO InvokeAction — the intended
+			// walk is skipped because the predicate at step_errors.go:253
 			// cannot see a record sitting in an open scope.
 			name: "an_unhandled_error_compensates_the_open_scope_before_failing",
 			kill: func(at time.Time, holdCmd string) engine.Trigger {
@@ -115,7 +115,7 @@ func TestDyingInstanceCompensatesOpenScopeRecords(t *testing.T) {
 			},
 		},
 		{
-			// T2. Same defect via the operator path: handleCancelRequested's predicate
+			// Same defect via the operator path: handleCancelRequested's predicate
 			// at step_triggers.go:213 is the same shape.
 			name: "an_operator_cancel_compensates_the_open_scope_before_terminating",
 			kill: func(at time.Time, _ string) engine.Trigger {

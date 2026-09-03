@@ -1,6 +1,6 @@
 package engine_test
 
-// ADR-0178 — a dying instance ignores a fired timer.
+// A dying instance ignores a fired timer.
 //
 // handleTimerFired's path 4 (the s.Timers record switch) was the only one of its
 // five paths with no !spawnsNewWork() guard, and it is the only path whose
@@ -162,7 +162,7 @@ func assertRefused(t *testing.T, before engine.InstanceState, rec engine.TimerRe
 	}
 }
 
-// TestFiredTimerOnDyingInstanceOnlyDisarmsItsTimer is the ADR-0178 guard: each
+// TestFiredTimerOnDyingInstanceOnlyDisarmsItsTimer covers the guard: each
 // of the three token-hung path-4 kinds is refused on a dying instance, its
 // record retired, and the ONLY command emitted is the CancelTimer disarming the
 // scheduler job it just orphaned.

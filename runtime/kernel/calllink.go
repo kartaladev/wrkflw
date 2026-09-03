@@ -9,8 +9,8 @@ import (
 // parent (it is a root instance, not a child of any call activity).
 var ErrNoCallLink = errors.New("workflow-runtime: no call link for instance")
 
-// CallLink is the durable parent↔child correlation for one async call activity
-// (ADR-0024). It is recorded atomically with the child's Create (ADR-0025).
+// CallLink is the durable parent↔child correlation for one async call activity.
+// It is recorded atomically with the child's Create.
 type CallLink struct {
 	ChildInstanceID  string
 	ParentInstanceID string
@@ -35,7 +35,7 @@ type PendingNotify struct {
 
 // CallLinkStore persists parent↔child call-activity correlation and the durable
 // parent-notification queue. The write side is fused into the transactional Store
-// (AppliedStep.NewCallLink / CallOutcome, ADR-0025); this port is the read/claim
+// (AppliedStep.NewCallLink / CallOutcome); this port is the read/claim
 // side the CallNotifier uses.
 type CallLinkStore interface {
 	// ClaimPending returns up to limit terminal-but-unnotified links.

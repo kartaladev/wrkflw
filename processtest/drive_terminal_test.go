@@ -14,9 +14,9 @@ import (
 )
 
 // TestDriveToCompletionIsShieldedFromTheTerminalPolicy pins the public harness
-// against ADR-0165. DriveToCompletion is the surface consumers write their own
-// process tests through, so a behaviour change here breaks THEIR suites on
-// upgrade, not ours.
+// against the engine's terminal policy. DriveToCompletion is the surface
+// consumers write their own process tests through, so a behaviour change here
+// breaks THEIR suites on upgrade, not ours.
 //
 // The drive loop checks IsTerminal both before classifying (so the handler is
 // never asked to resolve a terminal instance) and immediately after a productive

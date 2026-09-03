@@ -6,7 +6,7 @@
 //
 // Contrast with the message_correlation scenario, where an OUTSIDE actor injects the
 // message by calling driver.DeliverMessage directly. Here the trigger is a node in
-// the sender's graph. Per ADR-0067 a SendTask does NOT call a receiver synchronously;
+// the sender's graph. A SendTask does NOT call a receiver synchronously;
 // it commits a message.<Name> row into the transactional outbox in the same tx as its
 // state change. The delivery path is decoupled and durable:
 //
@@ -25,7 +25,7 @@
 // the message handler resumes the receiver. driver.DeliverMessage is called only from
 // inside the handler.
 //
-// The store is in-memory SQLite (ADR-0082) because a SendTask's outbound message flows
+// The store is in-memory SQLite because a SendTask's outbound message flows
 // through the transactional outbox + relay, which the in-memory instance store lacks.
 //
 // This is a reference wiring example — not a shipped binary.
@@ -38,7 +38,7 @@ import (
 	"log"
 	"time"
 
-	_ "modernc.org/sqlite" // pure-Go SQLite driver (ADR-0082)
+	_ "modernc.org/sqlite" // pure-Go SQLite driver
 
 	"github.com/kartaladev/wrkflw/action"
 	"github.com/kartaladev/wrkflw/definition"
@@ -102,7 +102,7 @@ func run() error {
 		return err
 	}
 	defer func() { _ = db.Close() }()
-	db.SetMaxOpenConns(1) // SQLite is single-writer (ADR-0082)
+	db.SetMaxOpenConns(1) // SQLite is single-writer
 	if err := persistence.MigrateSQLite(ctx, db); err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func run() error {
 	}
 
 	// DeliverMessage resolves the correlated instance's definition from its own
-	// snapshot via the registry (ADR-0121), so the receiver def must be registered.
+	// snapshot via the registry, so the receiver def must be registered.
 	reg := kernel.NewMemDefinitionRegistry()
 	if err := reg.Register(recvDef); err != nil {
 		return err

@@ -11,7 +11,7 @@ package runtime_test
 //   (c) WithDefinitions(nil) is ignored; WithDefinitions(custom) overrides.
 //   (d) DEBUG construction summary: definitions=default-global vs definitions=custom.
 //   (e) forceTerminationWarnings + registration-time WARN on redundant
-//       single-end force-termination (ADR-0119).
+//       single-end force-termination.
 
 import (
 	"bytes"
@@ -337,7 +337,7 @@ func TestConstructionSummaryDefinitionsField(t *testing.T) {
 // so parallel tests never collide on the shared global registry.
 var uniqueDefSeq atomic.Int64
 
-// ── (f) message-start name uniqueness at registration (ADR-0121) ──────────
+// ── (f) message-start name uniqueness at registration ─────────────────────
 
 // messageStartDef builds a single-message-start definition registered under a
 // unique id (idPrefix + a process-global counter suffix), with its lone start
@@ -360,8 +360,8 @@ func messageStartDef(t *testing.T, idPrefix, msgName string) *model.ProcessDefin
 // entry in msgNames (same id-uniqueness scheme as messageStartDef), all
 // flowing into a single shared end event. Used to exercise the
 // intra-definition duplicate-message-start-name case, which structural
-// validation does not catch (ADR-0121 permits any number of event-triggered
-// starts; only registration-time uniqueness closes this gap).
+// validation does not catch (any number of event-triggered starts is
+// permitted; only registration-time uniqueness closes this gap).
 func multiStartMessageDef(t *testing.T, idPrefix string, msgNames ...string) *model.ProcessDefinition {
 	t.Helper()
 
@@ -446,7 +446,7 @@ func TestRegisterDefinitionRejectsDuplicateMessageStart(t *testing.T) {
 				sharedID := fmt.Sprintf("super-a-%d", seq)
 				return []*model.ProcessDefinition{
 					// A v1 claims oldName, then A v2 renames its start to newName —
-					// v2 supersedes v1's start subscription (ADR-0121 Camunda semantics).
+					// v2 supersedes v1's start subscription (Camunda semantics).
 					messageStartDefVersioned(t, sharedID, oldName, 1),
 					messageStartDefVersioned(t, sharedID, newName, 2),
 					// A distinct def B reuses oldName: since only the LATEST version of
@@ -493,7 +493,7 @@ func TestRegisterDefinitionRejectsDuplicateMessageStart(t *testing.T) {
 	}
 }
 
-// ── (e) forceTerminationWarnings + registration-time WARN (ADR-0119) ───────
+// ── (e) forceTerminationWarnings + registration-time WARN ──────────────────
 
 // TestForceTerminationWarnings verifies the pure forceTerminationWarnings
 // helper: a force-termination end event only warrants a WARN when it is the
@@ -563,7 +563,7 @@ func TestForceTerminationWarnings(t *testing.T) {
 }
 
 // TestMixedSubprocessStartWarnings verifies the pure mixedSubprocessStartWarnings
-// helper (ADR-0122 review): a SubProcess whose nested definition has BOTH a
+// helper: a SubProcess whose nested definition has BOTH a
 // manual/none start AND an event-triggered start is treated as an event
 // sub-process (armed at the event-triggered start), so its manual-start branch
 // is dead. That foot-gun warrants a register-time WARN — but not an error.

@@ -132,7 +132,7 @@ func NewCasbinAuthorizer(opts ...Option) (authz.Authorizer, io.Closer, error) {
 // taken into account, and accepts wildcard "*" on both obj and act so that
 // broad grant lines like `p, manager, approve, *` work alongside fine-grained
 // ones. The attribute predicate is NOT modeled here — it is evaluated by
-// expr-lang (see ADR-0010).
+// expr-lang.
 const DefaultModel = `
 [request_definition]
 r = sub, obj, act

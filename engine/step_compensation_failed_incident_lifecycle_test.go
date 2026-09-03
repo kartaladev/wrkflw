@@ -1,14 +1,14 @@
 package engine_test
 
-// step_compensation_failed_incident_lifecycle_test.go — ADR-0179 Decision 6:
+// step_compensation_failed_incident_lifecycle_test.go —
 // IncidentCompensationFailed has a lifecycle, not just a birth.
 //
-// ⚠ Decision 6 as written was self-contradictory: it said the incident is
+// ⚠ The design as written was self-contradictory: it said the incident is
 // "retired when the walk advances past the record … keyed on CommandID" AND that
 // "the exhaustion incident is kept". On the failure path the incident was just
 // raised with CommandID == ActiveCmdID, so a retirement keyed on ActiveCmdID at
 // advance time would delete the very record that must survive. The resolution
-// implemented here — controller adjudication, folded back into the ADR — splits
+// implemented here — controller adjudication — splits
 // the retirement across the two routes by which a record stops being owed:
 //
 //   - retryFailedCompensation retires the OLD command id as it re-dispatches:
@@ -17,7 +17,7 @@ package engine_test
 //     the record ultimately SUCCEEDED, so nothing is left behind.
 //   - the failure/exhaustion path retires NOTHING.
 //
-// which yields Decision 6's stated bound exactly: one incident per exhausted
+// which yields the stated bound exactly: one incident per exhausted
 // record, not one per attempt.
 //
 // Measured before the change, on a cancel-started three-record walk:
@@ -73,7 +73,8 @@ func oneRetryPermitted() engine.StepOptions {
 	}
 }
 
-// TestCompensationFailedIncidentLifecycle covers plan P1 step 12.
+// TestCompensationFailedIncidentLifecycle covers the incident's retirement
+// routes.
 func TestCompensationFailedIncidentLifecycle(t *testing.T) {
 	at := time.Date(2026, 8, 17, 10, 0, 0, 0, time.UTC)
 
@@ -88,7 +89,7 @@ func TestCompensationFailedIncidentLifecycle(t *testing.T) {
 		{
 			// Measured before: incidents=1 — the superseded attempt's incident
 			// survived the re-dispatch, so a record retried five times would
-			// accumulate five, against Decision 6's "one per exhausted record".
+			// accumulate five, against the "one per exhausted record" bound.
 			name: "the re-dispatch retires the superseded attempt's incident",
 			opt:  compensationRetryOn(),
 			setup: func(t *testing.T, opt engine.StepOptions) (engine.InstanceState, engine.Trigger) {
@@ -149,7 +150,7 @@ func TestCompensationFailedIncidentLifecycle(t *testing.T) {
 			},
 			assert: func(t *testing.T, res engine.StepResult) {
 				require.NotNil(t, invokeActionNamed(res.Commands, "c2"),
-					"control: exhausted, so the walk skips and continues (Decision 7)")
+					"control: exhausted, so the walk skips and continues")
 
 				require.Len(t, res.State.Incidents, 1,
 					"exactly ONE incident survives per exhausted record — the retirement "+
@@ -182,8 +183,8 @@ func TestCompensationFailedIncidentLifecycle(t *testing.T) {
 // termination) and asserts on a different surface, so they share no call shape
 // with the retirement rows or with each other.
 
-// TestCompensationFailedIncidentIsNotResolvable covers plan P1 step 12's second
-// half: the kind stays non-resolvable, consistent with IncidentCompensationStall.
+// TestCompensationFailedIncidentIsNotResolvable covers the other half: the kind
+// stays non-resolvable, consistent with IncidentCompensationStall.
 //
 // ⚠ It is a CONTROL, not a red-first test, and the "add no new case if none is
 // needed" instruction was the right one — executed before writing any code,
@@ -200,7 +201,7 @@ func TestCompensationFailedIncidentLifecycle(t *testing.T) {
 //
 // So NO production line was added for it. The guard is `inc.Kind !=
 // IncidentAction`, a whitelist rather than a per-kind blacklist, which is why a
-// kind introduced two ADRs later inherits the refusal for free. Mutation-verified
+// kind introduced later inherits the refusal for free. Mutation-verified
 // in the report by turning that whitelist into a stall-only blacklist: the call
 // then returns err=<nil> having eaten the incident.
 func TestCompensationFailedIncidentIsNotResolvable(t *testing.T) {
@@ -232,12 +233,12 @@ func TestCompensationFailedIncidentIsNotResolvable(t *testing.T) {
 	assert.Empty(t, replay.Commands)
 }
 
-// TestCompensationFailedIncidentSurvivesEndInstance covers plan P1 step 13: the
-// durable record must survive BOTH of endInstance's incident sweeps.
+// TestCompensationFailedIncidentSurvivesEndInstance pins that the durable record
+// must survive BOTH of endInstance's incident sweeps.
 //
 // ⚠ It is a CONTROL — measured before any code was written, the incident already
 // survived (`AFTER TERMINATE: status=terminated incidents=1`). Nothing in the
-// design said so and nothing tested it, which is spec §3.5's point.
+// design said so and nothing tested it, which is the point.
 //
 // ⚠ THE FIXTURE IS WHAT MAKES IT NON-VACUOUS. The natural drive — fail, advance,
 // drain the walk — leaves the incident naming a command the cursor has long
@@ -250,7 +251,7 @@ func TestCompensationFailedIncidentIsNotResolvable(t *testing.T) {
 // sweep's predicate to the failure kind.
 //
 // The second sweep, removeOrphanedIncidents, is answered by TokenID: the record
-// carries "" and an empty key names no token (ADR-0152), asserted below.
+// carries "" and an empty key names no token, asserted below.
 func TestCompensationFailedIncidentSurvivesEndInstance(t *testing.T) {
 	at := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
 	def := threeCompensableDef()

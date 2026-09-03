@@ -1,8 +1,8 @@
 package engine_test
 
-// step_errors_test.go — black-box tests for Plan 8 Task 2:
-// error end events, boundary error events, scope-chain propagation,
-// and ActionFailed re-routed through propagateError.
+// step_errors_test.go — black-box tests for error end events, boundary error
+// events, scope-chain propagation, and ActionFailed re-routed through
+// propagateError.
 
 import (
 	"testing"
@@ -381,7 +381,7 @@ func directBoundaryOnInnerSvcInSubprocessDef() *model.ProcessDefinition {
 // sub-process) is matched when ActionFailed fires, even when the failing token is
 // at root scope (ScopeID == "").
 //
-// This is the critical regression test for Fix 1: previously propagateError only
+// This is the critical regression test: previously propagateError only
 // walked ENCLOSING SCOPES, so a root-level service task with a direct boundary
 // would wrongly FailInstance instead of routing to the recovery path.
 func TestActionFailedCaughtByDirectBoundary(t *testing.T) {
@@ -661,7 +661,7 @@ func TestActionFailedPropagatesToBoundaryError(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Task 4: CancelRequested — cancel instance with timer/await cleanup
+// CancelRequested — cancel instance with timer/await cleanup
 // ─────────────────────────────────────────────────────────────────────────────
 
 // cancelWithTimerDef builds a process whose single service task has a boundary
@@ -718,8 +718,8 @@ func cancelUserTaskDef() *model.ProcessDefinition {
 //   - Any outstanding armed timers receive a CancelTimer command.
 //   - A late HumanCompleted trigger after cancellation returns ErrTokenNotFound
 //     (clean deterministic error, not a panic).
-//   - A late ActionCompleted trigger after cancellation is a no-op (ADR-0164/O1:
-//     a terminal instance can never consume a resumption trigger, so a stray
+//   - A late ActionCompleted trigger after cancellation is a no-op (a terminal
+//     instance can never consume a resumption trigger, so a stray
 //     command against one is tolerated rather than surfaced as an error).
 func TestCancelRequestedTerminates(t *testing.T) {
 	at := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
@@ -801,7 +801,7 @@ func TestCancelRequestedTerminates(t *testing.T) {
 		require.NotNil(t, cancelTimer, "CancelTimer must be emitted for the outstanding boundary timer")
 
 		// Late trigger after cancellation: ActionCompleted for the already-cancelled
-		// token. Before ADR-0164/O1 this returned ErrTokenNotFound; a terminal
+		// token. This once returned ErrTokenNotFound; a terminal
 		// instance can never consume a resumption trigger, so a stray command
 		// against one is now tolerated as a no-op instead (the same tolerance
 		// handleResolveIncident already applies to a missing token).
@@ -867,13 +867,13 @@ func TestCancelRequestedTerminates(t *testing.T) {
 
 		// Late trigger: HumanCompleted after cancel → ErrInstanceTerminal. This
 		// call site (handleHumanCompleted, not handleActionCompleted) is
-		// untouched by ADR-0164/O1, so it still errors — this is now the
+		// untouched by that tolerance, so it still errors — this is now the
 		// witness that a late trigger against a terminated instance still
 		// classifies as ErrInvalidTransition (a 409), a pin the
 		// service-task-with-boundary-timer subtest above used to carry before
 		// its ActionCompleted case became a no-op.
 		//
-		// ⚠ Before ADR-0165 this returned engine.ErrTokenNotFound — a
+		// ⚠ This once returned engine.ErrTokenNotFound — a
 		// true-but-useless statement ("no token awaits that id") that a caller
 		// could not tell apart from a typo'd task id. HumanCompleted is now
 		// classified rejectWithError, so the reason the caller gets is the actual
@@ -888,14 +888,13 @@ func TestCancelRequestedTerminates(t *testing.T) {
 			"a late/wrong-state trigger is classifiable as an invalid transition")
 		assert.NotErrorIs(t, lateErr, engine.ErrTokenNotFound,
 			"ErrInstanceTerminal must NOT wrap ErrTokenNotFound: a dead instance and a "+
-				"missing token are conditions ADR-0165 deliberately keeps apart, and a "+
+				"missing token are conditions deliberately kept apart, and a "+
 				"refactor that re-merged them would silently undo the whole point")
 	})
 
 	t.Run("already-terminal-is-dropped-silently", func(t *testing.T) {
-		// Cancelling an already-terminal instance is a NO-OP (ADR-0165, the
-		// CancelRequested paragraph: reclassified from allowOnTerminal to
-		// rejectSilently by the rule-#9 audit).
+		// Cancelling an already-terminal instance is a NO-OP: CancelRequested is
+		// classified rejectSilently rather than allowOnTerminal.
 		//
 		// ⚠ This subtest previously asserted the opposite — that the cancel
 		// "idempotently overwrites" Status to StatusTerminated — and that overwrite
@@ -978,7 +977,7 @@ func TestCompensateRequestedUnknownToNodeErrors(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Task 2 (CancelActions): CancelRequested emits InvokeCancelAction per definition
+// CancelActions: CancelRequested emits InvokeCancelAction per definition
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestCancelRequestedEmitsCancelActions(t *testing.T) {

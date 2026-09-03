@@ -1,9 +1,6 @@
 package runtime_test
 
-// compensation_oncancel_test.go — Task 3: runtime e2e for compensation on cancel.
-//
-// Design: docs/specs/2026-06-23-compensation-on-error-cancel-design.md §4 (last bullet).
-// ADR: 0034.
+// compensation_oncancel_test.go — runtime e2e for compensation on cancel.
 //
 // Verifies that when a running instance with a completed compensable service task
 // is cancelled, the ProcessDriver drives the full compensation walk (InvokeAction →
@@ -53,7 +50,7 @@ func compensationOnCancelDef() *model.ProcessDefinition {
 	}
 }
 
-// TestProcessDriverCompensationOnCancel is the runtime e2e for compensation on cancel (ADR-0034).
+// TestProcessDriverCompensationOnCancel is the runtime e2e for compensation on cancel.
 //
 // Asserts:
 //  1. Run completes "charge" and parks at "approve" → StatusRunning.

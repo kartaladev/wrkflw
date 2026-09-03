@@ -121,7 +121,7 @@ func TestInstanceRoutes_Signal_NotFound(t *testing.T) {
 
 // TestMessageRoutes_NoMatchNoop verifies the message route returns 202 when the
 // message matches neither a running waiter nor a message-start definition: with
-// no def ref supplied (ADR-0121) an unmatched delivery is a clean no-op, not an
+// no def ref supplied, an unmatched delivery is a clean no-op, not an
 // error.
 func TestMessageRoutes_NoMatchNoop(t *testing.T) {
 	t.Parallel()
@@ -148,7 +148,7 @@ func TestTaskRoutes_Complete_ServiceError(t *testing.T) {
 	taskID := transporttest.StartedApprovalInstance(t, h, "task-complete-err-1")
 
 	// The forbidden actor is AUTHENTICATED by the resolver, not asserted by the
-	// body (ADR-0189). Without it the request is refused at 401 and the 403
+	// body. Without it the request is refused at 401 and the 403
 	// authorization path this test exists for is never reached.
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc, stdlib.WithRequestActor(
@@ -183,7 +183,7 @@ func TestTaskRoutes_Reassign_ServiceError(t *testing.T) {
 	}
 
 	// The unauthorized reassigner is AUTHENTICATED by the resolver, not asserted
-	// by the body's former "by" key (ADR-0189). Without it the request is refused
+	// by the body's former "by" key. Without it the request is refused
 	// at 401 and the 403 authorization path this test exists for is never reached.
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc, stdlib.WithRequestActor(

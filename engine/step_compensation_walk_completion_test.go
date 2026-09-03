@@ -18,7 +18,7 @@ import (
 
 var walkCompletionT0 = time.Date(2026, 8, 8, 9, 0, 0, 0, time.UTC)
 
-// walkVsSiblingDef builds the ADR-0168 reproduction: a compensable service task,
+// walkVsSiblingDef builds the reproduction fixture: a compensable service task,
 // then a parallel fork into two user-task branches, each with its own
 // interrupting signal boundary. Branch A's boundary throws compensation; branch
 // B's boundary just ends.
@@ -105,7 +105,7 @@ func driveToWalkInFlight(t *testing.T, def *model.ProcessDefinition) (engine.Ste
 	return r3, walkCmd
 }
 
-// TestCompensationWalkInFlightBlocksCompletion pins ADR-0168: an instance whose
+// TestCompensationWalkInFlightBlocksCompletion pins that an instance whose
 // compensation walk is still in flight is NOT complete, even when its last token
 // is gone.
 //
@@ -142,15 +142,16 @@ func TestCompensationWalkInFlightBlocksCompletion(t *testing.T) {
 	}
 }
 
-// TestCompensationWalkFinishCompletesInstance is the other half of ADR-0168:
-// deferring completion is only correct if the deferred completion still HAPPENS.
+// TestCompensationWalkFinishCompletesInstance is the other half of
+// TestCompensationWalkInFlightBlocksCompletion: deferring completion is only
+// correct if the deferred completion still HAPPENS.
 // Once the walk's own ActionCompleted arrives, stepCompensationFinish resumes at
 // the throw's resume node, drives to the end event, and the instance completes
 // there — that step emitting exactly one CompleteInstance, and the earlier
 // sibling-signal step none.
 //
 // Measured on unpatched main: the instance was already `completed` by the time
-// signal #2 returned, so this trigger hit ADR-0165's dispatch guard
+// signal #2 returned, so this trigger hit the dispatch guard
 // (`outcome=dropped`) and no CompleteInstance followed it at all.
 func TestCompensationWalkFinishCompletesInstance(t *testing.T) {
 	t.Parallel()
@@ -183,8 +184,8 @@ func TestCompensationWalkFinishCompletesInstance(t *testing.T) {
 }
 
 // TestSiblingSignalHonouredDuringCompensationWalk is a REGRESSION PIN, not a
-// red-green test: it passes on unpatched main AND with ADR-0168 applied, and
-// that is deliberate. What it guards is the predicate ADR-0168 did NOT choose.
+// red-green test: it passes with and without the completion-deferral fix, and
+// that is deliberate. What it guards is the predicate that fix did NOT choose.
 //
 // A sibling branch progressing while an in-definition CompensateThrow walks is
 // correct BPMN — StatusCompensating means two different things (whole-instance
@@ -202,14 +203,14 @@ func TestCompensationWalkFinishCompletesInstance(t *testing.T) {
 //     RED with `cmds=[]engine.Command(nil)`, and the rest of the engine suite —
 //     this file removed — stays EXIT=0 under the same mutation. So for that
 //     mutation this test is the only thing in the repo that catches it.
-//   - the same wrong predicate used for ADR-0169's guard in handleSignalReceived
-//     instead of IsTerminal(). NOT re-measured here: that guard does not exist yet
-//     (it lands with ADR-0169). Inherited from this bundle's audit, which measured
-//     this test RED under it. Re-verify rather than restate when that guard lands.
+//   - the same wrong predicate used for a future guard in handleSignalReceived
+//     instead of IsTerminal(). NOT re-measured here: that guard does not exist yet.
+//     Inherited from an earlier audit, which measured this test RED under it.
+//     Re-verify rather than restate when that guard lands.
 //
-// Deleting this test silently reopens the first, and — once ADR-0169 lands — very
-// likely the second, since the refuted shape is quoted in three of this bundle's
-// documents and is the single most likely implementation slip.
+// Deleting this test silently reopens the first, and — once that guard lands —
+// very likely the second, since the refuted shape is the single most likely
+// implementation slip.
 func TestSiblingSignalHonouredDuringCompensationWalk(t *testing.T) {
 	t.Parallel()
 
@@ -234,8 +235,8 @@ func TestSiblingSignalHonouredDuringCompensationWalk(t *testing.T) {
 
 // standbyESPBody is a second, never-triggered event sub-process body used by the
 // two event-sub-process fixtures below. Its only job is to leave an ARMED event
-// sub-process in the scope so the arm-retirement effect described in ADR-0168
-// Decision 3 is observable rather than argued.
+// sub-process in the scope so the arm-retirement effect is observable rather
+// than argued.
 func standbyESPBody() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "standby-esp-body", Version: 1,
@@ -352,8 +353,8 @@ func driveESPWalkToScopeDrain(t *testing.T, def *model.ProcessDefinition, instan
 // assertWalkDeferredESPCompletion holds the shared expectations of the two
 // event-sub-process exits: the instance does NOT complete under a live cursor,
 // the walk's compensation action reaches the runtime, and the exit is HELD
-// (ADR-0171) rather than closing the scope the walk still needs — after which
-// the walk's own resume drives the instance to completion.
+// rather than closing the scope the walk still needs — after which the walk's
+// own resume drives the instance to completion.
 func assertWalkDeferredESPCompletion(t *testing.T, def *model.ProcessDefinition, before engine.InstanceState, r engine.StepResult) {
 	t.Helper()
 
@@ -373,12 +374,12 @@ func assertWalkDeferredESPCompletion(t *testing.T, def *model.ProcessDefinition,
 	require.True(t, invoked,
 		"the walk's compensation action must reach the runtime, not be dropped as stale")
 
-	// ADR-0171 CORRECTS what ADR-0168 pinned here. This assertion previously read
+	// The held exit CORRECTS what this assertion previously pinned: it read
 	// `require.Empty(r.State.EventTriggeredSubprocesses)` with the message
 	// "ACCEPTED COST: the fallthrough retires this scope's event-sub-process
 	// arms" — the exit closed the scope, fell past the completion branch, and
-	// retired both arms. That premature close was the ADR-0171 defect in this
-	// fixture's clothing: MEASURED one Step further on the unpatched tree, this
+	// retired both arms. That premature close was the defect in this fixture's
+	// clothing: MEASURED one Step further on the unpatched tree, this
 	// walk's own ActionCompleted then resumed into the scope closeScope had just
 	// pruned and every subsequent Step returned `workflow-engine: defForScope:
 	// unknown scope "i-root-esp-s1"` / `"…-s2"` — a permanent wedge. Holding the
@@ -387,9 +388,9 @@ func assertWalkDeferredESPCompletion(t *testing.T, def *model.ProcessDefinition,
 	require.Len(t, before.EventTriggeredSubprocesses, 2,
 		"control: two arms were live immediately before the exit")
 	require.Len(t, r.State.EventTriggeredSubprocesses, 2,
-		"ADR-0171: the held exit does not retire this scope's event-sub-process arms")
+		"the held exit does not retire this scope's event-sub-process arms")
 	require.NotEmpty(t, r.State.Scopes,
-		"ADR-0171: the scope the walk resumes into is still open")
+		"the scope the walk resumes into is still open")
 
 	// The held exit is not a stall: the walk's resume places a token at the
 	// throw's successor INSIDE that scope, which re-runs the exit with a clear
@@ -406,19 +407,19 @@ func assertWalkDeferredESPCompletion(t *testing.T, def *model.ProcessDefinition,
 // TestCompensationWalkBlocksRootEventSubprocessCompletion drives a compensation
 // throw INSIDE a root-level event sub-process whose sibling drains the scope.
 //
-// ⚠ It no longer pins ADR-0168's second guard site, and the docstring that said
-// it did has been corrected rather than left to rot. ADR-0171 holds the scope
-// exit while a walk names that scope as its resume target, so control returns
-// before exitRootEventSubprocessScope is entered at all — measured, reverting
-// that conjunct now leaves the whole engine suite at EXIT=0. Coverage for the
-// site moved to TestRootEventSubprocessExitBlocksCompletionUnderRootWalk, which
+// ⚠ It no longer pins the second guard site, and the docstring that said it did
+// has been corrected rather than left to rot. The scope exit is held while a
+// walk names that scope as its resume target, so control returns before
+// exitRootEventSubprocessScope is entered at all — measured, reverting that
+// conjunct now leaves the whole engine suite at EXIT=0. Coverage for the site
+// moved to TestRootEventSubprocessExitBlocksCompletionUnderRootWalk, which
 // reaches it with a ROOT-scope walk the hold cannot match.
 //
-// What this fixture pins now is ADR-0171's hold on the event-sub-process route.
-// The historical measurement stands as history: on step_nodes.go before ADR-0168
-// the instance went `completed` with a CompleteInstance published and the walk's
-// undoB InvokeAction dropped in the same step; one Step further, before ADR-0171,
-// it wedged permanently on `defForScope: unknown scope "i-root-esp-s1"`.
+// What this fixture pins now is the hold on the event-sub-process route. The
+// historical measurement stands as history: on an older step_nodes.go the
+// instance went `completed` with a CompleteInstance published and the walk's
+// undoB InvokeAction dropped in the same step; one Step further, before the hold
+// existed, it wedged permanently on `defForScope: unknown scope "i-root-esp-s1"`.
 func TestCompensationWalkBlocksRootEventSubprocessCompletion(t *testing.T) {
 	t.Parallel()
 
@@ -458,13 +459,13 @@ func nestedESPWalkDef() *model.ProcessDefinition {
 }
 
 // TestCompensationWalkBlocksNestedEventSubprocessCompletion is the nested twin of
-// the test above, and carries the same correction: since ADR-0171 it no longer
-// pins ADR-0168's third guard site. That conjunct
+// the test above, and carries the same correction: since the scope-exit hold was
+// added it no longer pins the third guard site. That conjunct
 // (exitNestedEventSubprocessScope's grandparent-is-root branch) can now be
 // reverted with the engine suite at EXIT=0, and no other fixture covers it —
-// recorded in ADR-0171's Consequences and on the backlog, not silently dropped.
-// What this fixture pins now is ADR-0171's hold; measured before ADR-0171 it
-// wedged permanently on `defForScope: unknown scope "i-nested-esp-s2"`.
+// recorded rather than silently dropped. What this fixture pins now is the hold;
+// measured before it existed, the fixture wedged permanently on `defForScope:
+// unknown scope "i-nested-esp-s2"`.
 func TestCompensationWalkBlocksNestedEventSubprocessCompletion(t *testing.T) {
 	t.Parallel()
 
@@ -505,7 +506,7 @@ func idleESPBody() *model.ProcessDefinition {
 // rootWalkOutlivedByESPDef puts the compensation throw at the ROOT scope and a
 // root-level event sub-process alongside it. The walk's ResumeScope is therefore
 // "" while the scope that exits is the event sub-process's own — the one
-// combination ADR-0171's exitSubprocessScope hold deliberately does not hold,
+// combination the exitSubprocessScope hold deliberately does not hold,
 // so exitRootEventSubprocessScope is still entered with a live cursor.
 func rootWalkOutlivedByESPDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
@@ -538,18 +539,18 @@ func rootWalkOutlivedByESPDef() *model.ProcessDefinition {
 }
 
 // TestRootEventSubprocessExitBlocksCompletionUnderRootWalk restores the coverage
-// ADR-0171 took away from ADR-0168's SECOND guard site.
+// the scope-exit hold took away from the SECOND guard site.
 //
 // TestCompensationWalkBlocksRootEventSubprocessCompletion used to reach
 // exitRootEventSubprocessScope's completion branch with a live cursor, because
-// the walk lived INSIDE the exiting event sub-process's own scope. ADR-0171 now
-// holds that exit, so that fixture no longer reaches the branch at all —
+// the walk lived INSIDE the exiting event sub-process's own scope. The hold now
+// covers that exit, so that fixture no longer reaches the branch at all —
 // measured, reverting the conjunct at that site leaves the whole engine suite
 // green. This fixture reaches it the other way: the walk is rooted at the ROOT
 // scope (ResumeScope ""), which the hold never matches, while an unrelated
 // root-level event sub-process drains and exits.
 //
-// What makes this fail without ADR-0168's conjunct at that site: the exit finds
+// What makes this fail without the conjunct at that site: the exit finds
 // zero tokens and would publish CompleteInstance for an instance whose rollback
 // is still outstanding.
 func TestRootEventSubprocessExitBlocksCompletionUnderRootWalk(t *testing.T) {
@@ -586,7 +587,7 @@ func TestRootEventSubprocessExitBlocksCompletionUnderRootWalk(t *testing.T) {
 	walkCmd := r.State.Compensating.ActiveCmdID
 	require.NotEmpty(t, walkCmd, "setup: the root-scope walk must be in flight")
 	require.Empty(t, r.State.Compensating.ResumeScope,
-		"setup: the walk resumes at the ROOT scope, so the ADR-0171 hold cannot fire")
+		"setup: the walk resumes at the ROOT scope, so the hold cannot fire")
 
 	// Retire the remaining root token, leaving only the event sub-process running.
 	r, err = engine.Step(ctx, def, r.State,
@@ -595,8 +596,8 @@ func TestRootEventSubprocessExitBlocksCompletionUnderRootWalk(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, r.State.Tokens, 1, "setup: only the event sub-process token remains")
 
-	// The event sub-process drains and exits — reaching ADR-0168's second guard
-	// site with the cursor still live.
+	// The event sub-process drains and exits — reaching the second guard site
+	// with the cursor still live.
 	r, err = engine.Step(ctx, def, r.State,
 		engine.NewHumanCompleted(walkCompletionT0.Add(5*time.Second), espTask,
 			engine.CompletionInput{}, authz.Actor{ID: "u1"}), engine.StepOptions{})
@@ -608,7 +609,7 @@ func TestRootEventSubprocessExitBlocksCompletionUnderRootWalk(t *testing.T) {
 	require.Equal(t, walkCmd, r.State.Compensating.ActiveCmdID,
 		"the walk cursor survives the event-sub-process exit")
 	require.Empty(t, r.State.Scopes,
-		"ADR-0171's hold is NARROW: it must not hold a scope the walk does not resume into")
+		"the hold is NARROW: it must not hold a scope the walk does not resume into")
 
 	// The deferred completion still happens once the walk finishes.
 	r, err = engine.Step(ctx, def, r.State,
@@ -667,21 +668,22 @@ func rootWalkOutlivedByESPRunningOnDef() *model.ProcessDefinition {
 	}
 }
 
-// TestRootEventSubprocessExitKeepsRootArmsWhenTheWalkCanResume pins the
-// correction to ADR-0168 Decision 3's "accepted cost".
+// TestRootEventSubprocessExitKeepsRootArmsWhenTheWalkCanResume pins that the
+// exit keeps the ROOT-scope event-sub-process arms alive; retiring them was once
+// an accepted cost.
 //
 // exitRootEventSubprocessScope's non-completing tail used to retire every
 // ROOT-scope event-sub-process arm on its way out — cleanup written when that
-// tail was believed to run only as the instance finished. ADR-0168's cursor
-// conjunct made it the DEFERRED-completion path instead, and the deferral can
+// tail was believed to run only as the instance finished. The cursor conjunct
+// made it the DEFERRED-completion path instead, and the deferral can
 // end in a resume: the instance goes back to Running with its root event
 // sub-processes permanently disarmed.
 //
 // What makes this test fail without the change (measured on this bundle's
 // commit, this fixture): arms 1 → 0 at the exit, the walk's resume left the
 // instance `running` with arms=0, and a second "boom" signal opened no scope at
-// all — a NON-interrupting root event sub-process, which ADR-0124 makes
-// repeatable, silently stopped being triggerable.
+// all — a NON-interrupting root event sub-process, which is repeatable,
+// silently stopped being triggerable.
 func TestRootEventSubprocessExitKeepsRootArmsWhenTheWalkCanResume(t *testing.T) {
 	t.Parallel()
 

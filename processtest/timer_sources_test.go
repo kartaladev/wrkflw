@@ -1,9 +1,9 @@
 package processtest_test
 
-// timer_sources_test.go — ADR-0177's consequence for the harness. Widening
-// engine.InstanceState.HasArmedTimers from "a record in s.Timers" to "any of the
-// five timer-arm sources" moves parks in the classification ladder, and the
-// ladder is priority-ordered:
+// timer_sources_test.go — the harness consequence of the HasArmedTimers
+// widening. Widening engine.InstanceState.HasArmedTimers from "a record in
+// s.Timers" to "any of the five timer-arm sources" moves parks in the
+// classification ladder, and the ladder is priority-ordered:
 //
 //	terminal > openTasks > incidents > signals > messages > timers > commandWait
 //
@@ -134,8 +134,8 @@ func TestTimerArmReclassifiesOnlyTheLowestPark(t *testing.T) {
 	}
 
 	cases := map[string]testCase{
-		// (a) The shape ADR-0177 set out to flip — one of the three the file
-		// header enumerates, not "the one". Before ADR-0177 the plain catch's
+		// (a) One of the three shapes the file header enumerates that the
+		// widening set out to flip, not "the one". Before it, the plain catch's
 		// timer was invisible to HasArmedTimers, so the ladder fell through to the
 		// token's AwaitCommand and reported an async child — and AutoTimers(),
 		// which acts only on ReasonTimer, passed forever.
@@ -253,9 +253,9 @@ func eventGatewayTimerArmDef(t *testing.T) *model.ProcessDefinition {
 }
 
 // retryBackoffDef parks a service task token on a TimerRetry RECORD after one
-// retryable failure. The record was visible to HasArmedTimers long before
-// ADR-0177 widened it, so this row is a regression guard on behaviour that
-// predates this delivery entirely, not a new claim.
+// retryable failure. The record was visible to HasArmedTimers long before the
+// widening, so this row is a regression guard on behaviour that predates this
+// delivery entirely, not a new claim.
 //
 //	start → svc[Service work, retry 3×] → end
 func retryBackoffDef(t *testing.T) *model.ProcessDefinition {
@@ -314,7 +314,7 @@ func stepParked(t *testing.T, def *model.ProcessDefinition, failAction bool) eng
 // TestSecondaryTimerArmDoesNotOutrankACommandWait pins the commandWait rung
 // against [AutoTimers]' documented contract: "a park that merely has a
 // *secondary* armed timer … is left for the task handler rather than fired to its
-// timeout" (see AutoTimers' doc comment). ADR-0177's widening broke that for two
+// timeout" (see AutoTimers' doc comment). The widening broke that for two
 // shapes; the rule that repairs it must not swallow the three shapes for which an
 // armed timer IS the park.
 //
@@ -329,8 +329,8 @@ func stepParked(t *testing.T, def *model.ProcessDefinition, failAction bool) eng
 //	(a) svc ⊸ bnd[timer]   reason=timer       ← wrong, AutoTimers fired the boundary
 //	(b) evtsub timer arm   reason=timer       ← wrong, same shape without a token
 //	(c) plain ICE          reason=timer       ← right
-//	(d) egw ⊸ timer arm    reason=timer       ← right (async-child before ADR-0177)
-//	(e) retry backoff      reason=timer       ← right, and true since long before ADR-0177
+//	(d) egw ⊸ timer arm    reason=timer       ← right (async-child before the widening)
+//	(e) retry backoff      reason=timer       ← right, and true since long before it
 //
 // ⚠ Rows (c)–(e) are not decoration. Each of their tokens parks on a command too
 // (the timer id, the timer id, and an "evtgw:" sentinel), so a predicate that
@@ -369,12 +369,12 @@ func TestSecondaryTimerArmDoesNotOutrankACommandWait(t *testing.T) {
 			def:    eventSubprocessTimerArmDef,
 			assert: secondary,
 		},
-		// (c) The shape ADR-0177 set out to fix.
+		// (c) The shape the widening set out to fix.
 		"plain timer catch stays ReasonTimer": {
 			def:    plainTimerCatchDef,
 			assert: primary,
 		},
-		// (d) The other shape ADR-0177 fixed: the gateway's sentinel command wait
+		// (d) The other shape the widening fixed: the gateway's sentinel command wait
 		// is undeliverable, so the timer race is the only way out.
 		"event-gateway timer arm stays ReasonTimer": {
 			def:    eventGatewayTimerArmDef,

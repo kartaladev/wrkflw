@@ -1,12 +1,11 @@
 package engine_test
 
-// step_harvest_inflight_walk_test.go — ADR-0174, T9: the harvest is placed AFTER each
+// step_harvest_inflight_walk_test.go: the harvest is placed AFTER each
 // live site's in-flight-walk guard, so while a compensation walk is in flight the harvest
 // does NOT run at all.
 //
 // ⚠ Read this before "improving" the test. The obvious formulation — "an in-flight walk
-// still defers at both sites" — CANNOT FAIL, and the rule-#9 audit rejected it for that
-// reason. Both guards
+// still defers at both sites" — CANNOT FAIL, and was rejected for that reason. Both guards
 // (step_errors.go's `s.Status == StatusCompensating && s.Compensating.ActiveCmdID != ""`
 // and step_triggers.go's identical predicate) read ONLY the compensation cursor. Moving
 // the harvest above or below them changes nothing either guard observes, so a test that
@@ -20,9 +19,9 @@ package engine_test
 //
 // Why the harvest must not run mid-walk: `harvestOpenScopeCompensations`' own godoc says
 // it. The teardown WINDOW that archiveCompensations stamps onto the cursor
-// (TeardownArchiveKey/Offset/Count, ADR-0173) is only sound where the walk never advances
+// (TeardownArchiveKey/Offset/Count) is only sound where the walk never advances
 // again. These two sites are exactly the ones where the walk DOES continue, so a harvest
-// here would reintroduce the double-compensation residue ADR-0173's window fields exist to
+// here would reintroduce the double-compensation residue those window fields exist to
 // remove — for the drained scope — while also stealing the sibling scope's records out from
 // under a walk that has not yet decided its own fate.
 //
@@ -145,7 +144,7 @@ func TestInFlightCompensationWalkSuppressesTheHarvest(t *testing.T) {
 		// outstanding bHold command id, which the unhandled-error row fails and the
 		// cancel row ignores.
 		kill func(at time.Time, holdB string) engine.Trigger
-		// assertDeferral pins the ADR-0170 deferral each site performs, which differs
+		// assertDeferral pins the deferral each site performs, which differs
 		// per site even though the suppression property is shared.
 		assertDeferral func(t *testing.T, st engine.InstanceState)
 	}
@@ -161,7 +160,7 @@ func TestInFlightCompensationWalkSuppressesTheHarvest(t *testing.T) {
 			},
 			assertDeferral: func(t *testing.T, st engine.InstanceState) {
 				assert.True(t, st.PendingCancel,
-					"the error must be deferred to the in-flight walk (ADR-0170), not applied now")
+					"the error must be deferred to the in-flight walk, not applied now")
 				assert.Equal(t, engine.StatusFailed, st.PendingFinalStatus,
 					"and the deferred outcome must be this error's, applied when the walk finishes")
 				assert.Equal(t, "BOOM", st.PendingFinalErr)
@@ -177,7 +176,7 @@ func TestInFlightCompensationWalkSuppressesTheHarvest(t *testing.T) {
 			},
 			assertDeferral: func(t *testing.T, st engine.InstanceState) {
 				assert.True(t, st.PendingCancel,
-					"a cancel arriving mid-walk must be deferred, never start a second walk (ADR-0039/0170)")
+					"a cancel arriving mid-walk must be deferred, never start a second walk")
 				assert.Equal(t, engine.StatusTerminated, st.PendingFinalStatus,
 					"and the deferred outcome must be the cancel's own, explicitly stamped")
 				assert.Equal(t, "cancelled", st.PendingFinalErr)
@@ -251,9 +250,9 @@ func TestInFlightCompensationWalkSuppressesTheHarvest(t *testing.T) {
 			assert.Empty(t, after.ArchivedCompensations,
 				"and nothing may have reached the archive: a mid-walk harvest would stamp a teardown "+
 					"window onto a cursor that is still going to advance, which is exactly the "+
-					"double-compensation residue ADR-0173 removed")
+					"double-compensation residue that was removed")
 
-			// And the deferral ADR-0170 prescribes is intact: the walk continues, it was
+			// And the prescribed deferral is intact: the walk continues, it was
 			// not restarted, and no compensation action was re-dispatched.
 			assert.Equal(t, engine.StatusCompensating, after.Status,
 				"the live walk must still own the instance")

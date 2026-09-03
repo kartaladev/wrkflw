@@ -16,8 +16,7 @@ import (
 // in the same table that an under-eager one does.
 //
 // Every row's expectation was measured through the production chain
-// (runtime.convertTrigger -> scheduler.Trigger.Next) at five anchors; see
-// docs/specs/2026-08-13-never-due-gate-and-orphan-reclamation.md §3.1.
+// (runtime.convertTrigger -> scheduler.Trigger.Next) at five anchors.
 func TestTriggerSpecNeverDue(t *testing.T) {
 	t.Parallel()
 
@@ -98,11 +97,11 @@ func TestTriggerSpecNeverDue(t *testing.T) {
 		{name: "Every(1h)", spec: schedule.Every(time.Hour), assert: due},
 		{name: "EveryRandom(5s,10s)", spec: schedule.EveryRandom(5*time.Second, 10*time.Second), assert: due},
 
-		// ---- DUE by DELIBERATE OMISSION: cron is out of scope (ADR-0182 §3.2).
+		// ---- DUE by DELIBERATE OMISSION: cron is out of scope.
 		// The first two rows below ARE never due when executed, and the predicate
 		// still reports false: judging them would force robfig/cron/v3 into the
 		// definition layer, which the owner declined. Do not "fix" these rows —
-		// ADR-0176's arm guard is the layer that catches them.
+		// the arm guard is the layer that catches them.
 		{name: "Cron(unparseable) out of scope", spec: schedule.Cron("not a cron"), assert: due},
 		{name: "Cron(30 February) out of scope", spec: schedule.Cron("0 0 30 2 *"), assert: due},
 		{name: "Cron(weekdays 9am) genuinely due", spec: schedule.Cron("0 9 * * 1-5"), assert: due},

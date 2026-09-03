@@ -1,6 +1,6 @@
 package engine_test
 
-// ADR-0175 — the three operator escapes from a stalled compensation walk.
+// The three operator escapes from a stalled compensation walk.
 //
 // ⚠ Every skip-vs-abandon case needs a fixture with at least TWO compensable
 // activities. A one-record walk finishes on its first advance, so skip and
@@ -27,7 +27,7 @@ func recordNodeIDs(s engine.InstanceState) []string { return engine.RecordNodeID
 // re-arms the stall guard so a second silence is caught too.
 //
 // It must NOT re-run consumeDispatchedRecord: ownership of the record
-// transferred at the ORIGINAL dispatch (ADR-0173), so consuming again would
+// transferred at the ORIGINAL dispatch, so consuming again would
 // corrupt the walk's teardown window.
 func TestRetryRedispatchesUnderAFreshCommandID(t *testing.T) {
 	state, cmdID, timerID := startedStallWalk(t)
@@ -56,8 +56,8 @@ func TestRetryRedispatchesUnderAFreshCommandID(t *testing.T) {
 	assert.Empty(t, res.State.Incidents, "the stall incident is retired by the retry")
 }
 
-// TestSkipAdvancesTheWalk is T7. Skip takes the same path a returned
-// ActionFailed already takes (ADR-0034 Decision 4's best-effort skip).
+// TestSkipAdvancesTheWalk is T7. Skip takes the same best-effort path a
+// returned ActionFailed already takes.
 func TestSkipAdvancesTheWalk(t *testing.T) {
 	state, cmdID, _ := startedStallWalk(t)
 	def := threeCompensableDef()
@@ -102,7 +102,7 @@ func TestAbandonTerminatesAndRetainsOnlyUndispatchedRecords(t *testing.T) {
 		"exactly the records the walk never dispatched are retained; the stalled one is dropped")
 	assert.Empty(t, stallTimerRecords(res.State), "no stall timer survives")
 
-	// ADR-0164 Decision 2 still admits a later FULL rollback, which is what makes
+	// A later FULL rollback is still admitted, which is what makes
 	// retention worth anything. It must run step2 then step1 — and NOT c3.
 	later, err := engine.Step(t.Context(), def, res.State,
 		engine.NewCompensateRequested(at.Add(time.Hour), ""), opt)
@@ -124,7 +124,7 @@ func TestAbandonTerminatesAndRetainsOnlyUndispatchedRecords(t *testing.T) {
 //
 // Without it an abandoned walk terminates carrying a stale "compensation action
 // stalled" record, which incident_count, the service/ audit view and every
-// reader of InstanceState.Incidents then report. Before ADR-0179 that record was
+// reader of InstanceState.Incidents then report. That record was once
 // also published as the instance's cause of death by runtime/outbox.go's
 // terminalEventErr and runtime/processdriver_action.go's terminalErr; both now
 // go through runtime's causeOfDeathIncident allow-list, which admits
@@ -284,11 +284,11 @@ func TestEscapeVerbsRefuseAMismatchedCursor(t *testing.T) {
 // applyFinish that, on a stalled walk, never runs. Measured on main, a second
 // cancel returns err=nil with ZERO commands and leaves pendingCancel=true.
 //
-// ⚠ ADR-0175 as written said ABANDON discharges this. Measured, it cannot:
+// ⚠ ABANDON was expected to discharge this. Measured, it cannot:
 // PendingCancel is only ever stamped on a walk that RESUMES — handleCancelRequested
-// requires ResumeNode or ReverseNode to be non-empty — and the audit's C3 finding
-// made abandon refuse exactly those walks. The two decisions are incompatible, and
-// SKIP is the verb that actually discharges it:
+// requires ResumeNode or ReverseNode to be non-empty — and abandon refuses exactly
+// those walks. The two are incompatible, and SKIP is the verb that actually
+// discharges it:
 //
 //	PROBE[throw-walk]    mode=walkThrowScopeWide pendingCancel=false
 //	PROBE[after-cancel]  cmds=0                  pendingCancel=true

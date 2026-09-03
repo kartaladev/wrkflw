@@ -18,8 +18,8 @@ import (
 
 // ErrNoManualStart is returned when a StartInstance with an empty StartNodeID is
 // applied to a definition that has no manual (trigger-less, caller-driven) start
-// event — i.e. every start event carries a message, signal, or timer trigger
-// (ADR-0121). A manual start maps to BPMN's "none start event".
+// event — i.e. every start event carries a message, signal, or timer trigger. A
+// manual start maps to BPMN's "none start event".
 var ErrNoManualStart = errors.New("workflow-engine: definition has no manual start event")
 
 // handleStartInstance processes a StartInstance trigger: initialises instance
@@ -27,14 +27,14 @@ var ErrNoManualStart = errors.New("workflow-engine: definition has no manual sta
 // forward from the start node.
 //
 // It refuses an instance that has already been started with
-// [ErrInstanceAlreadyStarted] (ADR-0180) — the handler has no reset semantics, so
-// a second start would superimpose itself on the live one.
+// [ErrInstanceAlreadyStarted] — the handler has no reset semantics, so a second
+// start would superimpose itself on the live one.
 func handleStartInstance(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t StartInstance, opt StepOptions) (StepResult, error) {
 	// Refuse a start on an instance that has already been started: this handler
 	// never clears Tokens/Tasks/Timers, so a second start SUPERIMPOSES itself on
-	// the live one (ADR-0180). Every witness of a prior start is read, because no
-	// single one is sufficient — StatusRunning is the zero value, and OccurredAt
-	// comes from the caller so StartedAt can be zero on a started instance.
+	// the live one. Every witness of a prior start is read, because no single one
+	// is sufficient — StatusRunning is the zero value, and OccurredAt comes from
+	// the caller so StartedAt can be zero on a started instance.
 	if hasStarted(s) {
 		return StepResult{}, fmt.Errorf("%w: %q", ErrInstanceAlreadyStarted, s.InstanceID)
 	}
@@ -68,7 +68,7 @@ func handleStartInstance(ctx context.Context, def *model.ProcessDefinition, s *I
 
 // hasStarted reports whether s carries any witness that a StartInstance has
 // already been applied to it. It is the predicate behind
-// [ErrInstanceAlreadyStarted] (ADR-0180).
+// [ErrInstanceAlreadyStarted].
 //
 // Three witnesses, because each alone is defeatable: StartedAt is written from
 // the trigger's caller-supplied OccurredAt and can therefore be zero on a started
@@ -110,26 +110,25 @@ func handleActionCompleted(ctx context.Context, def *model.ProcessDefinition, s 
 		// This record ultimately SUCCEEDED, so any IncidentCompensationFailed
 		// raised against this very command — the walk was sitting in a retry
 		// backoff and the worker answered late, or the failure was never retried —
-		// describes an attempt that is no longer owed. Retire it (ADR-0179
-		// Decision 6).
+		// describes an attempt that is no longer owed. Retire it.
 		//
 		// ⚠ Deliberately HERE and not inside stepCompensationAdvance, which every
 		// route that moves a walk on funnels through: that function is also reached
 		// from the exhaustion path in handleActionFailed and from the operator skip
-		// verb, and on both of those the incident is the durable record the ADR
-		// exists to leave behind. This is the only route on which the record
-		// actually ran to completion.
+		// verb, and on both of those the incident is the durable record that must be
+		// left behind. This is the only route on which the record actually ran to
+		// completion.
 		s.retireCompensationFailedIncidents(t.CommandID)
 		return stepCompensationAdvance(ctx, def, s, t.OccurredAt(), resolvePolicy(opt))
 	}
 	// A reply to a compensation command the walk has already MOVED PAST is
-	// benign, not an error (ADR-0179 Decision 5). Placed after the short-circuit
-	// above, which owns the ACTIVE command's reply — see
-	// isBenignCompensationDuplicate for why that order is what keeps the walk
-	// advancing. Without this, an at-least-once worker's ordinary redelivery
-	// falls through to the tokenAwaiting lookup below (a walk parks no token on
-	// its dispatch), returns ErrTokenNotFound, and reaches the consumer as a 422
-	// on a perfectly healthy walk. Measured on this branch's base:
+	// benign, not an error. Placed after the short-circuit above, which owns the
+	// ACTIVE command's reply — see isBenignCompensationDuplicate for why that
+	// order is what keeps the walk advancing. Without this, an at-least-once
+	// worker's ordinary redelivery falls through to the tokenAwaiting lookup below
+	// (a walk parks no token on its dispatch), returns ErrTokenNotFound, and
+	// reaches the consumer as a 422 on a perfectly healthy walk. Measured on this
+	// branch's base:
 	// `no token awaiting command: invalid state transition: "i-dup-c3"`.
 	if s.isBenignCompensationDuplicate(t.CommandID) {
 		return StepResult{State: *s}, nil
@@ -138,9 +137,9 @@ func handleActionCompleted(ctx context.Context, def *model.ProcessDefinition, s 
 	tok := s.tokenAwaiting(t.CommandID)
 	if tok == nil {
 		// Unreachable for a terminal instance — dispatch's structural guard
-		// returned before this handler was entered (ADR-0165) — so reaching here
-		// means a non-terminal instance with no matching token, which is a genuine
-		// caller error.
+		// returned before this handler was entered — so reaching here means a
+		// non-terminal instance with no matching token, which is a genuine caller
+		// error.
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 	}
 	// Cancel any boundary arms on this host token before advancing.
@@ -175,13 +174,13 @@ func handleActionCompleted(ctx context.Context, def *model.ProcessDefinition, s 
 func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t CancelRequested, opt StepOptions) (StepResult, error) {
 	// Admin trigger: terminate the instance, optionally running compensation first.
 	// Emit InvokeCancelAction (fire-and-forget) for each entry in def.CancelActions
-	// regardless of whether compensation records exist (ADR-0028 unchanged).
+	// regardless of whether compensation records exist.
 	var cancelActionCmds []Command
 	for _, name := range def.CancelActions {
 		cancelActionCmds = append(cancelActionCmds, InvokeCancelAction{Name: name, Input: copyVars(s.Variables)})
 	}
 
-	// Per-node cancel handlers (ADR-0035): collect InvokeCancelAction for each
+	// Per-node cancel handlers: collect InvokeCancelAction for each
 	// active token whose node carries a non-empty CancelAction.
 	// This MUST happen before the compensation/immediate branch because
 	// beginCompensation (and the immediate path) clear s.Tokens.
@@ -220,25 +219,25 @@ func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s 
 		// exact pre-refactor behaviour.
 		if s.Compensating.ResumeNode != "" || s.Compensating.ReverseNode != "" {
 			// A RESUMING walk is in flight — either a compensation THROW walk
-			// (ResumeNode set, ADR-0039 B1) or a full-REVERSE walk (ReverseNode
-			// set, ADR-0109 Fork B). Both would otherwise RESUME (Running) at
-			// finish, so the instance would keep running and the caller who
-			// cancelled would be left with a live instance. Defer this cancel —
-			// record the intent and let the in-flight walk finish; applyFinish then
+			// (ResumeNode set) or a full-REVERSE walk (ReverseNode set). Both
+			// would otherwise RESUME (Running) at finish, so the instance would
+			// keep running and the caller who cancelled would be left with a live
+			// instance. Defer this cancel — record the intent and let the
+			// in-flight walk finish; applyFinish then
 			// consumes PendingCancel and runs a full cancel over the REMAINING
 			// records (the throw's archive / the reverse's records are cleared by
 			// then) and terminates instead of resuming.
 			//
 			// The outcome is stamped EXPLICITLY, not left to applyFinish's
-			// zero-value default. Since ADR-0170 the same two fields also carry a
-			// deferred unhandled error's outcome, so a cancel arriving after one
-			// found them already set to StatusFailed + that error's code and
-			// inherited it — measured, the finish produced status=failed with
+			// zero-value default. The same two fields also carry a deferred
+			// unhandled error's outcome, so a cancel arriving after one found them
+			// already set to StatusFailed + that error's code and inherited it —
+			// measured, the finish produced status=failed with
 			// FailInstance{Err:"boom"} for an instance whose last operator action
 			// was a cancel. Writing both fields here makes this deferral
-			// last-writer-wins in the same way ADR-0170 documents for successive
-			// errors. applyFinish's zero-value default now covers only a state
-			// PERSISTED before this change (PendingCancel true, outcome unset).
+			// last-writer-wins in the same way as successive errors. applyFinish's
+			// zero-value default now covers only a state PERSISTED before this
+			// change (PendingCancel true, outcome unset).
 			s.PendingCancel = true
 			s.PendingFinalStatus = StatusTerminated
 			s.PendingFinalErr = "cancelled"
@@ -259,19 +258,19 @@ func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s 
 		// in exchange for the no-double-compensation guarantee.
 		//
 		// The drop is REPORTED — but ONLY when the walk in flight RESUMES the
-		// instance, which is the case that loses the cancel (ADR-0180). Nothing else
-		// changes: no commands, no state change, the in-flight walk still owns the
-		// instance. Only the caller stops being told this worked — measured, an
-		// operator got a 200 and then watched the "cancelled" instance resume.
+		// instance, which is the case that loses the cancel. Nothing else changes:
+		// no commands, no state change, the in-flight walk still owns the instance.
+		// Only the caller stops being told this worked — measured, an operator got a
+		// 200 and then watched the "cancelled" instance resume.
 		//
-		// ⚠ This site serves TWO situations, and implementation refuted the ADR's
-		// claim that both take the sentinel. A walkAdmin walk (the terminal
-		// cancel/error rollback) ENDS the instance, so a redundant cancel is
-		// idempotently satisfied — ADR-0034's post-acceptance idempotent re-cancel,
-		// pinned by TestSecondCancelMidCompensationWalkDoesNotDoubleCompensate, which
-		// went RED under the blanket form. Only walkPartial (the admin rollback that
-		// resumes at ToNode) is the measured defect. walkTerminates is the shared
-		// predicate, so this stays in step with what the finish actually does.
+		// ⚠ This site serves TWO situations, and only one of them takes the sentinel.
+		// A walkAdmin walk (the terminal cancel/error rollback) ENDS the instance, so
+		// a redundant cancel is idempotently satisfied — the post-acceptance
+		// idempotent re-cancel, pinned by
+		// TestSecondCancelMidCompensationWalkDoesNotDoubleCompensate, which went RED
+		// under the blanket form. Only walkPartial (the admin rollback that resumes
+		// at ToNode) is the measured defect. walkTerminates is the shared predicate,
+		// so this stays in step with what the finish actually does.
 		//
 		// ⚠ Callers must treat the sentinel as an outcome, not a halt: propagation to
 		// async children must still run (see [ErrCancelNotApplicable]).
@@ -284,18 +283,18 @@ func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s 
 	// The instance is dying, so harvest what its open scopes still hold BEFORE asking
 	// whether there is anything to compensate — otherwise a record for an activity that
 	// completed inside a still-open sub-process is invisible here, the cancel terminates
-	// immediately, and the record can never be compensated (ADR-0174). Measured on
+	// immediately, and the record can never be compensated. Measured on
 	// `main`: a cancel delivered to an instance parked inside a sub-process holding
 	// `undo-inner` dispatched no compensation action at all.
 	//
-	// Placed AFTER the in-flight-walk guard above, which must keep winning (ADR-0170).
+	// Placed AFTER the in-flight-walk guard above, which must keep winning.
 	s.harvestOpenScopeCompensations()
 
 	if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
-		// Compensation walk before termination (ADR-0034). The harvest above is what
+		// Compensation walk before termination. The harvest above is what
 		// makes this predicate correct for an open scope's records.
 		// beginCompensation consolidates ArchivedCompensations into RootCompensations
-		// first (ADR-0039), then clears tokens/timers/arms and emits the first
+		// first, then clears tokens/timers/arms and emits the first
 		// compensation InvokeAction, setting the cursor with FinalStatus=Terminated
 		// and FinalErr="cancelled". stepCompensationFinish will emit
 		// FailInstance{"cancelled"} at walk end.
@@ -305,14 +304,14 @@ func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s 
 			return StepResult{}, err
 		}
 		// Ordering: [def.CancelActions…, per-node CancelActions…, compensation walk…].
-		// The explicit task-cancel prepend ADR-0088 documented here is gone. Since
-		// ADR-0163, beginCompensation cancels each token's open task inside its own
-		// preCmds, so for any state this engine version produces the sweep that used
-		// to sit here has nothing left to find — the same UpdateTask commands are
-		// still emitted, one call site earlier.
+		// The explicit task-cancel prepend that used to sit here is gone:
+		// beginCompensation cancels each token's open task inside its own preCmds, so
+		// for any state this engine version produces that sweep has nothing left to
+		// find — the same UpdateTask commands are still emitted, one call site
+		// earlier.
 		//
-		// That is not an absolute: an instance persisted before ADR-0163 can carry a
-		// leaked task (open, with no live token), which no per-token teardown
+		// That is not an absolute: an instance persisted by an older version can
+		// carry a leaked task (open, with no live token), which no per-token teardown
 		// reaches. Dropping the sweep stays safe for those, because
 		// stepCompensationFinish runs cancelOpenTasks over whatever remains at walk
 		// end, before the instance reaches its terminal state — a legacy leak is
@@ -323,8 +322,7 @@ func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s 
 
 	// No compensation records: immediate termination (unchanged behaviour).
 	// The token drop runs BEFORE endInstance so its removeOrphanedIncidents sweep
-	// sees the empty token set and retires the incidents those tokens carried
-	// (ADR-0164).
+	// sees the empty token set and retires the incidents those tokens carried.
 	for i := range s.Tokens {
 		tok := &s.Tokens[i]
 		s.closeVisitAs(tok.ID, tok.NodeID, t.OccurredAt(), CloseKindInstanceCancelled)
@@ -337,8 +335,8 @@ func handleCancelRequested(ctx context.Context, def *model.ProcessDefinition, s 
 	cmds := append(append([]Command(nil), cancelActionCmds...), nodeCancelCmds...)
 	// endInstance's cancelOpenTasks is the ONLY task sweep on this path: the branch
 	// drops its tokens via closeVisitAs + s.Tokens = nil and never routes through
-	// cancelTokenWaits, so a parked task would otherwise stay open in the TaskStore
-	// (ADR-0088).
+	// cancelTokenWaits, so a parked task would otherwise stay open in the
+	// TaskStore.
 	cmds = append(cmds, s.endInstance(StatusTerminated, t.OccurredAt(), FailInstance{Err: "cancelled"})...)
 	return StepResult{State: *s, Commands: cmds}, nil
 }
@@ -359,9 +357,9 @@ func handleCompensateRequested(ctx context.Context, def *model.ProcessDefinition
 func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t ActionFailed, opt StepOptions) (StepResult, error) {
 	// Best-effort compensation: if the engine is compensating and the failed
 	// command is the active compensation action, skip that record and advance
-	// the walk rather than re-entering propagateError/retry (ADR-0034 Decision 4).
+	// the walk rather than re-entering propagateError/retry.
 	if s.Status == StatusCompensating && s.Compensating.ActiveCmdID == t.CommandID {
-		// IDEMPOTENCY FIRST, ahead of the incident raise (ADR-0179 Decision 3). A
+		// IDEMPOTENCY FIRST, ahead of the incident raise. A
 		// retry backoff is already armed for this exact command, so this delivery is
 		// a REDELIVERY of the failure that armed it: answer it as a clean no-op.
 		//
@@ -375,21 +373,21 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 		// as a duplicate — a hung walk. RetryTimerID != "" is the only thing that
 		// closes this window; without it the redelivery raises a second incident,
 		// arms a second timer and doubles the attempt count, leaving two timers
-		// dispatching one record (ADR-0034's double-refund hazard).
+		// dispatching one record (the double-refund hazard).
 		if s.Compensating.RetryTimerID != "" {
 			return StepResult{State: *s}, nil
 		}
 		// That skip used to be SILENT: no log line, no incident, no command, so a
 		// compensation that never ran was indistinguishable from one that
-		// succeeded. Make it visible before advancing (ADR-0179 Decision 1).
+		// succeeded. Make it visible before advancing.
 		//
 		// NodeID comes from the record the walk currently has in flight, which sits
 		// at s.Compensating.NextIndex. ⚠ Bounds-check it: cursorRecords can return
-		// a slice SHORTER than NextIndex — a cursor persisted before ADR-0171
+		// a slice SHORTER than NextIndex — a cursor persisted by an older version
 		// carries no pinned Records, so it falls back to a live read whose source a
-		// sibling branch may have nilled mid-walk. That is the ADR-0171 panic
-		// shape, and an unreadable record must cost the operator the node id, not
-		// the whole trace.
+		// sibling branch may have nilled mid-walk. That is the panic shape, and an
+		// unreadable record must cost the operator the node id, not the whole
+		// trace.
 		failedNodeID := ""
 		if records := cursorRecords(s, s.Compensating); s.Compensating.NextIndex < len(records) {
 			failedNodeID = records[s.Compensating.NextIndex].NodeID
@@ -411,7 +409,7 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 			Kind: IncidentCompensationFailed,
 			// TokenID is empty by construction: the walk owns this incident, not a
 			// token. removeOrphanedIncidents deliberately KEEPS an empty-TokenID
-			// record, and removeIncidentsForToken("") returns early (ADR-0152).
+			// record, and removeIncidentsForToken("") returns early.
 			NodeID:    failedNodeID,
 			ScopeID:   s.Compensating.ScopeID,
 			CommandID: t.CommandID,
@@ -419,24 +417,23 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 			CreatedAt: t.OccurredAt(),
 		})
 		pol := resolvePolicy(opt)
-		// Retry when the consumer opted in (ADR-0179 Decision 2). Taking this
+		// Retry when the consumer opted in. Taking this
 		// branch leaves ActiveCmdID and NextIndex alone: the walk has not moved,
 		// the same record is being tried again once the backoff fires.
 		if retryCmds, retrying := armCompensationRetryTimer(s, pol, failedNodeID, t.Err, t.Retryable); retrying {
 			return StepResult{State: *s, Commands: retryCmds}, nil
 		}
-		// No policy, non-retryable, or budget exhausted: SKIP AND CONTINUE, exactly
-		// as before ADR-0179. The walk never parks on an exhausted retry
-		// (Decision 7) — parking would reverse ADR-0034's safety argument that a
-		// failed compensation never strands the instance.
+		// No policy, non-retryable, or budget exhausted: SKIP AND CONTINUE. The
+		// walk never parks on an exhausted retry — parking would reverse the
+		// safety guarantee that a failed compensation never strands the instance.
 		return stepCompensationAdvance(ctx, def, s, t.OccurredAt(), pol)
 	}
 	// The same benign-duplicate rule as handleActionCompleted, and it must be on
 	// BOTH reply paths: a worker that redelivers a FAILURE for a superseded
-	// compensation command hits the identical ErrTokenNotFound → 422 (ADR-0179
-	// Decision 5). No incident is raised — the walk moved past this record long
-	// ago, and the failure that mattered was recorded by the short-circuit above
-	// when it was still the active command.
+	// compensation command hits the identical ErrTokenNotFound → 422. No
+	// incident is raised — the walk moved past this record long ago, and the
+	// failure that mattered was recorded by the short-circuit above when it was
+	// still the active command.
 	if s.isBenignCompensationDuplicate(t.CommandID) {
 		return StepResult{State: *s}, nil
 	}
@@ -444,9 +441,9 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 	tok := s.tokenAwaiting(t.CommandID)
 	if tok == nil {
 		// Unreachable for a terminal instance — dispatch's structural guard
-		// returned before this handler was entered (ADR-0165; the route it closes
-		// is on ActionFailed.terminalPolicy). So reaching here means a
-		// non-terminal instance with no matching token, a genuine caller error.
+		// returned before this handler was entered (the route it closes is on
+		// ActionFailed.terminalPolicy). So reaching here means a non-terminal
+		// instance with no matching token, a genuine caller error.
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 	}
 	// Cancel any boundary arms on this host token before propagating.
@@ -570,9 +567,9 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 //
 // Errors with [ErrTaskNotOpen] when the task is already Completed or Cancelled.
 // That is the task-lifetime key, independent of the instance-status key
-// dispatch enforces (ADR-0165 Decision 6): ADR-0163 closes a task with the token
-// it is attached to — an interrupting boundary or a breached deadline — while the
-// instance carries on down the alternative path, so a closed task on a RUNNING
+// dispatch enforces: the engine closes a task with the token it is attached
+// to — an interrupting boundary or a breached deadline — while the instance
+// carries on down the alternative path, so a closed task on a RUNNING
 // instance is reachable and the status guard cannot see it.
 func handleHumanClaimed(s *InstanceState, t HumanClaimed) (StepResult, error) {
 	task := s.TaskByID(t.TaskID)
@@ -582,12 +579,12 @@ func handleHumanClaimed(s *InstanceState, t HumanClaimed) (StepResult, error) {
 	if !task.IsOpen() {
 		return StepResult{}, fmt.Errorf("%w: task %q", ErrTaskNotOpen, t.TaskID)
 	}
-	// Record the full claiming actor and the claim time (ADR-0147): the instance
+	// Record the full claiming actor and the claim time: the instance
 	// view renders who claimed and when, not just an ID.
 	task.Claim = &humantask.Claim{Actor: t.Actor, At: t.OccurredAt()}
 	task.State = humantask.Claimed
 	// Clone before the record escapes to a consumer-supplied TaskStore: task
-	// points into s.Tasks, which is committed as instance state (ADR-0163).
+	// points into s.Tasks, which is committed as instance state.
 	return StepResult{State: *s, Commands: []Command{UpdateTask{Task: task.Clone()}}}, nil
 }
 
@@ -602,7 +599,7 @@ func handleHumanClaimed(s *InstanceState, t HumanClaimed) (StepResult, error) {
 // late refresh must not rewrite history.
 func handleHumanCandidatesResolved(s *InstanceState, t HumanCandidatesResolved) (StepResult, error) {
 	// A terminal instance never reaches here: dispatch's structural guard returns
-	// first (ADR-0165; the route it closes is on
+	// first (the route it closes is on
 	// HumanCandidatesResolved.terminalPolicy). The !task.IsOpen() check below is
 	// the INDEPENDENT task-lifetime key — a task cancelled by an interrupting
 	// boundary on a still-running instance — not a stand-in for it.
@@ -618,7 +615,7 @@ func handleHumanCandidatesResolved(s *InstanceState, t HumanCandidatesResolved) 
 	// mutation reach committed instance state.
 	task.Candidates = authz.CloneActors(t.Candidates)
 	// Clone before the record escapes to a consumer-supplied TaskStore: task
-	// points into s.Tasks, which is committed as instance state (ADR-0163).
+	// points into s.Tasks, which is committed as instance state.
 	return StepResult{State: *s, Commands: []Command{UpdateTask{Task: task.Clone()}}}, nil
 }
 
@@ -636,14 +633,14 @@ func handleHumanReassigned(s *InstanceState, t HumanReassigned) (StepResult, err
 		return StepResult{}, fmt.Errorf("%w: task %q", ErrTaskNotOpen, t.TaskID)
 	}
 	// A task carries at most one claim: reassignment overwrites it rather than
-	// appending, so there is no claim history (ADR-0147). The reassignment
+	// appending, so there is no claim history. The reassignment
 	// trigger identifies the new assignee by ID only — unlike a claim, which
 	// carries the actor the caller authorized — so the recorded actor has an ID
 	// and no roles or attributes.
 	task.Claim = &humantask.Claim{Actor: authz.Actor{ID: t.To}, At: t.OccurredAt()}
 	task.State = humantask.Claimed
 	// Clone before the record escapes to a consumer-supplied TaskStore: task
-	// points into s.Tasks, which is committed as instance state (ADR-0163).
+	// points into s.Tasks, which is committed as instance state.
 	return StepResult{State: *s, Commands: []Command{UpdateTask{Task: task.Clone()}}}, nil
 }
 
@@ -664,9 +661,9 @@ func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *Inst
 	// 5) standalone intermediate catch event (token parks on TimerID).
 
 	// A terminal instance never reaches this cascade: dispatch's structural guard
-	// returns first (ADR-0165; the route it closes — a late timer firing a
-	// boundary, deadline or event-sub arm that the terminal transition never
-	// swept — is on TimerFired.terminalPolicy).
+	// returns first (the route it closes — a late timer firing a boundary,
+	// deadline or event-sub arm that the terminal transition never swept — is
+	// on TimerFired.terminalPolicy).
 	//
 	// 1)-3) Gateway arm / boundary arm / event sub-process arm cascade,
 	// first-match-wins (dispatchArmCascade — no payload to merge for timer).
@@ -686,13 +683,12 @@ func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *Inst
 	// retry (TimerRetry), compensation-stall (TimerCompensationStall) and
 	// compensation-retry (TimerCompensationRetry) records — the five kinds the
 	// switch below dispatches, re-derived from the package's own
-	// `s.Timers = append` sites when ADR-0179 added the fifth. Intermediate timers
-	// (TimerIntermediate) are never appended to s.Timers; for those, the token
-	// parks on the TimerID as its AwaitCommand, so they route via the
-	// tokenAwaiting path below.
+	// `s.Timers = append` sites. Intermediate timers (TimerIntermediate) are
+	// never appended to s.Timers; for those, the token parks on the TimerID as
+	// its AwaitCommand, so they route via the tokenAwaiting path below.
 	rec := s.timerByID(t.TimerID)
 	if rec != nil {
-		// ADR-0178: a DYING instance is given no work by a fired timer. Path 4 was
+		// A DYING instance is given no work by a fired timer. Path 4 was
 		// the only one of the five with no spawnsNewWork() guard — this function's
 		// other guard sits BELOW the switch and protects path 5 alone, and every
 		// return in the switch jumps over it. Measured on a walk carrying a
@@ -706,7 +702,7 @@ func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *Inst
 		// walk-scoped timer belongs to the compensation walk rather than to the
 		// instance's forward work, and the terminating walks — exactly the
 		// spawnsNewWork()==false ones — are the walks an operator most needs to see
-		// wedged (ADR-0175, pinned by TestStallIncidentIsRaisedOnADyingWalk). A
+		// wedged (pinned by TestStallIncidentIsRaisedOnADyingWalk). A
 		// blanket guard here would silence stall detection precisely where it
 		// matters.
 		if !rec.Kind.firesOnDyingInstance() && !s.spawnsNewWork() {
@@ -754,7 +750,7 @@ func handleTimerFired(ctx context.Context, def *model.ProcessDefinition, s *Inst
 		// instance may have advanced via a different branch), so we never error here.
 		return StepResult{State: *s, Commands: nil}, nil
 	}
-	// ADR-0172: a DYING instance spawns no new work — and that is NOT a
+	// A DYING instance spawns no new work — and that is NOT a
 	// signal-specific rule. Resuming this token would drive it forward and
 	// dispatch a real InvokeAction to a worker, whose ActionCompleted then lands
 	// on an instance the in-flight rollback has already terminated.
@@ -822,7 +818,7 @@ func parkOnCompletionAction(s *InstanceState, tdef *model.ProcessDefinition, tok
 }
 
 // applyOutcomeExposure publishes a completion outcome as a process variable when
-// the user task opts in (ADR-0146): an explicit OutcomeVariable name wins,
+// the user task opts in: an explicit OutcomeVariable name wins,
 // otherwise ExposeOutcome publishes under the "<node id>_outcome" convention. A
 // node opting into neither keeps the outcome audit-only, and an empty outcome is
 // never published. Call it after the completion output is merged so the outcome
@@ -847,7 +843,7 @@ func applyOutcomeExposure(s *InstanceState, ut activity.UserTask, outcome string
 // Errors with [ErrTaskNotOpen] on an already Completed or Cancelled task — the
 // task-lifetime key described on [handleHumanClaimed].
 func handleHumanCompleted(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t HumanCompleted, opt StepOptions) (StepResult, error) {
-	// The task record is resolved BEFORE the token (ADR-0165 Decision 6). The
+	// The task record is resolved BEFORE the token. The
 	// lookup order is what makes the task-lifetime guard reachable at all: with
 	// tokenAwaiting first the guard below is dead code, because the three paths
 	// that close a task on a live instance today each also detach its token.
@@ -865,7 +861,7 @@ func handleHumanCompleted(ctx context.Context, def *model.ProcessDefinition, s *
 	//
 	// The no-record branch below must NOT collapse the two cases the pre-reorder
 	// order told apart, which is why it re-checks the token rather than answering
-	// with one sentinel (ADR-0165 correction, Phase 6.4):
+	// with one sentinel:
 	//
 	//   - no record AND no parked token — the id is a GHOST. Reached through
 	//     service.deliverTaskTrigger, which reads the task store FIRST and answers
@@ -910,15 +906,15 @@ func handleHumanCompleted(ctx context.Context, def *model.ProcessDefinition, s *
 	}
 	// A wait-mode manual UserTask (Manual && !ManualImmediate) is a form-less
 	// checkpoint: it completes on a bare trigger only. Reject any completion
-	// payload before any output is merged (ADR-0118). This runs BEFORE the
-	// outcome-set check because a manual task declares no outcomes, so that check
-	// would fail open and silently record an outcome/note (ADR-0146).
+	// payload before any output is merged. This runs BEFORE the outcome-set
+	// check because a manual task declares no outcomes, so that check would fail
+	// open and silently record an outcome/note.
 	if ut.Manual && !ut.ManualImmediate && (len(t.Output) > 0 || t.Outcome != "" || t.Note != "") {
 		return StepResult{}, fmt.Errorf("%w: node %q", ErrManualTaskPayload, tok.NodeID)
 	}
 	// Outcome validation fails closed: a declared set is a closed AND mandatory
-	// value domain, so the completion must carry exactly one of its members
-	// (ADR-0146). Declaring none leaves the task unconstrained.
+	// value domain, so the completion must carry exactly one of its members.
+	// Declaring none leaves the task unconstrained.
 	switch {
 	case ut.Manual:
 		// A manual task is forbidden from declaring outcomes at authoring time
@@ -936,7 +932,7 @@ func handleHumanCompleted(ctx context.Context, def *model.ProcessDefinition, s *
 	mergeVars(s, t.Output)
 	applyOutcomeExposure(s, ut, t.Outcome)
 	task.State = humantask.Completed
-	// Record who completed the task, when, and with what disposition (ADR-0147).
+	// Record who completed the task, when, and with what disposition.
 	// The outcome is audited whether or not the node exposes it as a variable.
 	task.Completion = &humantask.Completion{
 		Actor:   t.Actor,
@@ -947,7 +943,7 @@ func handleHumanCompleted(ctx context.Context, def *model.ProcessDefinition, s *
 	tok.State = TokenActive
 	tok.clearAwait()
 	// Clone before the record escapes to a consumer-supplied TaskStore: task
-	// points into s.Tasks, which is committed as instance state (ADR-0163).
+	// points into s.Tasks, which is committed as instance state.
 	cmds := []Command{UpdateTask{Task: task.Clone()}}
 	// Cancel any deadline or reminder timers that were guarding this task.
 	cmds = appendCancelTimers(cmds, s.cancelTimersByTaskID(t.TaskID, ""))
@@ -976,7 +972,7 @@ func handleHumanCompleted(ctx context.Context, def *model.ProcessDefinition, s *
 // order through event-gateway arms, boundary arms, event sub-process arms, and
 // standalone parked-signal tokens (broadcast semantics).
 //
-// Broadcast applies BOTH across families and WITHIN each one (ADR-0158): every
+// Broadcast applies BOTH across families and WITHIN each one: every
 // arm matching the signal name fires, not just the first. Only arms armed at the
 // DELIVERY INSTANT are eligible — each family's matching identities are
 // snapshotted before any dispatch, so an arm created by this delivery's own drive
@@ -989,9 +985,9 @@ func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *
 	// runs ONLY when at least one match is found.
 	//
 	// NOTE: mergeVars is deferred until after match-checking so that a no-match
-	// delivery does not mutate instance variables (Task-2 review fix).
+	// delivery does not mutate instance variables.
 	//
-	// Dispatch order for signal (ADR-0158 — EVERY matching arm in each family,
+	// Dispatch order for signal (EVERY matching arm in each family,
 	// in the order the definition declares its nodes; the engine does not
 	// re-order them):
 	// 1) event-based gateway arms (first-event-wins WITHIN one gateway token,
@@ -1019,7 +1015,7 @@ func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *
 	matched := false
 
 	// markMatched merges the delivery payload the FIRST time any dispatch point
-	// matches, and only then (ADR-0169 Decision 4). It runs inside the tier that
+	// matches, and only then. It runs inside the tier that
 	// matches, before that tier fires, so the tier that legitimately fired is the
 	// one that merged: a delivery aborted after a match returns state carrying the
 	// payload, and one aborted before any match leaves Variables untouched.
@@ -1030,7 +1026,7 @@ func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *
 		}
 	}
 
-	// ADR-0158: SNAPSHOT each family's matching arm IDENTITIES before dispatching
+	// SNAPSHOT each family's matching arm IDENTITIES before dispatching
 	// anything, then build one lookup-and-fire closure per identity. Tiers 1–3 used
 	// to be three closures doing three FIRST-MATCH lookups; a broadcast signal now
 	// fires every matching arm per family.
@@ -1038,9 +1034,9 @@ func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *
 	// The snapshot is load-bearing TWICE OVER, and the second reason is not about
 	// termination:
 	//
-	//  1. TERMINATION. A non-interrupting arm deliberately stays armed after firing
-	//     (ADR-0124), in both the boundary and event-sub-process families, so a loop
-	//     that re-scanned for "the next match" would find the same arm forever.
+	//  1. TERMINATION. A non-interrupting arm deliberately stays armed after firing,
+	//     in both the boundary and event-sub-process families, so a loop that
+	//     re-scanned for "the next match" would find the same arm forever.
 	//  2. SINGLE-INSTANT SEMANTICS. It confines the delivery to arms that existed at
 	//     the DELIVERY INSTANT. Without it a later tier fires an arm an earlier
 	//     tier's own drive created — measured on main, a gateway fire parked at a
@@ -1054,7 +1050,7 @@ func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *
 	// an already-retired arm. See armIDsBySignal.
 	//
 	// ⚠ Each closure RE-RESOLVES its identity at the moment it runs, and skips the
-	// arm when it no longer resolves. This is the successor to ADR-0169's "the three
+	// arm when it no longer resolves. This is the successor to the older "the three
 	// lookups must NOT be hoisted" requirement, which this change would otherwise
 	// have broken: what may not be hoisted is the RESOLUTION (an earlier fire can
 	// retire a later arm — an interrupting boundary cancels its host's siblings, an
@@ -1064,7 +1060,7 @@ func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *
 	// non-terminating re-scan.
 	//
 	// ⚠ NO SORT. Arms fire in declaration order. A per-family NonInterrupting sort
-	// was specified by an earlier draft of ADR-0158 and refuted by execution in BOTH
+	// was specified by an earlier draft and refuted by execution in BOTH
 	// directions — whether an earlier arm's effects are destroyable depends on the
 	// arm's BODY, not its flag. Ordering is outcome-affecting and author-controlled.
 	gatewayIDs := s.armedEventIDsBySignal(t.Name)
@@ -1127,21 +1123,19 @@ func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *
 		})
 	}
 
-	// MID-DELIVERY RE-CHECK (ADR-0169, predicate widened by ADR-0172). A tier's
-	// own drive can reach an uncaught error and end the instance — or begin a
-	// TERMINATING compensation rollback — and dispatch's entry guard (ADR-0165)
-	// cannot see either: the instance was running when the trigger was admitted.
-	// So every remaining dispatch point re-checks, and an aborted delivery returns
-	// the partial commands the earlier tiers legitimately produced — including the
-	// FailInstance that made the instance terminal. Dropping them would lose the
-	// earlier tiers' task-store reconciliation (ADR-0089) and degrade the terminal
-	// event's error payload. No Warn is emitted; that cost is recorded in
-	// ADR-0169 Decision 5.
+	// MID-DELIVERY RE-CHECK. A tier's own drive can reach an uncaught error and
+	// end the instance — or begin a TERMINATING compensation rollback — and
+	// dispatch's entry guard cannot see either: the instance was running when the
+	// trigger was admitted. So every remaining dispatch point re-checks, and an
+	// aborted delivery returns the partial commands the earlier tiers legitimately
+	// produced — including the FailInstance that made the instance terminal.
+	// Dropping them would lose the earlier tiers' task-store reconciliation and
+	// degrade the terminal event's error payload. No Warn is emitted.
 	//
 	// ⚠ The predicate is spawnsNewWork(), NOT IsTerminal(). IsTerminal() is false
 	// for StatusCompensating, so it let a later arm fire into a rollback that was
-	// already going to end the instance. ADR-0158's fan-out multiplies the number
-	// of dispatch points per delivery and therefore that window.
+	// already going to end the instance. The broadcast fan-out multiplies the
+	// number of dispatch points per delivery and therefore that window.
 	for _, fire := range tiers {
 		if !s.spawnsNewWork() {
 			return StepResult{State: *s, Commands: signalCmds}, nil
@@ -1159,7 +1153,7 @@ func handleSignalReceived(ctx context.Context, def *model.ProcessDefinition, s *
 	//
 	// The terminal re-check belongs INSIDE this loop, not only ahead of it: the
 	// loop is multi-iteration, so one token's drive can end the instance while a
-	// later token still awaits resumption (ADR-0169 Decision 3).
+	// later token still awaits resumption.
 	for _, tokenID := range snapshotIDs {
 		if !s.spawnsNewWork() {
 			return StepResult{State: *s, Commands: signalCmds}, nil
@@ -1200,9 +1194,9 @@ func handleSubInstanceCompleted(ctx context.Context, def *model.ProcessDefinitio
 	tok := s.tokenAwaiting(t.CommandID)
 	if tok == nil {
 		// Unreachable for a terminal instance — dispatch's structural guard
-		// returned before this handler was entered (ADR-0165; the route it closes,
-		// and why returning nil there does not make CallNotifier retry forever, is
-		// on SubInstanceCompleted.terminalPolicy).
+		// returned before this handler was entered (the route it closes, and why
+		// returning nil there does not make CallNotifier retry forever, is on
+		// SubInstanceCompleted.terminalPolicy).
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 	}
 	mergeVars(s, t.Output)
@@ -1222,11 +1216,11 @@ func handleSubInstanceCompleted(ctx context.Context, def *model.ProcessDefinitio
 
 // handleSubInstanceFailed processes a SubInstanceFailed trigger: routes to a
 // parent error boundary attached to the call-activity node when the child's
-// error code matches (ADR-0128), else fails the parent instance.
+// error code matches, else fails the parent instance.
 func handleSubInstanceFailed(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, t SubInstanceFailed, opt StepOptions) (StepResult, error) {
 	// A child process instance has terminated with an error. A SubInstanceFailed
 	// is semantically an error thrown AT the call-activity node that spawned the
-	// child (ADR-0128): when that node carries a boundary error event whose
+	// child: when that node carries a boundary error event whose
 	// ErrorCode matches the child's error, route to it exactly as propagateError's
 	// direct-boundary path does for an ActionFailed on an ordinary activity —
 	// cancel the call-activity token, fire the boundary's outgoing flow, and
@@ -1236,8 +1230,8 @@ func handleSubInstanceFailed(ctx context.Context, def *model.ProcessDefinition, 
 	tok := s.tokenAwaiting(t.CommandID)
 	if tok == nil {
 		// Unreachable for a terminal instance — dispatch's structural guard
-		// returned before this handler was entered (ADR-0165; the route it closes
-		// is on SubInstanceFailed.terminalPolicy).
+		// returned before this handler was entered (the route it closes is on
+		// SubInstanceFailed.terminalPolicy).
 		return StepResult{}, fmt.Errorf("%w: %q", ErrTokenNotFound, t.CommandID)
 	}
 
@@ -1268,11 +1262,11 @@ func handleSubInstanceFailed(ctx context.Context, def *model.ProcessDefinition, 
 	}
 
 	// endInstance reconciles the human-task projection (a UserTask parked on a
-	// sibling branch must not be left open when a child failure fails the parent —
-	// ADR-0089) and cancels the scheduled work. FailInstance moves from FIRST to
-	// the canonical position AFTER the task cancels: this was the one terminal path
-	// that emitted the other order (ADR-0164 Decision 1). Tokens are not dropped
-	// here, so incidents whose token survives are deliberately kept.
+	// sibling branch must not be left open when a child failure fails the parent)
+	// and cancels the scheduled work. FailInstance moves from FIRST to the
+	// canonical position AFTER the task cancels: this was the one terminal path
+	// that emitted the other order. Tokens are not dropped here, so incidents
+	// whose token survives are deliberately kept.
 	//
 	// endInstance mutates *s, so its result is bound BEFORE the StepResult literal
 	// dereferences s: Go orders function calls left-to-right but leaves a plain
@@ -1301,7 +1295,7 @@ func handleMessageReceived(ctx context.Context, def *model.ProcessDefinition, s 
 	// point-to-point, so each dispatch branch returns immediately on a match.
 	//
 	// NOTE: mergeVars is deferred until after match-checking so that a no-match
-	// delivery does not mutate instance variables (Task-2 review fix).
+	// delivery does not mutate instance variables.
 
 	// 1)-3) Gateway arm / boundary arm (reuses the same fireBoundaryArm
 	// machinery as timer/signal boundaries) / event sub-process arm cascade,
@@ -1329,7 +1323,7 @@ func handleMessageReceived(ctx context.Context, def *model.ProcessDefinition, s 
 		// or arrived after the instance advanced).
 		return StepResult{State: *s, Commands: nil}, nil
 	}
-	// ADR-0172: a DYING instance spawns no new work — and that is NOT a
+	// A DYING instance spawns no new work — and that is NOT a
 	// signal-specific rule. Resuming this token would drive it forward and
 	// dispatch a real InvokeAction to a worker, whose ActionCompleted then lands
 	// on an instance the in-flight rollback has already terminated.
@@ -1386,9 +1380,8 @@ func handleResolveIncident(ctx context.Context, def *model.ProcessDefinition, s 
 	// returns without re-invoking.
 	//
 	// A terminal instance never reaches here: dispatch's structural guard returns
-	// ErrInstanceTerminal first, BEFORE the incident is removed below (ADR-0165).
-	// That ordering is the whole point — the route it closes, and ADR-0164
-	// Decision 3's write-consumer lesson behind it, is on
+	// ErrInstanceTerminal first, BEFORE the incident is removed below. That
+	// ordering is the whole point — the route it closes is on
 	// ResolveIncident.terminalPolicy.
 
 	idx := -1
@@ -1403,25 +1396,25 @@ func handleResolveIncident(ctx context.Context, def *model.ProcessDefinition, s 
 		return StepResult{State: *s, Commands: nil}, nil
 	}
 	inc := s.Incidents[idx]
-	// Refuse a kind this operation cannot act on (ADR-0175). This is a WHITELIST of
-	// IncidentAction, so it also refuses IncidentCompensationFailed (ADR-0179) and
-	// any kind appended after it, with no case of its own. Both walk-scoped kinds
+	// Refuse a kind this operation cannot act on. This is a WHITELIST of
+	// IncidentAction, so it also refuses IncidentCompensationFailed and any kind
+	// appended after it, with no case of its own. Both walk-scoped kinds
 	// carry TokenID "", so an unguarded call falls straight through to the
 	// tok == nil branch: measured on a stall, err=<nil>, cmds=[], incidents=0, i.e.
 	// it silently EATS the only record that the walk had stalled, leaving the stall
 	// invisible as well as unresolved. The error names the verbs that do work.
 	//
 	// ⚠ Placed above the removal for readability, NOT because the position is what
-	// protects the incident — ADR-0175 said it was, and measurement refuted that.
-	// Moving this block below the removal line leaves every assertion green,
-	// because Step returns the ZERO StepResult on error and the caller therefore
-	// discards the clone the removal mutated. What prevents the data loss is
-	// returning an ERROR at all; deleting the guard outright is the mutation that
-	// reddens (see TestResolveIncidentRefusesACompensationStall).
+	// protects the incident — an earlier design said it was, and measurement
+	// refuted that. Moving this block below the removal line leaves every
+	// assertion green, because Step returns the ZERO StepResult on error and the
+	// caller therefore discards the clone the removal mutated. What prevents the
+	// data loss is returning an ERROR at all; deleting the guard outright is the
+	// mutation that reddens (see TestResolveIncidentRefusesACompensationStall).
 	//
 	// This guards the StatusCompensating window only. On a terminal instance
-	// dispatch's structural guard returns ErrInstanceTerminal first (ADR-0165);
-	// the two refusals are told apart by
+	// dispatch's structural guard returns ErrInstanceTerminal first; the two
+	// refusals are told apart by
 	// TestResolveIncidentOnATerminalInstanceIsRefusedAsTerminal.
 	if inc.Kind != IncidentAction {
 		slog.WarnContext(ctx, "resolve-incident refused: incident kind is not resolvable here",

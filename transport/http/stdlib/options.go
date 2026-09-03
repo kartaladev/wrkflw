@@ -54,7 +54,7 @@ func WithMaxBodyBytes(n int64) httpcore.CustomizeOption[*http.ServeMux] {
 // any other error when the identity source itself failed (⇒ 503). It is never
 // asked to authorize; that stays with the engine's authz.Authorizer.
 //
-// ⚠ The actor is NEVER read from the request body (ADR-0189). A body still
+// ⚠ The actor is NEVER read from the request body. A body still
 // carrying an "actor" or "by" key is ignored.
 //
 // ⚠ This alias is REQUIRED, not cosmetic, for the same inference reason as

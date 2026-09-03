@@ -1,7 +1,7 @@
 package engine_test
 
-// step_compensation_test.go — black-box tests for Plan 8 Task 1:
-// recording CompensationRecord entries when a compensable activity completes.
+// step_compensation_test.go — black-box tests for recording CompensationRecord
+// entries when a compensable activity completes.
 //
 // Compensable activity = a node with a non-empty CompensateAction field.
 // On completion (ActionCompleted for ServiceTask; sub-process exit), the engine
@@ -24,8 +24,8 @@ import (
 
 // requireCompensationStart asserts the command stream a compensation walk emits
 // on its FIRST step: the UpdateTask that reconciles the parked user task the walk
-// just tore down, followed by exactly one compensation InvokeAction. Since
-// ADR-0163 beginCompensation cancels every token, and a token parked on an open
+// just tore down, followed by exactly one compensation InvokeAction.
+// beginCompensation cancels every token, and a token parked on an open
 // UserTask now takes its task with it — before, the task was left open on an
 // instance whose token had been consumed, so no one could ever complete it.
 func requireCompensationStart(t *testing.T, cmds []engine.Command) engine.InvokeAction {
@@ -178,13 +178,13 @@ func TestNonCompensableActivityDoesNotRecord(t *testing.T) {
 
 // TestCompensableActivityInsideSubProcessIsArchivedOnClose asserts that
 // when a sub-process scope closes normally, its accumulated CompensationRecords
-// are moved into ArchivedCompensations keyed by the sub-process node ID (ADR-0039
-// archive-by-scope). Records are NOT hoisted to RootCompensations directly; instead
+// are moved into ArchivedCompensations keyed by the sub-process node ID
+// (archive-by-scope). Records are NOT hoisted to RootCompensations directly; instead
 // consolidateArchiveIntoRoot merges them into RootCompensations when the compensation
 // walk begins (CompensateRequested / error / cancel with compensation).
 //
-// Pre-ADR-0039: records were hoisted to RootCompensations (ADR-0013 hoist).
-// Post-ADR-0039: records are archived by scope, preserving scope identity.
+// Earlier versions hoisted records to RootCompensations; records are now
+// archived by scope, preserving scope identity.
 func TestCompensableActivityInsideSubProcessIsArchivedOnClose(t *testing.T) {
 	at := time.Date(2026, 6, 21, 9, 0, 0, 0, time.UTC)
 
@@ -221,7 +221,7 @@ func TestCompensableActivityInsideSubProcessIsArchivedOnClose(t *testing.T) {
 	// The sub-process scope is now closed (removed from r2.State.Scopes).
 	assert.Empty(t, r2.State.Scopes, "sub-process scope must be closed")
 
-	// ADR-0039 archive-by-scope: the inner activity's record must now be in
+	// Archive-by-scope: the inner activity's record must now be in
 	// ArchivedCompensations keyed by the sub-process node ID ("sub"), NOT in RootCompensations.
 	assert.Empty(t, r2.State.RootCompensations,
 		"RootCompensations must NOT contain inner records — they live in ArchivedCompensations")
@@ -266,7 +266,7 @@ func TestCompensationRecordInputIsSnapshotNotReference(t *testing.T) {
 		"Input must be a snapshot of variables BEFORE ActionCompleted output is merged")
 }
 
-// ── ADR-0013 regression: nested-scope compensation hoist ─────────────────────
+// ── Regression: nested-scope compensation hoist ──────────────────────────────
 
 // compensableSubThenRootDef returns a process:
 //
@@ -308,7 +308,7 @@ func compensableSubThenRootDef() *model.ProcessDefinition {
 // sub-process completes and its scope closes, the inner compensable activity's
 // record is archived in ArchivedCompensations (not RootCompensations), and that
 // a subsequent CompensateRequested consolidates the archive and emits the
-// compensation action (ADR-0039).
+// compensation action.
 func TestArchiveSubProcessCompensationAndReachViaWalk(t *testing.T) {
 	at := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
 	def := compensableSubThenRootDef()
@@ -334,9 +334,9 @@ func TestArchiveSubProcessCompensationAndReachViaWalk(t *testing.T) {
 	// Sub-process scope must be closed.
 	require.Empty(t, r2.State.Scopes, "sub-process scope must be closed")
 
-	// ADR-0039: record must be in ArchivedCompensations (keyed by "sub"), NOT RootCompensations.
+	// The record must be in ArchivedCompensations (keyed by "sub"), NOT RootCompensations.
 	assert.Empty(t, r2.State.RootCompensations,
-		"RootCompensations must NOT contain inner records after sub-process closes (ADR-0039)")
+		"RootCompensations must NOT contain inner records after sub-process closes")
 	require.NotNil(t, r2.State.ArchivedCompensations,
 		"ArchivedCompensations must be populated after sub-process closes with compensable record")
 	require.Contains(t, r2.State.ArchivedCompensations, "sub",
@@ -362,7 +362,7 @@ func TestArchiveSubProcessCompensationAndReachViaWalk(t *testing.T) {
 		"inner sub-process activity must be rollback-able via archive consolidation")
 }
 
-// ── Task-1 gap: positive sub-process-scope compensation recording ────────────
+// ── Positive sub-process-scope compensation recording ────────────────────────
 
 // openSubProcessWithParkDef returns a process whose sub-process contains a
 // compensable service task followed by a user task. The user task keeps the
@@ -400,8 +400,8 @@ func openSubProcessWithParkDef() *model.ProcessDefinition {
 	}
 }
 
-// TestCompensableActivityInsideOpenSubProcessScopeRecords is the Task-1 gap test.
-// It verifies the POSITIVE recording path: after svc completes (ActionCompleted),
+// TestCompensableActivityInsideOpenSubProcessScopeRecords closes the recording
+// gap. It verifies the POSITIVE recording path: after svc completes (ActionCompleted),
 // while the scope is STILL OPEN (userTask is now parked), the sub-process scope's
 // Compensations[0].NodeID == "svc".
 func TestCompensableActivityInsideOpenSubProcessScopeRecords(t *testing.T) {
@@ -451,7 +451,7 @@ func TestCompensableActivityInsideOpenSubProcessScopeRecords(t *testing.T) {
 		"root must NOT contain records from a sub-process's compensable task")
 }
 
-// ── Task 3: CompensateRequested reverse-order rollback ───────────────────────
+// ── CompensateRequested reverse-order rollback ───────────────────────────────
 
 // threeCompensableDef returns a process:
 //
@@ -639,7 +639,7 @@ func TestCompensateRequestedFullRollback(t *testing.T) {
 	assert.Empty(t, r8.State.Tokens, "no tokens remain after full rollback")
 }
 
-// ── ADR-0013: ordering and nested-depth tests ─────────────────────────────────
+// ── Ordering and nested-depth tests ───────────────────────────────────────────
 
 // rootThenSubProcessCompensableDef returns a process:
 //
@@ -684,7 +684,7 @@ func rootThenSubProcessCompensableDef() *model.ProcessDefinition {
 // the archive and emits compensation InvokeActions in strict reverse completion
 // order: inner-comp (most recent) then root-comp (earlier root).
 //
-// ADR-0039: after sub-process closes, RootCompensations = [rootSvc] and
+// After the sub-process closes, RootCompensations = [rootSvc] and
 // ArchivedCompensations["sub"] = [{inner-svc}]. CompensateRequested triggers
 // consolidation → [rootSvc, inner-svc] sorted by CompletedAt → reversed walk
 // emits inner-comp first, then root-comp.
@@ -721,7 +721,7 @@ func TestArchiveCompensationOrderingReversed(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, r3.State.Status)
 
-	// ADR-0039: after sub-process closes, RootCompensations = [rootSvc] only.
+	// After the sub-process closes, RootCompensations = [rootSvc] only.
 	// The inner record is in ArchivedCompensations, NOT hoisted to root yet.
 	require.Len(t, r3.State.RootCompensations, 1,
 		"RootCompensations must contain only the root record (inner is archived)")
@@ -815,7 +815,7 @@ func twoLevelNestedCompensableDef() *model.ProcessDefinition {
 
 // TestArchiveTwoLevelNestedCompensation verifies that a compensable activity at
 // grandchild depth (sub-process inside a sub-process) is reachable by a full
-// CompensateRequested after both scopes have closed. ADR-0039 archive-by-scope:
+// CompensateRequested after both scopes have closed. Archive-by-scope:
 // each closing scope archives into ArchivedCompensations keyed by its NodeID.
 // After both scopes close, ArchivedCompensations contains entries for both
 // sub-process nodes. CompensateRequested consolidates all into RootCompensations
@@ -847,7 +847,7 @@ func TestArchiveTwoLevelNestedCompensation(t *testing.T) {
 	assert.Equal(t, engine.StatusRunning, r2.State.Status)
 	assert.Empty(t, r2.State.Scopes, "both scopes must be closed")
 
-	// ADR-0039: grandchild record must be in ArchivedCompensations (NOT RootCompensations).
+	// The grandchild record must be in ArchivedCompensations (NOT RootCompensations).
 	assert.Empty(t, r2.State.RootCompensations,
 		"RootCompensations must be empty — grandchild record is in ArchivedCompensations")
 	require.NotNil(t, r2.State.ArchivedCompensations,
@@ -870,8 +870,8 @@ func TestArchiveTwoLevelNestedCompensation(t *testing.T) {
 }
 
 // TestSecondCancelMidCompensationWalkDoesNotDoubleCompensate is a regression test
-// for a pre-existing double-compensation bug found during the ADR-0039 review: a
-// CancelRequested delivered while a TERMINAL cancel/error compensation walk is
+// for a pre-existing double-compensation bug: a CancelRequested delivered while
+// a TERMINAL cancel/error compensation walk is
 // already in flight (Compensating.ResumeNode == "") must NOT re-enter
 // beginCompensation — doing so re-emits the in-flight compensation record, running
 // a money-moving action twice. Each completed compensable activity must be

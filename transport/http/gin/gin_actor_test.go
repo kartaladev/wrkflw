@@ -1,4 +1,4 @@
-// gin_actor_test.go — ADR-0189 identity seam for the gin adapter. The actor a
+// gin_actor_test.go — the identity seam for the gin adapter. The actor a
 // human-task route acts as comes from the mount's RequestActorFunc (by default
 // the authz context seam a consumer's middleware writes to), never from the
 // request body. These tests pin that seam, the fail-closed 401 when nothing
@@ -122,9 +122,9 @@ func TestRequestActorOptionAliases(t *testing.T) {
 	}
 }
 
-// TestTaskRoutes_ActorComesFromMiddlewareNotTheBody is the ADR-0189 headline: an
+// TestTaskRoutes_ActorComesFromMiddlewareNotTheBody pins the headline case: an
 // authenticated VIEWER whose request body claims to be a manager is judged as the
-// viewer and refused with 403. Before ADR-0189 the body won and this was a 200.
+// viewer and refused with 403. Previously the body won and this was a 200.
 //
 // The middleware uses the idiom that actually works under gin — reassigning
 // gc.Request with the enriched context — because gin/groups.go hands httpcore
@@ -186,7 +186,7 @@ func TestTaskRoutes_NoIdentity401(t *testing.T) {
 // ⚠ If this test ever starts returning 403 — i.e. gc.Set began reaching the
 // request context — gin's behaviour has changed underneath us. Do NOT "just fix
 // the test": every piece of consumer guidance naming the authenticating channel
-// (SECURITY.md, examples/, WithRequestActor's godoc) must be revisited first.
+// (examples/, WithRequestActor's godoc) must be revisited first.
 func TestTaskRoutes_GinSetDoesNotAuthenticate(t *testing.T) {
 	t.Parallel()
 
@@ -207,10 +207,10 @@ func TestTaskRoutes_GinSetDoesNotAuthenticate(t *testing.T) {
 // contract after ClaimInput lost its last field: any body — including none — is
 // accepted and ignored, but an OVERSIZE one is still refused with 413.
 //
-// Each row fails against the pre-ADR-0189 required decoder for a different
-// reason: the first three would decode-fail with EOF/`null` handling into 400,
-// the malformed row into 400, and the oversize row is the ADR-0186 response
-// contract that an unguarded optional decode would silently drop to 200.
+// Each row fails against the legacy required decoder for a different reason:
+// the first three would decode-fail with EOF/`null` handling into 400, the
+// malformed row into 400, and the oversize row is the response contract that
+// an unguarded optional decode would silently drop to 200.
 func TestTaskRoutes_ClaimBodyIsOptionalButStillBounded(t *testing.T) {
 	t.Parallel()
 
@@ -263,7 +263,7 @@ func TestTaskRoutes_ClaimBodyIsOptionalButStillBounded(t *testing.T) {
 			},
 		},
 		{
-			// ⚠ The row that keeps the ADR-0186 cap on this route. "Optional" is
+			// ⚠ The row that keeps the body cap on this route. "Optional" is
 			// not "unbounded": without the oversize arm the claim route would
 			// read an unbounded body into memory and answer 200.
 			name:       "oversize body is still 413",
@@ -299,7 +299,7 @@ func TestTaskRoutes_ClaimBodyIsOptionalButStillBounded(t *testing.T) {
 // therefore learns nothing about whether its body parsed — a malformed document
 // that would be a 400 for an authenticated caller is a 401 for this one.
 //
-// Ordering since ADR-0189 (code-review finding F6):
+// The current ordering:
 //
 //	401 (identity) → 413 (body cap) → 400 (decode) → 404 (lookup)
 //
@@ -311,7 +311,7 @@ func TestTaskRoutes_ClaimBodyIsOptionalButStillBounded(t *testing.T) {
 //
 // ⚠ If a row here ever reports 400 again, that is NOT a stale expectation to
 // update: it means httpcore.RequestActor has moved back BEHIND the body decode
-// in groups.go and F6 has regressed. Fix the handler, not this test.
+// in groups.go. Fix the handler, not this test.
 //
 // What makes it fail today: move the httpcore.RequestActor call in
 // groups.go below the decode for a route and that route's row turns 400.

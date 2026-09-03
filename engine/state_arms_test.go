@@ -1,7 +1,7 @@
 package engine
 
-// state_arms_test.go — white-box tests for the generic arm lookups. Covers
-// ADR-0152: an empty identity key matches no arm, while an empty correlationKey
+// state_arms_test.go — white-box tests for the generic arm lookups. An empty
+// identity key matches no arm, while an empty correlationKey
 // keeps its documented "uncorrelated" meaning.
 
 import (

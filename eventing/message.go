@@ -12,10 +12,10 @@ import (
 // Its signature matches [runtime.ProcessDriver.DeliverMessage] exactly, so a
 // consumer can pass that method value directly — the driver resolves the target
 // definition itself (correlate to a running instance or start from a
-// message-start event), so no receiver definition needs pre-capturing (ADR-0121).
+// message-start event), so no receiver definition needs pre-capturing.
 type MessageDeliverFunc func(ctx context.Context, name, correlationKey string, payload map[string]any) error
 
-// messageBody is the wire shape of a message.<Name> outbox event payload (ADR-0067).
+// messageBody is the wire shape of a message.<Name> outbox event payload.
 type messageBody struct {
 	MessageName    string         `json:"messageName"`
 	CorrelationKey string         `json:"correlationKey"`

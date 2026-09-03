@@ -47,8 +47,8 @@ func TestPostgresElectorLeadership(t *testing.T) {
 	require.NoError(t, electorB.Close())
 }
 
-// TestPostgresElectorInvokesOnLeadershipAcquired proves the Option-A failover
-// hook (ADR-0072): when an instance wins leadership, the registered
+// TestPostgresElectorInvokesOnLeadershipAcquired proves the failover hook:
+// when an instance wins leadership, the registered
 // on-leadership-acquired callback fires. Wiring it to ProcessDriver.RehydrateTimers
 // re-arms the full persisted timer set on a new leader after failover, closing
 // the window where runtime-armed timers would otherwise be lost until restart.
@@ -87,7 +87,7 @@ func TestPostgresElectorCloseIdempotent(t *testing.T) {
 	require.NoError(t, elector.Close(), "second Close must be a no-op")
 }
 
-// TestPostgresElectorCloseReleasesReentrantLockStack proves ADR-0061's Close fully
+// TestPostgresElectorCloseReleasesReentrantLockStack proves Close fully
 // releases leadership even when the session-level advisory lock was acquired more
 // than once on the SAME dedicated connection. A transient heartbeat ping failure
 // can falsely step the elector down (clearing isLeader while the lock is still

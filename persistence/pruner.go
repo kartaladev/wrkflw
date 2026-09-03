@@ -10,12 +10,11 @@ import (
 	"github.com/kartaladev/wrkflw/internal/persistence/store"
 )
 
-// Pruner is the stable public interface for data-lifecycle retention pruning
-// (ADR-0052). Each method deletes only safely-eligible rows older than the
+// Pruner is the stable public interface for data-lifecycle retention
+// pruning. Each method deletes only safely-eligible rows older than the
 // caller-supplied cutoff and returns the number of rows deleted, so a consumer
 // can drive retention from their own scheduled job (they own the cron). Pruning
-// is the consumer's responsibility — the library ships no daemon. See
-// docs/retention.md for recommended cadences and cutoffs.
+// is the consumer's responsibility — the library ships no daemon.
 type Pruner interface {
 	// PruneOutbox deletes published outbox rows (status='published') whose
 	// published_at is strictly before cutoff. Pending and dead-lettered rows are
@@ -51,10 +50,10 @@ type Pruner interface {
 	//
 	//   - Rows whose trigger is a recurring kind. next_run is written once when
 	//     such a timer is armed and is not updated per recurrence, so an expired
-	//     next_run there does not mean the timer is done firing (ADR-0134).
+	//     next_run there does not mean the timer is done firing.
 	//     Reclaiming the never-due subset of these needs
 	//     [NeverDueTimerReclaimer].
-	//   - Compensation-retry rows (engine.TimerCompensationRetry, ADR-0179).
+	//   - Compensation-retry rows (engine.TimerCompensationRetry).
 	//     The backoff is armed as a one-shot, so the recurring-kind clause does
 	//     not cover it, and the row is the only thing that will resume its
 	//     compensation walk — deleting it strands the walk.
@@ -68,14 +67,14 @@ var _ Pruner = (*store.Pruner)(nil)
 
 // NeverDueTimerReclaimer is an optional capability of a [Pruner]: it reclaims
 // orphan timer rows — rows whose next_run is sub-epoch (strictly before
-// 1970-01-01T00:00:00Z) while their trigger is a recurring kind (ADR-0181).
+// 1970-01-01T00:00:00Z) while their trigger is a recurring kind.
 //
 // Such a row is never-due by construction, and no retention cutoff reaches it:
 // [Pruner.PruneTimers] deletes only non-recurring kinds, so its reachable set
-// and the orphan set are disjoint. ADR-0176 stopped the engine writing a
-// zero next_run for a recurring trigger it could not schedule, but nothing
-// reclaimed the rows already stored — they sit at the head of the armed-timer
-// keyset index forever, pinning the reported next-fire time at 0001-01-01.
+// and the orphan set are disjoint. The engine no longer writes a zero next_run
+// for a recurring trigger it could not schedule, but nothing reclaimed the rows
+// already stored — they sit at the head of the armed-timer keyset index
+// forever, pinning the reported next-fire time at 0001-01-01.
 //
 // Every Pruner this package constructs ([NewPruner], [NewMySQLPruner],
 // [NewSQLitePruner]) satisfies NeverDueTimerReclaimer today, but the method is

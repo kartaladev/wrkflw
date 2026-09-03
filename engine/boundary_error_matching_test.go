@@ -1,7 +1,7 @@
 package engine_test
 
-// boundary_error_matching_test.go — black-box tests for Task 4 (ADR-0104):
-// three-tier boundary error matching: Check → Expr → Code precedence,
+// boundary_error_matching_test.go — black-box tests for three-tier boundary
+// error matching: Check → Expr → Code precedence,
 // live-error cause threading, and bare-code-source synthesis.
 
 import (
@@ -558,7 +558,7 @@ func TestBoundaryErrorCheckVsExprPrecedenceWithTypedError(t *testing.T) {
 	})
 }
 
-// TestBoundaryErrorCheckVarsMutationTrap verifies Fix 2: the ErrorCheck closure
+// TestBoundaryErrorCheckVarsMutationTrap verifies that the ErrorCheck closure
 // receives a SHALLOW CLONE of instance variables, not the live map. A closure
 // that mutates its vars argument must not corrupt committed instance variables
 // after error propagation.
@@ -614,7 +614,7 @@ func TestBoundaryErrorCheckVarsMutationTrap(t *testing.T) {
 
 // twoErrorBoundaryDef builds a root-level service task with TWO boundaries:
 // the first has a runtime-failing ErrorExpr (type error at eval: _error + 42),
-// the second has a matching ErrorCode. Used to verify Fix 3.
+// the second has a matching ErrorCode. Used by TestMalformedErrorExprNonFatal.
 //
 //	Root: start → svc → end
 //	      svc has boundary-1 (failing ErrorExpr) → end-bad (should never route here)
@@ -648,8 +648,8 @@ func twoErrorBoundaryDef() *model.ProcessDefinition {
 	}
 }
 
-// TestMalformedErrorExprNonFatal verifies Fix 3: a boundary ErrorExpr that
-// compiles but type-errors at runtime (e.g. _error + 42) must be treated as a
+// TestMalformedErrorExprNonFatal pins the non-fatal rule: a boundary ErrorExpr
+// that compiles but type-errors at runtime (e.g. _error + 42) must be treated as a
 // non-match (the boundary is skipped), allowing subsequent boundaries in the
 // same scope to still be evaluated. The Step must NOT return an error.
 func TestMalformedErrorExprNonFatal(t *testing.T) {
@@ -678,7 +678,7 @@ func TestMalformedErrorExprNonFatal(t *testing.T) {
 		engine.NewActionFailed(at.Add(time.Second), ia.CommandID, "REAL_CODE", false),
 		engine.StepOptions{})
 
-	// Fix 3: Step must NOT return an error — a malformed ErrorExpr is non-fatal.
+	// Step must NOT return an error — a malformed ErrorExpr is non-fatal.
 	require.NoError(t, err, "Step must not error when an ErrorExpr type-errors at runtime; it should skip to next boundary")
 
 	// The second boundary (bnd-real) must have caught the error.

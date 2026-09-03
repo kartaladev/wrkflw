@@ -1,9 +1,6 @@
 package runtime_test
 
-// cancel_handler_test.go — Task 2: runtime e2e for per-node cancel handlers.
-//
-// Design: docs/specs/2026-06-23-cancel-handlers-design.md §3 (runtime bullet).
-// ADR: 0035.
+// cancel_handler_test.go — runtime e2e for per-node cancel handlers.
 //
 // Verifies that when a running instance is cancelled, the engine emits an
 // InvokeCancelAction for each active node whose Node.CancelAction is non-empty,
@@ -52,7 +49,7 @@ func cancelActionDef() *model.ProcessDefinition {
 }
 
 // TestProcessDriverPerNodeCancelHandlerFires is the runtime e2e for per-node cancel
-// handlers (ADR-0035).
+// handlers.
 //
 // Asserts:
 //  1. Run parks at the user task → StatusRunning.

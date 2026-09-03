@@ -1,4 +1,4 @@
-// Package gin_test — ADR-0190 disclosure parity with the stdlib adapter.
+// Package gin_test — disclosure parity with the stdlib adapter.
 package gin_test
 
 import (

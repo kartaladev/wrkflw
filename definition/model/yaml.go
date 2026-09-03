@@ -28,7 +28,7 @@ type nodeYAML struct {
 	Manual             bool     `yaml:"manual,omitempty"`
 	ManualImmediate    bool     `yaml:"manual_immediate,omitempty"`
 	// Outcomes/ExposeOutcome/OutcomeVariable mirror the like-named NodeWire
-	// fields — a UserTask's completion-outcome declaration (ADR-0146).
+	// fields — a UserTask's completion-outcome declaration.
 	Outcomes         []string     `yaml:"outcomes,omitempty"`
 	ExposeOutcome    bool         `yaml:"expose_outcome,omitempty"`
 	OutcomeVariable  string       `yaml:"outcome_variable,omitempty"`
@@ -42,29 +42,29 @@ type nodeYAML struct {
 	RecoveryFlow     string       `yaml:"recovery_flow,omitempty"`
 	CompensateAction string       `yaml:"compensate_action,omitempty"`
 	CompensateRef    string       `yaml:"compensate_ref,omitempty"`
-	// CompensateScopeLocal mirrors NodeWire.CompensateScopeLocal (ADR-0120).
+	// CompensateScopeLocal mirrors NodeWire.CompensateScopeLocal.
 	CompensateScopeLocal bool   `yaml:"compensate_scope_local,omitempty"`
 	CancelAction         string `yaml:"cancel_action,omitempty"`
 	CompletionAction     string `yaml:"completion_action,omitempty"`
 	SignalName           string `yaml:"signal_name,omitempty"`
 	MessageName          string `yaml:"message_name,omitempty"`
 	CorrelationKey       string `yaml:"correlation_key,omitempty"`
-	// MessageStartSingleton mirrors NodeWire.MessageStartSingleton (ADR-0121 review).
+	// MessageStartSingleton mirrors NodeWire.MessageStartSingleton.
 	MessageStartSingleton bool   `yaml:"message_start_singleton,omitempty"`
 	ErrorCode             string `yaml:"error_code,omitempty"`
 	// EndBehavior mirrors NodeWire.EndBehavior — the name-based EndEvent
-	// discriminator ("terminate"/"error"); empty means normal (ADR-0127).
+	// discriminator ("terminate"/"error"); empty means normal.
 	EndBehavior string `yaml:"end_behavior,omitempty"`
 	// TerminationReason and TerminationOutcome mirror the like-named NodeWire
 	// fields — the EndTerminate payload authored alongside endBehavior:
-	// "terminate" (ADR-0119). TerminationOutcome is "complete" or "abort".
+	// "terminate". TerminationOutcome is "complete" or "abort".
 	TerminationReason  string `yaml:"termination_reason,omitempty"`
 	TerminationOutcome string `yaml:"termination_outcome,omitempty"`
 	AttachedTo         string `yaml:"attached_to,omitempty"`
 	NonInterrupting    bool   `yaml:"non_interrupting,omitempty"`
 	// BoundaryAction / BoundaryErrorExpr mirror the like-named NodeWire fields so
 	// that event.WithBoundaryAction and event.WithBoundaryErrorExpr are reachable
-	// from YAML, which they were not before backlog 143: a boundary could be
+	// from YAML, which they were not in earlier versions: a boundary could be
 	// attached in YAML but never given an action or an error predicate.
 	BoundaryAction    string          `yaml:"boundary_action,omitempty"`
 	BoundaryErrorExpr string          `yaml:"boundary_error_expr,omitempty"`
@@ -76,7 +76,7 @@ type nodeYAML struct {
 
 // definitionYAML is the YAML mirror of ProcessDefinition. It handles nested
 // subprocess definitions recursively. Flows decode straight into the canonical
-// flow.SequenceFlow — it carries the same snake_case yaml tags (ADR-0144), so no
+// flow.SequenceFlow — it carries the same snake_case yaml tags, so no
 // mirror struct is needed.
 type definitionYAML struct {
 	ID            string              `yaml:"id"`
@@ -217,7 +217,7 @@ func ParseYAML(r io.Reader, opts ...LoaderOption) (DefinitionLoader, error) {
 	dec.KnownFields(true)
 	// io.EOF is tolerated deliberately: yaml.Unmarshal returns nil for an empty
 	// or comment-only document while Decode reports io.EOF, so without this the
-	// change would silently also make empty input a parse error (ADR-0167 D3a).
+	// change would silently also make empty input a parse error.
 	// dy keeps its zero value in that case, exactly as before.
 	if err := dec.Decode(&dy); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("workflow-definition: parse YAML: %w", boundFieldErrors(err))

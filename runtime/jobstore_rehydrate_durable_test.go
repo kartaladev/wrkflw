@@ -23,7 +23,7 @@ import (
 // TestSelfRehydrateOnStart proves that a Scheduler wired with WithJobStore
 // re-arms all durable timers automatically on Start, without an explicit
 // ProcessDriver.RehydrateTimers call. This is the durable e2e test for
-// ADR-0102 scheduler self-rehydration (Task 3).
+// scheduler self-rehydration.
 //
 // Scenario: a timer is armed against a SQLite store (row persists). The driver
 // and scheduler are discarded ("crash"). A fresh scheduler.Scheduler is

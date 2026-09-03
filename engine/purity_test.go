@@ -12,7 +12,7 @@ import (
 )
 
 // TestCorePurityNoOTel asserts the pure core never imports OpenTelemetry.
-// Observability lives strictly in the runtime and outer layers (spec §1).
+// Observability lives strictly in the runtime and outer layers.
 func TestCorePurityNoOTel(t *testing.T) {
 	for _, dir := range []string{".", "../definition"} {
 		entries, err := os.ReadDir(dir)
@@ -163,7 +163,7 @@ var deniedEngineImports = []string{
 	"/internal/persistence",
 	// The engine core is a layer BELOW the runtime: its seams (IDGenerator,
 	// ConditionEvaluator, …) are declared locally and satisfied structurally by
-	// runtime types, never by importing them back down (ADR-0149).
+	// runtime types, never by importing them back down.
 	"/runtime/",
 	"watermill",
 	"gocron",

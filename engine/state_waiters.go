@@ -42,8 +42,7 @@ func (s *InstanceState) MessageArmedEventWaiters() []MessageWaiter {
 // these alongside message-catch tokens, message-boundary waiters, and
 // event-based-gateway message arms so a delivered message can be correlated to a
 // parked instance even though an event sub-process arm carries no token — the arm
-// lives in s.EventTriggeredSubprocesses, not on a Token.AwaitMessage
-// (ADR-0122/0123).
+// lives in s.EventTriggeredSubprocesses, not on a Token.AwaitMessage.
 //
 // Timer and signal arms contribute no entries. The result preserves
 // s.EventTriggeredSubprocesses slice order (deterministic) and is nil when no
@@ -82,7 +81,7 @@ func (s *InstanceState) SignalArmedEventNames() []string {
 // SIGNAL-triggered event sub-process arm. A runtime subscribes these in its
 // SignalBus alongside signal-catch tokens (Token.AwaitSignal) so a broadcast
 // signal can wake an event sub-process arm, which — like a message event-sub arm
-// — carries no token (ADR-0123).
+// — carries no token.
 //
 // Timer and message arms contribute no entries. The result preserves
 // s.EventTriggeredSubprocesses slice order (deterministic) and is nil when no
@@ -96,7 +95,7 @@ func (s *InstanceState) SignalEventSubprocessNames() []string {
 // armed message boundaries, event-based-gateway message arms, and
 // message-triggered event sub-process arms. It is the single authority a runtime
 // mirrors into its correlation table — a future message construct extends only
-// this method, not every runtime call site (ADR-0123). The scattered per-construct
+// this method, not every runtime call site. The scattered per-construct
 // enumeration that this method centralizes is exactly what let event-sub arms be
 // forgotten by the runtime in the first place.
 //
@@ -120,13 +119,13 @@ func (s *InstanceState) MessageWaiters() []MessageWaiter {
 // token signal-catch awaits (Token.AwaitSignal), armed signal boundaries,
 // event-based-gateway signal arms, and signal-triggered event sub-process arms.
 // It is the single authority a runtime mirrors into its SignalBus subscription
-// set (ADR-0123, completed for boundaries and gateway arms by ADR-0154).
+// set.
 //
 // It is the exact mirror of [InstanceState.MessageWaiters]: the two must
 // enumerate the same four sources, because every construct that can await a
 // message can equally await a signal. Omitting a source here does not fail
 // loudly — the runtime simply never subscribes the name, and the instance parks
-// forever (the bug ADR-0154 fixed).
+// forever.
 //
 // Order is deterministic: tokens (slice order), then boundaries, then gateway
 // arms, then event-subs. The list may contain duplicates when two constructs

@@ -1,6 +1,6 @@
 package engine_test
 
-// step_retry_backoff_test.go — backlog 40. handleActionFailed computed the retry
+// step_retry_backoff_test.go — handleActionFailed computed the retry
 // delay as
 //
 //	delay := time.Duration(t.JitterFraction * float64(eff.Backoff(attempt)))

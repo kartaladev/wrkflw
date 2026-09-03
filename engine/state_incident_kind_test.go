@@ -16,7 +16,7 @@ import (
 	"github.com/kartaladev/wrkflw/engine"
 )
 
-// TestIncidentCompensationFailedDistinctAndStringable is the ADR-0179 counterpart
+// TestIncidentCompensationFailedDistinctAndStringable is the counterpart
 // of TestTimerCompensationStallDistinctAndStringable in command_test.go, and it
 // exists for the same reason: nothing else in the package enumerates the
 // IncidentKind constants, so neither a colliding value nor a missing String()

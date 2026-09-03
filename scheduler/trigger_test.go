@@ -156,7 +156,7 @@ func TestTrigger_Next(t *testing.T) {
 			trig:  scheduler.Cron("0 9 * * *"),
 			assert: func(t *testing.T, next time.Time, ok bool) {
 				// after is 2026-01-01 00:00 +02:00; the next 09:00 is resolved in
-				// that same +02:00 zone (ADR-0137), i.e. 2026-01-01 09:00 +02:00.
+				// that same +02:00 zone, i.e. 2026-01-01 09:00 +02:00.
 				want := time.Date(2026, 1, 1, 9, 0, 0, 0, time.FixedZone("plusTwo", 2*60*60))
 				if !ok || !next.Equal(want) {
 					t.Fatalf("next=%v ok=%v want %v", next, ok, want)
@@ -243,7 +243,7 @@ func TestTrigger_Next(t *testing.T) {
 			},
 		},
 		{
-			// Changed by ADR-0176: this used to assert ok=false. The gocron
+			// This test used to assert ok=false. The gocron
 			// adapter substitutes Sunday for an empty weekday set before
 			// arming, so the trigger does fire and Next now says so.
 			name: "weekly with no weekdays takes the substituted Sunday",
@@ -257,7 +257,7 @@ func TestTrigger_Next(t *testing.T) {
 			},
 		},
 		{
-			// Changed by ADR-0176: this used to assert ok=false. The same
+			// This test used to assert ok=false. The same
 			// adapter substitutes the 1st for an empty day-of-month set.
 			name: "monthly with no days-of-month takes the substituted first of the month",
 			trig: scheduler.Monthly(1, nil, scheduler.ClockTime{Hour: 9}),
@@ -279,7 +279,7 @@ func TestTrigger_Next(t *testing.T) {
 			},
 		},
 		{
-			name:  "daily interval>1 jumps by interval once the current day is past (ADR-0140)",
+			name:  "daily interval>1 jumps by interval once the current day is past",
 			after: time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC), // past the day's 09:00
 			trig:  scheduler.Daily(2, scheduler.ClockTime{Hour: 9}),
 			assert: func(t *testing.T, next time.Time, ok bool) {
@@ -303,7 +303,7 @@ func TestTrigger_Next(t *testing.T) {
 			},
 		},
 		{
-			name:  "weekly interval>1 multi-weekday jumps to the next interval-week (ADR-0140)",
+			name:  "weekly interval>1 multi-weekday jumps to the next interval-week",
 			after: time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC), // Wednesday, past this week's 09:00
 			trig:  scheduler.Weekly(2, []time.Weekday{time.Monday, time.Wednesday}, scheduler.ClockTime{Hour: 9}),
 			assert: func(t *testing.T, next time.Time, ok bool) {
@@ -316,7 +316,7 @@ func TestTrigger_Next(t *testing.T) {
 			},
 		},
 		{
-			name:  "monthly interval>1 jumps by interval months (ADR-0140)",
+			name:  "monthly interval>1 jumps by interval months",
 			after: time.Date(2026, 1, 31, 10, 0, 0, 0, time.UTC), // past the day's 09:00
 			trig:  scheduler.Monthly(2, []int{31}, scheduler.ClockTime{Hour: 9}),
 			assert: func(t *testing.T, next time.Time, ok bool) {
@@ -329,7 +329,7 @@ func TestTrigger_Next(t *testing.T) {
 			},
 		},
 		{
-			name: "daily zero interval reports no future fire (mod-by-zero guard, ADR-0140)",
+			name: "daily zero interval reports no future fire (mod-by-zero guard)",
 			trig: scheduler.Daily(0, scheduler.ClockTime{Hour: 9}),
 			assert: func(t *testing.T, next time.Time, ok bool) {
 				if ok {
@@ -338,7 +338,7 @@ func TestTrigger_Next(t *testing.T) {
 			},
 		},
 		{
-			name:  "monthly interval anchored on a day-less month exhausts the scan bound (ADR-0140)",
+			name:  "monthly interval anchored on a day-less month exhausts the scan bound",
 			after: time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC), // February
 			trig:  scheduler.Monthly(12, []int{31}, scheduler.ClockTime{Hour: 9}),
 			assert: func(t *testing.T, next time.Time, ok bool) {
@@ -368,11 +368,10 @@ func TestTrigger_Next(t *testing.T) {
 }
 
 // TestTrigger_NextAgreesWithLiveScheduler pins Next against the instants the
-// LIVE gocron scheduler actually arms (ADR-0176). Every want below was
-// measured by arming the same Trigger through NativeScheduler.Activate with
-// the clock pinned at the case's anchor and reading the engine's own next run
-// back through Scheduled — see docs/specs/2026-08-13-adr-0176-measurements.md
-// §14. ADR-0140 already promises this agreement; before ADR-0176 the whole
+// LIVE gocron scheduler actually arms. Every want below was measured by
+// arming the same Trigger through NativeScheduler.Activate with the clock
+// pinned at the case's anchor and reading the engine's own next run back
+// through Scheduled. The agreement is required: before it, the whole
 // non-control half of this table reported ok=false with the zero time, so the
 // runtime persisted a zero next_run for definitions that arm and fire.
 func TestTrigger_NextAgreesWithLiveScheduler(t *testing.T) {
@@ -556,7 +555,7 @@ func TestTrigger_NextAgreesWithLiveScheduler(t *testing.T) {
 		},
 		// REGRESSION PIN, not new behaviour: this shape must KEEP reporting
 		// never-due. It is what lets the runtime refuse the arm before
-		// gocron's monthlyJob.next spins forever on it (ADR-0176's Decision).
+		// gocron's monthlyJob.next spins forever on it.
 		{
 			name:   "monthly every 12 months on the 31st stays never-due from a February anchor",
 			after:  tueFeb10,
@@ -569,7 +568,7 @@ func TestTrigger_NextAgreesWithLiveScheduler(t *testing.T) {
 			// Given out of order and differing below the hour: the earliest
 			// still-future at-time wins. gocron sorts a job's at-times the same
 			// way at setup, so both agree on which one comes first. This pins
-			// the comparator that ADR-0176 moved from sort.Slice to
+			// the comparator that was moved from sort.Slice to
 			// slices.SortFunc — the hour tie-breaks had no test before.
 			trig: scheduler.Daily(1,
 				scheduler.ClockTime{Hour: 9, Minute: 30, Second: 10},
@@ -709,8 +708,8 @@ func TestTrigger_NextAgreesWithLiveScheduler(t *testing.T) {
 
 // TestTrigger_NextMonthlyScanSkipsOffGridMonths guards the cost of the one
 // shape that has to exhaust calendarNext's scan: a valid day-of-month that no
-// month on the interval grid contains. The scan bound is scaled by interval
-// (ADR-0140), and interval is an unvalidated uint carried from the definition,
+// month on the interval grid contains. The scan bound is scaled by interval,
+// and interval is an unvalidated uint carried from the definition,
 // so walking every day of every off-grid month made this linear in a
 // consumer-supplied number — paid on the arm path, inside the commit
 // transaction.
@@ -724,7 +723,7 @@ func TestTrigger_NextAgreesWithLiveScheduler(t *testing.T) {
 // keep the FAILING case from costing 53 s under -race.)
 //
 // ⚠ It is NOT a claim that the scan is cheap: cost is still linear in
-// interval, just with a ~16x smaller constant. See the handover backlog.
+// interval, just with a ~16x smaller constant.
 func TestTrigger_NextMonthlyScanSkipsOffGridMonths(t *testing.T) {
 	t.Parallel()
 
@@ -793,9 +792,9 @@ func bruteMonthlyNext(after time.Time, interval uint, days []int, bound int) (ti
 //
 // ⚠ This test exists because that exact failure was MEASURED to be invisible.
 // Dropping the `- 1` from the jump's index arithmetic left the ENTIRE
-// TestTrigger_* suite — including both new backlog-26/30 tests and
-// TestTrigger_NextAgreesWithLiveScheduler — green, while this comparison found
-// mismatches immediately:
+// TestTrigger_* suite — including the grid-stride and interval-overflow tests
+// and TestTrigger_NextAgreesWithLiveScheduler — green, while this comparison
+// found mismatches immediately:
 //
 //	anchor=2026-02-04 days=[1] interval=2: got (zero,false) want (2026-04-01,true)
 //	anchor=2026-02-04 days=[1] interval=3: got (zero,false) want (2026-05-01,true)
@@ -841,14 +840,14 @@ func TestTrigger_NextMonthlyGridJumpMatchesBruteForce(t *testing.T) {
 const maxCalendarScanDaysForTest = 366 * 5
 
 // TestTrigger_NextMonthlyScanJumpsWholeGridStrides is the regression test for
-// backlog 26: calendarNext's monthly scan skipped ONE month per step when a
+// a cost defect: calendarNext's monthly scan skipped ONE month per step when a
 // month was off the interval grid, so an unsatisfiable day-of-month re-tested
 // and discarded interval-1 whole months and stayed linear in a
 // consumer-supplied uint — on the arm path, inside the commit transaction.
 //
-// ⚠ Backlog 26 filed this as effectively a non-issue on the strength of a
-// single measurement, Monthly(120000,{31}) at ~404 ms. That number is real but
-// it is one point on a straight line. Measured across the range (anchor
+// ⚠ A single measurement, Monthly(120000,{31}) at ~404 ms, makes this look
+// like a non-issue. That number is real but it is one point on a straight
+// line. Measured across the range (anchor
 // 2026-02-04, day 31, intervals ≡ 0 mod 12 so every grid month is a February
 // and the scan must exhaust):
 //
@@ -859,7 +858,7 @@ const maxCalendarScanDaysForTest = 366 * 5
 //	786432      2.746s   20.677s
 //	1044480     3.568s   27.159s   ← just under maxSchedulableInterval
 //
-// So the clamp added for backlog 30 bounds this at ~3.6 s / ~27 s rather than
+// So the interval clamp bounds this at ~3.6 s / ~27 s rather than
 // removing it. This test pins the fix that does remove it: jumping straight to
 // the next ON-GRID month, which makes the iteration count depend on the scan
 // bound's 5-year-per-interval-unit shape rather than on interval itself.
@@ -875,7 +874,7 @@ func TestTrigger_NextMonthlyScanJumpsWholeGridStrides(t *testing.T) {
 	// February anchor with day-of-month 31, and an interval divisible by 12 so
 	// every grid month is also a February — no grid month can ever hold a 31st
 	// and the scan is forced to exhaustion. 1044480 == 12 * 87040, just under
-	// maxSchedulableInterval so the backlog-30 clamp does not short-circuit it.
+	// maxSchedulableInterval so the interval clamp does not short-circuit it.
 	after := time.Date(2026, 2, 4, 12, 0, 0, 0, time.UTC)
 
 	type result struct {
@@ -898,7 +897,7 @@ func TestTrigger_NextMonthlyScanJumpsWholeGridStrides(t *testing.T) {
 }
 
 // TestTrigger_NextCalendarIntervalCannotOverflow is the regression test for
-// backlog 30. weeklyNext computed its interval-week jump as
+// an integer-overflow defect. weeklyNext computed its interval-week jump as
 // `after.Day() - int(after.Weekday()) + int(interval)*7` with interval an
 // unvalidated uint carried from a consumer definition, and calendarNext its
 // scan bound as `maxCalendarScanDays * int(interval)`. Both conversions wrap.
@@ -916,8 +915,8 @@ func TestTrigger_NextMonthlyScanJumpsWholeGridStrides(t *testing.T) {
 //
 // The MaxUint64 row is the defect: a next fire strictly BEFORE `after`,
 // reported ok=true. A past next-run accepted as valid is the never-due /
-// past-due-arm class ADR-0176 and ADR-0181 exist to refuse, and backlog 49
-// records what gocron does when handed one.
+// past-due-arm class this package exists to refuse; see maxSchedulableInterval
+// for what gocron does when handed one.
 //
 // ⚠ Asserting only `ok` would pass today on the MaxUint64 row — it IS true.
 // Every ok=true row therefore also asserts `!next.Before(after)`.

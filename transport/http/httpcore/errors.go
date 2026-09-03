@@ -29,7 +29,7 @@ var ErrRequestBodyTooLarge = errors.New("workflow-httpcore: request body too lar
 // It classifies as 401.
 //
 // ⚠ It is a REFUSAL, never a downgrade. Nothing in this package may respond to an
-// unresolved identity by proceeding with the zero authz.Actor (ADR-0189).
+// unresolved identity by proceeding with the zero authz.Actor.
 var ErrUnauthenticated = errors.New("workflow-httpcore: unauthenticated")
 
 // ErrIdentityUnavailable is the sentinel for a [RequestActorFunc] that FAILED, or
@@ -113,21 +113,21 @@ func ClassifyError(err error) (int, ErrorBody) {
 		errors.Is(err, ErrBadInput), errors.Is(err, validation.ErrInvalidInput),
 		// Both outcome sentinels describe a completion payload the caller can
 		// correct — an outcome outside the node's declared set, or none supplied
-		// where the node declares one (ADR-0146). Without these arms they fall to
+		// where the node declares one. Without these arms they fall to
 		// the 500 default, which hides an actionable 4xx behind an empty body.
 		errors.Is(err, engine.ErrInvalidOutcome), errors.Is(err, engine.ErrOutcomeRequired),
 		// An empty trigger identity key is a malformed request the caller can fix
-		// by supplying the id (ADR-0152), not a server fault. This changes the
+		// by supplying the id, not a server fault. This changes the
 		// human-task routes from 404/422 and the incident route from 200.
 		errors.Is(err, engine.ErrEmptyTriggerKey),
 		// Likewise a reassignment naming no actor: a required field the caller
-		// omitted and can supply, not a server fault (ADR-0183).
+		// omitted and can supply, not a server fault.
 		errors.Is(err, engine.ErrEmptyReassignTarget):
 		return http.StatusBadRequest, ErrorBody{Error: "bad_request", Message: err.Error()}
 	case errors.Is(err, service.ErrConflict), errors.Is(err, engine.ErrInvalidTransition),
 		// A contradictory task shape is engine-authored — editing the request
 		// cannot fix it — so it is 422 like the other unprocessable states, and
-		// the message names the task and the contradiction (ADR-0183).
+		// the message names the task and the contradiction.
 		errors.Is(err, humantask.ErrInvalidTask):
 		return http.StatusUnprocessableEntity, ErrorBody{Error: "conflict_state", Message: err.Error()}
 	default:
