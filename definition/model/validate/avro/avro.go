@@ -1,7 +1,7 @@
 // Package avro is an Avro-record validation adapter over github.com/linkedin/goavro/v2.
 // It checks that the input map conforms to an Avro record schema by attempting to encode
 // the map against the parsed codec; an encode error means the input does not conform. The
-// goavro dep is isolated in this package (ADR-0112); the definition/engine core never
+// goavro dep is isolated in this package; the definition/engine core never
 // imports it. The serialized descriptor always carries the raw .avsc schema text.
 package avro
 
