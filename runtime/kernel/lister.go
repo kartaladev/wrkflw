@@ -160,6 +160,11 @@ type InstanceSummary struct {
 	//     and ResolveIncident REFUSES both with engine.ErrIncidentNotResolvable
 	//     (it whitelists engine.IncidentAction); the verbs that act on them are
 	//     retry, skip and abandon on the compensation walk.
+	//   - engine.IncidentDefinitionDefect, raised when a token reaches a node no
+	//     trigger can resume. It parks a token but is refused by ResolveIncident
+	//     for the same reason as the walk-scoped kinds, and no verb clears it:
+	//     the definition is wrong, so it is fixed and redeployed, and the stuck
+	//     instance is cancelled.
 	//
 	// Read the instance's Incidents and switch on Kind to decide what to offer
 	// an operator. A count alone cannot be routed.

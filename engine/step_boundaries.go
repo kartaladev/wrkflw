@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/event"
@@ -11,7 +12,20 @@ import (
 
 // armBoundaries finds all KindBoundaryEvent nodes with AttachedTo == hostNode,
 // records a boundaryArm for each, and returns ScheduleTimer commands for timer
-// boundaries. Called from the ServiceTask and UserTask park points in drive.
+// boundaries.
+//
+// Its call sites are the four node-entry strategies that park a token the arm
+// can be keyed to: service task and business-rule task (both through
+// emitActionInvoke), receive task, and user task. That list is not incidental —
+// model.ErrBoundaryTriggerHost enforces it from the other side, so a validated
+// definition cannot declare a boundary this function is never asked to arm, and
+// its doc comment carries the per-host reasoning for why the three remaining
+// activity kinds cannot simply be added here. Keep the two in step: widening
+// one without the other either strands a working boundary or restores the
+// silent no-op (TestBoundaryArmingMatchesValidation pins the correspondence).
+//
+// Error boundaries do not pass through here at all — they are resolved by
+// findDirectBoundary and the enclosing-scope walk.
 //
 // Definition-scan order is deterministic (Nodes slice order); boundary arms are
 // appended in the same order so s.Boundaries is deterministic.
@@ -169,4 +183,41 @@ func fireBoundaryArm(ctx context.Context, def *model.ProcessDefinition, s *Insta
 	}
 	cmds = append(cmds, driveCmds...)
 	return cmds, nil
+}
+
+// warnUnarmedBoundaries logs a WARN for each timer/signal/message boundary
+// attached to hostNode, and is called from the three node-entry strategies that
+// cannot arm one: send task, sub-process and call activity.
+//
+// It is the runtime counterpart to model.ErrBoundaryTriggerHost, and exists for
+// the same reason the trigger-less catch event raises an incident: every
+// authoring route runs model.Validate, but runtime.RegisterDefinition accepts a
+// hand-built *model.ProcessDefinition that never passed through it. On that
+// path the boundary is still silently dead, which is the complaint in the first
+// place.
+//
+// It WARNS rather than raising an [IncidentDefinitionDefect], and the asymmetry
+// with the catch event is deliberate. A trigger-less catch strands its token
+// forever, so an incident reports something already broken. A dead boundary
+// costs the host only its escape hatch — the activity itself runs, completes
+// and moves on — so halting the instance over one would do more damage than the
+// defect it reports. The definition still has to be fixed; the log is what says
+// so without taking a running instance down.
+//
+// Error boundaries are skipped: they reach these same hosts perfectly well
+// through findDirectBoundary and the enclosing-scope walk.
+func warnUnarmedBoundaries(c *stepCtx, hostNode string) {
+	for _, raw := range c.tdef.Nodes {
+		n, ok := raw.(event.BoundaryEvent)
+		if !ok || n.AttachedTo != hostNode || isErrorBoundary(n) {
+			continue
+		}
+		slog.WarnContext(c.ctx, "boundary event cannot be armed on this host and will never fire",
+			"instance_id", c.s.InstanceID,
+			"host_node_id", hostNode,
+			"boundary_node_id", n.ID(),
+			"reason", "model.Validate rejects this attachment (ErrBoundaryTriggerHost); "+
+				"this definition reached the engine without passing that gate",
+		)
+	}
 }

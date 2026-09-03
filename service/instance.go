@@ -197,8 +197,8 @@ type compensatingJSON struct {
 
 type incidentJSON struct {
 	ID string `json:"id"`
-	// Kind is the field a consumer switches on, because the three kinds are
-	// resolved by DIFFERENT operations:
+	// Kind is the field a consumer switches on, because the kinds are resolved
+	// by DIFFERENT operations:
 	//
 	//   - "IncidentAction" — a service action that failed and exhausted its
 	//     retries. It parks a token and IS cleared by resolve-incident.
@@ -206,6 +206,13 @@ type incidentJSON struct {
 	//     (ADR-0179) — walk-scoped: token_id is empty, because a compensation walk
 	//     is not driven by a token of its own. resolve-incident REFUSES both and
 	//     names the three escape verbs (retry, skip, abandon) instead.
+	//   - "IncidentDefinitionDefect" — a token that reached a node no trigger can
+	//     resume, such as an intermediate catch event declaring neither timer,
+	//     signal nor message. It parks a token, like IncidentAction, but
+	//     resolve-incident REFUSES it too: re-driving the token would park it on
+	//     the same dead node. Nothing an operator does to the INSTANCE clears it —
+	//     the definition has to be corrected and redeployed, and the affected
+	//     instance retired by cancelling it.
 	//
 	// ⚠ Do NOT route on slice position. A walk-scoped record and a token-parked
 	// one coexist routinely, and `incidents[0]` says nothing about which is which

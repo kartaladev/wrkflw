@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/kartaladev/wrkflw/authz"
@@ -127,6 +128,7 @@ func (sendTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 		CorrelationKey: resolvedKey,
 		Payload:        copyVars(c.s.Variables),
 	}}
+	warnUnarmedBoundaries(c, node.ID())
 	c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
 	// tok.State stays TokenActive (auto-advance): drive() derives stopped=false.
 	return cmds, false, nil
@@ -660,6 +662,7 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 	if msErr != nil {
 		return cmds, false, fmt.Errorf("workflow-engine: sub-process %q: %w", node.ID(), msErr)
 	}
+	warnUnarmedBoundaries(c, node.ID())
 	// Open a scope parented to the current token's scope.
 	scopeID := c.s.openScope(node.ID(), tok.ScopeID)
 	// Place the inner manual-start token in the new scope.
@@ -821,6 +824,39 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	return cmds, false, nil
 }
 
+// raiseDefinitionDefect parks tok as an [IncidentDefinitionDefect] on node and
+// records the incident, for a node whose definition is specified so
+// incompletely that no trigger can ever resume the token. reason states the
+// defect; the node it happened on travels separately, on the incident's NodeID
+// and the log line, so reason does not name it.
+//
+// A caller schedules nothing alongside it. There is no work to start for a node
+// that can never advance, and in particular no in-wait reminder is armed — a
+// reminder would keep firing against a token that is not legitimately waiting.
+//
+// Attempts is 1: the token reached the node once, and unlike a retry-exhausted
+// action there is no attempt budget to report.
+func raiseDefinitionDefect(c *stepCtx, tok *Token, nodeID, reason string) {
+	slog.WarnContext(c.ctx, "definition defect: token parked on a node no trigger can resume",
+		"instance_id", c.s.InstanceID,
+		"token_id", tok.ID,
+		"node_id", nodeID,
+		"scope_id", tok.ScopeID,
+		"reason", reason,
+	)
+	tok.State = TokenIncident
+	c.s.Incidents = append(c.s.Incidents, Incident{
+		ID:        c.s.nextIncidentID(),
+		Kind:      IncidentDefinitionDefect,
+		TokenID:   tok.ID,
+		NodeID:    nodeID,
+		ScopeID:   tok.ScopeID,
+		Error:     reason,
+		Attempts:  1,
+		CreatedAt: c.at,
+	})
+}
+
 // intermediateCatchEventStrategy handles KindIntermediateCatchEvent node entry.
 type intermediateCatchEventStrategy struct{}
 
@@ -863,9 +899,15 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 		tok.AwaitMessage = ice.MessageName
 		tok.AwaitMessageKey = resolvedKey
 	} else {
-		// Non-timer, non-signal, non-message intermediate catch event: park.
-		// Further event variants arrive in later plans.
-		tok.State = TokenWaiting
+		// A catch event naming no trigger family is resumed by nothing: no timer
+		// to fire, no signal to broadcast, no message to correlate. Parking here
+		// left the token waiting for the life of the instance, indistinguishably
+		// from a legitimate wait. model.ErrCatchEventMissingTrigger rejects the
+		// shape at authoring time; see [IncidentDefinitionDefect] for how a
+		// definition still reaches this branch.
+		raiseDefinitionDefect(c, tok, node.ID(),
+			"intermediate catch event declares no timer, signal or message trigger")
+		return nil, false, nil
 	}
 	// Arm the node's in-wait reminder, if configured. It is cancelled by the
 	// parked token (cancelKey = tok.ID) when the awaited signal/message/timer
@@ -1039,6 +1081,7 @@ func (callActivityStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Co
 		DefRef:    ca.DefRef,
 		Input:     copyVars(c.s.Variables),
 	})
+	warnUnarmedBoundaries(c, node.ID())
 	tok.State = TokenWaiting
 	tok.AwaitCommand = cmdID
 	// token parked: tok.State == TokenWaiting → stopped=true.

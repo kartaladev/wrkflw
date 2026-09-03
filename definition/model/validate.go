@@ -34,6 +34,17 @@ var (
 		KindSubProcess:   true,
 		KindCallActivity: true,
 	}
+	// triggerBoundaryHostKinds mirrors the engine's arming sites one-for-one:
+	// serviceTaskStrategy and businessRuleTaskStrategy (both through
+	// emitActionInvoke), receiveTaskStrategy, and userTaskStrategy are the only
+	// node-entry strategies that call armBoundaries. A boundary attached to any
+	// other host is never armed, so it can never fire — see ErrBoundaryTriggerHost.
+	triggerBoundaryHostKinds = map[NodeKind]bool{
+		KindServiceTask:      true,
+		KindBusinessRuleTask: true,
+		KindReceiveTask:      true,
+		KindUserTask:         true,
+	}
 )
 
 var (
@@ -93,6 +104,38 @@ var (
 	// KindServiceTask, KindSubProcess, and KindCallActivity may host a
 	// boundary error event; user tasks and task variants are not valid hosts.
 	ErrBoundaryErrorHost = errors.New("workflow-definition: boundary error event attached to non-error-throwing activity")
+	// ErrBoundaryTriggerHost is returned when a boundary event carrying a
+	// timer, signal or message trigger is attached to an activity whose engine
+	// strategy never arms it. Only KindServiceTask, KindBusinessRuleTask,
+	// KindReceiveTask and KindUserTask call armBoundaries at their park point;
+	// on any other host the boundary is accepted by the model and then dropped
+	// on the floor by the engine, so it is rejected at authoring time rather
+	// than left as a silent no-op (the same reasoning as
+	// ErrScopeLocalWithCompensateRef, ADR-0120).
+	//
+	// The three rejected hosts each fail for their own reason, and none is a
+	// missing line of wiring:
+	//
+	//   - KindSendTask never parks. sendTaskStrategy emits SendMessage and
+	//     auto-advances along its single outgoing flow in the same Step, so
+	//     there is no interval during which a boundary could fire. Arming it is
+	//     not unimplemented, it is meaningless.
+	//   - KindSubProcess consumes its host token on entry, moving execution
+	//     into a freshly opened scope. A boundaryArm is keyed by host TOKEN, so
+	//     an arm recorded here would name a token that no longer exists and
+	//     fireBoundaryArm would discard it as a late fire. Arming a sub-process
+	//     needs scope-keyed arms plus scope-subtree teardown — the shape the
+	//     enclosing-scope ERROR walk already has, and a feature in its own right.
+	//   - KindCallActivity does park, so an arm would survive, but an
+	//     interrupting fire consumes the parent token while the child instance
+	//     keeps running: the engine's command set has StartSubInstance and no
+	//     way to cancel a started child. Arming it would strand live child
+	//     instances.
+	//
+	// Error boundaries are unaffected: they reach their host through
+	// findDirectBoundary and the enclosing-scope walk rather than through an
+	// arm, and keep the wider errorBoundaryHostKinds host set.
+	ErrBoundaryTriggerHost = errors.New("workflow-definition: timer/signal/message boundary event attached to an activity the engine never arms")
 	// ErrInvalidRetryPolicy is returned when a node's RetryPolicy carries
 	// field values that violate the documented constraints: MaxAttempts must be
 	// ≥ 0, InitialInterval and MaxInterval must be ≥ 0, and BackoffCoef must
@@ -140,6 +183,23 @@ var (
 	// silently skipped (fail-open). The combination is rejected at authoring
 	// time to keep validation fail-closed.
 	ErrPayloadValidationRequiresMessage = errors.New("workflow-definition: payload validation requires a message catch")
+	// ErrCatchEventMissingTrigger is returned when a KindIntermediateCatchEvent
+	// declares no trigger family at all — no timer, no signal name, and no
+	// message name. A catch event parks its token and is resumed only by the
+	// trigger it named, so a trigger-less catch is resumed by nothing: the
+	// branch is dead for the life of the instance, and the token is
+	// indistinguishable from one legitimately waiting.
+	//
+	// A non-empty CorrelationKey does not rescue it. The key only narrows which
+	// delivery of a NAMED message correlates; with no MessageName there is no
+	// message to correlate, exactly as ErrEventStartMissingTrigger treats the
+	// same shape on a start event (ADR-0121).
+	//
+	// This is the authoring-time half of the fix. The engine raises an
+	// IncidentDefinitionDefect for the same shape at runtime, because a
+	// definition can still reach it as a hand-built struct literal through
+	// runtime.RegisterDefinition without passing through this gate.
+	ErrCatchEventMissingTrigger = errors.New("workflow-definition: intermediate catch event declares no timer, signal or message trigger")
 	// ErrEmptyMessageName is returned when a ReceiveTask's MessageName is empty
 	// or whitespace-only. The two sub-cases have different rationale:
 	//
@@ -595,13 +655,19 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 			errs = append(errs, fmt.Errorf("%w: boundary event %q AttachedTo %q", ErrBoundaryAttachment, n.ID(), w.AttachedTo))
 			continue // skip further checks — attachment itself is invalid
 		}
-		// If this is a boundary error event (no timer/signal/message trigger),
-		// the host must be an error-throwing activity. Check both the canonical
-		// nested TimerTrigger field (written by ToWire) and the legacy flat
-		// TimerDuration string (decoded-only; written by older serializers).
-		isErrorBoundary := w.TimerTrigger == nil && w.TimerDuration == "" && w.SignalName == "" && w.MessageName == ""
-		if isErrorBoundary && !errorBoundaryHostKinds[host.Kind()] {
-			errs = append(errs, fmt.Errorf("%w: boundary error event %q AttachedTo %q (kind %d)", ErrBoundaryErrorHost, n.ID(), w.AttachedTo, host.Kind()))
+		// The trigger family a boundary declares decides which host set applies,
+		// and the two are exhaustive. A boundary declaring NO family is the
+		// BPMN error boundary, whose host must be able to throw a workflow
+		// error. One declaring a timer, signal or message only ever fires
+		// because the host's node-entry strategy armed it, so its host must be
+		// one the engine actually arms — otherwise the model would accept a
+		// boundary the engine drops on the floor.
+		if !hasTriggerFamily(w) {
+			if !errorBoundaryHostKinds[host.Kind()] {
+				errs = append(errs, fmt.Errorf("%w: boundary error event %q AttachedTo %q (kind %d)", ErrBoundaryErrorHost, n.ID(), w.AttachedTo, host.Kind()))
+			}
+		} else if !triggerBoundaryHostKinds[host.Kind()] {
+			errs = append(errs, fmt.Errorf("%w: boundary event %q AttachedTo %q (kind %d)", ErrBoundaryTriggerHost, n.ID(), w.AttachedTo, host.Kind()))
 		}
 	}
 
@@ -666,8 +732,13 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		if n.Kind() != KindIntermediateCatchEvent {
 			continue
 		}
-		if ValidationStrategyFor(n) != nil && toWire(n).MessageName == "" {
+		w := toWire(n)
+		if ValidationStrategyFor(n) != nil && w.MessageName == "" {
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrPayloadValidationRequiresMessage, n.ID()))
+		}
+		// A catch that names no trigger family is resumed by nothing.
+		if !hasTriggerFamily(w) {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrCatchEventMissingTrigger, n.ID()))
 		}
 	}
 
@@ -704,9 +775,10 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	// node even when both SignalName and MessageName are blank.
 	//
 	// This must NEVER be confused with, or replace, the event-kind
-	// discriminators elsewhere in this file (hasSignal/hasMessage above,
-	// isErrorBoundary below, isEventTriggeredSubprocess) — those stay on the
-	// bare != ""/== "" comparison. Trimming a discriminator would silently
+	// discriminators elsewhere in this file — hasSignal/hasMessage in the
+	// start-event check above, and hasTriggerFamily, through which the boundary
+	// flavour, catch-event and event-sub-process questions all run. Those stay
+	// on the bare != ""/== "" comparison. Trimming a discriminator would silently
 	// RECLASSIFY a node (e.g. a boundary with SignalName " " turning into an
 	// error boundary); this rule only REJECTS the definition, so a
 	// reclassification question never arises for it.
@@ -874,12 +946,31 @@ func isEventTriggeredSubprocess(n Node) bool {
 		return false
 	}
 	for _, st := range sub.StartNodes() {
-		w := toWire(st)
-		if w.SignalName != "" || w.MessageName != "" || w.TimerTrigger != nil || w.TimerDuration != "" {
+		if hasTriggerFamily(toWire(st)) {
 			return true
 		}
 	}
 	return false
+}
+
+// hasTriggerFamily reports whether w declares any event trigger family —
+// message, signal or timer. It is the single discriminator behind three
+// questions this file asks in different places: whether a boundary event is the
+// ERROR flavour (the error flavour is the one that declares none), whether an
+// intermediate catch event can ever be resumed, and whether a nested start node
+// makes its sub-process event-triggered.
+//
+// Timer is read through BOTH the canonical nested TimerTrigger (written by
+// ToWire) and the legacy flat TimerDuration (decoded-only, written by older
+// serializers). Missing the legacy field is the specific way this predicate has
+// gone wrong before: a timer boundary carrying only TimerDuration reads as
+// having no trigger, and is then misclassified as an error boundary.
+//
+// It stays on the bare != "" comparison and must NOT be given a TrimSpace: a
+// name that is whitespace-only is rejected by ErrBlankEventName as a separate
+// rule, and trimming here would silently RECLASSIFY the node instead.
+func hasTriggerFamily(w NodeWire) bool {
+	return w.MessageName != "" || w.SignalName != "" || w.TimerTrigger != nil || w.TimerDuration != ""
 }
 
 // forwardReachable returns the set of node IDs reachable from seed by following

@@ -692,14 +692,17 @@ func callActivityWithBoundaryAndTimerDef() *model.ProcessDefinition {
 // boundary timer/deadline is not leaked (it would otherwise fire later
 // against a host that no longer exists).
 //
-// The engine does not currently call armBoundaries for KindCallActivity (see
+// The engine does not call armBoundaries for KindCallActivity (see
 // callActivityStrategy.enter, engine/step_nodes.go) — only the direct-attach
 // ERROR-boundary check (findDirectBoundary) participates for a call-activity
-// host today, so a sibling timer/signal/message boundary is never armed via
-// the normal StartInstance path. This test uses the white-box
-// engine.ArmBoundaryTimerForHost test helper to seed the sibling arm
-// directly, so the consume-callback cleanup logic is verified independent of
-// that separate (pre-existing, out-of-scope) arming gap.
+// host, so a sibling timer/signal/message boundary is never armed via the
+// normal StartInstance path. model.Validate now rejects that attachment
+// outright (model.ErrBoundaryTriggerHost), so the fixture below is a definition
+// the authoring gate would refuse; it is built as a struct literal, which is
+// what makes it reachable. This test uses the white-box
+// engine.ArmBoundaryTimerForHost helper to seed the sibling arm directly, so
+// the consume-callback cleanup logic is verified defensively — the sweep must
+// still be total for a definition that skipped validation.
 func TestSubInstanceFailedBoundaryRoutingCancelsSiblingBoundaryArms(t *testing.T) {
 	t.Parallel()
 

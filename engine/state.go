@@ -184,6 +184,28 @@ const (
 	// IncidentKind is persisted as a plain integer, so giving a new kind anything
 	// but the next free value re-labels every stored incident row.
 	IncidentCompensationFailed
+	// IncidentDefinitionDefect is a token that reached a node the definition
+	// specified incompletely, so no trigger can ever resume it. Today its only
+	// source is an intermediate catch event declaring neither timer, signal nor
+	// message: the token used to park there in total silence and wait forever,
+	// indistinguishable from one legitimately awaiting a signal.
+	//
+	// model.ErrCatchEventMissingTrigger rejects that shape at authoring time,
+	// and every authoring route runs model.Validate, so this kind is reachable
+	// only when a hand-built *model.ProcessDefinition is handed straight to
+	// runtime.RegisterDefinition — the one path that skips the gate
+	// engine.Step's doc comment assumes has run.
+	//
+	// It names a token, unlike the two walk-scoped kinds above, but it is NOT
+	// resolvable: re-driving the token would park it on the same dead node
+	// again. handleResolveIncident whitelists IncidentAction alone, so it is
+	// refused without needing a case of its own. The fix is to correct the
+	// definition and redeploy; the instance itself is retired by cancelling it.
+	//
+	// ⚠ APPENDED deliberately, for the same reason as the two kinds above:
+	// IncidentKind is persisted as a plain integer, so giving a new kind
+	// anything but the next free value re-labels every stored incident row.
+	IncidentDefinitionDefect
 )
 
 // String returns the name of the IncidentKind for debugging/logging.
@@ -195,6 +217,8 @@ func (k IncidentKind) String() string {
 		return "IncidentCompensationStall"
 	case IncidentCompensationFailed:
 		return "IncidentCompensationFailed"
+	case IncidentDefinitionDefect:
+		return "IncidentDefinitionDefect"
 	default:
 		return "IncidentKind(unknown)"
 	}

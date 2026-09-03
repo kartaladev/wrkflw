@@ -114,15 +114,20 @@ func BeginCompensation(ctx context.Context, def *model.ProcessDefinition, s *Ins
 //
 // This bypasses the normal arming path (armBoundaries, called from drive()'s
 // per-node-kind strategies) so tests can exercise the arm-cleanup machinery
-// (e.g. removeBoundaryArmsForHost) for a host kind the engine does not yet
-// call armBoundaries for — currently KindCallActivity: a CallActivity may
-// validly carry an attached boundary timer/signal/message event (definition
-// validation allows it), but callActivityStrategy.enter (engine/step_nodes.go)
-// only checks the direct-attachment ERROR-boundary case via findDirectBoundary
-// (ADR-0128) and never arms non-error boundary siblings. This helper lets a
-// test simulate "an arm exists for this host" independent of whether/when that
-// gap is closed, so the cleanup path (e.g. handleSubInstanceFailed's
-// consume callback) is verified in isolation.
+// (e.g. removeBoundaryArmsForHost) for a host kind that never arms — currently
+// KindCallActivity: callActivityStrategy.enter (engine/step_nodes.go) checks
+// only the direct-attachment ERROR-boundary case via findDirectBoundary
+// (ADR-0128) and never arms a timer/signal/message sibling.
+//
+// That asymmetry is now settled rather than pending. model.Validate rejects a
+// timer/signal/message boundary on a CallActivity outright
+// (model.ErrBoundaryTriggerHost): arming one would need a way to cancel the
+// started child instance, and the engine's command set has StartSubInstance and
+// no counterpart. So a validated definition can no longer produce this state at
+// all, and the helper's purpose narrows to what it always actually did — seed
+// the arm directly so the cleanup path (e.g. handleSubInstanceFailed's consume
+// callback) is verified in isolation, defensively, for an unvalidated
+// definition that reached the engine through runtime.RegisterDefinition.
 func ArmBoundaryTimerForHost(s *InstanceState, hostToken, hostNode, boundaryNode, timerID string) {
 	s.Boundaries = append(s.Boundaries, boundaryArm{
 		HostToken:    hostToken,
