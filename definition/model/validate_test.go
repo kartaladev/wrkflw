@@ -1034,6 +1034,25 @@ func validSubprocessDef(id string) *model.ProcessDefinition {
 	}
 }
 
+// catchDef wraps a single IntermediateCatchEvent, which must carry the node id
+// "catch", between a start and an end event. Several rules in validate.go are
+// exercised against exactly this shape, so it lives here rather than being
+// rebuilt per test.
+func catchDef(catch model.Node) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			catch,
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "catch"},
+			{ID: "f2", Source: "catch", Target: "end"},
+		},
+	}
+}
+
 func TestValidateSubProcess(t *testing.T) {
 	tests := map[string]struct {
 		def    *model.ProcessDefinition
@@ -1531,21 +1550,6 @@ func TestValidateCancelActions(t *testing.T) {
 func TestValidate_RejectsPayloadValidationOnNonMessageCatch(t *testing.T) {
 	t.Parallel()
 
-	// catchDef wraps a single IntermediateCatchEvent between start and end.
-	catchDef := func(catch model.Node) *model.ProcessDefinition {
-		return &model.ProcessDefinition{
-			ID: "catch-validation", Version: 1,
-			Nodes: []model.Node{
-				event.NewStart("start"),
-				catch,
-				event.NewEnd("end"),
-			},
-			Flows: []flow.SequenceFlow{
-				{ID: "f1", Source: "start", Target: "catch"},
-				{ID: "f2", Source: "catch", Target: "end"},
-			},
-		}
-	}
 	// recvDef wraps a single ReceiveTask between start and end.
 	recvDef := func(recv model.Node) *model.ProcessDefinition {
 		return &model.ProcessDefinition{
@@ -2476,6 +2480,233 @@ func TestValidateBlankEventName(t *testing.T) {
 					{ID: "f2", Source: "catch", Target: "end"},
 				},
 			},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}
+
+// boundaryHostDef wraps host between a start and an end event and attaches
+// boundary to it, giving the boundary its own escape route so the definition is
+// otherwise structurally valid (a boundary with no outgoing flow is a dead end,
+// and an unreachable escape target is its own violation).
+func boundaryHostDef(host, boundary model.Node) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "boundary-host", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			host,
+			boundary,
+			activity.NewServiceTask("escalate", activity.WithTaskAction("escalate")),
+			event.NewEnd("end"),
+			event.NewEnd("end-escalated"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "host"},
+			{ID: "f2", Source: "host", Target: "end"},
+			{ID: "f3", Source: "bnd", Target: "escalate"},
+			{ID: "f4", Source: "escalate", Target: "end-escalated"},
+		},
+	}
+}
+
+// TestValidate_RejectsTriggerBoundaryOnUnarmedHost pins the authoring-time half
+// of the boundary no-op fix. A timer/signal/message boundary only ever fires
+// because a strategy called armBoundaries at the host's park point, and only
+// four strategies do: service task and business-rule task (via
+// emitActionInvoke), receive task, and user task. SendTask, SubProcess and
+// CallActivity were accepted here and then silently ignored by the engine, so
+// the attachment is rejected instead — see ErrBoundaryTriggerHost for why each
+// of the three cannot simply be armed.
+//
+// The ERROR flavour is unaffected: it reaches its host through the
+// propagateError scan and the enclosing-scope walk, not through an arm, and
+// keeps the wider errorBoundaryHostKinds host set.
+func TestValidate_RejectsTriggerBoundaryOnUnarmedHost(t *testing.T) {
+	t.Parallel()
+
+	timer := event.WithBoundaryTimer(schedule.AfterDuration(time.Hour))
+	signal := event.WithSignalName("cancel")
+	message := event.WithMessageCorrelator("msg", "")
+
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "timer boundary on a send task is rejected",
+			def: boundaryHostDef(
+				activity.NewSendTask("host", "notify"),
+				event.NewBoundary("bnd", "host", timer)),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrBoundaryTriggerHost)
+			},
+		},
+		{
+			name: "signal boundary on a sub-process is rejected",
+			def: boundaryHostDef(
+				activity.NewSubProcess("host", validSubprocessDef("inner")),
+				event.NewBoundary("bnd", "host", signal)),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrBoundaryTriggerHost)
+			},
+		},
+		{
+			name: "message boundary on a call activity is rejected",
+			def: boundaryHostDef(
+				activity.NewCallActivity("host", model.Latest("child")),
+				event.NewBoundary("bnd", "host", message)),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrBoundaryTriggerHost)
+			},
+		},
+		{
+			name: "timer boundary on a service task stays valid",
+			def: boundaryHostDef(
+				activity.NewServiceTask("host", activity.WithTaskAction("work")),
+				event.NewBoundary("bnd", "host", timer)),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "timer boundary on a business-rule task stays valid",
+			def: boundaryHostDef(
+				activity.NewBusinessRuleTask("host", activity.WithTaskAction("decide")),
+				event.NewBoundary("bnd", "host", timer)),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "signal boundary on a receive task stays valid",
+			def: boundaryHostDef(
+				activity.NewReceiveTask("host", "msg"),
+				event.NewBoundary("bnd", "host", signal)),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "message boundary on a user task stays valid",
+			def: boundaryHostDef(
+				activity.NewUserTask("host"),
+				event.NewBoundary("bnd", "host", message)),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "error boundary on a sub-process stays valid",
+			def: boundaryHostDef(
+				activity.NewSubProcess("host", validSubprocessDef("inner")),
+				event.NewBoundary("bnd", "host", event.WithBoundaryErrorCode("E1"))),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "error boundary on a call activity stays valid",
+			def: boundaryHostDef(
+				activity.NewCallActivity("host", model.Latest("child")),
+				event.NewBoundary("bnd", "host", event.WithBoundaryErrorCode("E1"))),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}
+
+// TestValidate_RejectsCatchEventWithoutTrigger pins the authoring-time half of
+// the trigger-less catch fix. An IntermediateCatchEvent parks its token and is
+// resumed only by the trigger it declared — a fired timer, a broadcast signal,
+// or a correlated message. One that declares none is resumed by nothing: the
+// engine parks the token and no trigger can ever match it, so the branch is
+// dead for the life of the instance.
+//
+// It mirrors ErrEventStartMissingTrigger, which already refuses an
+// incompletely-specified start for the same reason.
+func TestValidate_RejectsCatchEventWithoutTrigger(t *testing.T) {
+	t.Parallel()
+
+	// The event-based-gateway case needs a shape catchDef cannot express, so it
+	// builds its definition inline.
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "catch with no trigger at all is rejected",
+			def:  catchDef(event.NewIntermediateCatch("catch")),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrCatchEventMissingTrigger)
+			},
+		},
+		{
+			name: "catch with only a correlation key is rejected",
+			def:  catchDef(event.NewIntermediateCatch("catch", event.WithMessageCorrelator("", "orderId"))),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrCatchEventMissingTrigger)
+			},
+		},
+		{
+			name: "trigger-less catch behind an event gateway is rejected too",
+			def: &model.ProcessDefinition{
+				ID: "evtgw-catch-trigger", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					gateway.NewEventBased("gw"),
+					event.NewIntermediateCatch("catch-timer",
+						event.WithCatchTimer(schedule.AfterDuration(time.Hour))),
+					event.NewIntermediateCatch("catch-none"),
+					event.NewEnd("end-timer"),
+					event.NewEnd("end-none"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "gw"},
+					{ID: "f2", Source: "gw", Target: "catch-timer"},
+					{ID: "f3", Source: "gw", Target: "catch-none"},
+					{ID: "f4", Source: "catch-timer", Target: "end-timer"},
+					{ID: "f5", Source: "catch-none", Target: "end-none"},
+				},
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrCatchEventMissingTrigger)
+			},
+		},
+		{
+			name: "timer catch stays valid",
+			def: catchDef(event.NewIntermediateCatch("catch",
+				event.WithCatchTimer(schedule.AfterDuration(time.Hour)))),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "signal catch stays valid",
+			def:  catchDef(event.NewIntermediateCatch("catch", event.WithSignalName("go"))),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "message catch stays valid",
+			def:  catchDef(event.NewIntermediateCatch("catch", event.WithMessageCorrelator("msg", "orderId"))),
 			assert: func(t *testing.T, err error) {
 				require.NoError(t, err)
 			},

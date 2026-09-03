@@ -17,18 +17,7 @@ import (
 // neverDueTimerDef builds a root definition whose IntermediateCatchEvent "catch"
 // carries spec as its timer trigger.
 func neverDueTimerDef(spec schedule.TriggerSpec) *model.ProcessDefinition {
-	return &model.ProcessDefinition{
-		ID: "p", Version: 1,
-		Nodes: []model.Node{
-			event.NewStart("start"),
-			event.NewIntermediateCatch("catch", event.WithCatchTimer(spec)),
-			event.NewEnd("end"),
-		},
-		Flows: []flow.SequenceFlow{
-			{ID: "f1", Source: "start", Target: "catch"},
-			{ID: "f2", Source: "catch", Target: "end"},
-		},
-	}
+	return catchDef(event.NewIntermediateCatch("catch", event.WithCatchTimer(spec)))
 }
 
 // neverDueWaitDef builds a root definition whose UserTask "ut" carries spec as
@@ -223,8 +212,21 @@ func TestValidate_RejectsNeverDueTrigger(t *testing.T) {
 			},
 		},
 		{
-			name: "node with no timer and no in-wait trigger is accepted",
+			// The catch probe for the same guard cannot assert NoError: a catch
+			// event with an absent timer names no trigger family at all, which
+			// ErrCatchEventMissingTrigger rejects for an unrelated reason. What
+			// the never-due guard needs from this row is narrower and still
+			// exact: ErrTriggerNeverDue must not read an ABSENT trigger as
+			// never due.
+			name: "catch with no timer is not rejected as never due",
 			def:  neverDueTimerDef(schedule.TriggerSpec{}),
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrTriggerNeverDue)
+			},
+		},
+		{
+			name: "node with no timer and no in-wait trigger is accepted",
+			def:  neverDueWaitDef(schedule.TriggerSpec{}),
 			assert: func(t *testing.T, err error) {
 				require.NoError(t, err)
 			},

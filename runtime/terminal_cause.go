@@ -7,9 +7,12 @@ import "github.com/kartaladev/wrkflw/engine"
 //
 // It is an ALLOW-LIST — it admits [engine.IncidentAction] and nothing else — and
 // that direction is the point. Only IncidentAction describes work the instance was
-// actually doing when it died; every other kind is walk-scoped (it carries no
-// TokenID, because a compensation walk is not driven by a token of its own) and
-// describes the cleanup rather than the failure. Written as a deny-list of the
+// actually doing when it died. The compensation kinds are walk-scoped (they carry
+// no TokenID, because a compensation walk is not driven by a token of its own) and
+// describe the cleanup rather than the failure; [engine.IncidentDefinitionDefect]
+// does name a token, but it describes a branch that could never run rather than
+// anything that killed the instance — an instance carrying one dies by being
+// cancelled, and "cancelled" is the honest cause. Written as a deny-list of the
 // kinds known today, each new [engine.IncidentKind] would silently become a
 // publishable cause of death the moment it was added; written this way it has to
 // be opted in deliberately.

@@ -22,10 +22,16 @@ const (
 	// because the two shapes of incident demand opposite treatment:
 	//
 	//   - TOKEN-SCOPED (a token in engine.TokenIncident, or an incident whose
-	//     engine.Incident.TokenID is non-empty — in practice engine.IncidentAction
-	//     from an exhausted retry budget or a non-retryable failure). The token is
-	//     stuck, ResolveIncident is what frees it, and nothing lower in the ladder
-	//     can. It fires from the HIGH rung, above signal, message and timer.
+	//     engine.Incident.TokenID is non-empty — engine.IncidentAction from an
+	//     exhausted retry budget or a non-retryable failure, or
+	//     engine.IncidentDefinitionDefect from a node no trigger can resume). The
+	//     token is stuck and nothing lower in the ladder can free it, so it fires
+	//     from the HIGH rung, above signal, message and timer. ResolveIncident
+	//     frees an IncidentAction; it REFUSES a defect, which no instance-level
+	//     verb clears — that definition has to be corrected and the instance
+	//     cancelled. Both belong on this rung regardless, because the question
+	//     the rung answers is what the harness is blocked ON, not whether the
+	//     block is clearable.
 	//   - WALK-SCOPED (engine.IncidentCompensationStall and
 	//     engine.IncidentCompensationFailed). These park no token: they
 	//     carry an empty TokenID because a compensation walk is not driven by a
