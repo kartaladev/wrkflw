@@ -591,8 +591,8 @@ func TestReassignTask(t *testing.T) {
 	}
 }
 
-// TestClaimTask_ActorComesFromTheResolverNotTheBody is the point of ADR-0189: a body
-// that names a manager cannot promote an unauthenticated caller.
+// TestClaimTask_ActorComesFromTheResolverNotTheBody pins that a body naming a manager
+// cannot promote an unauthenticated caller.
 //
 // FAILS BEFORE THE CHANGE: ClaimTask reads in.Actor, so the forged manager claims the
 // task and the call returns 200.

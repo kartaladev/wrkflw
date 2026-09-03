@@ -465,8 +465,8 @@ func TestTaskRoutes_Customize(t *testing.T) {
 
 	taskID := transporttest.StartedApprovalInstance(t, h, "task-claim-stdlib-1")
 
-	// The claimant is AUTHENTICATED by the resolver, not asserted by the body
-	// (ADR-0189); httpcore.ClaimInput now has no fields, so no body is sent.
+	// The claimant is AUTHENTICATED by the resolver, not asserted by the body;
+	// httpcore.ClaimInput now has no fields, so no body is sent.
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc, stdlib.WithRequestActor(
 		staticActor(authz.Actor{ID: "alice", Roles: []string{"manager"}}),

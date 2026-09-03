@@ -193,7 +193,7 @@ func TestSignalBusIsSafeForConcurrentUse(t *testing.T) {
 
 // TestSignalBusPublishStampsViaClock verifies that SignalReceived triggers
 // produced by Publish use the injected clockwork.Clock timestamp, not wall-clock
-// time.Now(). This is required by ADR-0138 for fake-clock determinism in tests.
+// time.Now(). This is what makes fake-clock determinism possible in tests.
 func TestSignalBusPublishStampsViaClock(t *testing.T) {
 	knownTime := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
 	fc := clockwork.NewFakeClockAt(knownTime)

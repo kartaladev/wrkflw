@@ -3,7 +3,7 @@ package engine
 import "time"
 
 // CloseKind names why a [NodeVisit] closed ABNORMALLY — the token left the node
-// for a reason other than completing it and advancing (ADR-0145).
+// for a reason other than completing it and advancing.
 //
 // A normal advance leaves [NodeVisit.CloseKind] EMPTY (the zero value). That is
 // the load-bearing half of the contract: gateway forks and joins, sub-process

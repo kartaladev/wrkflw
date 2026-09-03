@@ -330,9 +330,9 @@ func TestNewTaskServiceFailsFast(t *testing.T) {
 	}
 }
 
-// TestTaskServiceRefreshCandidates verifies the candidate-refresh operation
-// (ADR-0147): candidates are a projection resolved at task-creation time, and the
-// underlying actor registry is not static, so a caller must be able to re-resolve
+// TestTaskServiceRefreshCandidates verifies the candidate-refresh operation:
+// candidates are a projection resolved at task-creation time, and the underlying
+// actor registry is not static, so a caller must be able to re-resolve
 // an open task's eligible actors. Refresh re-runs the ActorResolver against the
 // task's stored eligibility and variables and returns the trigger that replaces
 // the list; it never mutates the store directly.
@@ -422,7 +422,6 @@ func TestTaskServiceRefreshCandidates(t *testing.T) {
 				// instead of falling through httpcore.ClassifyError to a 500 with
 				// an empty body. Pinned here because nothing else in this package
 				// would notice the alias being replaced by a fresh errors.New.
-				// See ADR-0165.
 				assert.ErrorIs(t, err, engine.ErrTaskNotOpen)
 				assert.ErrorIs(t, err, engine.ErrInvalidTransition)
 			},
@@ -476,7 +475,7 @@ func TestTaskServiceRefreshCandidates(t *testing.T) {
 }
 
 // TestTaskServiceCompleteCarriesCompletion verifies that the completion payload —
-// outcome, note, and output — reaches the engine trigger intact (ADR-0146). The
+// outcome, note, and output — reaches the engine trigger intact. The
 // outcome and note are audit-bearing, so a layer that silently dropped them would
 // leave the task's completion record incomplete with no visible failure.
 func TestTaskServiceCompleteCarriesCompletion(t *testing.T) {
@@ -675,9 +674,9 @@ func TestTaskServiceRefreshCandidatesBoundsResolver(t *testing.T) {
 
 // TestTaskServiceReassignRejectsAnEmptyTarget verifies that Reassign refuses a
 // reassignment naming no actor BEFORE it reads the task store, authorizes, or
-// records the "reassigned" metric. engine.Step refuses the same shape
-// (ADR-0183), but only after the service has already counted a reassignment that
-// never happened and paid for a store read plus an authz round-trip.
+// records the "reassigned" metric. engine.Step refuses the same shape, but only
+// after the service has already counted a reassignment that never happened and
+// paid for a store read plus an authz round-trip.
 //
 // The unknown-task row is the discriminator: it can only pass if the guard runs
 // ahead of the store lookup, which otherwise answers ErrTaskNotFound. The

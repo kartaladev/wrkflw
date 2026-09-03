@@ -21,8 +21,8 @@
 // which CANCELS the reminder. A final clock advance fires nothing: the nudge
 // counter stays at three, proving the reminder was cancelled on resume.
 //
-// A *clockwork.FakeClock drives both the engine and the gocron-backed scheduler
-// (ADR-0003), so the recurring timer is deterministic: advancing the clock fires
+// A *clockwork.FakeClock drives both the engine and the gocron-backed scheduler,
+// so the recurring timer is deterministic: advancing the clock fires
 // the reminder without real waiting. Because the scheduler fires on its own
 // executor goroutine, each nudge is observed via a buffered channel guarded by a
 // timeout, and clk.BlockUntilContext waits for the timer to be re-armed before
@@ -83,7 +83,7 @@ func main() {
 		}),
 	})
 
-	// One fake clock drives the engine and the scheduler (ADR-0003).
+	// One fake clock drives the engine and the scheduler.
 	startAt := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
 	clk := clockwork.NewFakeClockAt(startAt)
 
@@ -103,7 +103,7 @@ func main() {
 	// parks a token carrying AwaitMessage, which the runtime registers as a message
 	// waiter, so a delivered message with the matching name+key resumes this instance.
 	// The driver resolves a correlated instance's definition from its own
-	// snapshot via the registry, so the definition must be registered (ADR-0121).
+	// snapshot via the registry, so the definition must be registered.
 	reg := kernel.NewMemDefinitionRegistry()
 	if err := reg.Register(def); err != nil {
 		log.Fatal("register:", err)

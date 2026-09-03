@@ -237,7 +237,7 @@ func TestProcessDefinitionJSONRoundTrip(t *testing.T) {
 // TestProcessDefinitionJSONFlatDecode verifies that hand-authored flat-shaped
 // JSON decodes into the correct concrete node types.
 func TestProcessDefinitionJSONFlatDecode(t *testing.T) {
-	// Hand-written flat JSON in the snake_case NodeWire layout (ADR-0144).
+	// Hand-written flat JSON in the snake_case NodeWire layout.
 	flatJSON := `{
 		"id": "legacy",
 		"version": 1,

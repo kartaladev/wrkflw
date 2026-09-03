@@ -12,7 +12,7 @@ import (
 )
 
 // TestValidateTaskCommands covers the pure pre-commit hook that refuses a step
-// whose task projections contradict themselves (ADR-0183).
+// whose task projections contradict themselves.
 //
 // The rows exercise the three shapes the hook can meet: an invalid UpdateTask,
 // a valid one, and command slices carrying no UpdateTask at all — including an
@@ -52,9 +52,9 @@ func TestValidateTaskCommands(t *testing.T) {
 			assert: func(t *testing.T, err error) { require.NoError(t, err) },
 		},
 		{
-			// The N>1 case audit finding B8 is about: the WHOLE step is refused, so
-			// no later UpdateTask is silently dropped the way a post-commit rejection
-			// dropped tasks 2..N out of the queue.
+			// The N>1 case: the WHOLE step is refused, so no later UpdateTask is
+			// silently dropped the way a post-commit rejection dropped tasks 2..N out
+			// of the queue.
 			name: "the first of two UpdateTasks being invalid refuses the step",
 			cmds: []engine.Command{
 				engine.UpdateTask{Task: humantask.HumanTask{TaskID: "tk-first", State: humantask.Claimed}},

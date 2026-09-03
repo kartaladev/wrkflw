@@ -83,7 +83,7 @@ func capBody[R any](cfg httpcore.CustomizeConfig[R], gc *ginlib.Context) error {
 //
 // That asymmetry is the point. "Optional" is not "unbounded": ignoring the
 // oversize outcome too would leave the route reading an unbounded body into
-// memory, which is the exact hole [capBody] exists to close (ADR-0186). ⚠ Do not
+// memory, which is the exact hole [capBody] exists to close. ⚠ Do not
 // collapse the two arms into `if err != nil` — a non-oversize read failure must
 // stay ignored here; see capBody's own note on why reporting it turns requests
 // that fit the cap into 400s.

@@ -57,7 +57,7 @@ func TestNativeSchedulerCalendarTriggers(t *testing.T) {
 	// the conversion produces.
 	//
 	// Timezone: the live scheduler now resolves calendar at-times in UTC by
-	// default (ADR-0136) — see the timezone note on [scheduler.Daily]'s
+	// default — see the timezone note on [scheduler.Daily]'s
 	// godoc. refTime and wantFire are built in time.UTC here to match that
 	// default, while still exercising the hour/minute/second passthrough
 	// (wantFire is independently computed above, not derived through
@@ -208,7 +208,7 @@ func TestNewScheduler_WithLogger(t *testing.T) {
 
 // TestNewScheduler_ObservabilityOptions verifies that WithTracerProvider and
 // WithMeterProvider are accepted by the façade and that the resulting scheduler
-// constructs without panicking. Per spec §4, the scheduler holds these options
+// constructs without panicking. The scheduler holds these options
 // for parity with other components (relay, runtime, transports); no spans or
 // metrics are emitted in this track.
 func TestNewScheduler_ObservabilityOptions(t *testing.T) {

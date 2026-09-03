@@ -48,7 +48,7 @@ func buildOrderPlacedSendTaskDef() *model.ProcessDefinition {
 }
 
 // TestSendTaskCommitsMessageOutboxEvent asserts that a SendTask's message is written
-// atomically as a message.<Name> outbox event in AppliedStep.Events (ADR-0067),
+// atomically as a message.<Name> outbox event in AppliedStep.Events,
 // and that Drive succeeds with no message sink — SendTask relies solely on the outbox.
 func TestSendTaskCommitsMessageOutboxEvent(t *testing.T) {
 	def := buildOrderPlacedSendTaskDef()

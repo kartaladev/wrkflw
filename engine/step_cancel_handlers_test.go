@@ -1,10 +1,7 @@
 package engine_test
 
-// step_cancel_handlers_test.go — Task 1: per-node cancel handlers
-// (Node.CancelAction) emitted as InvokeCancelAction on CancelRequested.
-//
-// Design:  docs/specs/2026-06-23-cancel-handlers-design.md
-// ADR:     0035
+// step_cancel_handlers_test.go — per-node cancel handlers (Node.CancelAction)
+// emitted as InvokeCancelAction on CancelRequested.
 //
 // Cases:
 //  (a) one active node with CancelAction → InvokeCancelAction emitted alongside def.CancelActions

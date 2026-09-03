@@ -34,8 +34,8 @@ func outcomeTaskDef(opts ...activity.UserTaskOption) *model.ProcessDefinition {
 	}
 }
 
-// TestHumanCompletedOutcomeValidation covers the fail-closed completion guards of
-// ADR-0146. A declared outcome set is closed AND mandatory: an outcome outside it
+// TestHumanCompletedOutcomeValidation covers the fail-closed completion guards.
+// A declared outcome set is closed AND mandatory: an outcome outside it
 // is rejected with ErrInvalidOutcome and a missing one with ErrOutcomeRequired.
 // An empty declaration leaves the task unconstrained. A wait-mode manual task —
 // which declares no outcomes and would therefore fail OPEN — rejects an outcome
@@ -150,8 +150,8 @@ func TestHumanCompletedOutcomeValidation(t *testing.T) {
 	}
 }
 
-// TestHumanCompletedOutcomeExposure covers the hybrid opt-in projection of
-// ADR-0146: an explicit OutcomeVariable wins, ExposeOutcome falls back to the
+// TestHumanCompletedOutcomeExposure covers the hybrid opt-in projection: an
+// explicit OutcomeVariable wins, ExposeOutcome falls back to the
 // "<node id>_outcome" convention, and a node opting into neither keeps the
 // outcome audit-only. The projection runs after the output merge, so it wins a
 // key collision, and the value written is the outcome string itself.

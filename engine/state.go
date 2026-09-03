@@ -48,7 +48,7 @@ func (s Status) String() string {
 //
 // It is the key [Step] tests before dispatching any trigger to its handler: each
 // [Trigger] declares what it does on a terminal instance, and that declaration is
-// applied in one place rather than re-checked per handler (ADR-0165). The check
+// applied in one place rather than re-checked per handler. The check
 // is also the defence against the TOCTOU race in which an instance reaches a
 // terminal status between a caller's own pre-check load and the engine's state —
 // a caller-side check can only ever be advisory.
@@ -70,10 +70,10 @@ const (
 	// TokenWaiting marks a token parked on an external trigger — an outstanding
 	// action command (AwaitCommand), a signal (AwaitSignal), a message
 	// (AwaitMessage), or a human task. It is the general "parked, not consumed"
-	// state; the Await* fields say what is awaited (ADR-0145).
+	// state; the Await* fields say what is awaited.
 	TokenWaiting
 	// TokenJoining marks a token that has arrived at a join gateway and is
-	// waiting for its sibling branches to arrive (ADR-0145).
+	// waiting for its sibling branches to arrive.
 	TokenJoining
 	// TokenIncident marks a token that has exhausted its retry budget (or hit a
 	// non-retryable error) and is now parked as an incident. The token remains in
@@ -104,7 +104,7 @@ type Token struct {
 	// AwaitTimer is the scheduled timer id this token is parked on (plain timer
 	// intermediate catch event). It is an ENUMERATION MARKER, not a dispatch key:
 	// the same id is written to AwaitCommand, which is what handleTimerFired
-	// still routes on, so this field is purely additive (ADR-0177).
+	// still routes on, so this field is purely additive.
 	//
 	// It exists because AwaitCommand is overloaded — measured holding human-task
 	// ids, event-gateway sentinels, action command ids, timer ids and "" — so a
@@ -136,9 +136,8 @@ type Token struct {
 // It exists so the two can never drift. AwaitTimer is written alongside
 // AwaitCommand at the plain timer intermediate-catch arm site, and left set it
 // makes [InstanceState.TimerWaiters] report an arm the scheduler no longer
-// holds — the inverted-purpose defect ADR-0177's audit caught. Every site that
-// clears AwaitCommand calls this instead; that is the invariant, not an
-// optimisation.
+// holds — an inverted-purpose defect. Every site that clears AwaitCommand
+// calls this instead; that is the invariant, not an optimisation.
 //
 // It deliberately leaves AwaitSignal/AwaitMessage alone: those are cleared (or
 // not) by the signal/message resume paths on their own terms, and folding them
@@ -151,8 +150,9 @@ func (t *Token) clearAwait() {
 // IncidentKind discriminates what an [Incident] is about, so a reader can tell
 // a failed action apart from a compensation walk that stopped reporting back.
 //
-// Its zero value is IncidentAction, which is what every incident raised before
-// ADR-0175 means — so an existing record keeps its meaning without migration.
+// Its zero value is IncidentAction, which is what every incident raised by an
+// older version means — so an existing record keeps its meaning without
+// migration.
 type IncidentKind int
 
 const (
@@ -160,16 +160,16 @@ const (
 	// It names a token, and resolving it re-invokes that token's action.
 	IncidentAction IncidentKind = iota
 	// IncidentCompensationStall is a dispatched compensation action that has not
-	// reported back within StepOptions.CompensationStallAfter (ADR-0175). It is
+	// reported back within StepOptions.CompensationStallAfter. It is
 	// walk-scoped: TokenID is empty, because a stalled walk holds no tokens.
 	//
 	// It must NOT be resolved through ResolveIncident — see handleResolveIncident,
 	// which refuses it and names the three escape verbs instead.
 	IncidentCompensationStall
 	// IncidentCompensationFailed is a dispatched compensation action that replied
-	// ActionFailed (ADR-0179). Before it the walk skipped that record in total
+	// ActionFailed. Without it the walk would skip that record in total
 	// silence — no log line, no incident, no command — so a compensation that
-	// never ran looked identical to one that succeeded.
+	// never ran would look identical to one that succeeded.
 	//
 	// Like IncidentCompensationStall it is walk-scoped: TokenID is empty, because
 	// the walk is not driven by a token of its own, and the record is keyed by
@@ -231,9 +231,9 @@ func (k IncidentKind) String() string {
 //     non-retryable error, created as the engine moves that token to
 //     [TokenIncident].
 //   - IncidentCompensationStall — a compensation walk whose dispatched action
-//     stopped reporting back (ADR-0175).
+//     stopped reporting back.
 //   - IncidentCompensationFailed — a dispatched compensation action that replied
-//     ActionFailed (ADR-0179).
+//     ActionFailed.
 //
 // See [IncidentKind]: the two walk-scoped kinds carry no TokenID and are cleared
 // by the compensation-walk verbs (retry, skip, abandon), not by ResolveIncident.
@@ -242,13 +242,14 @@ type Incident struct {
 	// from InstanceState.IncidentSeq.
 	ID string
 	// Kind discriminates what this incident is about. The zero value,
-	// IncidentAction, is what every pre-ADR-0175 record means.
+	// IncidentAction, is what every record written by an older version means.
 	//
 	// ⚠ Kind enters the persisted snapshot. An OLD build round-trips a NEW
 	// snapshot with Kind dropped, degrading an IncidentCompensationStall into a
 	// resolvable IncidentAction that the shipped resolve-incident endpoint will
 	// then delete — the exact data loss the refusal exists to prevent. Do not run
-	// pre-0175 and post-0175 builds against the same instance store.
+	// a build that predates Kind against the same instance store as one that
+	// writes it.
 	Kind IncidentKind
 	// TokenID is the ID of the token that encountered the error.
 	TokenID string
@@ -277,17 +278,17 @@ type NodeVisit struct {
 	// TaskID links a user-task visit to the human task minted for it, so a
 	// rendered history can resolve who claimed/completed it (and with which
 	// outcome) from the task record instead of duplicating that audit on the
-	// visit. Empty on every other node kind. See ADR-0145.
+	// visit. Empty on every other node kind.
 	TaskID string
 	// CloseKind is why the visit closed, recorded only for an ABNORMAL close
 	// (see the CloseKind* constants). A normal advance — the token completed the
-	// node and moved on — leaves it empty. See ADR-0145.
+	// node and moved on — leaves it empty.
 	CloseKind CloseKind
 }
 
 // InstanceState is the authoritative snapshot of a running instance.
 type InstanceState struct {
-	// ids is the transient, per-Step id-generation seam (ADR-0149). It is
+	// ids is the transient, per-Step id-generation seam. It is
 	// unexported: never serialized, never part of the durable snapshot, and
 	// scrubbed by Step before the state is returned.
 	ids idSource
@@ -316,7 +317,7 @@ type InstanceState struct {
 	// timer arms and plain timer intermediate catch events) arm a timer without
 	// writing a record here, so a len(Timers) test is not a test for "any armed
 	// timer". [InstanceState.TimerWaiters] is the authority spanning all five
-	// sources (ADR-0177).
+	// sources.
 	// Keyed implicitly by index; looked up by TimerID. A timer record is removed
 	// when the timer is consumed (fired and handled) or cancelled so that a
 	// late/duplicate TimerFired is a clean no-op.
@@ -350,14 +351,14 @@ type InstanceState struct {
 	// clean (containing ONLY currently-open sub-process scopes, as expected by
 	// existing tests that assert on len(s.Scopes)).
 	//
-	// Plan 8 (compensation rollback) reads this in reverse order when rolling
-	// back top-level compensable activities.
+	// Compensation rollback reads this in reverse order when rolling back
+	// top-level compensable activities.
 	RootCompensations []CompensationRecord
 
 	// ArchivedCompensations holds completed sub-process compensation records keyed
 	// by the sub-process node id. On normal scope exit, scope.Compensations are moved
 	// here (instead of being hoisted to the parent) so scope identity survives for
-	// scope-targeted compensation (ADR-0039). A root/instance walk consolidates these
+	// scope-targeted compensation. A root/instance walk consolidates these
 	// into RootCompensations before traversal via consolidateArchiveIntoRoot.
 	ArchivedCompensations map[string][]CompensationRecord
 
@@ -371,8 +372,8 @@ type InstanceState struct {
 	// Compensating tracks the in-flight reverse-order compensation walk, if any.
 	// It is non-zero only while Status == StatusCompensating. Its scalar fields
 	// are carried by the InstanceState struct copy in cloneState; its one
-	// non-scalar field — the pinned Records source added by ADR-0171 — is
-	// deep-copied there explicitly.
+	// non-scalar field — the pinned Records source — is deep-copied there
+	// explicitly.
 	Compensating compensationCursor
 
 	// Incidents holds all open incident records for this instance. An incident is
@@ -381,11 +382,11 @@ type InstanceState struct {
 	// resolves the incident (re-invoking the failed action via ResolveIncident).
 	Incidents []Incident
 
-	// PendingCancel is set when a CancelRequested — or, since ADR-0170, an
-	// unhandled error — arrives while a resuming compensation walk is in flight;
-	// that walk finishes, then runs a full walk over the remaining records and
-	// terminates instead of resuming, avoiding double-compensation of the records
-	// the in-flight walk already consumed (ADR-0039 B1 fix).
+	// PendingCancel is set when a CancelRequested — or an unhandled error —
+	// arrives while a resuming compensation walk is in flight; that walk
+	// finishes, then runs a full walk over the remaining records and terminates
+	// instead of resuming, avoiding double-compensation of the records the
+	// in-flight walk already consumed.
 	PendingCancel bool
 
 	// PendingFinalStatus / PendingFinalErr are the terminal outcome the deferred
@@ -393,13 +394,13 @@ type InstanceState struct {
 	// finishes. They are read by applyFinish and cleared as they are consumed.
 	//
 	// BOTH deferral sites stamp them EXPLICITLY: handleCancelRequested writes
-	// StatusTerminated + "cancelled" (the ADR-0039 cancel outcome) and
-	// handleUnhandledError writes StatusFailed + the uncaught error code
-	// (ADR-0170), so whichever trigger arrives last owns the outcome. They did
-	// not always: the cancel path once set PendingCancel alone and leaned on
-	// applyFinish's zero-value default, which a preceding deferred error had
-	// already displaced — measured, a cancel then terminated the instance
-	// `failed` carrying the superseded error's code.
+	// StatusTerminated + "cancelled" (the cancel outcome) and
+	// handleUnhandledError writes StatusFailed + the uncaught error code, so
+	// whichever trigger arrives last owns the outcome. They did not always: the
+	// cancel path once set PendingCancel alone and leaned on applyFinish's
+	// zero-value default, which a preceding deferred error had already
+	// displaced — measured, a cancel then terminated the instance `failed`
+	// carrying the superseded error's code.
 	//
 	// The ZERO value (StatusRunning == 0, "") consequently no longer accompanies
 	// a SET PendingCancel in any state this engine writes — applyFinish zeroes
@@ -421,19 +422,19 @@ type InstanceState struct {
 	// one walk in flight, so concurrent throws (parallel branches processed in one
 	// Macro drive pass) are SERIALIZED: the second+ throw tokens are parked
 	// (TokenWaiting, not consumed) and enqueued here. stepCompensationFinish
-	// re-activates exactly one per finish, draining the queue one walk at a time
-	// (ADR-0071). It is engine bookkeeping (persisted with the state, excluded from
-	// the service.ProcessInstance JSON projection like Compensating/PendingCancel).
+	// re-activates exactly one per finish, draining the queue one walk at a time.
+	// It is engine bookkeeping (persisted with the state, excluded from the
+	// service.ProcessInstance JSON projection like Compensating/PendingCancel).
 	DeferredCompensationThrows []string
 
 	// RecentCompensationCmdIDs is a bounded ring of the last
 	// maxRecentCompensationCmdIDs compensation command ids this instance has
 	// dispatched, appended by recordCompensationDispatch at every
-	// compensationInvoke site (ADR-0179 Decision 5). Both reply handlers consult
+	// compensationInvoke site. Both reply handlers consult
 	// it so a late or redelivered reply to a command the walk has already moved
 	// past is answered as a benign no-op instead of ErrTokenNotFound — which
 	// wraps ErrInvalidTransition and reaches a consumer as HTTP 422 on a
-	// perfectly healthy walk (backlog 3g).
+	// perfectly healthy walk.
 	//
 	// It lives HERE and not on compensationCursor deliberately. The cursor is
 	// zeroed at both walk-finish sites, so a cursor-resident set would cover only
@@ -465,8 +466,7 @@ type InstanceState struct {
 }
 
 // TaskByID returns a pointer to the HumanTask with the given taskID, or
-// nil if no such task exists in the state. An empty taskID names no task
-// (ADR-0152).
+// nil if no such task exists in the state. An empty taskID names no task.
 func (s *InstanceState) TaskByID(taskID string) *humantask.HumanTask {
 	if taskID == "" {
 		return nil
@@ -480,7 +480,7 @@ func (s *InstanceState) TaskByID(taskID string) *humantask.HumanTask {
 }
 
 // removeIncidentsForToken drops every incident raised against tokenID. An empty
-// tokenID matches nothing (ADR-0152: an empty key names nothing, and admitting
+// tokenID matches nothing (an empty key names nothing, and admitting
 // it would make every token with a blank ID wipe the incident list). The
 // remaining records keep their relative order so command output stays
 // deterministic.
@@ -496,7 +496,7 @@ func (s *InstanceState) removeIncidentsForToken(tokenID string) {
 // removeOrphanedIncidents drops every incident whose TokenID names a token that
 // is no longer present, and keeps the rest in slice order so command output
 // stays deterministic. It is the terminal-site counterpart of
-// removeIncidentsForToken (ADR-0163): the two terminal paths that drop every
+// removeIncidentsForToken: the two terminal paths that drop every
 // token — forceTerminate and handleCancelRequested's immediate branch — never
 // route through cancelTokenWaits, so without this an incident outlives the token
 // it describes.
@@ -505,19 +505,17 @@ func (s *InstanceState) removeIncidentsForToken(tokenID string) {
 // (handleUnhandledError's immediate branch, handleSubInstanceFailed's tail)
 // keeps its incidents, because runtime/outbox.go's terminalEventErr, the
 // service/ audit view and incident_count all read them after the instance is
-// terminal (ADR-0164 Decision 3).
+// terminal.
 //
 // An incident with an empty TokenID is KEPT, mirroring removeIncidentsForToken:
-// an empty key names nothing (ADR-0152), so such a record names no token to be
+// an empty key names nothing, so such a record names no token to be
 // orphaned FROM. Leaving it to tokenByID would invert that rule — tokenByID("")
 // reports nil, which this predicate would read as "the token is gone" and
 // delete an incident the keep-token sites are supposed to keep.
 //
-// ⚠ This was written as "a guard against the next terminal site rather than a
-// live defect", because no production path built an empty-TokenID incident.
-// ADR-0175 IS that next site: handleCompensationStallFired raises a walk-scoped
-// incident with TokenID "". The keep is now load-bearing rather than
-// speculative — which is also why retiring a stall incident needs its own sweep
+// ⚠ The keep is load-bearing rather than speculative:
+// handleCompensationStallFired raises a walk-scoped incident with TokenID "".
+// Which is also why retiring a stall incident needs its own sweep
 // (retireCompensationStallIncidents) instead of falling out of this one.
 func (s *InstanceState) removeOrphanedIncidents() {
 	s.Incidents = slices.DeleteFunc(s.Incidents, func(inc Incident) bool {
@@ -526,15 +524,15 @@ func (s *InstanceState) removeOrphanedIncidents() {
 }
 
 // retireCompensationStallIncidents removes every open IncidentCompensationStall
-// raised against commandID (ADR-0175). An empty commandID names no incident and
-// retires nothing, mirroring ADR-0152.
+// raised against commandID. An empty commandID names no incident and retires
+// nothing.
 //
 // It is called wherever a walk moves on — stepCompensationAdvance, and the
 // escape verbs before they delegate to a finish — plus a final sweep in
 // endInstance. Without it, a walk that recovered on its own carries a stale
 // "compensation action stalled" incident into its terminal state.
 //
-// ⚠ The sweep is STILL REQUIRED after ADR-0179, but its justification narrowed.
+// ⚠ The sweep is STILL REQUIRED, but its justification is narrow.
 // runtime/outbox.go's terminalEventErr and runtime/processdriver_action.go's
 // terminalErr used to read Incidents[0] unconditionally, so a retained stall
 // record was published as the instance's cause of death — to the outbox, and to
@@ -554,8 +552,8 @@ func (s *InstanceState) retireCompensationStallIncidents(commandID string) {
 }
 
 // retireCompensationFailedIncidents removes every open IncidentCompensationFailed
-// raised against commandID (ADR-0179 Decision 6). An empty commandID names no
-// incident and retires nothing, mirroring ADR-0152 and its stall-kind sibling.
+// raised against commandID. An empty commandID names no incident and retires
+// nothing, mirroring its stall-kind sibling.
 //
 // ⚠ Its call sites are DELIBERATELY narrower than
 // [InstanceState.retireCompensationStallIncidents]'s. That one is called
@@ -566,12 +564,12 @@ func (s *InstanceState) retireCompensationStallIncidents(commandID string) {
 //
 //   - retryFailedCompensation, for the OLD command id as the backoff's retry
 //     re-dispatches — that attempt is superseded by the one about to go out.
-//   - retryStalledCompensation, for the OLD command id as ADR-0175's operator
-//     `retry` verb re-dispatches. ⚠ ADDED AT THE DELIVERY GATE: that function
-//     predates IncidentCompensationFailed and retired only the stall kind, and
-//     the verb has no cap — so an operator retrying a failing compensation
-//     accumulated one open record per invocation (measured: three after two
-//     retries) against Decision 6's bound of one per exhausted record.
+//   - retryStalledCompensation, for the OLD command id as the operator `retry`
+//     verb re-dispatches. ⚠ ADDED AT THE DELIVERY GATE: that function predates
+//     IncidentCompensationFailed and retired only the stall kind, and the verb
+//     has no cap — so an operator retrying a failing compensation accumulated
+//     one open record per invocation (measured: three after two retries)
+//     against the bound of one open record per exhausted record.
 //   - handleActionCompleted's compensation short-circuit, for ActiveCmdID — the
 //     record ultimately SUCCEEDED.
 //
@@ -581,10 +579,11 @@ func (s *InstanceState) retireCompensationStallIncidents(commandID string) {
 //
 // It is NOT called from stepCompensationAdvance, and must not be: that function
 // is also the exhaustion and operator-skip route, where the incident IS the
-// durable record ADR-0179 exists to leave behind. Putting it there would delete
-// the incident of every unrecoverable compensation at the moment the walk skips
-// it — the one outcome the ADR is written to make visible. What survives is
-// exactly one incident per exhausted record, not one per attempt.
+// durable record IncidentCompensationFailed exists to leave behind. Putting it
+// there would delete the incident of every unrecoverable compensation at the
+// moment the walk skips it — the one outcome the kind exists to make visible.
+// What survives is exactly one incident per exhausted record, not one per
+// attempt.
 func (s *InstanceState) retireCompensationFailedIncidents(commandID string) {
 	if commandID == "" {
 		return
@@ -616,7 +615,7 @@ func (s *InstanceState) endInstance(status Status, at time.Time, terminal Comman
 	ended := at
 	s.EndedAt = &ended
 	// Harvest BEFORE the cursor clear, and before the scopes are dropped. Both halves
-	// of that ordering are load-bearing (ADR-0174):
+	// of that ordering are load-bearing:
 	//
 	//   - Before the CLEAR, because partitionForLiveWalk drops a live scope-wide
 	//     walk's already-dispatched records, and forceTerminate reaches here with such
@@ -627,13 +626,13 @@ func (s *InstanceState) endInstance(status Status, at time.Time, terminal Comman
 	//   - Before s.Scopes = nil, or there is nothing left to harvest from.
 	s.harvestOpenScopeCompensations()
 	// Retire any stall incident still open, BEFORE the cursor clear takes away the
-	// ActiveCmdID that names it (ADR-0175). The walk ends here, so an incident
+	// ActiveCmdID that names it. The walk ends here, so an incident
 	// saying it is stalled is stale by construction — and leaving one behind ships
 	// that lie in the terminal snapshot, where it is counted in incident_count,
 	// rendered by the service/ audit view, and handed to every consumer reading
-	// InstanceState.Incidents. (Before ADR-0179 it was also PUBLISHED as the cause
-	// of death; runtime's causeOfDeathIncident allow-list now admits IncidentAction
-	// only, which closes that route but not the ones above.)
+	// InstanceState.Incidents. (It was once also PUBLISHED as the cause of death;
+	// runtime's causeOfDeathIncident allow-list now admits IncidentAction only,
+	// which closes that route but not the ones above.)
 	//
 	// This is the REMAINDER sweep. The routes that move a walk on retire their own
 	// incident first — a late ActionCompleted, a late ActionFailed and the skip
@@ -649,10 +648,9 @@ func (s *InstanceState) endInstance(status Status, at time.Time, terminal Comman
 		cmds = append(cmds, terminal)
 	}
 	cmds = append(cmds, s.cancelAllScheduledWork()...)
-	// Close every scope the instance still had open. Before ADR-0174 a terminal
-	// snapshot could carry one — ADR-0162 deferred closing them to ADR-0164, and 0164
-	// shipped without it. nil rather than an empty slice: it matches the
-	// normalization ADR-0173 chose for ArchivedCompensations, and no reader
+	// Close every scope the instance still had open. A terminal snapshot persisted
+	// by an older version can carry one. nil rather than an empty slice: it matches
+	// the normalization chosen for ArchivedCompensations, and no reader
 	// distinguishes them (every one uses len/range, and no reader exists outside this
 	// package). Note this changes the persisted shape from "Scopes":[] to
 	// "Scopes":null on EVERY terminal transition, ordinary completions included.
@@ -665,7 +663,7 @@ func (s *InstanceState) endInstance(status Status, at time.Time, terminal Comman
 // reconciled when the instance is terminated — otherwise a cancelled instance
 // leaves its parked tasks visible in inbox queries (ClaimableBy / AssignedTo).
 // Already-resolved tasks (Completed or Cancelled) are left untouched. Tasks are
-// visited in slice order for deterministic command output. See ADR-0088.
+// visited in slice order for deterministic command output.
 func (s *InstanceState) cancelOpenTasks() []Command {
 	var cmds []Command
 	for i := range s.Tasks {
@@ -675,7 +673,7 @@ func (s *InstanceState) cancelOpenTasks() []Command {
 			// consumer-supplied TaskStore while the record it was built from is
 			// committed as instance state, so a shallow copy would share the
 			// Claim/Completion pointees, the Vars map and the actor slices
-			// across that boundary (ADR-0163). HumanTask.Clone is the single
+			// across that boundary. HumanTask.Clone is the single
 			// deep-copy definition for a task.
 			cmds = append(cmds, UpdateTask{Task: s.Tasks[i].Clone()})
 		}
@@ -692,9 +690,9 @@ func (s InstanceState) Clone() InstanceState {
 
 // maxRecentCompensationCmdIDs bounds [InstanceState.RecentCompensationCmdIDs]:
 // the ring keeps the last K = 16 dispatched compensation command ids and drops
-// the oldest beyond that (ADR-0179 Decision 5).
+// the oldest beyond that.
 //
-// A bound is required, not merely tidy: ADR-0175's operator verb
+// A bound is required, not merely tidy: the operator verb
 // retryStalledCompensation sets a fresh ActiveCmdID per invocation with no cap,
 // and the whole state is re-marshalled every Step, so an unbounded slice would
 // grow without limit under repeated operator retries. 16 comfortably spans the
@@ -709,9 +707,8 @@ const maxRecentCompensationCmdIDs = 16
 //
 // It MUST be called at every compensationInvoke dispatch site;
 // TestDispatchedCmdIDsAreDerivedFromEverySite derives that set from the
-// package's own sources rather than trusting a count, because ADR-0179 adds a
-// fifth site and this decision's history has miscounted the dispatch sites
-// twice.
+// package's own sources rather than trusting a count, because the dispatch
+// sites have been miscounted twice.
 //
 // The ring is deliberately never cleared at walk finish — a post-finish
 // redelivery is the likeliest duplicate in production.
@@ -722,7 +719,7 @@ const maxRecentCompensationCmdIDs = 16
 // that error, so a state carrying an empty-id ring never escapes the step and is
 // never persisted. Were "" ever admitted, the reply handlers' slices.Contains
 // would classify a CommandID-less reply as a benign duplicate instead of the
-// caller error it is (ADR-0152's empty-identity-key hazard).
+// caller error it is (the empty-identity-key hazard).
 //
 // Eviction re-allocates rather than resliceing so the dropped ids become
 // garbage instead of being retained by a shared backing array for the life of
@@ -738,7 +735,7 @@ func (s *InstanceState) recordCompensationDispatch(cmdID string) {
 // isBenignCompensationDuplicate reports whether cmdID names a compensation
 // command this instance dispatched and has since MOVED PAST — a late or
 // redelivered reply that both reply handlers must answer as a clean no-op rather
-// than ErrTokenNotFound (ADR-0179 Decision 5).
+// than ErrTokenNotFound.
 //
 // ⚠ The `!= ActiveCmdID` term is not an optimisation, it is what stops this
 // feature becoming a hung walk. recordCompensationDispatch appends AT DISPATCH,
@@ -759,8 +756,8 @@ func (s *InstanceState) isBenignCompensationDuplicate(cmdID string) bool {
 }
 
 // spawnsNewWork reports whether the instance may still START new work — open a
-// scope, place a token, dispatch an action. ADR-0172: a dying instance spawns no
-// new work, whichever scope an arm belongs to.
+// scope, place a token, dispatch an action. A dying instance spawns no new
+// work, whichever scope an arm belongs to.
 //
 // ⚠ It is an ALLOW-LIST, and that is load-bearing. Status.IsTerminal treats an
 // out-of-range Status as NOT terminal (see its doc comment), so a deny-list
@@ -783,7 +780,7 @@ func (s *InstanceState) spawnsNewWork() bool {
 }
 
 // hasOpenStallIncident reports whether an open IncidentCompensationStall with
-// the given id exists. An empty id names no incident (ADR-0152).
+// the given id exists. An empty id names no incident.
 func (s *InstanceState) hasOpenStallIncident(incidentID string) bool {
 	if incidentID == "" {
 		return false

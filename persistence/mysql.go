@@ -42,8 +42,8 @@ import (
 type MySQLOption = Option
 
 // MySQLWithHistoryCap bounds the inline instance History persisted in the
-// snapshot to every open visit plus at most n most-recent closed visits
-// (ADR-0021). n <= 0 keeps full inline history. Mirrors WithHistoryCap for Postgres.
+// snapshot to every open visit plus at most n most-recent closed visits. n <= 0
+// keeps full inline history. Mirrors WithHistoryCap for Postgres.
 func MySQLWithHistoryCap(n int) MySQLOption { return WithHistoryCap(n) }
 
 // MySQLWithStoreLogger sets the structured logger used by the MySQL Store.
@@ -108,13 +108,13 @@ func MigrateMySQL(ctx context.Context, db *sql.DB) error {
 
 // NewMySQLTimerStore returns a kernel.TimerStore backed by MySQL. It backs
 // ProcessDriver.RehydrateTimers (explicit re-arm) and, via runtime.NewJobStore's
-// Load, the scheduler's own automatic self-rehydration on Start (ADR-0134). The
+// Load, the scheduler's own automatic self-rehydration on Start. The
 // db must already have migrations applied. Mirrors NewTimerStore for Postgres.
 //
 // Alongside ListArmed, the returned store serves kernel.TimerStore's ArmedTimer
 // point lookup — a primary-key-exact read of one (instanceID, timerID) pair, used
-// by the timer-fire path to test recurrence without reading the whole armed table
-// (ADR-0159); a missing row is (zero, false, nil), not an error. The concrete
+// by the timer-fire path to test recurrence without reading the whole armed
+// table; a missing row is (zero, false, nil), not an error. The concrete
 // store additionally satisfies service.TimerAdmin (Stats plus the keyset-paged
 // ListArmedPage) for admin listing; neither method is on the returned
 // kernel.TimerStore interface, so reach them via `admin, ok := ts.(service.TimerAdmin)`.
@@ -163,7 +163,7 @@ func MySQLWithRelayBackoff(base, maxInterval time.Duration) MySQLRelayOption {
 
 // MySQLWithRelayClock sets the clock the MySQL relay uses to stamp published_at
 // / next_attempt_at and to evaluate which rows are due. Default: clockwork.NewRealClock().
-// Inject a fake clock in tests for deterministic behaviour (ADR-0138).
+// Inject a fake clock in tests for deterministic behaviour.
 // Mirrors WithRelayClock for the Postgres relay.
 func MySQLWithRelayClock(clk clockwork.Clock) MySQLRelayOption {
 	return storeRelayOption(store.WithRelayClock(clk))
@@ -235,7 +235,7 @@ func MySQLWithCallLinkLease(owner string, ttl time.Duration) MySQLCallLinkOption
 
 // MySQLWithCallLinkClock sets the clock the MySQL CallLinkStore uses for lease
 // timestamps. Default: clockwork.NewRealClock(). Inject a fake clock in tests for
-// deterministic behaviour (ADR-0138).
+// deterministic behaviour.
 // Mirrors WithCallLinkClock for the Postgres facade.
 func MySQLWithCallLinkClock(clk clockwork.Clock) MySQLCallLinkOption {
 	return WithCallLinkClock(clk)
@@ -244,7 +244,7 @@ func MySQLWithCallLinkClock(clk clockwork.Clock) MySQLCallLinkOption {
 // NewMySQLCallLinkStore constructs the MySQL-backed kernel.CallLinkStore (read/claim
 // side). It provides ClaimPending, MarkNotified, LookupChild, and ListRunningChildren
 // over the wrkflw_call_links table. The write side is fused into Store.Create /
-// Store.Commit (ADR-0025); use OpenMySQL for that.
+// Store.Commit; use OpenMySQL for that.
 //
 // Pass [MySQLWithCallLinkLease] and [MySQLWithCallLinkClock] to opt in to lease-based
 // multi-replica exclusivity. Existing zero-option call sites compile unchanged.
@@ -282,7 +282,7 @@ func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (kernel.Inst
 }
 
 // NewMySQLChainLinkStore constructs the MySQL-backed kernel.ChainLinkStore for
-// process-instance chaining lineage (ADR-0045): Record persists one
+// process-instance chaining lineage: Record persists one
 // predecessor->successor hop; LookupBySuccessor and ListByPredecessor serve
 // ancestry/audit queries. MigrateMySQL must have been applied before the first call.
 //
@@ -296,7 +296,7 @@ func NewMySQLAdvisoryLockOwnership(ctx context.Context, db *sql.DB) (kernel.Inst
 //	chainer, err := chain.NewChainer(runner, policy, chain.WithChainLinks(links))
 //
 // Pass [WithChainLinkClock] to control the created_at fallback Record uses when
-// a link carries a zero CreatedAt (ADR-0138). Zero-option call sites compile
+// a link carries a zero CreatedAt. Zero-option call sites compile
 // unchanged.
 func NewMySQLChainLinkStore(db *sql.DB, opts ...ChainLinkOption) (kernel.ChainLinkStore, error) {
 	return store.NewChainLinkStore(db, dialect.NewMySQL(), buildChainLinkOptions(opts)...)
@@ -362,7 +362,7 @@ func NewMySQLCallNotifier(db *sql.DB, deliver calllink.CallDeliverFunc, reg kern
 //	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute)
 //
 // Pass [WithDefinitionClock] to control the created_at stamp PutDefinition
-// writes (ADR-0138). Zero-option call sites compile unchanged.
+// writes. Zero-option call sites compile unchanged.
 func NewMySQLDefinitionStore(db *sql.DB, opts ...DefinitionOption) (DefinitionStore, error) {
 	return store.NewDefinitionStore(db, dialect.NewMySQL(), buildDefinitionOptions(opts)...)
 }

@@ -1,7 +1,7 @@
 package engine_test
 
 // step_errorend_drive_test.go — verifies drive() halts immediately when an
-// error-behavior end event (an EndEvent with Behavior==EndError, ADR-0127) fails
+// error-behavior end event (an EndEvent with Behavior==EndError) fails
 // the instance, so a sibling parallel token is not driven on an already-failed
 // instance.
 //
@@ -129,7 +129,7 @@ func TestErrorEndHaltsDriveOnImmediateFailure(t *testing.T) {
 }
 
 // newAPIErrorEndCaughtByBoundaryDef mirrors errorEndCaughtByBoundaryDef but
-// authors the inner error end via the unified EndEvent API (ADR-0127):
+// authors the inner error end via the unified EndEvent API:
 // event.NewEnd(id, event.WithErrorCode("BOOM")) instead of the retired dedicated
 // error-end constructor. The behavioral contract is identical: the thrown error
 // is caught by the sub-process's boundary error event, the recovery flow runs,
@@ -174,8 +174,7 @@ func newAPIErrorEndCaughtByBoundaryDef() *model.ProcessDefinition {
 // TestNewAPIErrorEndCaughtByBoundary verifies that an EndEvent with
 // Behavior==EndError (authored via event.WithErrorCode) throws exactly like the
 // former standalone error end kind: the error is caught by the sub-process
-// boundary, the recovery ServiceTask is invoked, and the instance is NOT failed
-// (ADR-0127).
+// boundary, the recovery ServiceTask is invoked, and the instance is NOT failed.
 func TestNewAPIErrorEndCaughtByBoundary(t *testing.T) {
 	def := newAPIErrorEndCaughtByBoundaryDef()
 	at := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)

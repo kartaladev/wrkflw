@@ -561,8 +561,8 @@ func TestMessageRoutes_Customize(t *testing.T) {
 
 // TestTaskRoutes_Customize verifies POST /tasks/:token/claim returns 200.
 //
-// The request carries NO body: ClaimInput is an empty struct since ADR-0189,
-// so a correctly-migrated client sends nothing at all. The identity comes from
+// The request carries NO body: ClaimInput is an empty struct, so a
+// correctly-migrated client sends nothing at all. The identity comes from
 // the mount's RequestActor, never from the payload.
 func TestTaskRoutes_Customize(t *testing.T) {
 	t.Parallel()
@@ -700,14 +700,14 @@ func TestIdentityOptionAliases(t *testing.T) {
 	}
 }
 
-// TestTaskRoutes_ActorComesFromMiddlewareNotTheBody pins ADR-0189's core
-// decision for the fiber adapter: the acting principal is whatever the
+// TestTaskRoutes_ActorComesFromMiddlewareNotTheBody pins the core rule for
+// the fiber adapter: the acting principal is whatever the
 // consumer's AUTHENTICATION middleware put on the request context, and a body
 // claiming a different identity is ignored rather than believed.
 //
 // The middleware authenticates a VIEWER — a role the approval task's
 // eligibility spec (activity.WithEligibleRoles("manager")) does not admit —
-// while the request body still carries the pre-ADR-0189
+// while the request body still carries the legacy
 // {"actor": {..., "roles": ["manager"]}} payload a stale client would send.
 // 403 is the only answer that proves the body lost: a 200 would mean the
 // self-asserted manager role in the payload had been honoured.
@@ -785,7 +785,7 @@ func TestTaskRoutes_NoIdentity401(t *testing.T) {
 //
 // ⚠ If this test ever returns 403 (i.e. the viewer identity DID arrive), fiber
 // has unified the two objects. That is not a licence to delete the test: it
-// means SECURITY.md and the fiber examples must be revisited, because the
+// means the fiber examples must be revisited, because the
 // documented "use c.SetContext" guidance would no longer be the only working
 // channel — and because a channel that starts working silently changes which
 // requests are authenticated.
@@ -813,7 +813,7 @@ func TestTaskRoutes_LocalsDoesNotAuthenticate(t *testing.T) {
 }
 
 // TestTaskRoutes_ClaimBodyIsOptionalButStillBounded pins the claim route's body
-// contract after ADR-0189 emptied ClaimInput.
+// contract now that ClaimInput is empty.
 //
 // A correctly-migrated client sends NO body at all, so requiring one would
 // break every such client with a 400 (MEASURED before the optional decode
@@ -823,7 +823,7 @@ func TestTaskRoutes_LocalsDoesNotAuthenticate(t *testing.T) {
 //
 // ⚠ Optional is not unbounded. The oversize row is the load-bearing one: it
 // fails if the optional decode is written as a bare "ignore the error", which
-// would drop this route out of ADR-0186's 413 contract while every other row
+// would drop this route out of the 413 contract while every other row
 // here stayed green. TestEveryDecodeSiteIsBounded covers the same fact from the
 // enumeration side; this row keeps it attached to the reason.
 func TestTaskRoutes_ClaimBodyIsOptionalButStillBounded(t *testing.T) {
@@ -1060,7 +1060,7 @@ func TestAdminRelayStats(t *testing.T) {
 
 // TestAdminTimers exercises GET /admin/timers through the fiber app: the query
 // string parsed into the filter, the aggregate gate behind total, the
-// handler-side limit clamp, and the 400 mapping for a bad cursor (ADR-0159). A
+// handler-side limit clamp, and the 400 mapping for a bad cursor. A
 // route that drops the cursor silently re-serves page one forever, which no
 // status-code-only assertion would catch.
 func TestAdminTimers(t *testing.T) {
@@ -1095,7 +1095,7 @@ func TestAdminTimers(t *testing.T) {
 				var got map[string]any
 				require.NoError(t, json.Unmarshal([]byte(body), &got))
 				assert.EqualValues(t, 3, got["total_count"], "total_count is the table total from Stats")
-				assert.NotContains(t, got, "count", "count is the retired pre-ADR-0159 field name")
+				assert.NotContains(t, got, "count", "count is the retired legacy field name")
 				assert.Equal(t, "cursor-2", got["next_cursor"])
 			},
 		},

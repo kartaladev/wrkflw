@@ -57,7 +57,7 @@ func noopCatalog() action.Catalog {
 // in-engine when opted in: a ProcessDriver built WithExpressionTimeout(50ms) evaluating
 // a blocking gateway condition aborts with expreval.ErrEvalTimeout (surfaced as a
 // Drive error) rather than hanging the driver loop. This is the explicit opt-in
-// for untrusted definitions (ADR-0049).
+// for untrusted definitions.
 func TestProcessDriverWithExpressionTimeoutGuardsGateway(t *testing.T) {
 	fc := clockwork.NewFakeClock()
 	release := make(chan struct{})

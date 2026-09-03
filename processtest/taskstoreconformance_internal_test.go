@@ -73,8 +73,9 @@ func listClaimableBy(rows []humantask.HumanTask, actor authz.Actor) []humantask.
 }
 
 // permissiveTaskStore validates nothing: it stores and returns whatever it is
-// given. It stands in for a consumer's store written before ADR-0183 — the
-// SILENT break the conformance suite exists to surface.
+// given. It stands in for a consumer's store written before the claim
+// invariant existed — the SILENT break the conformance suite exists to
+// surface.
 type permissiveTaskStore struct {
 	mu sync.Mutex
 	m  map[string]humantask.HumanTask
@@ -113,7 +114,7 @@ func (s *permissiveTaskStore) Get(_ context.Context, taskID string) (humantask.H
 }
 
 // AssignedTo and ClaimableBy answer from the stored rows rather than returning
-// nil: a pre-ADR-0183 store lists what it accepted, and that is exactly how the
+// nil: a legacy store lists what it accepted, and that is exactly how the
 // contradictory row it accepted becomes double-listed.
 func (s *permissiveTaskStore) AssignedTo(_ context.Context, actorID string) ([]humantask.HumanTask, error) {
 	return listAssignedTo(s.rows(), actorID), nil
@@ -126,8 +127,8 @@ func (s *permissiveTaskStore) ClaimableBy(_ context.Context, actor authz.Actor) 
 // leakyRollbackTaskStore is the failure mode a Get-only check cannot see: it
 // writes first and validates afterwards, so a rejected Upsert does return
 // ErrInvalidTask and Get does miss — while the row it never rolled back is still
-// returned by the inbox queries. That is the double-listing shape ADR-0183 exists
-// to close, wearing a conforming store's error behaviour.
+// returned by the inbox queries. That is the double-listing shape the claim
+// invariant exists to close, wearing a conforming store's error behaviour.
 type leakyRollbackTaskStore struct {
 	*humantask.MemTaskStore
 
@@ -189,9 +190,10 @@ func (inboxFailingTaskStore) ClaimableBy(context.Context, authz.Actor) ([]humant
 }
 
 // blindInboxTaskStore is conforming on the write path and answers BOTH inbox
-// queries with nothing. It is the store that motivated ADR-0184: every
-// not-listed assertion on the rejected leg holds vacuously for it, so before the
-// legal leg gained a positive expectation this store passed the whole suite.
+// queries with nothing. It is the store that motivated the positive half of
+// the legal leg: every not-listed assertion on the rejected leg holds
+// vacuously for it, so before the legal leg gained a positive expectation
+// this store passed the whole suite.
 type blindInboxTaskStore struct{ *humantask.MemTaskStore }
 
 func (blindInboxTaskStore) AssignedTo(context.Context, string) ([]humantask.HumanTask, error) {
@@ -248,8 +250,8 @@ func (writeOnlyTaskStore) ClaimableBy(context.Context, authz.Actor) ([]humantask
 }
 
 // kioskHostileTaskStore is conforming except that it also refuses a claim whose
-// claimant has no ID — the clause a design round of ADR-0183 proposed and then
-// REVERSED, because ADR-0148 amendment 1 §4 blesses exactly that kiosk shape.
+// claimant has no ID — a clause that was proposed during design and then
+// REVERSED, because an anonymous kiosk claim carrying roles is a legal shape.
 type kioskHostileTaskStore struct{ *humantask.MemTaskStore }
 
 func (s kioskHostileTaskStore) Upsert(ctx context.Context, t humantask.HumanTask) error {
@@ -259,7 +261,7 @@ func (s kioskHostileTaskStore) Upsert(ctx context.Context, t humantask.HumanTask
 	return s.MemTaskStore.Upsert(ctx, t)
 }
 
-// kioskCase returns the ADR-0148 control from the case set: the only legal case
+// kioskCase returns the kiosk control from the case set: the only legal case
 // whose claim carries an empty claimant. Selecting it by shape rather than by
 // name keeps the assertion honest if a case is renamed.
 func kioskCase(t *testing.T, cases []taskStoreConformanceCase) taskStoreConformanceCase {
@@ -297,9 +299,10 @@ func inboxLeaks(t *testing.T, c taskStoreConformanceCase) int {
 		// shape even when it is persisted — Get is its sole discriminator.
 		return 0
 	case "unclaimed_with_a_claim_is_rejected":
-		// The double-listing shape ADR-0183 exists to close: AssignedTo matches the
-		// claim's alice, and ClaimableBy matches an Unclaimed row whose eligibility
-		// names the probe's "manager" role. BOTH fire, on the same row.
+		// The double-listing shape the claim invariant exists to close:
+		// AssignedTo matches the claim's alice, and ClaimableBy matches an
+		// Unclaimed row whose eligibility names the probe's "manager" role.
+		// BOTH fire, on the same row.
 		return 2
 	case "out_of_range_state_is_rejected":
 		// The claim makes AssignedTo match; ClaimableBy is restricted to Unclaimed
@@ -484,14 +487,14 @@ func TestCheckTaskStoreConformanceCatchesNonConformingStores(t *testing.T) {
 			},
 		},
 		{
-			name: "a store that refuses an empty claimant fails the ADR-0148 kiosk control",
+			name: "a store that refuses an empty claimant fails the kiosk control",
 			newStore: func() humantask.TaskStore {
 				return kioskHostileTaskStore{MemTaskStore: humantask.NewMemTaskStore()}
 			},
 			assert: func(t *testing.T, c taskStoreConformanceCase, failures []string) {
 				kiosk := kioskCase(t, taskStoreConformanceCases())
 				if c.name == kiosk.name {
-					assert.NotEmptyf(t, failures, "%q must FAIL: the kiosk claim shape is LEGAL (ADR-0148 amendment 1 §4)", c.name)
+					assert.NotEmptyf(t, failures, "%q must FAIL: the kiosk claim shape is LEGAL", c.name)
 					return
 				}
 				assert.Emptyf(t, failures, "only the kiosk control may fail here, not %q: %v", c.name, failures)
@@ -523,8 +526,8 @@ func TestCheckTaskStoreConformanceCatchesNonConformingStores(t *testing.T) {
 			newStore: func() humantask.TaskStore { return inboxFailingTaskStore{MemTaskStore: humantask.NewMemTaskStore()} },
 			assert: func(t *testing.T, c taskStoreConformanceCase, failures []string) {
 				if c.legal {
-					// Since ADR-0184 the legal leg DOES ask an inbox, but only for a
-					// shape declaring one; those report the unanswerable query once.
+					// The legal leg DOES ask an inbox, but only for a shape
+					// declaring one; those report the unanswerable query once.
 					want := 0
 					if c.listedBy == inboxAssigned || c.listedBy == inboxClaimable {
 						want = 1
@@ -539,8 +542,9 @@ func TestCheckTaskStoreConformanceCatchesNonConformingStores(t *testing.T) {
 			},
 		},
 		{
-			// The vacuity ADR-0184 closes. This store validates correctly, persists
-			// correctly and reads back correctly — it simply never lists anything.
+			// The vacuity the positive inbox expectation closes. This store
+			// validates correctly, persists correctly and reads back correctly —
+			// it simply never lists anything.
 			// Only the legal shapes carrying a positive inbox expectation can catch
 			// it; the rejected leg cannot, because "not listed" is exactly what a
 			// store that lists nothing does.

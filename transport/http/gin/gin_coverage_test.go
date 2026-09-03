@@ -170,8 +170,8 @@ func newTaskSrv(t *testing.T, opts ...httpcore.CustomizeOption[ginlib.IRouter]) 
 	return srv
 }
 
-// TestTaskRoutes_Claim_BadJSON asserts 401, NOT the 400 it asserted before
-// ADR-0189, and both halves of that are deliberate:
+// TestTaskRoutes_Claim_BadJSON asserts 401, NOT the 400 it asserted
+// previously, and both halves of that are deliberate:
 //
 //   - the claim route now decodes OPTIONALLY (ClaimInput has no fields left, so a
 //     migrated client sends no body at all), which means "not-json" no longer
@@ -198,7 +198,7 @@ func TestTaskRoutes_Claim_BadJSON(t *testing.T) {
 }
 
 // TestTaskRoutes_Claim_ErrorPath pins the service-error branch, so it must get
-// PAST identity resolution: since ADR-0189 the 401 precedes the task lookup, and
+// PAST identity resolution: the 401 precedes the task lookup, and
 // mounting bare would answer 401 and never reach errInstanceSvc.
 func TestTaskRoutes_Claim_ErrorPath(t *testing.T) {
 	t.Parallel()
@@ -212,7 +212,7 @@ func TestTaskRoutes_Claim_ErrorPath(t *testing.T) {
 // TestTaskRoutes_Complete_BadJSON is about the DECODER, not identity: it pins
 // that a malformed body on the complete route is refused with 400.
 //
-// ⚠ The mount must authenticate. Since ADR-0189 the complete route resolves the
+// ⚠ The mount must authenticate. The complete route resolves the
 // actor BEFORE it reads the body, so a bare mount answers 401 and the decoder is
 // never reached — the 400 this test exists for would be unobservable. The actor
 // is scaffolding to get past the 401 gate; it is not part of what is asserted.
@@ -249,7 +249,7 @@ func TestTaskRoutes_Complete_ErrorPath(t *testing.T) {
 // that a malformed body on the reassign route is refused with 400.
 //
 // ⚠ The mount must authenticate, for the same reason as
-// TestTaskRoutes_Complete_BadJSON: ADR-0189 moved actor resolution ahead of the
+// TestTaskRoutes_Complete_BadJSON: actor resolution happens ahead of the
 // body read, so a bare mount answers 401 and never decodes. The actor here is
 // scaffolding to reach the decoder, not the subject of the assertion.
 func TestTaskRoutes_Reassign_BadJSON(t *testing.T) {

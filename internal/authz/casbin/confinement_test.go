@@ -9,17 +9,17 @@ import (
 
 // TestCasbinConfinement asserts that github.com/casbin/casbin is NOT transitively
 // imported by the engine core, model, runtime, or persistence packages. casbin
-// must remain confined to casbinauthz/ and internal/authz/casbin/ (ADR-0023).
+// must remain confined to casbinauthz/ and internal/authz/casbin/.
 //
 // It also asserts no ORM (gorm/go-pg/jmoiron/sqlx/ent) has leaked into go.mod or
-// those package transitive deps (the project uses raw pgx/v5 per ADR-0006).
+// those package transitive deps (the project uses raw pgx/v5).
 func TestCasbinConfinement(t *testing.T) {
 	t.Parallel()
 
 	// Packages whose transitive deps must NOT include casbin or any ORM.
 	// The public service facade + the mountable transports must stay casbin-free:
 	// they depend only on the authz.Authorizer / service.PolicyAdmin interfaces, so
-	// casbin remains confined to casbinauthz/ and internal/authz/casbin/ (ADR-0023/0036).
+	// casbin remains confined to casbinauthz/ and internal/authz/casbin/.
 	targets := []string{
 		"./engine/...",
 		"./definition/...",
@@ -54,12 +54,12 @@ func TestCasbinConfinement(t *testing.T) {
 		for _, banned := range forbiddenCasbin {
 			if strings.Contains(dep, banned) {
 				t.Errorf("CONFINEMENT VIOLATION: %q was found in transitive deps of engine/model/runtime/persistence\n"+
-					"  casbin must be confined to casbinauthz/ and internal/authz/casbin/ (ADR-0023)", dep)
+					"  casbin must be confined to casbinauthz/ and internal/authz/casbin/", dep)
 			}
 		}
 		for _, banned := range forbiddenORM {
 			if strings.Contains(dep, banned) {
-				t.Errorf("ORM VIOLATION: %q was found in transitive deps — project uses raw pgx/v5 only (ADR-0006)", dep)
+				t.Errorf("ORM VIOLATION: %q was found in transitive deps — project uses raw pgx/v5 only", dep)
 			}
 		}
 	}

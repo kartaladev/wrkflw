@@ -1,7 +1,7 @@
 package engine_test
 
 // end_force_termination_test.go — behaviour test for the force-termination end
-// event (ADR-0119). When a token enters an EndEvent whose ForceTermination is
+// event. When a token enters an EndEvent whose ForceTermination is
 // true, the engine must cancel ALL remaining parallel work (open tasks, timers,
 // arms/boundaries, event sub-process arms) and end the instance at the
 // outcome-selected terminal status:

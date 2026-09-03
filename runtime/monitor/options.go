@@ -20,7 +20,7 @@ import (
 // left pinned to the OTel global providers with no compile error at the call
 // they could write. This is the same shape the rest of the repo already uses
 // (see runtime.Option, calllink.CallNotifierOption): a package-owned option
-// type, with the internal one held in an unexported field (ADR-0004).
+// type, with the internal one held in an unexported field.
 type Option func(*collectorConfig)
 
 // collectorConfig stages the telemetry options a collector was built with,
@@ -45,7 +45,7 @@ func (c *collectorConfig) telemetry(name string, opts []Option) observability.Te
 }
 
 // WithClock sets the time source a collector derives wall-clock ages from —
-// currently the overdue age of the earliest armed timer (ADR-0138). Default:
+// currently the overdue age of the earliest armed timer. Default:
 // [clockwork.NewRealClock]. A nil value is ignored.
 //
 // ⚠ In tests use [clockwork.NewFakeClockAt] with an explicit instant, not

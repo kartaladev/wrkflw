@@ -401,7 +401,8 @@ func TestPgxNotifierReconnectLogsWarn(t *testing.T) {
 	handler := &recordingHandler{}
 	logger := slog.New(handler)
 
-	// NewPgxNotifier with logger option — fails to compile before Fix 1 is applied.
+	// NewPgxNotifier with the logger option — fails to compile without
+	// WithPgxNotifierLogger.
 	notifier := store.NewPgxNotifier(notifierPool, store.WithPgxNotifierLogger(logger))
 
 	ctx, cancel := context.WithCancel(t.Context())

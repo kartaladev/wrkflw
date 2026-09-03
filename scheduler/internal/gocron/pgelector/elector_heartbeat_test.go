@@ -11,12 +11,12 @@ import (
 	sched "github.com/kartaladev/wrkflw/scheduler/internal/gocron/pgelector"
 )
 
-// TestPostgresElectorHeartbeatStepsDownOnConnLoss proves ADR-0061: a leader whose
+// TestPostgresElectorHeartbeatStepsDownOnConnLoss proves that a leader whose
 // dedicated connection is severed out-of-band (here via pg_terminate_backend on a
 // side connection, which auto-releases its advisory lock server-side) STEPS DOWN
 // on the next heartbeat tick — its sticky IsLeader flips back to ErrNotLeader.
 //
-// Without the heartbeat (the ADR-0059 split-brain caveat) IsLeader would wrongly
+// Without the heartbeat (the split-brain caveat) IsLeader would wrongly
 // keep returning nil from the in-memory flag, leaving a two-leader window. The
 // heartbeat is what catches the silent loss.
 func TestPostgresElectorHeartbeatStepsDownOnConnLoss(t *testing.T) {

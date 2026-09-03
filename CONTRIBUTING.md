@@ -29,8 +29,7 @@ go test -race -coverprofile=cover.out ./... && go tool cover -func=cover.out | t
 - **Coverage.** Touched packages should stay at **≥ 85%** line coverage.
 - **Lint clean.** `golangci-lint run ./...` must report zero issues.
 - **Architecture Decision Records.** Non-trivial design decisions are recorded as ADRs under
-  `docs/adr/NNNN-<slug>.md` using the Nygard template (see `docs/adr/0001-record-architecture-decisions.md`).
-  Specs go in `docs/specs/`, plans in `docs/plans/`.
+  `docs/adr/NNNN-<slug>.md` using the Nygard template.
 - **Engine purity.** The engine core (`engine/`, `model/`) must not import transport, storage-vendor,
   or event-bus packages — depend on the in-repo interfaces. Never import watermill, casbin, gocron, or
   clockwork directly from workflow/engine code.
@@ -50,4 +49,4 @@ Commit one logical change at a time.
 ## Reporting bugs / requesting features
 
 Open a GitHub issue with a minimal reproduction (a failing test is ideal). For **security issues**,
-do **not** open a public issue — see [`SECURITY.md`](SECURITY.md).
+do **not** open a public issue — contact the maintainers privately first.

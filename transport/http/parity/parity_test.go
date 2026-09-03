@@ -530,7 +530,7 @@ func TestParity_PostTasksClaim_200(t *testing.T) {
 		def := transporttest.ApprovalProcess()
 		h, svcLocal := transporttest.NewHarness(t, def)
 		taskID := transporttest.StartedApprovalInstance(t, h, instanceID)
-		// ⚠ The body no longer carries the actor (ADR-0189); the identity is supplied
+		// ⚠ The body no longer carries the actor; the identity is supplied
 		// through the seam by the hit helpers below. An empty object is sent rather than
 		// no body so this case stays about PARITY of the 200 path, not about the
 		// optional-body decode, which each adapter pins separately.
@@ -668,9 +668,9 @@ func TestParity_ErrorEnvelopes(t *testing.T) {
 	}
 }
 
-// TestParity_PostResolveCompensationStall_400 verifies that ADR-0175's escape
-// endpoint is MOUNTED on all three adapters and rejects an unknown disposition
-// identically.
+// TestParity_PostResolveCompensationStall_400 verifies that the
+// compensation-stall escape endpoint is MOUNTED on all three adapters and
+// rejects an unknown disposition identically.
 //
 // Mounting is the property under test. Each adapter's route table is written by
 // hand and nothing enumerates them, so "mounted in the stdlib, gin and fiber
@@ -737,7 +737,7 @@ func TestParity_PostResolveCompensationStall_400(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ADR-0186 inbound body cap — cross-adapter parity
+// Inbound body cap — cross-adapter parity
 // ---------------------------------------------------------------------------
 //
 // The three adapters bound the inbound body by three DIFFERENT mechanisms, so
@@ -807,7 +807,7 @@ var coreRouteGroup = routeGroup{
 // adminRouteGroup is the admin group, which carries the OPTIONAL-body decode
 // site (POST /admin/instances/{id}/incidents/{incidentID}/resolve).
 //
-// ⚠ ADR-0095 deliberately keeps AdminRoutes OUT of Mount so a consumer can put
+// ⚠ AdminRoutes is deliberately kept OUT of Mount so a consumer can put
 // it behind separate authorization. That does NOT put admin routes beyond this
 // suite's reach: they are mounted BY HAND here, exactly as
 // TestParity_PostResolveCompensationStall_400 already does. Any claim that the
@@ -934,15 +934,15 @@ func assertTooLargeEnvelope(t *testing.T, got capResults) {
 // capOf returns a pointer to n, for the runCapped capBytes parameter.
 func capOf(n int64) *int64 { return &n }
 
-// TestParity_MaxBodyBytes_CoreRoute_413 pins ADR-0186's inbound cap on an
+// TestParity_MaxBodyBytes_CoreRoute_413 pins the inbound cap on an
 // ordinary REQUIRED-body route (POST /instances): all three adapters must refuse
 // an oversize body with the same status AND the same envelope.
 //
-// This is the case phase 2 could not cover — each adapter's own package can only
-// prove its own mechanism, and the three mechanisms are unrelated (MaxBytesReader
-// vs MaxBytesReader-plus-rebuffer vs a BodyRaw/Body pre-check). Divergence here
-// would mean a consumer who swaps adapters silently changes the status their
-// clients see.
+// This is the case a per-adapter test cannot cover — each adapter's own package
+// can only prove its own mechanism, and the three mechanisms are unrelated
+// (MaxBytesReader vs MaxBytesReader-plus-rebuffer vs a BodyRaw/Body pre-check).
+// Divergence here would mean a consumer who swaps adapters silently changes the
+// status their clients see.
 //
 // ⚠ Every fixture stays BELOW fiber.Config.BodyLimit (4 MiB default). Above it
 // fasthttp refuses the request before the route group is entered, so fiber
@@ -1163,7 +1163,7 @@ func TestParity_MaxBodyBytes_UnderCap(t *testing.T) {
 // three adapters, admitting a body far above the 1 MiB default.
 //
 // The disabled path is a distinct branch in each adapter and each got it wrong in
-// a different way before phase 2: http.MaxBytesReader(w, body, 0) refuses EVERY
+// a different way at first: http.MaxBytesReader(w, body, 0) refuses EVERY
 // non-empty body, and fiber's plain comparison against 0 refuses every body of
 // one byte or more. "Disabled means 413 on everything" is the failure this pins
 // against, so the assertion checks explicitly that the answer is not 413.
@@ -1258,7 +1258,7 @@ func TestFiberDivergence_AboveFiberConfigBodyLimit(t *testing.T) {
 // TestParity_PostTasksClaim_Unauthenticated_401 pins that all three adapters are
 // identically FAIL-CLOSED, not merely identically functional.
 //
-// ⚠ Parity of the happy path is the weaker property. Before ADR-0189 every adapter
+// ⚠ Parity of the happy path is the weaker property. Previously every adapter
 // accepted a body-supplied actor identically; what matters now is that each refuses an
 // unauthenticated caller with the same status AND the same error envelope, so a
 // consumer cannot tell the adapters apart by how they reject.
@@ -1269,8 +1269,8 @@ func TestParity_PostTasksClaim_Unauthenticated_401(t *testing.T) {
 		def := transporttest.ApprovalProcess()
 		h, svcLocal := transporttest.NewHarness(t, def)
 		taskID := transporttest.StartedApprovalInstance(t, h, instanceID)
-		// The body still carries the pre-ADR-0189 actor on purpose: a forged manager
-		// must not promote an unauthenticated caller on ANY adapter.
+		// The body still carries the legacy body-supplied actor on purpose: a
+		// forged manager must not promote an unauthenticated caller on ANY adapter.
 		return svcLocal, jsonReqFactory(http.MethodPost, "/tasks/"+taskID+"/claim", map[string]any{
 			"actor": map[string]any{"id": "alice", "roles": []string{"manager"}},
 		})

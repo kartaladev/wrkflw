@@ -58,7 +58,7 @@ func TestClassifyError(t *testing.T) {
 		"malformed armed-timer cursor -> 400": {
 			// A cursor an operator pasted wrong must be an actionable 400, never a
 			// silent reset to page one — which would loop a large listing forever
-			// without the operator noticing (ADR-0159).
+			// without the operator noticing.
 			err: fmt.Errorf("wrap: %w", kernel.ErrBadArmedTimerCursor),
 			assert: func(t *testing.T, status int, body httpcore.ErrorBody) {
 				if status != http.StatusBadRequest || body.Error != "bad_request" {
@@ -90,7 +90,7 @@ func TestClassifyError(t *testing.T) {
 // are client errors, not server errors. Both describe a bad completion payload the
 // caller can correct — an outcome outside the node's declared set, or a missing
 // outcome on a node that declares one — so answering 500 tells the client nothing
-// and hides a 4xx behind an opaque body (ADR-0146).
+// and hides a 4xx behind an opaque body.
 func TestClassifyErrorOutcomeSentinels(t *testing.T) {
 	t.Parallel()
 
@@ -120,7 +120,7 @@ func TestClassifyErrorOutcomeSentinels(t *testing.T) {
 			},
 		},
 		{
-			// ADR-0152: a malformed trigger is a caller-correctable input error,
+			// A malformed trigger is a caller-correctable input error,
 			// not a server fault.
 			name: "empty trigger key is a bad request",
 			err:  fmt.Errorf("apply trigger: %w", engine.ErrEmptyTriggerKey),
@@ -131,10 +131,10 @@ func TestClassifyErrorOutcomeSentinels(t *testing.T) {
 			},
 		},
 		{
-			// ADR-0180. A PIN, not a change: ClassifyError needed no new arm.
+			// A PIN, not a change: ClassifyError needed no new arm.
 			//
-			// ⚠ The status is 422, NOT the 409 ADR-0180 and spec §3b state: in this
-			// repo 409 is kernel.ErrConcurrentUpdate's alone, and service.ErrConflict
+			// ⚠ The status is 422, NOT 409: in this repo 409 is
+			// kernel.ErrConcurrentUpdate's alone, and service.ErrConflict
 			// has always mapped to 422 (see the arm above).
 			//
 			// This row is carried by the service.ErrConflict wrapper, which is exactly
@@ -164,7 +164,7 @@ func TestClassifyErrorOutcomeSentinels(t *testing.T) {
 			},
 		},
 		{
-			// ADR-0180's start guard. Same falsifier, and here it is the only carrier:
+			// The duplicate-start guard. Same falsifier, and here it is the only carrier:
 			// no service-layer arm classifies this sentinel.
 			name: "a duplicate start is a state conflict",
 			err:  fmt.Errorf("workflow-service: start instance: %w", engine.ErrInstanceAlreadyStarted),
@@ -194,7 +194,7 @@ func TestClassifyErrorOutcomeSentinels(t *testing.T) {
 	}
 }
 
-// TestClassifyErrorClaimInvariantSentinels pins the two ADR-0183 sentinels as
+// TestClassifyErrorClaimInvariantSentinels pins the two claim-invariant sentinels as
 // client errors carrying their message. Both arrive WRAPPED in production —
 // humantask.Validate wraps ErrInvalidTask itself, and the runtime, the store and
 // the caching decorator each add a prefix — so the wrapped rows are the real
@@ -277,7 +277,7 @@ func TestClassifyErrorClaimInvariantSentinels(t *testing.T) {
 	}
 }
 
-// TestOversizedBodyClassifiesAs413NotBadRequest pins ADR-0186's 413 arm and,
+// TestOversizedBodyClassifiesAs413NotBadRequest pins the 413 arm and,
 // crucially, its POSITION in the ordered switch. ClassifyError's switch resolves
 // an error matching two arms to whichever arm comes first, so the arm order is
 // itself behaviour: the "both sentinels" row below is the only thing that can
@@ -319,8 +319,8 @@ func TestOversizedBodyClassifiesAs413NotBadRequest(t *testing.T) {
 			// The row is a shape a FUTURE wrapping decode site could produce, and
 			// that is exactly why it is worth pinning: it is the only row here that
 			// can fail if the 413 arm is moved below the 400 arm, so it holds the
-			// arm-ordering invariant STABILITY.md declares against a change no
-			// current-behaviour test would notice.
+			// arm-ordering invariant against a change no current-behaviour test
+			// would notice.
 			name: "an error carrying BOTH ErrBadInput and the oversize sentinel is a 413",
 			err: fmt.Errorf("%w: decode body: %w", httpcore.ErrBadInput,
 				httpcore.ErrRequestBodyTooLarge),

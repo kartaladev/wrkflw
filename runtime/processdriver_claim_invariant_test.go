@@ -35,12 +35,12 @@ func openTaskIndex(t *testing.T, st engine.InstanceState) int {
 	return idx
 }
 
-// TestPreCommitRejectionDoesNotCommitTheStep is the load-bearing test for
-// ADR-0183's primary seam: a step whose task projection contradicts itself is
+// TestPreCommitRejectionDoesNotCommitTheStep is the load-bearing test for the
+// pre-commit seam: a step whose task projection contradicts itself is
 // refused BEFORE this iteration's commit, so the persisted snapshot is exactly
 // what it was before the trigger arrived.
 //
-// The fixture reproduces backlog 32's downgrade: an instance is driven to a
+// The fixture reproduces a downgrade: an instance is driven to a
 // parked user task and claimed normally, then its SNAPSHOT is corrupted
 // out-of-band (the Claim nilled on a Claimed task) the way a rollback to a build
 // without the write guard would leave it. The corrupted shape is then re-emitted
@@ -124,11 +124,11 @@ func TestPreCommitRejectionDoesNotCommitTheStep(t *testing.T) {
 	assert.Equal(t, before.Status, after.Status)
 }
 
-// TestTerminalSweepReconcilesEveryTaskDespiteACorruptOne is audit finding B8's
-// regression guard, in the shape the engine can actually produce.
+// TestTerminalSweepReconcilesEveryTaskDespiteACorruptOne is the terminal
+// sweep's regression guard, in the shape the engine can actually produce.
 //
-// B8 asked for a terminal sweep whose FIRST UpdateTask is invalid, to pin that a
-// rejection never drops tasks 2..N. MEASURED: that shape is unconstructible.
+// The guard was originally asked for as a terminal sweep whose FIRST UpdateTask
+// is invalid, to pin that a rejection never drops tasks 2..N. MEASURED: that shape is unconstructible.
 // cancelOpenTasks (engine/state.go) assigns humantask.Cancelled to every task it
 // sweeps, and Validate leaves Cancelled unconstrained on the claim axis, so a
 // swept task is valid no matter how corrupt the snapshot was. Probed on a
@@ -219,7 +219,7 @@ func TestTerminalSweepReconcilesEveryTaskDespiteACorruptOne(t *testing.T) {
 
 	// AssignedTo filters on the Claim pointer alone and never on State (measured:
 	// humantask/memory.go:77), so the cancelled-while-held task IS returned — by
-	// design, since ADR-0148 keeps the claim as audit. What must hold is that the
+	// design, since the claim is kept as audit. What must hold is that the
 	// row the inbox hands back is the RECONCILED one, so a reader can see it is
 	// closed rather than acting on a task that no longer exists.
 	assigned, err := taskStore.AssignedTo(ctx, manager.ID)

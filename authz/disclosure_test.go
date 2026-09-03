@@ -8,8 +8,8 @@ import (
 
 // TestZeroDisclosureSet_DisclosesNothing pins the closed posture on the ZERO value.
 //
-// This is the property the whole ADR-0190 allow-list rests on: a category nobody thought
-// about is withheld rather than exposed. Revision 1 of that design used the opposite
+// This is the property the whole allow-list rests on: a category nobody thought
+// about is withheld rather than exposed. An earlier design used the opposite
 // polarity (a deny-list), where the zero value disclosed everything.
 func TestZeroDisclosureSet_DisclosesNothing(t *testing.T) {
 	t.Parallel()

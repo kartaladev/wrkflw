@@ -29,9 +29,9 @@ import (
 // Timestamp codec follows the same pattern as [TimerStore]: Postgres and MySQL
 // bind and scan time.Time natively; SQLite stores TEXT, written by [timeArg] as
 // UTC RFC3339 with a FIXED-WIDTH nine-digit fraction — never time.RFC3339Nano,
-// whose trimmed fraction does not sort lexicographically (ADR-0080, ADR-0151) —
-// and read back through [parseTimeText], which stays tolerant of any fraction
-// width so pre-ADR-0151 rows keep parsing. The codec is gated on
+// whose trimmed fraction does not sort lexicographically — and read back
+// through [parseTimeText], which stays tolerant of any fraction width so older
+// rows keep parsing. The codec is gated on
 // [dialect.Dialect.TimestampsAsText] — NEVER compare [dialect.Dialect.Name]
 // to "sqlite" directly.
 //
@@ -122,7 +122,7 @@ const humanTaskColumns = `task_id, instance_id, node_id, state, claimed_by,
 // Upsert inserts or replaces the task identified by t.TaskID.
 // The upsert conflict clause is dialect-specific (via [dialect.Dialect.UpsertTask]).
 //
-// The claim/completion audit (ADR-0148 amendment 2) is normalized across typed
+// The claim/completion audit is normalized across typed
 // columns: claimed_by, claimed_at, completed_by, completed_at, outcome and note
 // are scalars — indexable and directly queryable — and only each actor's
 // roles/attributes remainder rides in a JSON column. The timestamps are the
@@ -138,13 +138,13 @@ const humanTaskColumns = `task_id, instance_id, node_id, state, claimed_by,
 // Claimed and Unclaimed. A Cancelled or Completed task carrying no claim has a
 // NULL claimed_at without being Unclaimed, and a Completed task carrying no
 // Completion — a shape Validate deliberately accepts, since the completion axis
-// is unconstrained (ADR-0183) — has a NULL completed_at while being completed.
+// is unconstrained — has a NULL completed_at while being completed.
 //
 // Upsert rejects a task failing [humantask.Validate] with
-// [humantask.ErrInvalidTask]. For direction R1 the invariant cannot be enforced
+// [humantask.ErrInvalidTask]. In one direction the invariant cannot be enforced
 // on read at all — a state='claimed' row whose claimed_at is NULL is
 // indistinguishable from one that was never claimed — so the write path is the
-// only seam there is (ADR-0183).
+// only seam there is.
 func (s *HumanTaskStore) Upsert(ctx context.Context, t humantask.HumanTask) error {
 	// Returned UNWRAPPED by this method's "upsert task %s" prefix: the error
 	// already names the task and the contradiction, so wrapping would say both
@@ -306,7 +306,7 @@ func (s *HumanTaskStore) query(ctx context.Context, op, sqlText string, args ...
 //   - Postgres/MySQL: scan created_at into time.Time, due_at into sql.NullTime,
 //     then normalise to UTC.
 //
-// The audit is normalized (ADR-0148 amendment 2): claimed_at and completed_at
+// The audit is normalized: claimed_at and completed_at
 // are the sole presence discriminators — NULL exactly when the corresponding
 // lifecycle event has not happened — and claimed_by/completed_by supply the
 // actor ids, never a fabricated actor. Presence is deliberately NOT keyed on
@@ -587,10 +587,10 @@ func htDecodeActor(id string, remainder []byte) (authz.Actor, error) {
 // reports whether the lifecycle event it discriminates happened at all. asText
 // selects which of the two scan targets the dialect populated: SQLite stores the
 // instant as fixed-width RFC3339 TEXT as written by [timeArg] — never
-// time.RFC3339Nano, whose trimmed fraction breaks lexicographic ordering
-// (ADR-0151) — while Postgres and MySQL bind time.Time natively (ADR-0080).
-// [parseTimeText] deliberately stays tolerant of any fraction width, so rows
-// written before ADR-0151 still read back here.
+// time.RFC3339Nano, whose trimmed fraction breaks lexicographic ordering —
+// while Postgres and MySQL bind time.Time natively. [parseTimeText]
+// deliberately stays tolerant of any fraction width, so rows written by an
+// older version still read back here.
 //
 // Presence is reported from the column being non-NULL, INDEPENDENTLY of whether
 // its value parses: a garbled instant still proves the lifecycle event happened,
@@ -616,7 +616,7 @@ func htAuditTime(asText bool, text sql.NullString, native sql.NullTime) (time.Ti
 
 // errZeroAuditTime rejects an audit record whose timestamp is the zero time.
 //
-// Presence is keyed on the timestamp column (ADR-0148 amendment 2), so a record
+// Presence is keyed on the timestamp column, so a record
 // without one is incoherent — it would persist as "claimed, at no time". It is
 // also unstorable: MySQL DATETIME's range starts at 1000-01-01, so a zero
 // time.Time surfaces as an opaque out-of-range driver error. [humantask.TaskStore]

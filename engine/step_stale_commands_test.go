@@ -1,7 +1,7 @@
 package engine
 
-// step_stale_commands_test.go — white-box tests for the stale-command filter
-// (ADR-0161). liveAwaiters and dropStaleTokenCommands are unexported and have no
+// step_stale_commands_test.go — white-box tests for the stale-command filter.
+// liveAwaiters and dropStaleTokenCommands are unexported and have no
 // black-box path of their own; the end-to-end behaviour through Step is pinned
 // separately in step_stale_commands_e2e_test.go.
 
@@ -17,7 +17,7 @@ import (
 	"github.com/kartaladev/wrkflw/humantask"
 )
 
-// TestLiveAwaiters pins the set ADR-0161's filter is built on: every surviving
+// TestLiveAwaiters pins the set the filter is built on: every surviving
 // token's NON-EMPTY AwaitCommand, plus Compensating.ActiveCmdID while the
 // instance is not terminal.
 //
@@ -57,7 +57,7 @@ func TestLiveAwaiters(t *testing.T) {
 			}},
 			assert: func(t *testing.T, got map[string]struct{}) {
 				assert.NotContains(t, got, "",
-					"an empty key must not become a wildcard awaiter (ADR-0152)")
+					"an empty key must not become a wildcard awaiter")
 				assert.Len(t, got, 1)
 			},
 		},
@@ -127,7 +127,7 @@ func TestLiveAwaiters(t *testing.T) {
 				{ID: "t2", State: TokenWaiting, AwaitCommand: "tm3"},
 			}},
 			assert: func(t *testing.T, got map[string]struct{}) {
-				// ADR-0161: three of the seven AwaitCommand assignment sites store
+				// Three of the seven AwaitCommand assignment sites store
 				// a timer id or the event-gateway sentinel. They can only ever
 				// cause UNDER-filtering, never a dropped live command.
 				assert.Contains(t, got, "evtgw:t1")
@@ -187,7 +187,7 @@ func updateTaskIDs(cmds []Command) []string {
 	return out
 }
 
-// TestDropStaleTokenCommands pins ADR-0161's filter: a command whose awaiter the
+// TestDropStaleTokenCommands pins the filter: a command whose awaiter the
 // state no longer holds is dropped, everything else survives untouched, and a
 // dropped AwaitHuman cancels its task record and emits the UpdateTask that keeps
 // the store in step.
@@ -543,7 +543,7 @@ func TestDropStaleTokenCommands(t *testing.T) {
 // A dropped command has no other trace anywhere — no error, no event, no history
 // entry — so without this record an operator investigating "why was this refund
 // never invoked?" has nothing to work from. This is the site class Step's own doc
-// comment reserves ctx for (ADR-0129), and drive already follows the convention
+// comment reserves ctx for, and drive already follows the convention
 // at step.go:187.
 //
 // No ctx modifier: ctx reaches the filter for slog correlation only, and no

@@ -252,7 +252,7 @@ func demonstrateIncident(ctx context.Context, _ *sql.DB, store kernel.InstanceSt
 	// incidents in the same slice, so Incidents[0] is not reliably the resolvable
 	// one. This example raises exactly one action incident, but reading it
 	// positionally is the pattern that breaks the moment a compensation walk is
-	// involved (ADR-0179).
+	// involved.
 	incident := firstResolvableIncident(parked.Incidents)
 	if incident == nil {
 		return fmt.Errorf("expected a resolvable %s incident; got %d incident(s) of other kinds",

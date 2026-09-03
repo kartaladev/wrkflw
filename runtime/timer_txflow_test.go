@@ -1,6 +1,6 @@
 package runtime_test
 
-// Task 11 (ADR-0134) hot-path tests: durable timer writes ride the runtime
+// Hot-path tests: durable timer writes ride the runtime
 // jobStore INSIDE the state-commit transaction (direct-Save model); the
 // scheduler is touched post-commit only.
 //
@@ -56,8 +56,8 @@ var errInjected = errors.New("timer_txflow_test: injected timer-write failure")
 // call counter. It is handed to runtime.WithTimerStore, so the driver
 // type-asserts the TimerWriter capability off it and every durable timer
 // write flows through here — the direct-Save path is the ONLY write path
-// (the fused AppliedStep.TimerArms/TimerCancels path was retired by Task 12,
-// ADR-0134), so the upsert counter counts every durable timer write.
+// (the fused AppliedStep.TimerArms/TimerCancels path has been retired), so the
+// upsert counter counts every durable timer write.
 type faultTimerWriter struct {
 	inner *store.TimerStore
 
@@ -209,7 +209,7 @@ func assertSameTxAtomicity(t *testing.T, conn any, dlct dialect.Dialect) {
 	armed, err := fw.ListArmed(ctx)
 	require.NoError(t, err)
 	require.Len(t, armed, 1, "wait1's timer row must be durably armed")
-	// Timer ids are minted by the driver's IDGenerator (ADR-0149) and opaque —
+	// Timer ids are minted by the driver's IDGenerator and are opaque —
 	// read wait1's id from the durable row rather than predicting its shape.
 	wait1TimerID := armed[0].TimerID
 
@@ -438,8 +438,8 @@ func TestTimerTxFlowRolledBackCancel(t *testing.T) {
 // TestTimerTxFlowSingleSavePerArm is hot-path test 5 — the double-arm
 // regression guard: with the perform-path timer cases deleted, one armed timer
 // makes EXACTLY one TimerWriter.UpsertJob call per transaction (the fused
-// AppliedStep.TimerArms/TimerCancels path was retired by Task 12, ADR-0134,
-// so the direct-Save path is the only writer left to count).
+// AppliedStep.TimerArms/TimerCancels path has been retired, so the direct-Save
+// path is the only writer left to count).
 func TestTimerTxFlowSingleSavePerArm(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
@@ -491,7 +491,7 @@ func (s *failingFlipScheduler) Deactivate(context.Context, string) error {
 
 // TestTimerTxFlowPostCommitFlipFailureIsBenign pins the post-commit contract:
 // a failing Activate or Deactivate (e.g. the scheduler is closed during the
-// ADR-0133 drain window) is WARN-logged and NEVER fails the committed step —
+// shutdown drain window) is WARN-logged and NEVER fails the committed step —
 // the durable rows are the truth and rehydration self-heals the in-memory arm.
 func TestTimerTxFlowPostCommitFlipFailureIsBenign(t *testing.T) {
 	t.Parallel()
@@ -538,7 +538,7 @@ func TestTimerTxFlowPostCommitFlipFailureIsBenign(t *testing.T) {
 // gateScheduler blocks inside the FIRST post-commit Activate it sees, so a test
 // can interleave a second transaction between a commit and its post-commit
 // scheduler flip. It gates on arrival order rather than on a predicted job id:
-// engine-minted ids come from the injected IDGenerator (ADR-0149) and are opaque
+// engine-minted ids come from the injected IDGenerator and are opaque
 // in product configuration, so a test must never predict one. The gated job's id
 // is captured for later assertions and readable via GatedID once reached is
 // closed.
@@ -567,7 +567,7 @@ func (g *gateScheduler) Activate(ctx context.Context, j scheduler.ScheduledJob) 
 // once the reached channel is closed (the write happens-before that close).
 func (g *gateScheduler) GatedID() string { return g.gatedID }
 
-// TestTimerTxFlowArmCancelInterleave is hot-path test 6 (audit v2-A4): step A
+// TestTimerTxFlowArmCancelInterleave is hot-path test 6: step A
 // commits an arm of the recurring reminder T but is gated BEFORE its
 // post-commit Activate(T); step B (task completion) commits the cancel of T
 // and runs its post-commit Deactivate(T) first; then A's delayed Activate(T)

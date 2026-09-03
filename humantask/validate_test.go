@@ -41,8 +41,8 @@ func TestValidate(t *testing.T) {
 			humantask.HumanTask{TaskID: "t-2", State: humantask.Claimed},
 			invalid("t-2", "requires a claim")},
 		// NOTE: `Claimed` + an EMPTY claimant is deliberately NOT rejected — it is
-		// ADR-0148 amendment 1 §4's kiosk shape. Pinned as legal by the row below.
-		{"claimed with an empty claimant is ACCEPTED (ADR-0148 kiosk shape)",
+		// the kiosk shape. Pinned as legal by the row below.
+		{"claimed with an empty claimant is ACCEPTED (kiosk shape)",
 			humantask.HumanTask{TaskID: "t-3", State: humantask.Claimed,
 				Claim: &humantask.Claim{Actor: authz.Actor{Roles: []string{"kiosk"}}, At: at}}, valid},
 		// R2
@@ -59,7 +59,7 @@ func TestValidate(t *testing.T) {
 		{"a negative state is rejected",
 			humantask.HumanTask{TaskID: "t-7", State: humantask.TaskState(-1)},
 			invalid("t-7", "unknown state")},
-		// DELIBERATE silences — see ADR-0183. ManualImmediate mints Completed with
+		// DELIBERATE silences. ManualImmediate mints Completed with
 		// neither claim nor completion; a task cancelled while held keeps its claim.
 		{"completed with neither claim nor completion is accepted",
 			humantask.HumanTask{TaskID: "t-8", State: humantask.Completed}, valid},

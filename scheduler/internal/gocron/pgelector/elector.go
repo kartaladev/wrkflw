@@ -23,7 +23,7 @@ const defaultElectorKey = "workflow-scheduling: timer-leader"
 
 // defaultHeartbeatInterval is how often a leader re-validates that its dedicated
 // connection (and thus its advisory lock) is still alive. It bounds the residual
-// split-brain window to at most one interval (ADR-0061). Five seconds keeps the
+// split-brain window to at most one interval. Five seconds keeps the
 // re-validation cheap while closing the window promptly.
 const defaultHeartbeatInterval = 5 * time.Second
 
@@ -40,21 +40,21 @@ var ErrNotLeader = errors.New("workflow-scheduling: not the timer leader")
 // job on them.
 //
 // Leadership is held on one dedicated pooled connection for the elector's lifetime
-// (like AdvisoryLockOwnership, ADR-0020). When the leader process dies the
+// (like AdvisoryLockOwnership). When the leader process dies the
 // connection drops and Postgres auto-releases the lock; a follower then wins it on
 // its next IsLeader attempt — natural failover with no lease-renewal loop.
 //
 // IsLeader is sticky: once leadership is held, it returns nil from an in-memory
 // flag without a DB round-trip, satisfying gocron's per-job-run hot path. To close
-// the split-brain window left by that stickiness (ADR-0059), a bounded background
-// heartbeat (ADR-0061) periodically re-validates the dedicated connection; if it
+// the split-brain window left by that stickiness, a bounded background
+// heartbeat periodically re-validates the dedicated connection; if it
 // has been severed server-side (the advisory lock auto-released), the heartbeat
 // flips isLeader back to false so the next IsLeader re-attempts acquisition. The
 // residual two-leader window is therefore at most one heartbeat interval, and the
-// engine's version-CAS (ADR-0027) remains the exactly-once backstop.
+// engine's version-CAS remains the exactly-once backstop.
 //
 // The Elector is the single-leader ALTERNATIVE to a load-balanced advisory-lock
-// locker (ADR-0050): use one or the other, never both (see ADR-0059).
+// locker: use one or the other, never both.
 type PostgresElector struct {
 	conn      *pgxpool.Conn
 	key       string
@@ -65,8 +65,8 @@ type PostgresElector struct {
 	isLeader bool
 	closed   bool
 
-	// onAcquire, if set, is invoked each time this elector transitions to leader
-	// (Option A, ADR-0072). Wiring it to ProcessDriver.RehydrateTimers re-arms persisted
+	// onAcquire, if set, is invoked each time this elector transitions to leader.
+	// Wiring it to ProcessDriver.RehydrateTimers re-arms persisted
 	// timers on a new leader after failover. It runs in a wg-tracked goroutine on
 	// bgCtx so Close waits for it and cancellation propagates; acquiring coalesces
 	// overlapping invocations from rapid step-down/re-acquire cycles.
@@ -114,7 +114,7 @@ func WithElectorClock(clk clockwork.Clock) ElectorOption {
 
 // WithHeartbeatInterval overrides how often a leader re-validates its dedicated
 // connection (default: [defaultHeartbeatInterval]). It bounds the residual
-// split-brain window to at most one interval (ADR-0061). A non-positive value is
+// split-brain window to at most one interval. A non-positive value is
 // ignored.
 func WithHeartbeatInterval(d time.Duration) ElectorOption {
 	return func(e *PostgresElector) {
@@ -130,7 +130,7 @@ func WithHeartbeatInterval(d time.Duration) ElectorOption {
 // context that is cancelled when Close is called; Close waits for it to return.
 // Overlapping invocations from rapid step-down/re-acquire cycles are coalesced.
 // Wire it to ProcessDriver.RehydrateTimers to re-arm persisted timers on a new leader
-// after failover (Option A, ADR-0072). A nil value is ignored.
+// after failover. A nil value is ignored.
 func WithOnLeadershipAcquired(fn func(context.Context)) ElectorOption {
 	return func(e *PostgresElector) {
 		if fn != nil {
@@ -168,7 +168,7 @@ func NewPostgresElector(ctx context.Context, pool *pgxpool.Pool, opts ...Elector
 // BackendPID returns the Postgres backend PID of the elector's dedicated
 // connection. It lets operators correlate the leader's session in pg_stat_activity
 // and lets tests sever the connection out-of-band (pg_terminate_backend) to
-// exercise the heartbeat step-down path (ADR-0061). It returns 0 after Close.
+// exercise the heartbeat step-down path. It returns 0 after Close.
 func (e *PostgresElector) BackendPID() uint32 {
 	e.mu.Lock()
 	defer e.mu.Unlock()

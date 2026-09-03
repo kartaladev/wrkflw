@@ -12,8 +12,8 @@ import (
 	"github.com/kartaladev/wrkflw/definition/model"
 )
 
-// ChainOutcome is the terminal outcome that triggered a chaining decision (ADR-0045).
-// It mirrors the status-accurate terminal outbox topics (ADR-0046):
+// ChainOutcome is the terminal outcome that triggered a chaining decision.
+// It mirrors the status-accurate terminal outbox topics:
 // instance.completed -> OutcomeCompleted, instance.failed -> OutcomeFailed,
 // instance.terminated -> OutcomeTerminated.
 type ChainOutcome string
@@ -29,7 +29,7 @@ const (
 )
 
 // ChainLink is the durable predecessor→successor correlation for one chaining
-// hop (ADR-0045). It is keyed by (PredecessorID, Outcome): at most one successor
+// hop. It is keyed by (PredecessorID, Outcome): at most one successor
 // per terminal outcome of a predecessor, which doubles as the exactly-once
 // backstop under at-least-once terminal-event delivery.
 type ChainLink struct {

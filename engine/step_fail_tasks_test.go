@@ -1,11 +1,9 @@
 package engine_test
 
 // step_fail_tasks_test.go — an instance reaching StatusFailed via an unhandled
-// error reconciles its open human tasks, mirroring the cancel path (ADR-0088).
+// error reconciles its open human tasks, mirroring the cancel path.
 // A parallel branch parked at a UserTask must not be left Unclaimed in the
 // TaskStore when another branch faults the whole instance.
-//
-// ADR: 0089 (extends 0088)
 //
 // findUpdateTasks is defined in step_cancel_tasks_test.go (same test package).
 
@@ -152,10 +150,10 @@ func TestFailureWithCompensationReconcilesOpenTasks(t *testing.T) {
 	}
 	require.NotEmpty(t, refundCmdID, "compensation walk must emit refund")
 
-	// The task is reconciled when the walk BEGINS, not when it finishes: since
-	// ADR-0163 beginCompensation's per-token teardown cancels the open task
-	// attached to the token it consumes. Before, the task stayed open across the
-	// whole walk even though its token was already gone.
+	// The task is reconciled when the walk BEGINS, not when it finishes:
+	// beginCompensation's per-token teardown cancels the open task attached to
+	// the token it consumes. Before, the task stayed open across the whole walk
+	// even though its token was already gone.
 	uts := findUpdateTasks(r2.Commands)
 	require.Len(t, uts, 1, "the parked task must be cancelled when the compensation walk begins")
 	assert.Equal(t, humantask.Cancelled, uts[0].Task.State)

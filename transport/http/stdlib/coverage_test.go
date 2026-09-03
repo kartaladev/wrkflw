@@ -86,7 +86,7 @@ func TestTaskRoutes_Complete(t *testing.T) {
 	}
 
 	// The completing actor is AUTHENTICATED by the resolver, not asserted by the
-	// body (ADR-0189).
+	// body.
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc, stdlib.WithRequestActor(
 		staticActor(authz.Actor{ID: "alice", Roles: []string{"manager"}}),
@@ -121,7 +121,7 @@ func TestTaskRoutes_Reassign(t *testing.T) {
 	}
 
 	// The reassigning actor is AUTHENTICATED by the resolver, not asserted by the
-	// body's former "by" key (ADR-0189).
+	// body's former "by" key.
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc, stdlib.WithRequestActor(
 		staticActor(authz.Actor{ID: "alice", Roles: []string{"manager"}}),
@@ -140,7 +140,7 @@ func TestTaskRoutes_Reassign(t *testing.T) {
 
 // TestTaskRoutes_BadJSON verifies that an unreadable body on claim → 401, not 400.
 //
-// ⚠ This asserted 400 before ADR-0189. The claim body is now OPTIONAL — with
+// ⚠ This asserted 400 previously. The claim body is now OPTIONAL — with
 // httpcore.ClaimInput a zero-field struct a migrated client sends none at all —
 // so decodeOptionalRequestBody DISCARDS the decode error and the handler proceeds
 // to actor resolution, which refuses the unauthenticated request first. The 400
@@ -180,10 +180,10 @@ func TestTaskRoutes_Complete_BadJSON(t *testing.T) {
 	taskID := transporttest.StartedApprovalInstance(t, h, "task-complete-badjson-1")
 
 	// The mount MUST authenticate, even though this test is about the BODY.
-	// Since the ADR-0189 review fix (F6) the task routes resolve identity BEFORE
-	// reading the body — 401 → 413 → 400 → 404 — so an unauthenticated mount is
-	// refused at 401 and the 400 decode arm under test is never reached. The
-	// actor here is incidental to the assertion; its presence is not.
+	// The task routes resolve identity BEFORE reading the body — 401 → 413 →
+	// 400 → 404 — so an unauthenticated mount is refused at 401 and the 400
+	// decode arm under test is never reached. The actor here is incidental to
+	// the assertion; its presence is not.
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc, stdlib.WithRequestActor(
 		staticActor(authz.Actor{ID: "alice", Roles: []string{"manager"}}),
@@ -211,10 +211,10 @@ func TestTaskRoutes_Reassign_BadJSON(t *testing.T) {
 	taskID := transporttest.StartedApprovalInstance(t, h, "task-reassign-badjson-1")
 
 	// The mount MUST authenticate, even though this test is about the BODY.
-	// Since the ADR-0189 review fix (F6) the task routes resolve identity BEFORE
-	// reading the body — 401 → 413 → 400 → 404 — so an unauthenticated mount is
-	// refused at 401 and the 400 decode arm under test is never reached. The
-	// actor here is incidental to the assertion; its presence is not.
+	// The task routes resolve identity BEFORE reading the body — 401 → 413 →
+	// 400 → 404 — so an unauthenticated mount is refused at 401 and the 400
+	// decode arm under test is never reached. The actor here is incidental to
+	// the assertion; its presence is not.
 	mux := http.NewServeMux()
 	stdlib.Mount(mux, svc, stdlib.WithRequestActor(
 		staticActor(authz.Actor{ID: "alice", Roles: []string{"manager"}}),
@@ -530,7 +530,7 @@ func TestAdminRoutes_RelayStats_Absent(t *testing.T) {
 // TestAdminRoutes_Timers exercises GET /admin/timers through the mux: the
 // query string parsed into the filter, the aggregate gate behind total, the
 // handler-side limit clamp, the 400 mapping for a bad cursor, and the absence
-// of the route when the dep is nil (ADR-0159). A route that drops the cursor
+// of the route when the dep is nil. A route that drops the cursor
 // silently re-serves page one forever, which no status-code-only assertion
 // would catch. The nil-dep case shares the request shape and differs only in
 // what is wired, so it belongs in the same table.
@@ -568,7 +568,7 @@ func TestAdminRoutes_Timers(t *testing.T) {
 				var body map[string]any
 				decodeJSON(t, rr.Body, &body)
 				assert.EqualValues(t, 3, body["total_count"], "total_count is the table total from Stats")
-				assert.NotContains(t, body, "count", "count is the retired pre-ADR-0159 field name")
+				assert.NotContains(t, body, "count", "count is the retired legacy field name")
 				assert.Equal(t, "cursor-2", body["next_cursor"])
 			},
 		},

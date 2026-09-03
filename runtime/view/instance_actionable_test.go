@@ -113,11 +113,11 @@ func TestNewActionableView_ClosedTasksExcluded(t *testing.T) {
 	}
 }
 
-// TestActionableViewDoesNotAliasInstanceState guards the isolation boundary the
-// ADR-0147 audit flagged: ActionableTask.Claim is a pointer and Candidates a
-// slice, both taken from engine.InstanceState. NewActionableView is public API
-// and is routinely handed live driver state, so a consumer mutating the returned
-// view must not reach into the engine's audit record.
+// TestActionableViewDoesNotAliasInstanceState guards an isolation boundary:
+// ActionableTask.Claim is a pointer and Candidates a slice, both taken from
+// engine.InstanceState. NewActionableView is public API and is routinely handed
+// live driver state, so a consumer mutating the returned view must not reach
+// into the engine's audit record.
 func TestActionableViewDoesNotAliasInstanceState(t *testing.T) {
 	t.Parallel()
 

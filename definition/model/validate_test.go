@@ -38,7 +38,7 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"multiple manual start events": {
-			// ADR-0121: multiple start events are legal, but at most one may be a
+			// Multiple start events are legal, but at most one may be a
 			// trigger-less "none" start — a second one is rejected.
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
@@ -337,7 +337,7 @@ func TestValidate(t *testing.T) {
 				require.NoError(t, err)
 			},
 		},
-		// Mixed split+join gateway rules (ADR-0014)
+		// Mixed split+join gateway rules
 		"mixed gateway both splits and joins": {
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
@@ -569,7 +569,7 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"multiple starts still runs pairing (reachability well-defined via union)": {
-			// ADR-0121: reachability/pairing are computed over the union of all
+			// Reachability/pairing are computed over the union of all
 			// starts, so they run (and can flag real defects) even when the start
 			// configuration itself is separately invalid (two manual-starts here).
 			// The join "j" is genuinely unpaired regardless of start count: its
@@ -687,7 +687,7 @@ func TestValidate(t *testing.T) {
 		},
 		// CompensateRef validation rules
 		"normal intermediate throw event is unaffected": {
-			// KindIntermediateThrowEvent does not carry CompensateRef (ADR-0120);
+			// KindIntermediateThrowEvent does not carry CompensateRef;
 			// a normal signal throw must not trigger ErrCompensateRefNotFound.
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
@@ -706,7 +706,7 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"compensation throw event with dangling CompensateRef is rejected": {
-			// KindCompensationThrowEvent (ADR-0120) with CompensateRef pointing to a
+			// KindCompensationThrowEvent with CompensateRef pointing to a
 			// non-existent node.
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
@@ -727,7 +727,7 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"compensation throw event with valid CompensateRef is accepted": {
-			// KindCompensationThrowEvent (ADR-0120) with CompensateRef pointing to a
+			// KindCompensationThrowEvent with CompensateRef pointing to a
 			// real node.
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
@@ -748,7 +748,7 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"scope-wide compensation throw event with empty CompensateRef is accepted": {
-			// KindCompensationThrowEvent (ADR-0120) with empty CompensateRef (scope-wide)
+			// KindCompensationThrowEvent with empty CompensateRef (scope-wide)
 			// must not trigger ErrCompensateRefNotFound.
 			def: &model.ProcessDefinition{
 				ID: "p", Version: 1,
@@ -767,7 +767,7 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"targeted compensation throw with ScopeLocal is rejected (nonsensical combination)": {
-			// ADR-0120 review C2: WithScopeLocalCompensation only applies to the
+			// WithScopeLocalCompensation only applies to the
 			// scope-wide (empty CompensateRef) branch; combining it with a targeted
 			// CompensateRef is a silent no-op at runtime, so it is rejected at
 			// authoring time.
@@ -809,7 +809,7 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"event-triggered SubProcess with no incoming flow is a reachability root": {
-			// ADR-0122: a KindSubProcess whose nested definition has an
+			// A KindSubProcess whose nested definition has an
 			// event-triggered (message, here) start is recognized as a
 			// reachability root —
 			// it must not be flagged ErrUnreachableNode despite having no
@@ -820,7 +820,7 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"event-triggered SubProcess with an incoming flow is rejected": {
-			// ADR-0122 authoring guard: an event-triggered SubProcess must not
+			// Authoring guard: an event-triggered SubProcess must not
 			// also carry an incoming sequence flow — that combination is
 			// unmodelable (embedded vs. event sub-process semantics collide).
 			def: eventTriggeredSubprocessOnFlowDef(),
@@ -829,7 +829,7 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		"event-triggered SubProcess with an outgoing flow is rejected": {
-			// ADR-0122 review guard: an event sub-process never traverses its own
+			// Guard: an event sub-process never traverses its own
 			// sequence flows (it resumes via the enclosing scope), so an OUTGOING
 			// flow is dead — and worse, the reachability seed forwardReachable
 			// would follow it and wrongly mark the orphan target reachable,
@@ -1878,7 +1878,7 @@ func TestValidate_RejectsCompensateActionWithoutForwardAction(t *testing.T) {
 }
 
 // TestValidateManualTaskRejectsCompletionValidation proves the fail-closed
-// authoring rule from ADR-0118: a UserTask marked Manual (WithManual)
+// authoring rule: a UserTask marked Manual (WithManual)
 // completes on a bare trigger with no payload, so it must not also carry
 // completion validation (WithCompletionValidation) — there is no input for the
 // validation strategy to ever check. The guard requires BOTH Manual and a
@@ -1941,7 +1941,7 @@ func TestValidateManualTaskRejectsCompletionValidation(t *testing.T) {
 	}
 }
 
-// TestValidateStartEvents covers the ADR-0121 relaxation: a process
+// TestValidateStartEvents covers the multiple-start relaxation: a process
 // definition may now have multiple start events (at most one trigger-less
 // "none" start, plus any number of event-triggered starts each declaring
 // exactly one trigger family), and reachability/pairing are computed over the
@@ -2010,7 +2010,7 @@ func twoManualStartDef() *model.ProcessDefinition {
 }
 
 // noneAndMessageStartDef has one manual-start plus one message-triggered
-// start — legal under the ADR-0121 relaxation (at most one manual-start).
+// start — legal under the multiple-start relaxation (at most one manual-start).
 func noneAndMessageStartDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p", Version: 1,
@@ -2099,7 +2099,7 @@ func twoStartsBothReachDef() *model.ProcessDefinition {
 // flow-reachable nodes are the none-start chain (s -> work -> e), plus a
 // KindSubProcess ("handleCancel") whose nested definition has a
 // message-triggered start and NO incoming sequence flow of its own — it is a
-// reachability root by virtue of its event-triggered inner start (ADR-0122).
+// reachability root by virtue of its event-triggered inner start.
 func eventTriggeredSubprocessRootDef() *model.ProcessDefinition {
 	inner := &model.ProcessDefinition{
 		ID: "esc", Version: 1,
@@ -2128,7 +2128,7 @@ func eventTriggeredSubprocessRootDef() *model.ProcessDefinition {
 	}
 }
 
-// eventTriggeredSubprocessOnFlowDef is the ADR-0122 authoring-guard
+// eventTriggeredSubprocessOnFlowDef is the authoring-guard
 // counter-case: a KindSubProcess whose nested start is event-triggered
 // (signal, here) but which ALSO carries an incoming sequence flow. Mixing
 // "embedded, flow-driven" and "event sub-process, trigger-driven" semantics
@@ -2159,7 +2159,7 @@ func eventTriggeredSubprocessOnFlowDef() *model.ProcessDefinition {
 	}
 }
 
-// eventTriggeredSubprocessOutgoingFlowDef is the ADR-0122 review counter-case:
+// eventTriggeredSubprocessOutgoingFlowDef is the counter-case:
 // a KindSubProcess whose nested start is event-triggered (signal, here) but
 // which carries an OUTGOING sequence flow to a node ("orphan") that has no
 // other way in. An event sub-process never traverses its own sequence flows,
@@ -2196,7 +2196,7 @@ func eventTriggeredSubprocessOutgoingFlowDef() *model.ProcessDefinition {
 }
 
 // TestValidateUserTaskOutcomes covers the structural rules on a UserTask's
-// completion-outcome declaration (ADR-0146): the declared set must be usable
+// completion-outcome declaration: the declared set must be usable
 // (no blank or duplicate outcomes), an explicit outcome variable must be a
 // valid expr identifier so a gateway condition can reference it, and a manual
 // task — which completes on a bare trigger the engine fails closed on for any
@@ -2306,12 +2306,12 @@ func TestValidateUserTaskOutcomes(t *testing.T) {
 	}
 }
 
-// TestValidateReceiveTaskMessageName covers ADR-0152: a ReceiveTask waits on a
+// TestValidateReceiveTaskMessageName pins the rule: a ReceiveTask waits on a
 // NAMED message — engine/step_nodes.go:97-99 assigns tok.AwaitMessage =
 // rt.MessageName unconditionally, unlike the catch-event and boundary paths,
 // which guard != "". A blank name (empty or whitespace-only) parks a token on
 // AwaitMessage that no MessageReceived can ever resume once an empty identity
-// key stops matching a record (ADR-0152's core guard), so the shape is
+// key stops matching a record (the engine's core guard), so the shape is
 // rejected at authoring time rather than left to strand a token at runtime.
 func TestValidateReceiveTaskMessageName(t *testing.T) {
 	t.Parallel()
@@ -2367,7 +2367,7 @@ func TestValidateReceiveTaskMessageName(t *testing.T) {
 	}
 }
 
-// TestValidateBlankEventName covers ADR-0152's authoring-hygiene rule: a
+// TestValidateBlankEventName covers the authoring-hygiene rule: a
 // SignalName or MessageName that was WRITTEN but carries no visible character
 // is rejected, while a name that is legitimately ABSENT ("") — the way a
 // manual start or an error boundary says "no event trigger at all" — remains

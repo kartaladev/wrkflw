@@ -46,9 +46,9 @@ func TestMySQLElectorLeadership(t *testing.T) {
 	require.NoError(t, electorB.Close())
 }
 
-// TestMySQLElectorInvokesOnLeadershipAcquired proves the Option-A failover hook
-// (ADR-0072): when an instance wins leadership, the registered
-// on-leadership-acquired callback fires asynchronously.
+// TestMySQLElectorInvokesOnLeadershipAcquired proves the failover hook: when an
+// instance wins leadership, the registered on-leadership-acquired callback
+// fires asynchronously.
 func TestMySQLElectorInvokesOnLeadershipAcquired(t *testing.T) {
 	db := dbtest.RunTestMySQL(t)
 	ctx := t.Context()

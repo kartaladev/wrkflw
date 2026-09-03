@@ -1,7 +1,7 @@
 // Package jsonschema is a JSON Schema validation adapter. It validates the input map
 // against a compiled schema using github.com/santhosh-tekuri/jsonschema/v6, and can also
 // DERIVE a schema from a Go type via github.com/invopop/jsonschema (NewFromStruct). Both
-// third-party deps are isolated in this package (ADR-0111); the definition/engine core
+// third-party deps are isolated in this package; the definition/engine core
 // never imports them. The serialized descriptor always carries canonical JSON text.
 package jsonschema
 

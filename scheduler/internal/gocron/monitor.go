@@ -12,9 +12,9 @@ import (
 	"github.com/kartaladev/wrkflw/scheduler/internal/obs"
 )
 
-// Metric instrument names emitted by monitorStatus (ADR-0134 production item
-// ① — production observability via gocron's native Monitor/EventListener
-// hooks). Both are wired into the gocron engine at construction time via
+// Metric instrument names emitted by monitorStatus (production observability
+// via gocron's native Monitor/EventListener hooks). Both are wired into the
+// gocron engine at construction time via
 // gocron.WithMonitorStatus (scheduler.go).
 const (
 	// jobRunsTotalMetric counts job fires by outcome. Attributes:
@@ -46,7 +46,7 @@ const (
 )
 
 // monitorStatus implements gocron.MonitorStatus (which embeds gocron.Monitor)
-// backed by the Task-1 obs shim's meter (obs.Telemetry). It is wired into the
+// backed by the obs shim's meter (obs.Telemetry). It is wired into the
 // gocron engine via gocron.WithMonitorStatus at construction (scheduler.go).
 //
 // gocron's executor drives monitorStatus from a single call site per job run
@@ -59,7 +59,7 @@ const (
 //
 // Cardinality: every instrument here is keyed by "job_id" = the caller-
 // supplied timer/job id (see jobRunsTotalMetric's doc). This is a deliberate,
-// accepted trade-off (ADR-0134): wrkflw's timers/jobs are a bounded,
+// accepted trade-off: wrkflw's timers/jobs are a bounded,
 // operationally meaningful set registered by the consumer, and per-timer
 // attribution is the signal this metric exists to provide — collapsing
 // job_id away would erase exactly what operators need to see.
@@ -76,9 +76,9 @@ var _ gocron.MonitorStatus = (*monitorStatus)(nil)
 func newMonitorStatus(tel obs.Telemetry) *monitorStatus {
 	return &monitorStatus{
 		runsTotal: tel.Int64Counter(jobRunsTotalMetric,
-			"Count of gocron job runs by outcome status, keyed by job_id (ADR-0134)."),
+			"Count of gocron job runs by outcome status, keyed by job_id."),
 		duration: tel.Float64Histogram(jobDurationSecondsMetric,
-			"Duration in seconds of gocron job runs, keyed by status and job_id (ADR-0134)."),
+			"Duration in seconds of gocron job runs, keyed by status and job_id."),
 	}
 }
 

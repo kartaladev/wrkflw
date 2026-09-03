@@ -16,9 +16,8 @@ var _ persist.Watcher = (*pgWatcher)(nil)
 
 const watcherReconnectDelay = time.Second
 
-// pgWatcher is a casbin persist.Watcher backed by Postgres LISTEN/NOTIFY
-// (ADR-0023, reusing the ADR-0022 mechanics). Update() emits a NOTIFY carrying
-// this node's id; a listener goroutine invokes the update callback for every
+// pgWatcher is a casbin persist.Watcher backed by Postgres LISTEN/NOTIFY.
+// Update() emits a NOTIFY carrying this node's id; a listener goroutine invokes the update callback for every
 // notification whose payload differs from this node's id (so a node ignores the
 // echo of its own write).
 type pgWatcher struct {
@@ -38,7 +37,7 @@ type pgWatcher struct {
 	// closing the NOTIFY-before-LISTEN race.
 	listenReady chan struct{}
 
-	// clk drives the reconnect backoff wait (ADR-0138), letting a
+	// clk drives the reconnect backoff wait, letting a
 	// clockwork.FakeClock make it deterministic in tests. Production callers
 	// pass clockwork.NewRealClock().
 	clk clockwork.Clock

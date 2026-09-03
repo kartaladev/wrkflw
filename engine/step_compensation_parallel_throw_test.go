@@ -1,20 +1,17 @@
 package engine_test
 
-// step_compensation_parallel_throw_test.go — P1 (ADR-0071): serialize concurrent
+// step_compensation_parallel_throw_test.go — P1: serialize concurrent
 // compensation throws.
 //
 // In Macro mode drive() advances every active token in one pass. Two
-// CompensationThrowEvent (ADR-0120) nodes in parallel branches are both
-// processed in the SAME drive pass. Before ADR-0071 the second throw silently
-// OVERWROTE the single Compensating cursor, orphaning the first walk (its
-// ActionCompleted → ErrTokenNotFound).
+// CompensationThrowEvent nodes in parallel branches are both processed in the
+// SAME drive pass. Unserialized, the second throw silently OVERWROTE the single
+// Compensating cursor, orphaning the first walk (its ActionCompleted →
+// ErrTokenNotFound).
 //
 // These tests are strict RED-first per the TDD discipline: the first test
 // reproduces the bug (cursor overwrite), then the fix flips it to "both
 // compensations complete in sequence; the deferred queue drains".
-//
-// Design ref: docs/specs/2026-06-27-parallel-compensation-throw-design.md
-// ADR: 0071
 
 import (
 	"errors"
@@ -116,7 +113,7 @@ func invokeActionsByName(cmds []engine.Command) map[string]engine.InvokeAction {
 	return out
 }
 
-// TestParallelCompensationThrowsSerialize is the P1 regression test (ADR-0071).
+// TestParallelCompensationThrowsSerialize is the P1 regression test.
 //
 // RED (before the fix): the fork drives both throws in one pass; the second throw
 // overwrites the single Compensating cursor. Completing the FIRST throw's
@@ -192,7 +189,7 @@ func TestParallelCompensationThrowsCursorOverwriteIsFixed(t *testing.T) {
 		"the first throw's compensation must not be orphaned (cursor overwrite bug)")
 }
 
-// TestParallelCompensationThrowsDrainOrdering is the Task-3 table for the
+// TestParallelCompensationThrowsDrainOrdering is the table for the
 // serialize/drain behaviour: it varies the branch count and which refs carry
 // archived records, asserting the deferred queue drains exactly one walk per
 // finish and that branches whose ref has no records auto-advance WITHOUT being
@@ -275,7 +272,7 @@ func TestParallelCompensationThrowsDrainOrdering(t *testing.T) {
 // a distinct multi-step shape (cancel trigger interleaved), so it stays a
 // standalone test rather than folding into the drain table above.
 //
-// Resolved ordering (ADR-0040 + ADR-0071):
+// Resolved ordering:
 //   - The cancel is DEFERRED (PendingCancel set) because a throw walk is in flight
 //     (handleCancelRequested's in-flight guard, ResumeNode != "").
 //   - When the first throw's compensation completes, stepCompensationFinish sees

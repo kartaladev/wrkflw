@@ -22,8 +22,9 @@ import (
 )
 
 // parseDefRef hydrates a definition_ref TEXT column into a model.Qualifier. An
-// empty string (rows produced before ADR-0047, or an unset ref) yields the zero
-// Qualifier without error; a non-empty malformed value is a genuine scan error.
+// empty string (rows produced by an older version, or an unset ref) yields the
+// zero Qualifier without error; a non-empty malformed value is a genuine scan
+// error.
 func parseDefRef(s string) (model.Qualifier, error) {
 	if s == "" {
 		return model.Qualifier{}, nil
@@ -41,7 +42,7 @@ var (
 	_ kernel.JournalReader = (*Store)(nil)
 )
 
-// outboxNotifyChannel is the wake channel the relay listens on (ADR-0022). The
+// outboxNotifyChannel is the wake channel the relay listens on. The
 // notification carries no payload — it is a bare wakeup; the relay still claims
 // rows via FOR UPDATE SKIP LOCKED. Only backends whose dialect returns a
 // non-empty NotifyStatement (Postgres) emit it.
@@ -402,7 +403,7 @@ func (s *Store) writeOutbox(ctx context.Context, q database.Querier, instanceID 
 
 // insertCallLink writes a new wrkflw_call_links row with status='running' on q.
 // Called during Create when the applied step carries a NewCallLink — atomic with
-// the child instance INSERT (ADR-0025 crash-safety seam).
+// the child instance INSERT (the crash-safety seam).
 func (s *Store) insertCallLink(ctx context.Context, q database.Querier, link kernel.CallLink, createdAt time.Time) error {
 	if _, err := q.Exec(ctx, s.dialect.Rebind(
 		`INSERT INTO wrkflw_call_links
@@ -426,7 +427,7 @@ func (s *Store) insertCallLink(ctx context.Context, q database.Querier, link ker
 // timer) overwrites the row via the dialect's UpsertTimer conflict clause.
 //
 // A package-level free function (not a *Store method) so [TimerStore.UpsertJob]
-// (the standalone TimerWriter capability, ADR-0134) can call it with its own
+// (the standalone TimerWriter capability) can call it with its own
 // dialect value rather than relying on a receiver, since TimerStore is a
 // distinct type from Store.
 func upsertTimer(ctx context.Context, q database.Querier, d dialect.Dialect, tm kernel.ArmedTimer) error {
@@ -481,7 +482,7 @@ func deleteTimer(ctx context.Context, q database.Querier, d dialect.Dialect, ins
 // without an instance_id scope. Engine timer ids are globally unique
 // (`<instanceID>-tm<seq>`), so this is unambiguous; it backs
 // [TimerStore.DeleteJobByTimerID], which the runtime JobStore's Delete(id)
-// (Task 10) uses when it only carries the timer id, not the instance id.
+// uses when it only carries the timer id, not the instance id.
 func deleteTimerByTimerID(ctx context.Context, q database.Querier, d dialect.Dialect, timerID string) error {
 	_, err := q.Exec(ctx, d.Rebind(
 		`DELETE FROM wrkflw_timers WHERE timer_id = ?`),
@@ -495,7 +496,7 @@ func deleteTimerByTimerID(ctx context.Context, q database.Querier, d dialect.Dia
 // flipCallLink updates the wrkflw_call_links row for childInstanceID to the
 // terminal status implied by outcome (completed or failed) on q. Called during
 // Commit when the applied step carries a CallOutcome — atomic with the snapshot
-// UPDATE (ADR-0025). For a root instance (no link row) the UPDATE affects zero
+// UPDATE. For a root instance (no link row) the UPDATE affects zero
 // rows, which is a clean no-op; zero rows must NOT be treated as an error.
 func (s *Store) flipCallLink(ctx context.Context, q database.Querier, childInstanceID string, outcome kernel.CallOutcome, updatedAt time.Time) error {
 	_ = updatedAt // no updated_at column on call_links flip; retained for signature parity

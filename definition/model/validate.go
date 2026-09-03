@@ -54,17 +54,17 @@ var (
 	// at most one is allowed. A manual start is a KindStartEvent whose MessageName,
 	// SignalName, and Timer are all unset. Multiple event-triggered starts
 	// (message/signal/timer) remain legal alongside it — see ErrAmbiguousStartTrigger
-	// and ErrEventStartMissingTrigger for the per-start trigger rules (ADR-0121).
+	// and ErrEventStartMissingTrigger for the per-start trigger rules.
 	ErrMultipleManualStarts = errors.New("workflow-definition: multiple manual start events")
 	// ErrAmbiguousStartTrigger is returned when a start event sets more than one
 	// trigger family (message/signal/timer). Exactly one family — or none — is
-	// allowed per start event (ADR-0121).
+	// allowed per start event.
 	ErrAmbiguousStartTrigger = errors.New("workflow-definition: start event has ambiguous trigger")
 	// ErrEventStartMissingTrigger is returned when a start event declares a
 	// trigger family incompletely — currently: a non-empty CorrelationKey with
 	// no MessageName, i.e. a message start missing its message name. Such a
 	// start is neither a valid manual-start nor a valid message start, so it is
-	// rejected rather than silently treated as none (ADR-0121).
+	// rejected rather than silently treated as none.
 	ErrEventStartMissingTrigger = errors.New("workflow-definition: event start missing trigger detail")
 	ErrDanglingFlow             = errors.New("workflow-definition: flow references unknown node")
 	ErrDeadEnd                  = errors.New("workflow-definition: non-end node has no outgoing flow")
@@ -96,7 +96,7 @@ var (
 	// incoming flow and more than one outgoing flow. Such a gateway is
 	// structurally ambiguous — it combines join and split semantics in a single
 	// node, leading to silent mis-routing. Pure split (1-in/N-out), pure join
-	// (N-in/1-out), and pass-through (1-in/1-out) remain valid. ADR-0014.
+	// (N-in/1-out), and pass-through (1-in/1-out) remain valid.
 	ErrMixedGateway = errors.New("workflow-definition: gateway both splits and joins")
 	// ErrBoundaryErrorHost is returned when a boundary error event
 	// (KindBoundaryEvent with no TimerDuration/SignalName/MessageName) is
@@ -168,7 +168,7 @@ var (
 	// (WithScopeLocalCompensation). ScopeLocal narrows only the scope-wide (empty
 	// CompensateRef) throw's root breadth; the engine ignores it on the targeted
 	// branch, so the combination is a silent no-op. It is rejected at authoring
-	// time to make the nonsensical combination inexpressible (ADR-0120).
+	// time to make the nonsensical combination inexpressible.
 	ErrScopeLocalWithCompensateRef = errors.New("workflow-definition: compensation throw cannot combine CompensateRef with scope-local compensation")
 	// ErrInvalidVersion is returned by Validate when a (root) definition's
 	// Version is below 1. Version 0 is reserved as the "latest" resolution
@@ -208,11 +208,11 @@ var (
 	// tok.AwaitMessage = rt.MessageName UNCONDITIONALLY — unlike the
 	// catch-event and boundary paths, which guard != "" — so such a node
 	// parks its token on AwaitMessage "", and once an empty identity key
-	// matches no record (ADR-0152) no MessageReceived can ever resume it.
+	// matches no record, no MessageReceived can ever resume it.
 	//
 	// A WHITESPACE-ONLY name is NOT that defect: a token parked on e.g.
 	// AwaitMessage "   " remains resumable by an exact-equal
-	// MessageReceived{Name: "   "}, since ADR-0152's engine guards reject
+	// MessageReceived{Name: "   "}, since the engine's guards reject
 	// only "", never a non-empty whitespace string. It is rejected here as
 	// authoring hygiene, not a leak fix: not a name any operator can
 	// reasonably produce or correlate on, so the shape is made
@@ -223,7 +223,7 @@ var (
 	// it survives the definition's event-kind discriminators (:271-272, :503,
 	// :701) undetected, then parks a token on a name no operator can
 	// reasonably produce or match against — the whitespace analogue of the
-	// empty key ADR-0152 closes at the engine's state layer. A declared event
+	// empty key closed at the engine's state layer. A declared event
 	// name must carry at least one visible character; an ABSENT name ("") is
 	// unaffected — several kinds rely on "" meaning "no trigger at all" (a
 	// manual start, an error boundary).
@@ -238,7 +238,7 @@ var (
 	// ErrTriggerNeverDue is returned when a node carries a timer or in-wait
 	// trigger that can never fire at any anchor — schedule.Every(0),
 	// schedule.Daily(0), a Monthly day-of-month outside -31..-1 or 1..31, and
-	// the rest of schedule.TriggerSpec.NeverDue's decided set (ADR-0182). Such a
+	// the rest of schedule.TriggerSpec.NeverDue's decided set. Such a
 	// trigger arms a durable timer the scheduler then refuses, parking the
 	// instance forever, so it is rejected while the definition is authored
 	// instead of at run time.
@@ -280,28 +280,27 @@ var (
 	// ErrManualTaskValidation is returned when a UserTask marked Manual
 	// (WithManual) also carries completion validation. A manual task completes
 	// on a bare trigger with no payload, so there is no output to validate — the
-	// combination is contradictory and rejected at authoring time. See ADR-0118.
+	// combination is contradictory and rejected at authoring time.
 	ErrManualTaskValidation = errors.New("workflow-definition: manual user task cannot carry completion validation")
 	// ErrEmptyOutcome is returned when a UserTask declares a blank (empty or
 	// whitespace-only) completion outcome. A blank outcome can never be selected
 	// — the engine treats an empty outcome as "none given" — so it is dead
-	// config rejected at authoring time. See ADR-0146.
+	// config rejected at authoring time.
 	ErrEmptyOutcome = errors.New("workflow-definition: user task declares a blank outcome")
 	// ErrDuplicateOutcome is returned when a UserTask declares the same
 	// completion outcome twice. The declaration is a set; a duplicate entry
-	// signals an authoring mistake. See ADR-0146.
+	// signals an authoring mistake.
 	ErrDuplicateOutcome = errors.New("workflow-definition: user task declares a duplicate outcome")
 	// ErrInvalidOutcomeVariable is returned when a UserTask's explicit outcome
 	// variable name (WithOutcomeVariable) is not a valid expr identifier. The
 	// exposed variable exists to be referenced from gateway conditions, which
 	// are expr expressions, so a name expr cannot resolve is dead config.
-	// See ADR-0146.
 	ErrInvalidOutcomeVariable = errors.New("workflow-definition: outcome variable is not a valid identifier")
 	// ErrManualTaskOutcome is returned when a UserTask marked Manual
 	// (WithManual) also declares completion outcomes or opts into outcome
 	// exposure. A manual task completes on a bare trigger carrying no outcome —
 	// the engine fails closed on one — so the declaration could never be
-	// satisfied. See ADR-0146 and ADR-0118.
+	// satisfied.
 	ErrManualTaskOutcome = errors.New("workflow-definition: manual user task cannot declare completion outcomes")
 	// ErrOutcomeExposureWithoutOutcomes is returned when a UserTask opts into
 	// outcome exposure (WithExposeOutcome or WithOutcomeVariable) without
@@ -312,7 +311,7 @@ var (
 	// domain requires closing it first, so the combination is rejected at
 	// authoring time rather than yielding an unbounded routing input at runtime.
 	// A manual task is diagnosed by ErrManualTaskOutcome instead — it may not
-	// declare outcomes at all. See ADR-0146.
+	// declare outcomes at all.
 	ErrOutcomeExposureWithoutOutcomes = errors.New("workflow-definition: outcome exposure requires a declared outcome set")
 	// ErrEventSubprocessOnFlow is returned when a KindSubProcess node whose
 	// nested definition has an event-triggered (signal/message/timer) start
@@ -325,7 +324,7 @@ var (
 	// sub-process" (trigger-driven, no flow); an outgoing flow is dead, and the
 	// reachability seed would follow it and wrongly mark an otherwise-orphan
 	// node reachable (escaping ErrUnreachableNode). Rejected at authoring time
-	// rather than silently picking one interpretation (ADR-0122).
+	// rather than silently picking one interpretation.
 	ErrEventSubprocessOnFlow = errors.New("workflow-definition: event-triggered subprocess has incoming or outgoing sequence flow")
 	// ErrDuplicateNodeID is returned when two nodes of the same process
 	// definition share an ID. A node ID is the definition's lookup key:
@@ -413,7 +412,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		flowIDs[f.ID] = true
 	}
 
-	// Start events (ADR-0121): a definition may have any number of start
+	// Start events: a definition may have any number of start
 	// events. At most one may be a trigger-less "none" start
 	// (ErrMultipleManualStarts); each event-triggered start must set exactly one
 	// trigger family — message, signal, or timer (ErrAmbiguousStartTrigger for
@@ -531,7 +530,6 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	// Mixed split+join gateway: a gateway with both >1 incoming and >1 outgoing
 	// flows is structurally ambiguous and is rejected. Pure split (1-in/N-out),
 	// pure join (N-in/1-out), and pass-through (1-in/1-out) are all valid.
-	// ADR-0014.
 	for _, n := range d.Nodes {
 		if !gatewayKinds[n.Kind()] {
 			continue
@@ -542,7 +540,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	}
 
 	// Event-triggered SubProcess must not carry an incoming OR outgoing sequence
-	// flow (ErrEventSubprocessOnFlow, ADR-0122): it is latent until its trigger
+	// flow (ErrEventSubprocessOnFlow): it is latent until its trigger
 	// fires, never entered by a flowing token, and resumes via its enclosing
 	// scope rather than traversing its own flows. An incoming flow is ambiguous
 	// between "embedded" (token-driven) and "event sub-process" (trigger-driven)
@@ -556,7 +554,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 
 	// Reachability (ErrUnreachableNode). Runs whenever there is at least one
 	// start event, over the UNION of forward-reachable sets from every start
-	// (ADR-0121: multiple starts are legal, so reachability is well-defined for
+	// (multiple starts are legal, so reachability is well-defined for
 	// any start count > 0). With 0 starts the start-count error already fires
 	// and reachability is undefined, so we skip. Boundary events have no
 	// incoming flow (reachable iff their host is reachable, to a fixpoint, since a
@@ -616,7 +614,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	//
 	// reached == nil means 0 start events: reachability is undefined and the
 	// no-start-event error already fires, so we skip pairing entirely to avoid
-	// noise on an already-invalid definition. With >=1 starts (ADR-0121)
+	// noise on an already-invalid definition. With >=1 starts
 	// reachability is well-defined via the union above, so pairing runs even
 	// when the start configuration itself is otherwise invalid (e.g. multiple
 	// manual-starts) — it is an independent structural rule.
@@ -747,7 +745,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	// ErrEmptyMessageName's doc comment. In short: an EMPTY name parks the
 	// token on AwaitMessage "" (engine/step_nodes.go:97-99 assigns it
 	// unconditionally, unlike the catch-event and boundary paths), and an
-	// empty identity key matches no record (ADR-0152), so the token could
+	// empty identity key matches no record, so the token could
 	// never be resumed. A WHITESPACE-ONLY name remains resumable in
 	// principle — it is rejected as authoring hygiene, not to close a leak.
 	// Reject both shapes at authoring time. model cannot import the leaf
@@ -755,7 +753,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	//
 	// A ReceiveTask with a whitespace-only MessageName also trips
 	// ErrBlankEventName below (that loop does not exclude KindReceiveTask):
-	// intentional — the addendum's "at most one ErrBlankEventName per node"
+	// intentional — the "at most one ErrBlankEventName per node"
 	// dedup requirement is scoped to that rule alone, not to
 	// cross-rule exclusivity, so a definition can carry both errors at once.
 	for _, n := range d.Nodes {
@@ -771,7 +769,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	// not fire on an absent name: "" is how a node says it has no signal/message
 	// at all, and several kinds rely on that (a manual start, an error
 	// boundary). Only a name that was written but carries no visible character
-	// is rejected (ADR-0152). At most one ErrBlankEventName is reported per
+	// is rejected. At most one ErrBlankEventName is reported per
 	// node even when both SignalName and MessageName are blank.
 	//
 	// This must NEVER be confused with, or replace, the event-kind
@@ -803,7 +801,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		}
 	}
 
-	// Never-due timer and in-wait triggers (ADR-0182). Both fields reach the
+	// Never-due timer and in-wait triggers. Both fields reach the
 	// same durable-arm path — a timer trigger through the node's own arm, an
 	// in-wait trigger through engine.armWaitReminder's ScheduleTimer{Kind:
 	// TimerInWait} — where a spec that can never fire parks the instance on a
@@ -812,7 +810,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	// This loop lives INSIDE validateStructure, not in Validate, so it reaches
 	// nested sub-processes: Validate is called on the root only, and a nested
 	// definition is visited solely through this function's own recursion, which
-	// wraps the error with the host node id. Placement is the decision.
+	// wraps the error with the host node id.
 	//
 	// The timer trigger is read from the wire form because there is no TimerOf
 	// accessor and there cannot be one: the timer lives on the leaf event types
@@ -873,8 +871,8 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	//
 	//   - Manual UserTask must not carry completion validation: a manual task
 	//     completes with no payload, so a validation strategy would never
-	//     receive input to check (ADR-0118).
-	//   - The completion-outcome declaration must be well-formed (ADR-0146).
+	//     receive input to check.
+	//   - The completion-outcome declaration must be well-formed.
 	//
 	// model cannot import the activity package, so both Manual and the outcome
 	// declaration are read via the wire projection.
@@ -917,7 +915,7 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		}
 		// A targeted throw (non-empty CompensateRef) must not also request
 		// scope-local compensation: ScopeLocal applies only to the scope-wide
-		// branch, so the combination is a silent no-op — reject it (ADR-0120).
+		// branch, so the combination is a silent no-op — reject it.
 		if w.CompensateScopeLocal {
 			errs = append(errs, fmt.Errorf("%w: throw %q", ErrScopeLocalWithCompensateRef, n.ID()))
 		}
@@ -1051,7 +1049,7 @@ func isIdentifier(s string) bool {
 // validateOutcomes checks a UserTask's completion-outcome declaration: the
 // declared set must be usable (no blank or duplicate entries), an explicit
 // outcome variable must be an expr identifier, and a manual task must not
-// declare outcomes at all (ADR-0146).
+// declare outcomes at all.
 //
 // It takes the caller's already-computed wire projection rather than
 // re-deriving one, so a UserTask is flattened once per Validate call. nodeID is

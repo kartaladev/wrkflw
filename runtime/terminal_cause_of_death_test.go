@@ -119,8 +119,8 @@ func TestCompensationFailedIncidentIsNotPublishedAsCauseOfDeath(t *testing.T) {
 		},
 		{
 			// Control. Kind is left at its zero value on purpose: that is what every
-			// pre-ADR-0175 stored incident decodes to, and the allow-list must keep
-			// publishing it. This row passes both before and after the fix.
+			// incident stored by an older version decodes to, and the allow-list must
+			// keep publishing it. This row passes both before and after the fix.
 			name: "a zero-Kind action incident is still the published cause of death",
 			st: engine.InstanceState{
 				InstanceID: "i-action-only",

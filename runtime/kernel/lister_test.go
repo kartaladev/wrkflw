@@ -13,8 +13,7 @@ import (
 
 // mustEncodeInstanceCursor encodes an instance cursor for use as test input,
 // failing the test if encoding errors. It exists so call sites that only need a
-// valid cursor stay one line after EncodeCursor gained an error return
-// (ADR-0160).
+// valid cursor stay one line after EncodeCursor gained an error return.
 func mustEncodeInstanceCursor(t *testing.T, startedAt time.Time, instanceID string) string {
 	t.Helper()
 	c, err := kernel.EncodeCursor(startedAt, instanceID)
@@ -35,11 +34,11 @@ func TestCursorRoundTrip(t *testing.T) {
 	assert.Equal(t, "inst-7", gotID)
 }
 
-// TestEncodeCursorReportsUnrepresentableTime pins the second defect ADR-0160
-// fixes: EncodeCursor used to discard its json.Marshal error and return "",
-// which IS the first-page sentinel — so a page could answer HasMore: true with
-// an empty NextCursor and a conforming client would re-request page one
-// forever. time.Time.MarshalJSON rejects a year outside [0,9999].
+// TestEncodeCursorReportsUnrepresentableTime pins a fixed defect: EncodeCursor
+// used to discard its json.Marshal error and return "", which IS the first-page
+// sentinel — so a page could answer HasMore: true with an empty NextCursor and
+// a conforming client would re-request page one forever.
+// time.Time.MarshalJSON rejects a year outside [0,9999].
 func TestEncodeCursorReportsUnrepresentableTime(t *testing.T) {
 	t.Parallel()
 
@@ -57,8 +56,7 @@ func TestEncodeCursorReportsUnrepresentableTime(t *testing.T) {
 // ErrBadCursor. This matters concretely: DisallowUnknownFields alone rejects an
 // armed-timer cursor here (its "kind"/"next_run"/"timer_id" are all unknown to
 // cursorPayload), so the kind check is reached ONLY by an old-format cursor. A
-// table without that case still passes with the kind comparison deleted
-// (ADR-0160).
+// table without that case still passes with the kind comparison deleted.
 func TestDecodeCursorRejects(t *testing.T) {
 	t.Parallel()
 
@@ -86,7 +84,7 @@ func TestDecodeCursorRejects(t *testing.T) {
 		{
 			// The silent failure this delivery exists to stop. An armed-timer
 			// cursor is also base64-of-JSON and also carries an "instance_id",
-			// so before ADR-0160 it decoded with NO error as (zero, "inst-x").
+			// so an older version decoded it with NO error as (zero, "inst-x").
 			// Instance listing is DESC, so that predicate matches NOTHING and
 			// the operator gets an empty page with a 200 — quieter than the
 			// armed-timer side's infinite loop, and quieter is worse.
@@ -142,7 +140,7 @@ func TestDecodeCursorRejects(t *testing.T) {
 		},
 		{
 			// An empty instance id is the LOWEST key, and a cursor is always
-			// minted from a real row (ADR-0152 forbids empty identity keys), so
+			// minted from a real row (empty identity keys are forbidden), so
 			// an empty one means the payload was fabricated or truncated.
 			name:   "correct kind but empty instance id",
 			cursor: base64.URLEncoding.EncodeToString([]byte(`{"kind":"instance","started_at":"2026-07-30T09:00:00Z","instance_id":""}`)),
@@ -160,7 +158,7 @@ func TestDecodeCursorRejects(t *testing.T) {
 			// nothing and the operator gets a 200 with an empty page.
 			//
 			// Safe to reject, unlike the armed-timer sibling where a zero
-			// next_run is a legitimate armed value (ADR-0159): StartedAt is
+			// next_run is a legitimate armed value: StartedAt is
 			// minted from Trigger.OccurredAt, and a zero-StartedAt row sorts
 			// LAST under DESC, so a cursor is never legitimately minted from
 			// one.

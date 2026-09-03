@@ -8,7 +8,7 @@ import (
 
 // TestAuthzPurity pins that authz depends on nothing in this repo but internal/expreval.
 //
-// It mirrors engine/purity_test.go, which was the repo's ONLY purity guard until ADR-0190.
+// It mirrors engine/purity_test.go, which was previously the repo's ONLY purity guard.
 // authz was pure in fact and unguarded in practice; since engine imports authz, anything
 // added here propagates straight into the engine core the other guard protects.
 //

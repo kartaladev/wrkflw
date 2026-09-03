@@ -892,7 +892,7 @@ func TestAdminRelayStats(t *testing.T) {
 }
 
 // TestAdminTimers exercises httpcore.AdminTimers, which pages armed timers
-// rather than returning the whole table (ADR-0159). The aggregate fields are
+// rather than returning the whole table. The aggregate fields are
 // gated behind total=true so an ordinary paged request issues no count(*).
 func TestAdminTimers(t *testing.T) {
 	t.Parallel()
@@ -928,7 +928,7 @@ func TestAdminTimers(t *testing.T) {
 				assert.Equal(t, true, got["has_more"])
 				assert.Len(t, got["items"], 1)
 				assert.NotContains(t, got, "total_count", "a plain paged request must not report a table total it never queried")
-				assert.NotContains(t, got, "count", "the pre-ADR-0159 field name is gone; total_count replaced it")
+				assert.NotContains(t, got, "count", "the legacy field name is gone; total_count replaced it")
 				assert.NotContains(t, got, "next_fire_at")
 			},
 		},
@@ -944,7 +944,8 @@ func TestAdminTimers(t *testing.T) {
 				// derived from ArmedTimerPage — so Stats runs regardless. Forwarding
 				// IncludeTotal would make the store issue a SECOND count(*) whose
 				// result AdminTimers then discards, i.e. total=true would cost more
-				// database work than before ADR-0159. Do not "helpfully" re-add it.
+				// database work than the old whole-table endpoint. Do not "helpfully"
+				// re-add it.
 				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{
 					Limit:        1,
 					Cursor:       "opaque-cursor",

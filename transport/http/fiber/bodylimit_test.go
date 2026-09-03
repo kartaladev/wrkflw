@@ -17,7 +17,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Fixtures and helpers for the inbound request-body cap (ADR-0186).
+// Fixtures and helpers for the inbound request-body cap.
 //
 // ⚠ EVERY fixture in this file stays BELOW fiber's own fiber.Config.BodyLimit
 // (default 4 MiB, MEASURED: fiberlib.New().Config().BodyLimit == 4194304).
@@ -332,7 +332,7 @@ func TestDecodeFailuresOtherThanTheCeilingStayBadRequest(t *testing.T) {
 // unbounded: the site must still refuse an oversize body, while every OTHER
 // bind error stays ignored.
 //
-// ⚠ This is an ADMIN route. ADR-0095 keeps admin routes out of Mount, so the
+// ⚠ This is an ADMIN route. Admin routes are kept out of Mount, so the
 // test names AdminRoutes.Customize explicitly; a fixture built on Mount would
 // 404 on the path and prove nothing.
 //
@@ -548,9 +548,9 @@ func TestEveryDecodeSiteIsBounded(t *testing.T) {
 
 			app := newApp()
 			opt := fiber.WithMaxBodyBytes(1 << 20)
-			// ⚠ The mount AUTHENTICATES. This test is about the body bound, and since
-			// ADR-0189 the three task routes refuse an unresolved identity BEFORE the
-			// body is read — so without an actor they would 401 and this test would stop
+			// ⚠ The mount AUTHENTICATES. This test is about the body bound, and the
+			// three task routes refuse an unresolved identity BEFORE the body is
+			// read — so without an actor they would 401 and this test would stop
 			// testing what it is named for. The 401-precedes-413 ordering is pinned
 			// separately by TestUnauthenticatedOversizeBodyIs401NotThe413.
 			fiber.Mount(app, svc, opt, fiber.WithRequestActor(staticActor("alice", "manager")))
@@ -628,8 +628,8 @@ func TestUnderCapBehaviourIsUnchanged(t *testing.T) {
 	}
 }
 
-// TestUnauthenticatedOversizeBodyIs401NotThe413 pins the ORDERING that ADR-0189's
-// pre-decode resolution establishes on the three human-task routes: identity is
+// TestUnauthenticatedOversizeBodyIs401NotThe413 pins the ORDERING that pre-decode
+// identity resolution establishes on the three human-task routes: identity is
 // decided BEFORE the body is read, so an unauthenticated caller never gets far enough
 // to learn the body limit.
 //

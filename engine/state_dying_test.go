@@ -1,12 +1,12 @@
 package engine
 
-// state_dying_test.go — ADR-0172: a dying instance spawns no new work.
+// state_dying_test.go — a dying instance spawns no new work.
 //
 // ⚠ The predicate this replaces was `walkMode() == walkAdmin || PendingCancel`,
 // and it was REFUTED by execution: consumePendingCancel is set on the throw and
 // reverse finish plans but NOT on walkPartial, so a partial walk RESUMES with
 // PendingCancel set. The refuted predicate silenced an arm on that live instance
-// — reintroducing the very defect ADR-0172 exists to close.
+// — reintroducing the very defect the predicate exists to close.
 //
 // walkTerminates therefore mirrors stepCompensationFinish's own plan
 // construction, so the two cannot drift.
@@ -64,15 +64,15 @@ func TestCompensationCursorWalkTerminates(t *testing.T) {
 			},
 		},
 		{
-			// A full reverse RESUMES, but is treated as terminating anyway —
-			// see ADR-0172 Decision 1a. Firing an arm into it gives two
+			// A full reverse RESUMES, but is treated as terminating anyway,
+			// by decision. Firing an arm into it gives two
 			// concurrent tokens, ResetVars wiping the event sub-process body's
 			// variables under it, and rearmRootESP resurrecting an interrupting
 			// one-shot arm while its body still runs.
 			name:   "a full REVERSE is treated as terminating, by decision",
 			cursor: compensationCursor{ReverseNode: "start", ActiveCmdID: "c1"},
 			assert: func(t *testing.T, got bool) {
-				assert.True(t, got, "ADR-0172 Decision 1a excludes walkReverse deliberately")
+				assert.True(t, got, "walkReverse is excluded deliberately")
 			},
 		},
 		{
@@ -236,7 +236,7 @@ func dyingProbeDef() *model.ProcessDefinition {
 // for each meaning s.Status can carry, ROOT and NON-ROOT.
 //
 // ⚠ Direct-call, deliberately: this is the predicate's own unit, and the
-// end-to-end consequences are covered separately. ADR-0172 Correction 1 exists
+// end-to-end consequences are covered separately. A correction was needed
 // precisely because an earlier direct-call result was over-read, so this test
 // claims only what it measures — whether the fire function spawns work.
 func TestEventSubprocessArmRespectsSpawnsNewWork(t *testing.T) {
@@ -327,8 +327,8 @@ func TestEventSubprocessArmRespectsSpawnsNewWork(t *testing.T) {
 }
 
 // TestDyingInstanceSpawnsNoWorkOnAnyTriggerKind closes the gap `/code-review`
-// found: ADR-0172 Decision 4 claims "a dying instance spawns no new work" is not
-// a signal-specific rule, but only the SIGNAL path's token loop was guarded.
+// found: "a dying instance spawns no new work" is not a signal-specific rule,
+// but only the SIGNAL path's token loop was guarded.
 //
 // handleTimerFired's standalone-timer fall-through and handleMessageReceived's
 // standalone-message fall-through resumed a parked token and drove it with no

@@ -130,7 +130,7 @@ func TestStoreCommitWriteErrors(t *testing.T) {
 }
 
 // TestTimerWriterWriteErrors covers the driver-level SQL-error branches of the
-// standalone [kernel.TimerWriter] capability (ADR-0134) — UpsertJob, DeleteJob,
+// standalone [kernel.TimerWriter] capability — UpsertJob, DeleteJob,
 // and DeleteJobByTimerID — by dropping wrkflw_timers mid-flight, mirroring
 // [TestStoreWriteErrors]'s dropped-table harness. TestTimerWriterAtomicWithCommit
 // only exercises fn-returned rollbacks; these cases force the writer's own

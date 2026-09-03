@@ -33,7 +33,7 @@ func (c *countingRegistry) Lookup(_ context.Context, _ model.Qualifier) (*model.
 }
 
 // mustCachingDefinitionRegistry is a local helper to avoid pulling in runtimetest
-// (which imports runtime and calllink, both broken until Tasks 3/4).
+// (which imports runtime and calllink).
 func mustCachingDefinitionRegistry(t *testing.T, backing kernel.DefinitionRegistry, ttl time.Duration, opts ...kernel.CachingDefinitionRegistryOption) *kernel.CachingDefinitionRegistry {
 	t.Helper()
 	c, err := kernel.NewCachingDefinitionRegistry(backing, ttl, opts...)

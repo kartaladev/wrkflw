@@ -27,9 +27,9 @@ import (
 // self-removal from the tracking map after firing. "Past-due" covers BOTH
 // one-shot forms — an elapsed absolute time (At) and a non-positive duration
 // (After(0), After(-d)) — because oneShotFireTime resolves the due instant
-// for both (backlog 49; before that, the duration form was refused by gocron
-// with a raw "gocron: OneTimeJob: start must not be in the past" that escaped
-// this API unwrapped).
+// for both (before this, the duration form was refused by gocron with a raw
+// "gocron: OneTimeJob: start must not be in the past" that escaped this API
+// unwrapped).
 //
 // Errors returned from here always carry this engine's "workflow-scheduler:"
 // prefix, including the ones gocron's own NewJob raises for a well-formed
@@ -72,7 +72,7 @@ import (
 // under s.mu risks a deadlock against the AfterJobRuns listener above (which
 // also takes s.mu), and re-checking closed after NewJob does not help
 // either, since ScheduleJob holds s.mu for its entire body so closed cannot
-// change mid-call. See backlog 50 in docs/plans/HANDOVER.md.
+// change mid-call.
 func (s *GocronScheduler) ScheduleJob(_ context.Context, id string, trig TriggerDef, task func(context.Context) error, singleton bool) (time.Time, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

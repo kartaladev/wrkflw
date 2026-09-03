@@ -156,8 +156,8 @@ type Dialect interface {
 	// is expressible in terms of the other, and the instance listing is out of
 	// scope of this pair.
 	//
-	// The per-dialect shape is set by measurement rather than symmetry
-	// (ADR-0159) — see each implementation's doc comment. Because the two
+	// The per-dialect shape is set by measurement rather than symmetry — see
+	// each implementation's doc comment. Because the two
 	// shapes bind a different NUMBER of values (3 versus 5), the args are
 	// produced by [Dialect.ArmedTimerKeysetArgs] rather than by an arg count
 	// the caller would have to branch on.
@@ -187,9 +187,9 @@ type Dialect interface {
 	// results. The fixed width is required, not cosmetic: TEXT columns are
 	// compared lexicographically, so `<=` predicates and ORDER BY are only correct
 	// while string order matches chronological order. time.RFC3339Nano must NOT be
-	// used for the write path — it trims trailing zeros and therefore does not sort
-	// (ADR-0151). Postgres and MySQL bind and scan time.Time natively, so both
-	// return false.
+	// used for the write path — it trims trailing zeros and therefore does not
+	// sort. Postgres and MySQL bind and scan time.Time natively, so both return
+	// false.
 	//
 	// This flag is the single decision point for time (de)serialization across
 	// all store and lister sites; callers must not compare [Dialect.Name] to

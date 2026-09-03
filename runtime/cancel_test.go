@@ -78,8 +78,8 @@ func TestProcessDriverCancelInstanceRunsCancelActions(t *testing.T) {
 	assert.Equal(t, []string{"notify", "boom"}, ran, "both cancel actions ran in order")
 }
 
-// TestProcessDriverCancelInstanceCancelsParkedTask verifies the end-to-end reconciliation
-// (ADR-0088): after CancelInstance, a task parked at a UserTask is Cancelled in the
+// TestProcessDriverCancelInstanceCancelsParkedTask verifies the end-to-end reconciliation:
+// after CancelInstance, a task parked at a UserTask is Cancelled in the
 // TaskStore and no longer surfaces in an inbox (ClaimableBy) query.
 func TestProcessDriverCancelInstanceCancelsParkedTask(t *testing.T) {
 	fc := clockwork.NewFakeClock()

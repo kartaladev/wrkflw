@@ -24,11 +24,11 @@ var febAnchor = time.Date(2026, 2, 10, 9, 30, 0, 0, time.UTC)
 //
 // The ok=false half is also covered end-to-end by
 // TestTimerJobsForRefusesANeverDueArm. The next.IsZero() half is pinned HERE
-// and only here, deliberately: after ADR-0176's scheduler fix no Trigger shape
+// and only here, deliberately: after the scheduler fix no Trigger shape
 // reports (zero, true) any more — the 30-February cron that used to is now
 // ok=false — so the second half of the predicate has no reachable trigger to
-// drive it. It is kept as the direct statement of blocker 2's invariant ("a
-// zero next_run must never be persisted") and as the guard that survives if
+// drive it. It is kept as the direct statement of the invariant ("a zero
+// next_run must never be persisted") and as the guard that survives if
 // Trigger.Next ever regresses to reporting a zero instant as fireable.
 func TestNeverDueNextRun(t *testing.T) {
 	t.Parallel()
@@ -55,7 +55,7 @@ func TestNeverDueNextRun(t *testing.T) {
 // TestTimerJobsForRefusesANeverDueArm covers the arm site that both the in-tx
 // durable write and the post-commit Activate flow from: refusing here produces
 // no timer row AND no Activate call, which is what makes the gocron monthly
-// livelock unreachable (ADR-0176).
+// livelock unreachable.
 //
 // Without the guard every case below appends an arm carrying a ZERO NextRun —
 // which MySQL rejects outright (Error 1292), failing the whole step so the
@@ -79,8 +79,8 @@ func TestTimerJobsForRefusesANeverDueArm(t *testing.T) {
 		},
 		{
 			name: "a cron expression that parses but matches nothing",
-			// 30 February. robfig/cron gives up after five years; before
-			// ADR-0176 this reported ok=true with a zero instant, so it
+			// 30 February. robfig/cron gives up after five years; before the
+			// scheduler fix this reported ok=true with a zero instant, so it
 			// defeated every ok-keyed gate and still wrote a zero row.
 			trig: schedule.Cron("0 0 30 2 *"),
 		},

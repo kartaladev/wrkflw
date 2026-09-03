@@ -1,7 +1,7 @@
 package engine_test
 
-// step_compensation_retry_dying_and_late_reply_test.go — ADR-0179 Decisions 4
-// and 5, on the two surfaces the rest of the delivery could not reach.
+// step_compensation_retry_dying_and_late_reply_test.go — the retry-on-dying and
+// late-reply surfaces the rest of the delivery could not reach.
 //
 // Both tests here are CONTROLS rather than red-first tests: the predicate split
 // (TimerKind.firesOnDyingInstance) and the dispatched-id ring shipped in earlier
@@ -24,15 +24,16 @@ import (
 	"github.com/kartaladev/wrkflw/engine"
 )
 
-// TestCompensationRetryTimerFiresOnADyingWalk covers plan P1 step 14.
+// TestCompensationRetryTimerFiresOnADyingWalk covers the end-to-end fire of a
+// compensation retry timer on a dying walk.
 //
 // ⚠ THE FIXTURE MUST BE A CANCEL-STARTED WALK. A cancel walk is walkAdmin, so
 // walkTerminates is true and spawnsNewWork() is FALSE — the instance is already
-// dying, and ADR-0178's guard in handleTimerFired's path 4 refuses every fired
+// dying, and the guard in handleTimerFired's path 4 refuses every fired
 // timer record whose kind does not answer firesOnDyingInstance(). A compensation
 // THROW walk measures spawnsNewWork()==TRUE, so the guard is not consulted at
-// all and the test would pass no matter how the predicate answered (plan trap 6,
-// the opposite half of the constraint on the retirement test).
+// all and the test would pass no matter how the predicate answered — the
+// opposite half of the constraint on the retirement test.
 //
 // The fixture asserts its own dying-ness rather than assuming it, so a future
 // change to spawnsNewWork() cannot quietly turn this into a test about a healthy
@@ -50,7 +51,7 @@ func TestCompensationRetryTimerFiresOnADyingWalk(t *testing.T) {
 	state, failedCmdID := driveToCompensationFailure(t, at, opt)
 	require.False(t, engine.SpawnsNewWork(&state),
 		"fixture precondition: a cancel-started walk is DYING — on a throw walk "+
-			"spawnsNewWork() is true and ADR-0178's guard is never consulted")
+			"spawnsNewWork() is true and the guard is never consulted")
 	armed := retryTimerRecords(state)
 	require.Len(t, armed, 1, "control: a real backoff, armed by armCompensationRetryTimer")
 
@@ -62,7 +63,7 @@ func TestCompensationRetryTimerFiresOnADyingWalk(t *testing.T) {
 	require.NotNil(t, redispatched,
 		"a compensation retry is the walk's OWN work, not the instance's forward "+
 			"work: refusing it on a dying instance would strand exactly the walks an "+
-			"operator most needs to see complete (ADR-0179 Decision 4)")
+			"operator most needs to see complete")
 	assert.NotEqual(t, failedCmdID, redispatched.CommandID, "under a fresh command id")
 	assert.Equal(t, engine.StatusCompensating, res.State.Status,
 		"and the walk is still draining, not refused into silence")
@@ -71,9 +72,8 @@ func TestCompensationRetryTimerFiresOnADyingWalk(t *testing.T) {
 			"it too, so this alone does not distinguish the two")
 }
 
-// TestLateReplyToASupersededRetryCommandIsBenign covers plan P1 step 15 — the
-// test the pre-fold plan dropped entirely while spec §4 still listed it, which
-// would have shipped ADR-0179 Decision 5's fifth dispatch site untested.
+// TestLateReplyToASupersededRetryCommandIsBenign covers the retry site, the
+// fifth dispatch site, which would otherwise have shipped untested.
 //
 // A retry re-dispatches under a FRESH command id, so an at-least-once worker's
 // redelivery of that command's reply arrives after the walk has moved past it.

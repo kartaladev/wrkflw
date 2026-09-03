@@ -59,7 +59,7 @@ func senderDef() *model.ProcessDefinition {
 }
 
 // TestSendTaskOutboxResumesReceiveTaskViaMessageHandler is the async end-to-end test
-// for ADR-0067. It proves the full transactional-SendTask → outbox → relay → handler →
+// proving the full transactional-SendTask → outbox → relay → handler →
 // DeliverMessage loop:
 //
 //  1. A receiver process parks on a ReceiveTask awaiting "OrderPlaced".
@@ -93,7 +93,7 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 
 	// ── 3. Runner (shared by receiver and sender) ────────────────────────────
 	// The driver resolves the correlated instance's definition from its own
-	// snapshot via the registry (ADR-0121), so both definitions are registered.
+	// snapshot via the registry, so both definitions are registered.
 	recvDef := receiverDef()
 	reg := kernel.NewMemDefinitionRegistry()
 	require.NoError(t, reg.Register(recvDef))

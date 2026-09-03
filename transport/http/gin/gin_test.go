@@ -402,7 +402,7 @@ func TestTaskRoutes_ClaimCompleteReassign(t *testing.T) {
 	h, svc := transporttest.NewHarness(t, approvalDef)
 
 	r := ginlib.New()
-	// ADR-0189: the actor is the AUTHENTICATED principal the mount resolves, not
+	// The actor is the AUTHENTICATED principal the mount resolves, not
 	// a field of the request body. The bodies below no longer carry "actor".
 	ginadapter.Mount(r, svc, ginadapter.WithRequestActor(staticActor("alice", "manager")))
 	srv := httptest.NewServer(r)
@@ -433,7 +433,7 @@ func TestTaskRoutes_Reassign(t *testing.T) {
 	h, svc := transporttest.NewHarness(t, approvalDef)
 
 	r := ginlib.New()
-	// ADR-0189: alice is authenticated by the mount; the reassign body carries
+	// Alice is authenticated by the mount; the reassign body carries
 	// only from/to, never the "by" actor it used to assert for itself.
 	ginadapter.Mount(r, svc, ginadapter.WithRequestActor(staticActor("alice", "manager")))
 	srv := httptest.NewServer(r)

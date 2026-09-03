@@ -57,7 +57,7 @@ func CancelOpenTasks(s *InstanceState) []Command {
 // EndInstance exposes (*InstanceState).endInstance for engine_test. The eight
 // terminal sites are all reachable through Step, so this shim exists for the one
 // case no production path can construct: an [Incident] whose TokenID is empty,
-// which the orphaned-incident sweep must treat as naming nothing (ADR-0152).
+// which the orphaned-incident sweep must treat as naming nothing.
 func EndInstance(s *InstanceState, status Status, at time.Time, terminal Command) []Command {
 	return s.endInstance(status, at, terminal)
 }

@@ -165,7 +165,7 @@ func fireBoundaryArm(ctx context.Context, def *model.ProcessDefinition, s *Insta
 	} else {
 		// Non-interrupting: leave host parked, spawn an additional token. The arm
 		// STAYS armed so it can fire again on the next delivery — BPMN
-		// non-interrupting is repeatable (ADR-0124). The arm is retired only when
+		// non-interrupting is repeatable. The arm is retired only when
 		// the host token completes/advances (removeBoundaryArmsForHost) or the
 		// instance ends (terminal sweep). Keeping the arm also lets a recurring
 		// timer boundary's job be cancelled at host end (the arm still holds its

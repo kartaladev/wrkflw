@@ -1,6 +1,6 @@
 package engine_test
 
-// step_eventsubprocess_test.go — ADR-0162: the scope SUBTREE, not the scope, is
+// step_eventsubprocess_test.go: the scope SUBTREE, not the scope, is
 // the unit of abnormal teardown.
 //
 // Both abnormal teardowns — the interrupting event-sub-process path
@@ -30,8 +30,8 @@ import (
 
 // ── Fixture: root-level interrupting event sub-process over a nested scope ────
 
-// rootInterruptingEventSubprocessOverNestedDef builds ADR-0162's Context
-// topology — the one reachable in a single delivery today:
+// rootInterruptingEventSubprocessOverNestedDef builds the topology — the one
+// reachable in a single delivery today:
 //
 //	start → host (ServiceTask "host-action") → end
 //	          ↑ interrupting signal boundary "divert" → sub[ nested-start →
@@ -43,7 +43,7 @@ import (
 // Delivering "divert" interrupts the root-scope host and routes into "sub",
 // which drive enters — parking a token in a NESTED scope. Delivering "boom"
 // then fires the root-level interrupting event sub-process, whose enclosing
-// scope is the implicit root (""). Before ADR-0162 that teardown cancelled
+// scope is the implicit root (""). Previously that teardown cancelled
 // tokens whose ScopeID was exactly "", so the nested token survived.
 func rootInterruptingEventSubprocessOverNestedDef() *model.ProcessDefinition {
 	nested := &model.ProcessDefinition{
@@ -126,7 +126,7 @@ func driveToNestedScopeToken(t *testing.T, def *model.ProcessDefinition, instanc
 
 // TestRootInterruptingEventSubprocessCancelsNestedSubprocessToken asserts that a
 // root-level interrupting event sub-process cancels a token an earlier arm had
-// pushed into a NESTED sub-process scope. Before ADR-0162 the teardown matched
+// pushed into a NESTED sub-process scope. Previously the teardown matched
 // tokens on exact scope equality, so the nested token survived the interrupt and
 // the instance kept running the very activity the interrupt targeted.
 func TestRootInterruptingEventSubprocessCancelsNestedSubprocessToken(t *testing.T) {
@@ -164,7 +164,7 @@ func TestRootInterruptingEventSubprocessCancelsNestedSubprocessToken(t *testing.
 }
 
 // TestRootInterruptingEventSubprocessLeavesNoZombieScopes asserts a COMPLETED
-// instance carries no leftover Scopes entries. Before ADR-0162 the cancelled
+// instance carries no leftover Scopes entries. Previously the cancelled
 // descendant scopes were never closed, so a terminal snapshot was committed with
 // open scopes in it.
 //
@@ -197,7 +197,7 @@ func TestRootInterruptingEventSubprocessLeavesNoZombieScopes(t *testing.T) {
 	assert.Empty(t, r4.State.Tokens, "a terminal snapshot must not carry live tokens")
 }
 
-// ── Fixture: the `fulfil` topology (spec §1.4) ───────────────────────────────
+// ── Fixture: the `fulfil` topology ───────────────────────────────────────────
 
 // fulfilInnerDef is the sub-process body shared by both fulfil fixtures:
 //
@@ -232,7 +232,7 @@ func fulfilInnerDef() *model.ProcessDefinition {
 //	          ↑ error boundary "OutOfStock" → notify → end3
 //
 // A sub-process whose completed compensable activity must survive the
-// sub-process being torn down by its own error boundary (ADR-0162). "notify" is
+// sub-process being torn down by its own error boundary. "notify" is
 // a ServiceTask so the instance PARKS there and stays RUNNING — the branch
 // choice a later cancel makes is only observable while the instance can still
 // receive one.
@@ -261,7 +261,7 @@ func fulfilSubprocessDef() *model.ProcessDefinition {
 //
 //	↑ error boundary "OutOfStock" → throw(CompensateRef "fulfil") → notify → end3
 //
-// It pins the second reader surface ADR-0162 changes: a CompensateThrow naming
+// It pins the second reader surface: a CompensateThrow naming
 // the torn-down sub-process node.
 func fulfilSubprocessWithTargetedThrowDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
@@ -321,7 +321,7 @@ func driveFulfilToBoundary(t *testing.T, def *model.ProcessDefinition, instanceI
 
 // TestErrorBoundaryTeardownArchivesCompensations asserts that when an error
 // boundary tears down an enclosing scope, the completed compensable work inside
-// it is archived rather than pruned with the scope. Before ADR-0162 the record
+// it is archived rather than pruned with the scope. Previously the record
 // was discarded, so a card charged inside a failed fulfilment could never be
 // refunded — while the identical sub-process exiting normally stayed
 // compensable.
@@ -450,10 +450,9 @@ func nestedFulfilSubprocessDef() *model.ProcessDefinition {
 // It is the only test that exercises cancelScopeSubtree's descendant loop for
 // effect: TestErrorBoundaryTeardownArchivesCompensations drives the erroring
 // scope itself, which the loop skips by `id == scopeID`. Without this test both
-// statements in that loop can be deleted with the package staying green
-// (Task 3 review, IMPORTANT 1), and a nested-nested compensable activity would
-// be silently lost on teardown — the exact defect class ADR-0162 exists to
-// remove.
+// statements in that loop can be deleted with the package staying green, and a
+// nested-nested compensable activity would be silently lost on teardown — the
+// exact defect class subtree teardown exists to remove.
 func TestErrorBoundaryTeardownArchivesNestedSubtreeCompensations(t *testing.T) {
 	t.Parallel()
 
@@ -529,8 +528,8 @@ func TestErrorBoundaryTeardownArchivesNestedSubtreeCompensations(t *testing.T) {
 	assert.Empty(t, r3.State.Scopes, "the whole torn-down subtree must be closed")
 }
 
-// TestArchivedRecordIsReachableByTargetedThrow pins the second reader surface
-// ADR-0162 changes: a CompensateThrow naming the torn-down sub-process node used
+// TestArchivedRecordIsReachableByTargetedThrow pins the second reader surface:
+// a CompensateThrow naming the torn-down sub-process node used
 // to auto-advance on an empty archived-records lookup, in
 // compensationThrowEventStrategy.enter's targeted-throw branch, and now walks
 // the archived records for real.
@@ -556,8 +555,8 @@ func TestArchivedRecordIsReachableByTargetedThrow(t *testing.T) {
 }
 
 // TestTeardownArchiveSwitchesCancelToTheCompensationBranch pins the third reader
-// surface, and the one most likely to move an existing expectation (audit
-// finding D7). handleCancelRequested and handleUnhandledError both choose their
+// surface, and the one most likely to move an existing expectation.
+// handleCancelRequested and handleUnhandledError both choose their
 // branch on len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0. A teardown
 // that used to leave the archive empty now populates it, so a later admin cancel
 // switches from the SINGLE-STEP immediate-termination branch to a MULTI-STEP

@@ -30,7 +30,7 @@ type NodeWire struct {
 	Manual             bool     `json:"manual,omitempty"`
 	ManualImmediate    bool     `json:"manual_immediate,omitempty"`
 	// Outcomes/ExposeOutcome/OutcomeVariable carry a UserTask's completion-outcome
-	// declaration and its variable-exposure opt-in (ADR-0146).
+	// declaration and its variable-exposure opt-in.
 	Outcomes        []string `json:"outcomes,omitempty"`
 	ExposeOutcome   bool     `json:"expose_outcome,omitempty"`
 	OutcomeVariable string   `json:"outcome_variable,omitempty"`
@@ -50,7 +50,7 @@ type NodeWire struct {
 	CompensateAction string       `json:"compensate_action,omitempty"`
 	CompensateRef    string       `json:"compensate_ref,omitempty"`
 	// CompensateScopeLocal narrows a scope-wide CompensationThrowEvent at the
-	// root scope to root-direct compensable activities (ADR-0120).
+	// root scope to root-direct compensable activities.
 	CompensateScopeLocal bool   `json:"compensate_scope_local,omitempty"`
 	CancelAction         string `json:"cancel_action,omitempty"`
 	CompletionAction     string `json:"completion_action,omitempty"`
@@ -59,12 +59,11 @@ type NodeWire struct {
 	CorrelationKey       string `json:"correlation_key,omitempty"`
 	// MessageStartSingleton, when true on a StartEvent, makes a keyless
 	// message-start create at most one instance ever for its message name
-	// (name-only deterministic id). Default false = fresh instance per message
-	// (ADR-0121 review).
+	// (name-only deterministic id). Default false = fresh instance per message.
 	MessageStartSingleton bool   `json:"message_start_singleton,omitempty"`
 	ErrorCode             string `json:"error_code,omitempty"`
-	// EndBehavior is the name-based discriminator for an EndEvent's behavior
-	// (ADR-0127): "terminate" or "error"; empty means a normal end.
+	// EndBehavior is the name-based discriminator for an EndEvent's behavior:
+	// "terminate" or "error"; empty means a normal end.
 	// TerminationReason/TerminationOutcome are written only for "terminate";
 	// ErrorCode only for "error".
 	EndBehavior        string             `json:"end_behavior,omitempty"`
@@ -147,7 +146,7 @@ type definitionWire struct {
 	ID      string `json:"id"`
 	Version int    `json:"version"`
 	// ScopedActions carries the definition-scoped action NAMES so a marshalled
-	// definition is self-describing (ADR-0144). It is derived, MARSHAL-ONLY
+	// definition is self-describing. It is derived, MARSHAL-ONLY
 	// state: the scoped catalog holds live action implementations that have no
 	// serializable form, so UnmarshalJSON accepts the key and drops it — a
 	// reloaded definition falls back to the global catalog for those names.
@@ -185,7 +184,7 @@ func (d *ProcessDefinition) UnmarshalJSON(data []byte) error {
 	var dw definitionWire
 	// Strictness must be applied here, inside the custom unmarshaler: an outer
 	// json.Decoder's DisallowUnknownFields is discarded once this method takes
-	// over, so this is the only place it survives (ADR-0167 D1).
+	// over, so this is the only place it survives.
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&dw); err != nil {
@@ -194,7 +193,7 @@ func (d *ProcessDefinition) UnmarshalJSON(data []byte) error {
 		// would be a real behaviour change, not just a message change: a caller
 		// testing errors.Is(err, io.EOF) to mean "clean end of stream" would
 		// silently skip an empty or truncated definition. Translate it back so
-		// the EOF identity stays inside this method (ADR-0167 D3).
+		// the EOF identity stays inside this method.
 		if errors.Is(err, io.EOF) {
 			return errors.New("workflow-definition: unexpected end of definition JSON")
 		}
@@ -202,7 +201,7 @@ func (d *ProcessDefinition) UnmarshalJSON(data []byte) error {
 	}
 	// Decode stops after one value, so unlike json.Unmarshal it would accept
 	// anything following it. Reject trailing data explicitly, otherwise this
-	// change would loosen a check while tightening another (ADR-0167).
+	// change would loosen a check while tightening another.
 	//
 	// Two distinct causes reach here and both matter to whoever is debugging a
 	// rejected definition: a genuine second JSON value (err == nil), and corrupt

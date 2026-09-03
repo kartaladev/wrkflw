@@ -15,9 +15,9 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/task"
 )
 
-// TestManualTaskCompletesOnBareTrigger locks ADR-0118: a manual, roleless
-// UserTask (WithManual(false), no eligibility) drives to StatusCompleted via a
-// bare completion trigger — no claim, no payload.
+// TestManualTaskCompletesOnBareTrigger locks the manual-task contract: a
+// manual, roleless UserTask (WithManual(false), no eligibility) drives to
+// StatusCompleted via a bare completion trigger — no claim, no payload.
 func TestManualTaskCompletesOnBareTrigger(t *testing.T) {
 	ctx := t.Context()
 
@@ -83,9 +83,9 @@ func TestManualTaskCompletesOnBareTrigger(t *testing.T) {
 	}
 }
 
-// TestManualWaitTaskRejectsPayload locks ADR-0118: a wait-mode manual UserTask
-// (WithManual(false)) is a form-less checkpoint — completing it with a
-// non-empty output must be rejected with engine.ErrManualTaskPayload.
+// TestManualWaitTaskRejectsPayload locks the manual-task contract: a wait-mode
+// manual UserTask (WithManual(false)) is a form-less checkpoint — completing it
+// with a non-empty output must be rejected with engine.ErrManualTaskPayload.
 func TestManualWaitTaskRejectsPayload(t *testing.T) {
 	ctx := t.Context()
 	def, err := definition.NewBuilder("manual-payload", 1).
@@ -147,10 +147,10 @@ func TestManualWaitTaskRejectsPayload(t *testing.T) {
 	}
 }
 
-// TestImmediateManualTaskAutoCompletes locks ADR-0118: an immediate-mode
-// manual UserTask (WithManual(true)) never parks — driving alone, with no
-// external trigger, must record a completed human task (audit trail) and
-// reach StatusCompleted.
+// TestImmediateManualTaskAutoCompletes locks the manual-task contract: an
+// immediate-mode manual UserTask (WithManual(true)) never parks — driving
+// alone, with no external trigger, must record a completed human task (audit
+// trail) and reach StatusCompleted.
 func TestImmediateManualTaskAutoCompletes(t *testing.T) {
 	ctx := t.Context()
 	def, err := definition.NewBuilder("manual-immediate", 1).

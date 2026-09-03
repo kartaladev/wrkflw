@@ -1,7 +1,7 @@
 package persistence_test
 
 // chainlink_test.go exercises the public façade constructor
-// persistence.NewChainLinkStore (ADR-0045), verifying the thin delegation wires
+// persistence.NewChainLinkStore, verifying the thin delegation wires
 // through to the underlying Postgres ChainLinkStore.
 
 import (

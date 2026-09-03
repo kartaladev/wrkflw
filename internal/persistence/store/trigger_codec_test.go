@@ -68,7 +68,7 @@ func TestTriggerCodecRoundTrip(t *testing.T) {
 			},
 		},
 		// The outcome and note are added to the envelope as additive omitempty
-		// fields (ADR-0146): a completion that carries them must survive the
+		// fields: a completion that carries them must survive the
 		// durable round-trip, since replay re-applies the journalled trigger and
 		// the engine validates the outcome on every path.
 		"HumanCompleted with outcome and note": {
@@ -83,7 +83,7 @@ func TestTriggerCodecRoundTrip(t *testing.T) {
 		},
 		// Candidate resolution is journalled so replay re-applies the actors that
 		// were resolved at the time, rather than re-resolving against a group
-		// registry whose membership may since have changed (ADR-0147).
+		// registry whose membership may since have changed.
 		"HumanCandidatesResolved": {
 			in: engine.NewHumanCandidatesResolved(at, "t1",
 				[]authz.Actor{{ID: "u-jane", Roles: []string{"manager"}, Attributes: map[string]any{"email": "jane@acme.com"}}}),
@@ -159,7 +159,7 @@ func TestTriggerCodecRoundTrip(t *testing.T) {
 				require.IsType(t, engine.CancelRequested{}, got)
 			},
 		},
-		// ADR-0175 — one row per disposition. The Disposition is the whole
+		// One row per disposition. The Disposition is the whole
 		// meaning of the trigger, so a codec that dropped it would replay an
 		// operator's `abandon` as a `retry`, re-dispatching a compensation the
 		// operator had decided to give up on.
@@ -275,7 +275,7 @@ func TestActionFailedJitterBackwardCompat(t *testing.T) {
 }
 
 // TestCompensateRequestedReverseRoundTrip asserts that the ReverseNode/ResetVars/
-// RestoreTargetVars fields added for ReverseInstance (ADR-0109/FU#1) survive a
+// RestoreTargetVars fields added for ReverseInstance survive a
 // MarshalTrigger→UnmarshalTrigger round-trip, and that a plain ToNode-only
 // trigger still round-trips with ReverseNode/ResetVars/RestoreTargetVars left at
 // their zero values (back-compat with journal rows written before these fields
@@ -343,8 +343,8 @@ func TestCompensateRequestedReverseRoundTrip(t *testing.T) {
 	}
 }
 
-// TestDispositionIsScopedToItsOwnTriggerKind pins that ADR-0175's disposition
-// field does not leak into every other trigger's journal payload.
+// TestDispositionIsScopedToItsOwnTriggerKind pins that the disposition field
+// does not leak into every other trigger's journal payload.
 //
 // triggerEnvelope is ONE flat struct shared by all 17 kinds, so a non-omitempty
 // field is written for every trigger ever journalled. Measured before the fix,
@@ -365,7 +365,7 @@ func TestDispositionIsScopedToItsOwnTriggerKind(t *testing.T) {
 		data, kind, err := st.MarshalTrigger(trg)
 		require.NoError(t, err)
 		assert.NotContains(t, string(data), "disposition",
-			"%s must not carry ADR-0175's disposition field", kind)
+			"%s must not carry the disposition field", kind)
 	}
 
 	// The verb that owns the field still writes it, including for retry, whose

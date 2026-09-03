@@ -96,7 +96,7 @@ func TestNewScheduler_WithClock_NotFiredWithoutAdvance(t *testing.T) {
 	// silence above was the fake clock holding the job back rather than a job
 	// that was never going to fire at all. Measured: with the underlying task
 	// swapped for one that ignores the caller's action, the Never alone still
-	// PASSED (backlog 44) — this Eventually is what turns that mutation RED.
+	// PASSED — this Eventually is what turns that mutation RED.
 	clk.Advance(5 * time.Second)
 	require.Eventually(t, fired.Load, eventuallyBudget, 5*time.Millisecond,
 		"the same job must fire as soon as the fake clock is advanced")

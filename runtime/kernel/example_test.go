@@ -13,7 +13,7 @@ import (
 )
 
 // ExampleMemTimerStore_ArmedTimer shows the bounded point lookup a timer-fire
-// path uses to decide whether the timer that just fired is recurring (ADR-0159).
+// path uses to decide whether the timer that just fired is recurring.
 //
 // The question is about one timer, so the read is about one timer: ArmedTimer
 // keys on the exact (instanceID, timerID) pair rather than enumerating the whole
@@ -94,7 +94,7 @@ func ExampleEncodeArmedTimerCursor() {
 // mint and parse the token. It is opaque: callers pass it back verbatim and
 // never parse it.
 //
-// Two guarantees are worth noting, because both were once absent (ADR-0160).
+// Two guarantees are worth noting, because both were once absent.
 // A cursor from another family — an armed-timer cursor, say — is REJECTED with
 // [kernel.ErrBadCursor] rather than silently reinterpreted; instance listing is
 // DESC, so a foreign cursor used to yield an empty page with a 200 and no

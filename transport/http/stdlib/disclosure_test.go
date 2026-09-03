@@ -1,4 +1,4 @@
-// Package stdlib_test — ADR-0190 disclosure posture over the net/http adapter.
+// Package stdlib_test — disclosure posture over the net/http adapter.
 package stdlib_test
 
 import (
@@ -55,7 +55,7 @@ func seedDisclose(t *testing.T) (*http.ServeMux, string, service.Service) {
 // renders instance-derived data.
 //
 // ⚠ POST /instances/{id}/signals is the one that matters most. It ends in the SAME
-// mapInstance call as the GET, so before ADR-0190 a caller refused `variables` on the read
+// mapInstance call as the GET, so previously a caller refused `variables` on the read
 // obtained the identical document by changing the verb — a signal matching no waiter is a
 // clean no-op that still returns the whole instance. Any per-endpoint fix is wrong by
 // construction, which is why the table below is exhaustive rather than illustrative.
@@ -161,7 +161,7 @@ func TestDiscloseAllRestoresThePriorShape(t *testing.T) {
 	}
 }
 
-// TestResolverCalledOncePerRequest pins ADR-0190 Decision 7's "decides once per request".
+// TestResolverCalledOncePerRequest pins the "decides once per request" rule.
 //
 // ⚠ This exists because a scripted edit once nested DisclosingMapper inside itself at all
 // nine human-task sites, and EVERY EXISTING TEST STILL PASSED — projecting twice is

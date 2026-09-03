@@ -64,7 +64,7 @@ type Trigger struct {
 
 	// interval, days, weekdays, atTimes hold the calendar shape for
 	// triggerDaily, triggerWeekly, and triggerMonthly. calendarNext is
-	// interval-aware (ADR-0140): it accepts a scanned day only when its
+	// interval-aware: it accepts a scanned day only when its
 	// period index (day/week/month, anchored at the after instant given to
 	// [Trigger.Next]) is a multiple of interval, matching the live
 	// scheduler's first fire for any interval. days is used by
@@ -127,7 +127,7 @@ func Cron(expr string) Trigger {
 // Daily builds a recurring Trigger that fires every interval days, at each
 // of the given wall-clock times. Omitting at defaults to midnight.
 //
-// Timezone note (ADR-0137): [Trigger.Next] resolves at-times in after's
+// Timezone note: [Trigger.Next] resolves at-times in after's
 // location. The runtime and the façade Schedule() pass now.In(scheduler
 // location), so this matches the live scheduler's own at-time resolution;
 // a UTC after (the default) yields UTC.
@@ -138,10 +138,10 @@ func Daily(interval uint, at ...ClockTime) Trigger {
 // Weekly builds a recurring Trigger that fires every interval weeks, on each
 // of the given weekdays, at each of the given wall-clock times. Omitting at
 // defaults to midnight. See the timezone note on [Daily]: [Trigger.Next]
-// resolves at-times in after's location (ADR-0137).
+// resolves at-times in after's location.
 //
 // An empty days is not an error and not never-due: the scheduler substitutes
-// Sunday before arming, and [Trigger.Next] reports that (ADR-0176). A weekday
+// Sunday before arming, and [Trigger.Next] reports that. A weekday
 // outside Sunday–Saturday is likewise accepted and NOT normalised into the
 // week — the scheduler treats it as a raw offset from the day it is armed on,
 // so time.Weekday(8) fires eight days after a Sunday arm, not the next day.
@@ -150,7 +150,7 @@ func Daily(interval uint, at ...ClockTime) Trigger {
 // ⚠ An out-of-range weekday does not merely add an extra fire — it can DELAY
 // the whole trigger, and a negative one can make it never-due. This follows
 // gocron v2.22.0's own weeklyJob.next, which [Trigger.Next] transcribes
-// deliberately so the two agree (ADR-0176); it is documented, not fixed.
+// deliberately so the two agree; it is documented, not fixed.
 // Measured from a Thursday anchor (2026-08-20T12:00Z) at interval 1:
 //
 //	days                          next          ok
@@ -174,10 +174,10 @@ func Weekly(interval uint, days []time.Weekday, at ...ClockTime) Trigger {
 // times. Omitting at defaults to midnight. A day of the month that does not
 // exist in a given month (e.g. 31 in February) is simply skipped that month.
 // See the timezone note on [Daily]: [Trigger.Next] resolves at-times in
-// after's location (ADR-0137).
+// after's location.
 //
 // An empty days is not an error and not never-due: the scheduler substitutes
-// the 1st before arming, and [Trigger.Next] reports that (ADR-0176). A
+// the 1st before arming, and [Trigger.Next] reports that. A
 // NEGATIVE day counts back from the end of each candidate month — -1 is the
 // last day, so it selects the 28th in February and the 31st in March. The
 // scheduler rejects a day of 0, or one outside -31..31, at arm time.
@@ -185,7 +185,7 @@ func Weekly(interval uint, days []time.Weekday, at ...ClockTime) Trigger {
 // ⚠ A day-of-month that no month on the interval grid can hold (e.g.
 // Monthly(12, []int{31}) armed in a February) is never due. [Trigger.Next]
 // reports ok=false for it and the runtime refuses to arm it — deliberately,
-// because gocron v2.22.0 searches for such a day without a bound (ADR-0176).
+// because gocron v2.22.0 searches for such a day without a bound.
 func Monthly(interval uint, days []int, at ...ClockTime) Trigger {
 	return Trigger{kind: triggerMonthly, interval: interval, days: days, atTimes: at}
 }
@@ -225,10 +225,10 @@ func (t Trigger) Recurring() bool {
 //     February, is reported.
 //
 // ok=false is a statement about Next, not a guarantee about the live
-// scheduler. The two were reconciled by ADR-0176 across every case measured
-// there (docs/specs/2026-08-13-adr-0176-measurements.md §13–§14), which is
-// what lets the runtime treat ok=false as "do not arm this" — but they are
-// separate implementations, and gocron remains the authority on what fires.
+// scheduler. The two were reconciled case by case against measurements of
+// the live scheduler, which is what lets the runtime treat ok=false as "do
+// not arm this" — but they are separate implementations, and gocron remains
+// the authority on what fires.
 //
 // Note in particular that an empty weekday or day-of-month set is NOT
 // never-due: the gocron adapter substitutes Sunday and the 1st respectively
@@ -248,15 +248,15 @@ func (t Trigger) Recurring() bool {
 // min in (0, max) — the live scheduler resolves the actual draw per fire —
 // and ok=false for a non-positive min, for the same reason as [Every], or for
 // min >= max, which the live scheduler refuses outright and which no
-// next_run-keyed guard downstream would catch (ADR-0176).
+// next_run-keyed guard downstream would catch.
 //
 // [Cron], [Daily], [Weekly], and [Monthly] resolve the next matching
-// occurrence in the location of after (ADR-0137). A UTC after yields UTC.
+// occurrence in the location of after. A UTC after yields UTC.
 // [Cron] additionally: robfig/cron resolves the expression in after's
 // location; note the live gocron scheduler resolves cron by zone name, so a
 // [Cron] trigger under a non-IANA time.FixedZone fails to schedule there
-// (ADR-0136) — use UTC/Local/IANA zones with cron. [Daily], [Weekly], and
-// [Monthly] are interval-aware (ADR-0140): the first fire Next reports for
+// — use UTC/Local/IANA zones with cron. [Daily], [Weekly], and
+// [Monthly] are interval-aware: the first fire Next reports for
 // an interval>1 calendar trigger matches the live scheduler's first fire,
 // including when the current period's at-times have already passed. An
 // omitted atTimes defaults to midnight (00:00:00).
@@ -279,7 +279,7 @@ func (t Trigger) Next(after time.Time) (time.Time, bool) {
 			// The live scheduler refuses min >= max outright, so reporting a
 			// fire instant here would arm a job that can never run — and,
 			// unlike the never-due kinds, it has a NON-zero next run, so no
-			// next_run-keyed guard downstream would catch it (ADR-0176).
+			// next_run-keyed guard downstream would catch it.
 			return time.Time{}, false
 		}
 		return after.Add(t.min), true
@@ -288,7 +288,7 @@ func (t Trigger) Next(after time.Time) (time.Time, bool) {
 		if err != nil {
 			return time.Time{}, false
 		}
-		// Resolve in after's location (ADR-0137): robfig/cron computes Next in
+		// Resolve in after's location: robfig/cron computes Next in
 		// the location of the passed instant. The runtime and the façade
 		// Schedule() pass now.In(scheduler location), so this matches the live
 		// scheduler; a UTC after (the default) yields UTC.
@@ -298,7 +298,7 @@ func (t Trigger) Next(after time.Time) (time.Time, bool) {
 			// find — it searches five years ahead, then gives up and returns
 			// the ZERO time with no error. "0 0 30 2 *" (30 February) is the
 			// ordinary typo form. Reporting (zero, true) here made every
-			// ok-keyed caller persist a zero next_run (ADR-0176).
+			// ok-keyed caller persist a zero next_run.
 			return time.Time{}, false
 		}
 		return next, true
@@ -366,7 +366,7 @@ func (t Trigger) Calendar() (uint, []int, []time.Weekday, []ClockTime, bool) {
 // interval==1, so a degenerate calendar shape (e.g. an empty weekday set)
 // cannot spin forever; it is generous enough (5 years) that no real
 // interval==1 calendar trigger ever hits it. calendarNext scales this bound
-// by interval (ADR-0140) — at interval==1 the scaled bound equals this
+// by interval — at interval==1 the scaled bound equals this
 // constant exactly (byte-identical); for interval>1 it grows so a large
 // interval's first fire (e.g. "every 8 years") still lies within scan range,
 // matching the live scheduler rather than exhausting into ok=false.
@@ -381,10 +381,10 @@ const maxCalendarScanDays = 366 * 5
 // Measured on the unclamped code (anchor Thu 2026-08-20T12:00Z, weekdays
 // [Monday]): Weekly(MaxUint64) made int(interval)*7 == -7 and returned
 // 2026-08-10 — ten days in the PAST — with ok=true. A past next-run reported
-// as valid is the class ADR-0176 and ADR-0181 refuse, and backlog 49 records
-// gocron rejecting such an arm with a raw un-wrapped error. Weekly(MaxUint32)
-// did not wrap but armed 80 million years out; Daily(MaxUint64) already failed
-// closed, so only the weekly path produced a false positive.
+// as valid is a class this package refuses, and gocron itself rejects such an
+// arm with a raw un-wrapped error. Weekly(MaxUint32) did not wrap but armed
+// 80 million years out; Daily(MaxUint64) already failed closed, so only the
+// weekly path produced a false positive.
 //
 // 1<<20 months is ~87,000 years and ~20,000 years of weeks, far past any real
 // schedule, and keeps both products well inside int on a 32-bit platform
@@ -394,13 +394,13 @@ const maxCalendarScanDays = 366 * 5
 const maxSchedulableInterval = 1 << 20
 
 // calendarNext computes the first fire after the given instant for
-// triggerDaily, triggerWeekly, and triggerMonthly, in after's location
-// (ADR-0137), at one of atTimes (sorted ascending; midnight if atTimes is
-// empty). Its answers are reconciled with the live scheduler (ADR-0176): a
+// triggerDaily, triggerWeekly, and triggerMonthly, in after's location, at
+// one of atTimes (sorted ascending; midnight if atTimes is empty). Its
+// answers are reconciled with the live scheduler: a
 // weekday set is handled by weeklyNext, which transcribes gocron's own
 // algorithm, while triggerDaily and triggerMonthly scan forward day by day
 // for the first day passing kind's filter AND lying on the interval grid
-// anchored at after's own day/month (ADR-0140). A scanned day's period index
+// anchored at after's own day/month. A scanned day's period index
 // — its day offset for triggerDaily, its month offset for triggerMonthly,
 // both relative to after — must be a multiple of interval to be accepted;
 // day-of-month overflow (e.g. day 31 in a 30-day month) and "the target month
@@ -418,8 +418,7 @@ const maxSchedulableInterval = 1 << 20
 // match — which is how a day-of-month no qualifying month contains, such as
 // Monthly(12, []int{31}) anchored in February, is reported. That answer is
 // load-bearing: it is what lets the runtime refuse the arm before gocron's
-// own unbounded search spins on it (ADR-0176's Decision — the ADR has no
-// numbered sections; its headings are Context, Decision, Consequences).
+// own unbounded search spins on it.
 func calendarNext(after time.Time, kind triggerKind, interval uint, days []int, weekdays []time.Weekday, atTimes []ClockTime) (time.Time, bool) {
 	if interval == 0 || interval > maxSchedulableInterval {
 		return time.Time{}, false
@@ -456,8 +455,8 @@ func calendarNext(after time.Time, kind triggerKind, interval uint, days []int, 
 	}
 
 	start := time.Date(after.Year(), after.Month(), after.Day(), 0, 0, 0, 0, loc)
-	// Scaled per ADR-0140 audit F1: at interval==1 this equals
-	// maxCalendarScanDays exactly (byte-identical scan range).
+	// Scaled by interval: at interval==1 this equals maxCalendarScanDays
+	// exactly (byte-identical scan range).
 	bound := maxCalendarScanDays * int(interval)
 	for i := 0; i <= bound; i++ {
 		day := start.AddDate(0, 0, i)
@@ -484,9 +483,7 @@ func calendarNext(after time.Time, kind triggerKind, interval uint, days []int, 
 				// N=12000, 2.746 s at N=786432, 3.568 s at N=1044480, and
 				// 27.159 s for that last one under -race. Jumping whole
 				// strides makes it milliseconds at every N, on the arm path,
-				// inside the commit transaction (ADR-0140 audit F1, backlog
-				// 26; the backlog's own single 404 ms datapoint was one point
-				// on that line, not the whole line).
+				// inside the commit transaction.
 				target := day.AddDate(0, int(interval)-rem, 0)
 				// Normalise to the 1st: AddDate keeps the day-of-month, and
 				// carries an overflowing one into the following month.
@@ -516,8 +513,8 @@ func calendarNext(after time.Time, kind triggerKind, interval uint, days []int, 
 // which is the algorithm that actually schedules a [Weekly] trigger once the
 // runtime arms it. Reproducing it here rather than approximating it is what
 // makes [Trigger.Next] agree with the live scheduler for the whole weekly
-// kind (ADR-0176; ADR-0140 promised the agreement, a scan over a weekday-set
-// membership test could not deliver it).
+// kind (a scan over a weekday-set membership test could not deliver that
+// agreement).
 //
 // gocron makes two passes. The FIRST considers only weekdays at or after the
 // anchor's own weekday, placing each at anchorDay + (weekday - anchorWeekday)
@@ -634,7 +631,7 @@ func civilDayIndex(t time.Time) int {
 // out-of-range value into a different instant — an hour of 25 becomes 01:00 the
 // NEXT day. Reporting that as the fire time made the runtime persist it in the
 // commit transaction and only then fail at Activate, where failure is WARN-only:
-// the timer never fires and the row re-fails on every boot (ADR-0176).
+// the timer never fires and the row re-fails on every boot.
 func clockTimesSchedulable(cs []ClockTime) bool {
 	for _, c := range cs {
 		if c.Hour > 23 || c.Minute > 59 || c.Second > 59 {

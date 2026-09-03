@@ -1,12 +1,12 @@
 package engine_test
 
-// step_harvest_nested_scopes_test.go — ADR-0174, T7: a dying instance with MORE THAN ONE
+// step_harvest_nested_scopes_test.go — a dying instance with MORE THAN ONE
 // open scope harvests each scope's records under THAT scope's own NodeID key.
 //
 // This is the assertion that pins scope IDENTITY, not merely record survival. A harvest
 // that dumped every open scope's records under one key — the innermost scope's, the root's,
 // or a single flat list — would satisfy every other test in this delivery and would
-// silently break scope-targeted compensation (ADR-0039): a later CompensateThrow scoped to
+// silently break scope-targeted compensation: a later CompensateThrow scoped to
 // `outerSub` looks up ArchivedCompensations["outerSub"], and would find undoInner in it or
 // find nothing at all. So the invariant is "an abnormal exit archives exactly what a
 // normal exit would have", one key per scope.
@@ -163,7 +163,7 @@ func TestNestedOpenScopesEachHarvestUnderTheirOwnNodeID(t *testing.T) {
 			"innerSub": actionsOf(r.State.ArchivedCompensations["innerSub"]),
 		},
 		"each open scope must archive under ITS OWN sub-process node id, so scope identity "+
-			"survives an abnormal exit exactly as it survives a normal one (ADR-0039)")
+			"survives an abnormal exit exactly as it survives a normal one")
 	assert.Len(t, r.State.ArchivedCompensations, 2,
 		"and no third key: the harvest must not mint a key for a scope that does not exist")
 	assert.Empty(t, r.State.RootCompensations,

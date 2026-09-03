@@ -111,7 +111,7 @@ func TestHarness_DriveToCompletion(t *testing.T) {
 
 // TestHarness_TaskServiceRefreshesCandidates verifies the harness threads its
 // ActorResolver into the TaskService, not only into the driver — without it
-// RefreshCandidates (ADR-0150) is dead on every harness-built stack.
+// RefreshCandidates is dead on every harness-built stack.
 func TestHarness_TaskServiceRefreshesCandidates(t *testing.T) {
 	t.Parallel()
 

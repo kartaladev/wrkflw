@@ -7,7 +7,7 @@
 # otherwise drags a package's reported total far below its real coverage (e.g.
 # the `service` package reads 49.9% raw vs 89.3% excluding the four mock files).
 # This mirrors .golangci.yml's `exclusions: generated: lax`, which already drops
-# the same files from linting. See ADR-0143.
+# the same files from linting.
 #
 # Usage:
 #   scripts/coverage.sh              # run the race suite, then print the filtered total
@@ -17,12 +17,12 @@
 # bash 3.2 that ships on macOS as well as CI's bash 5.
 set -euo pipefail
 
-# Explicit go test binary timeout (backlog 48). Go's implicit default is also 600s,
-# but leaving it implicit meant nothing could enforce ADR-0184's sizing rule
+# Explicit go test binary timeout. Go's implicit default is also 600s, but
+# leaving it implicit meant nothing could enforce the sizing rule
 # (eventuallyBudget x densest-package site count < timeout) — and nothing did.
 # scripts/check-test-timeout.sh parses this literal and the identical one in
 # .github/workflows/ci.yml, and fails if they disagree or if the rule is violated.
-# Raising it is a deliberate decision: change BOTH, and say why in an ADR.
+# Raising it is a deliberate decision: change BOTH, and record why.
 GO_TEST_TIMEOUT="${GO_TEST_TIMEOUT:-600s}"
 
 profile="${1:-}"

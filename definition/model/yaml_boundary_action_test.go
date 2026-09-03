@@ -15,7 +15,7 @@ import (
 // boundaryActionYAML authors a boundary event carrying both of the fields
 // event.WithBoundaryAction and event.WithBoundaryErrorExpr set in Go.
 //
-// What makes this fail before backlog 143 is fixed: nodeYAML declares neither
+// What makes this fail before the fix: nodeYAML declares neither
 // boundary_action nor boundary_error_expr, and ParseYAML decodes with
 // KnownFields(true), so the document is REJECTED at parse time.
 const boundaryActionYAML = `
@@ -47,8 +47,8 @@ flows:
     target: finish
 `
 
-// TestParseYAMLBoundaryActionAndErrorExpr is the regression test for backlog
-// 143: two supported, documented, exampled boundary options were unreachable
+// TestParseYAMLBoundaryActionAndErrorExpr is the regression test for a gap:
+// two supported, documented, exampled boundary options were unreachable
 // from YAML, which CLAUDE.md makes a first-class authoring form.
 //
 // ⚠ Adding the fields to nodeYAML WITHOUT the fromNodeYAML mapping is a NET

@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestRollbackOnly covers transaction.RollbackOnly (ADR-0134): it must read the
+// TestRollbackOnly covers transaction.RollbackOnly: it must read the
 // ambient handle's rollback-only flag, defaulting to false with no ambient
 // handle, and observe the mark a joined participant's Rollback leaves behind.
 // Driven against SQLite (no Docker daemon required) since RollbackOnly's logic

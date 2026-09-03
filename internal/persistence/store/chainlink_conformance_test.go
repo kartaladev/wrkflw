@@ -157,7 +157,7 @@ func TestChainLinkStore(t *testing.T) {
 			got, ok, err := cls.LookupBySuccessor(ctx, "ts-succ")
 			require.NoError(t, err, "%s: LookupBySuccessor", b.name)
 			require.True(t, ok, "%s: ok", b.name)
-			// Normalised to UTC on every backend (ADR-0080).
+			// Normalised to UTC on every backend.
 			assert.Equal(t, time.UTC, got.CreatedAt.Location(), "%s: CreatedAt must be UTC", b.name)
 			// Sub-second precision must survive on all native-time backends (PG/MySQL).
 			// SQLite TEXT codec rounds to nanosecond via RFC3339Nano, so allow within 1ms.

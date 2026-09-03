@@ -38,7 +38,7 @@ func signalWaitDef() *model.ProcessDefinition {
 }
 
 // TestSignalBusPublishToleratesATerminalFanOutTarget pins the property that
-// makes SignalReceived's rejectSilently classification correct (ADR-0165).
+// makes SignalReceived's rejectSilently classification correct.
 //
 // SignalBus.Publish is best-effort: it attempts every registered waiter and
 // accumulates per-waiter failures with errors.Join. A broadcast therefore fails

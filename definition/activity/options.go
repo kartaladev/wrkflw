@@ -219,7 +219,7 @@ func (o eligibleRolesOpt) applyUserTask(u *UserTask) {
 // Roles are one of three co-equal, optional eligibility dimensions (with
 // WithEligiblePrivileges and WithEligibleExpr). With no eligibility set,
 // the engine gate is open and authorization defers to the consumer's transport
-// layer (e.g. HTTP security middleware). See ADR-0117.
+// layer (e.g. HTTP security middleware).
 func WithEligibleRoles(roles ...string) UserTaskOption { return eligibleRolesOpt{roles} }
 
 type eligiblePrivilegesOpt struct{ privs []string }
@@ -251,7 +251,7 @@ func (o outcomesOpt) applyUserTask(u *UserTask) {
 //
 // Declaring outcomes is audit-only unless the node also opts into exposure via
 // WithExposeOutcome or WithOutcomeVariable.
-// It may only be passed to NewUserTask. See ADR-0146.
+// It may only be passed to NewUserTask.
 func WithOutcomes(outcomes ...string) UserTaskOption { return outcomesOpt{outcomes} }
 
 type exposeOutcomeOpt struct{}
@@ -266,7 +266,7 @@ func (exposeOutcomeOpt) applyUserTask(u *UserTask) { u.ExposeOutcome = true }
 // It requires WithOutcomes: exposing an outcome into the variable space demands
 // a closed value domain, so Build rejects exposure without a declared set with
 // model.ErrOutcomeExposureWithoutOutcomes. It may only be passed to
-// NewUserTask. See ADR-0146.
+// NewUserTask.
 func WithExposeOutcome() UserTaskOption { return exposeOutcomeOpt{} }
 
 type outcomeVariableOpt struct{ name string }
@@ -280,7 +280,7 @@ func (o outcomeVariableOpt) applyUserTask(u *UserTask) { u.OutcomeVariable = o.n
 //
 // Like WithExposeOutcome it requires WithOutcomes — Build rejects exposure
 // without a declared set with model.ErrOutcomeExposureWithoutOutcomes. It may
-// only be passed to NewUserTask. See ADR-0146.
+// only be passed to NewUserTask.
 func WithOutcomeVariable(name string) UserTaskOption { return outcomeVariableOpt{name} }
 
 type manualOpt struct{ immediate bool }
@@ -298,7 +298,7 @@ func (o manualOpt) applyUserTask(u *UserTask) {
 //     engine records a completed task for audit and advances without waiting.
 //
 // A manual task must not carry completion validation (rejected at Build time,
-// ErrManualTaskValidation), regardless of mode. See ADR-0118.
+// ErrManualTaskValidation), regardless of mode.
 func WithManual(immediate bool) UserTaskOption { return manualOpt{immediate} }
 
 type completionValidationOpt struct{ s validate.ValidationStrategy }

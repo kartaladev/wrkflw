@@ -72,7 +72,7 @@ func (s *InstanceState) firstActive() *Token {
 
 // tokenAwaiting returns the token parked on the given command id, or nil.
 //
-// An empty cmdID names no token (ADR-0152): a Token parks on exactly one of
+// An empty cmdID names no token: a Token parks on exactly one of
 // AwaitCommand/AwaitSignal/AwaitMessage (state.go:89-101), leaving the other
 // two "". Without this guard, cmdID == "" would match any token NOT parked
 // on a command — an unrelated wildcard hit.
@@ -90,7 +90,7 @@ func (s *InstanceState) tokenAwaiting(cmdID string) *Token {
 
 // tokenByID returns the first token whose ID matches, or nil.
 //
-// An empty tokenID names no token (ADR-0152); a Token's ID is always assigned
+// An empty tokenID names no token; a Token's ID is always assigned
 // by nextID and is never legitimately empty.
 func (s *InstanceState) tokenByID(tokenID string) *Token {
 	if tokenID == "" {
@@ -110,7 +110,7 @@ func (s *InstanceState) tokenByID(tokenID string) *Token {
 // call are NOT included. Used by SignalReceived dispatch to implement snapshot
 // semantics: only tokens awaiting the signal AT DELIVERY TIME are resumed.
 //
-// An empty name names no signal (ADR-0152): a Token parks on exactly one of
+// An empty name names no signal: a Token parks on exactly one of
 // AwaitCommand/AwaitSignal/AwaitMessage (state.go:89-101), so without this
 // guard name == "" would select every token NOT awaiting a signal and a
 // consumer-built SignalReceived{Name: ""} would broadcast-resume them all.
@@ -132,7 +132,7 @@ func (s *InstanceState) tokenIDsAwaitingSignal(name string) []string {
 // the token (no key configured on the catch node) matches only when the
 // incoming MessageReceived.CorrelationKey is also empty.
 //
-// An empty name names no message (ADR-0152): a Token parks on exactly one of
+// An empty name names no message: a Token parks on exactly one of
 // AwaitCommand/AwaitSignal/AwaitMessage (state.go:89-101), so without this
 // guard name == "" would match any token NOT parked on a message.
 // correlationKey is deliberately NOT guarded: "" is the legitimate
@@ -162,7 +162,7 @@ func (s *InstanceState) nextTimerID() string { return s.nextID("tm", &s.TimerSeq
 func (s *InstanceState) nextIncidentID() string { return s.nextID("inc", &s.IncidentSeq) }
 
 // setVisitTask links the most recent open NodeVisit for the given
-// (tokenID, nodeID) pair to the human task minted for it (ADR-0145).
+// (tokenID, nodeID) pair to the human task minted for it.
 //
 // If no matching open visit exists the call is a no-op. On the user-task entry
 // path the visit is invariant-guaranteed to be open (the token opened it when
@@ -177,7 +177,7 @@ func (s *InstanceState) setVisitTask(tokenID, nodeID, taskID string) {
 // given (tokenID, nodeID) pair, or nil when none is open.
 //
 // Both tokenID and nodeID are identity keys into s.History; an empty value on
-// either side names no visit (ADR-0152), so both are guarded. Callers
+// either side names no visit, so both are guarded. Callers
 // (setVisitTask, closeVisit, closeVisitAs) pass through to this guard rather
 // than duplicating it.
 func (s *InstanceState) openVisitFor(tokenID, nodeID string) *NodeVisit {
@@ -232,7 +232,7 @@ func (s *InstanceState) consumeToken(tok *Token, at time.Time) {
 
 // removeToken drops the token with the given id from the token set.
 //
-// An empty id names no token (ADR-0152): a Token's ID is always assigned by
+// An empty id names no token: a Token's ID is always assigned by
 // nextID and is never legitimately empty, so an empty id is a no-op rather
 // than a mass-removal of every token that happens to lack one.
 func (s *InstanceState) removeToken(id string) {
@@ -266,7 +266,7 @@ func (s *InstanceState) moveTokenToTarget(tok *Token, target string, at time.Tim
 }
 
 // moveTokenToTargetAs is moveTokenToTarget with an abnormal close reason
-// stamped on the visit being left (ADR-0145).
+// stamped on the visit being left.
 func (s *InstanceState) moveTokenToTargetAs(tok *Token, target string, at time.Time, closeKind CloseKind) {
 	s.closeVisitAs(tok.ID, tok.NodeID, at, closeKind)
 	tok.NodeID = target
@@ -281,7 +281,7 @@ func (s *InstanceState) moveTokenToTargetAs(tok *Token, target string, at time.T
 // StepOptions.DefaultRetryPolicy > none. The override is the runtime's seam for a
 // per-action retry policy (action > node > runtime-default).
 //
-// FIELD-MERGE (ADR-0126): the override tier is fed from action.RetrySpecs, which
+// FIELD-MERGE: the override tier is fed from action.RetrySpecs, which
 // can express only MaxAttempts/InitialInterval/BackoffCoef/MaxInterval. When the
 // override is applied AND the node also declares a policy, the node's
 // safety-only fields the action tier cannot express — MaxElapsed and
@@ -421,7 +421,7 @@ func cloneState(st InstanceState) InstanceState {
 	// mutations to a clone's record do not affect the original. nil-vs-empty is
 	// preserved (see cloneCompensationRecords).
 	s.RootCompensations = cloneCompensationRecords(st.RootCompensations)
-	// Deep-copy the in-flight compensation walk's PINNED records (ADR-0171). The
+	// Deep-copy the in-flight compensation walk's PINNED records. The
 	// struct copy above carries the cursor's scalars correctly, but Records is a
 	// slice of records holding Input maps — without this the clone and the
 	// original would share both the backing array and those maps.
@@ -469,7 +469,7 @@ func cloneState(st InstanceState) InstanceState {
 	// Deep-copy RecentCompensationCmdIDs: a []string of command ids (value type),
 	// so an append-copy is sufficient. Without it two clones of one base append
 	// into the same backing slot, a dispatched id vanishes, and the duplicate-reply
-	// 422 this ring closes returns non-deterministically (ADR-0179 Decision 5).
+	// 422 this ring closes returns non-deterministically.
 	s.RecentCompensationCmdIDs = append([]string(nil), st.RecentCompensationCmdIDs...)
 	return s
 }

@@ -1,11 +1,11 @@
-// Package main demonstrates an event sub-process (ADR-0122): an
+// Package main demonstrates an event sub-process: an
 // activity.SubProcess with NO incoming sequence flow, whose nested definition
 // has an event-triggered inner start (event.NewStart + WithMessageCorrelator).
 // Such a node is latent — never entered by a flowing token — and instead arms
 // the moment its enclosing scope opens, firing only when the matching
 // message/signal/timer occurs. An "event sub-process" is not a distinct node
 // kind, it is an authoring pattern over the ordinary SubProcess +
-// event-triggered start (ADR-0122).
+// event-triggered start.
 //
 // This example uses the NON-INTERRUPTING flavor (event.WithNonInterrupting()):
 // when the "cancel" message arrives, the event sub-process runs ALONGSIDE the
@@ -67,7 +67,7 @@ func main() {
 
 	// The main order path. "handleCancel" is added to the definition's node
 	// set but deliberately never Connect-ed — an event-triggered SubProcess
-	// with no incoming flow is a reachability root in its own right (ADR-0122),
+	// with no incoming flow is a reachability root in its own right,
 	// latent until its inner start's trigger fires.
 	def, err := definition.NewBuilder("order-fulfillment", 1).
 		Add(event.NewStart("start")).
@@ -105,7 +105,7 @@ func main() {
 		log.Fatal("memstore:", err)
 	}
 	// DeliverMessage resolves a correlated instance's definition from its own
-	// snapshot via the registry (ADR-0121), so the definition must be
+	// snapshot via the registry, so the definition must be
 	// registered even though it is never event-started here.
 	reg := kernel.NewMemDefinitionRegistry()
 	if err := reg.Register(def); err != nil {
@@ -116,7 +116,7 @@ func main() {
 		log.Fatal("runner:", err)
 	}
 
-	fmt.Println("--- Order Fulfillment: Event Sub-process (ADR-0122) ---")
+	fmt.Println("--- Order Fulfillment: Event Sub-process ---")
 
 	// Start the instance: validate-order runs, the main token parks on
 	// await-delivery, and the root-level event-sub arms immediately alongside it.
@@ -132,7 +132,7 @@ func main() {
 	// main path — await-delivery is left untouched.
 	//
 	// driver.DeliverMessage correlates a delivered message to an event-sub's own
-	// message arm (ADR-0123), alongside message-catch tokens, message boundaries,
+	// message arm, alongside message-catch tokens, message boundaries,
 	// and event-based-gateway arms — so no ApplyTrigger workaround is needed.
 	fmt.Println(`delivering message "cancel" (orderId=order-1)...`)
 	if err := driver.DeliverMessage(ctx, "cancel", "order-1", map[string]any{"orderId": "order-1"}); err != nil {

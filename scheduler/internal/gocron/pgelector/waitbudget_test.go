@@ -9,7 +9,7 @@ import "time"
 // path, and only a test that was already going to fail waits it out.
 //
 // It replaces per-site literals of 1–3 s. The measurement that motivated this
-// change (backlog 42) is TestGocronScheduleJobTriggers/"At (past-due) fires
+// change is TestGocronScheduleJobTriggers/"At (past-due) fires
 // immediately" failing under full-suite -race contention — a test in the
 // SIBLING scheduler/internal/gocron package, not this one: this package has no
 // local repro of that flake. The same class of risk applies here regardless —
@@ -19,7 +19,7 @@ import "time"
 //
 // ⚠ Deliberately NOT used for Never (require.Never OR assert.Never). A Never
 // budget is an observation window paid in full on every GREEN run, so raising it
-// is pure cost (ADR-0184 §4).
+// is pure cost.
 //
 // ⚠ SIZED AGAINST THE BINARY, NOT THE SITE. go test's default timeout is 600s
 // per binary and these sites are predominantly SERIAL (2 of gocron's 31 run

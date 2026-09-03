@@ -1,12 +1,12 @@
 package engine
 
-// state_arms_wire_test.go — wire-format parity gate for Task B1
-// (docs/plans/2026-07-13-engine-simplify-phase-b.md, ADR-0131).
+// state_arms_wire_test.go — wire-format parity gate for the shared
+// triggerMatch embed.
 //
 // InstanceState (including ArmedEvents, Boundaries, and
 // EventTriggeredSubprocesses) is persisted via plain json.Marshal
 // (internal/persistence/store/store_core.go), with no custom
-// MarshalJSON/UnmarshalJSON on the arm types. B1 extracts a shared
+// MarshalJSON/UnmarshalJSON on the arm types. The refactor extracts a shared
 // `triggerMatch{TimerID, Signal, Message, MessageKey}` struct and embeds it
 // ANONYMOUSLY into armedEvent, boundaryArm, and eventTriggeredSubprocessArm.
 // Go promotes an anonymous embedded struct's fields into the parent JSON
@@ -30,15 +30,15 @@ import (
 )
 
 // goldenArmedEventJSON is the exact json.Marshal output of a fully-populated
-// armedEvent under the pre-B1 (non-embedded) struct shape.
+// armedEvent under the pre-embed (non-embedded) struct shape.
 const goldenArmedEventJSON = `{"GatewayToken":"gw-tok-1","CatchNode":"catch-1","Flow":"flow-1","TimerID":"timer-1","Signal":"sig-1","Message":"msg-1","MessageKey":"key-1"}`
 
 // goldenBoundaryArmJSON is the exact json.Marshal output of a fully-populated
-// boundaryArm under the pre-B1 (non-embedded) struct shape.
+// boundaryArm under the pre-embed (non-embedded) struct shape.
 const goldenBoundaryArmJSON = `{"HostToken":"host-tok-1","HostNode":"host-node-1","BoundaryNode":"bnd-node-1","Flow":"flow-2","NonInterrupting":true,"TimerID":"timer-2","Signal":"sig-2","Message":"msg-2","MessageKey":"key-2","Action":"action-1"}`
 
 // goldenEventTriggeredSubprocessArmJSON is the exact json.Marshal output of a
-// fully-populated eventTriggeredSubprocessArm under the pre-B1 (non-embedded)
+// fully-populated eventTriggeredSubprocessArm under the pre-embed (non-embedded)
 // struct shape.
 const goldenEventTriggeredSubprocessArmJSON = `{"EnclosingScopeID":"scope-1","EventSubprocessNode":"esp-node-1","NonInterrupting":true,"Signal":"sig-3","TimerID":"timer-3","Message":"msg-3","MessageKey":"key-3"}`
 

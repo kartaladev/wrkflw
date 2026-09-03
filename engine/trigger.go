@@ -1,4 +1,4 @@
-// Package engine is the pure token state machine (ADR-0002). Step maps
+// Package engine is the pure token state machine. Step maps
 // (definition, state, Trigger) -> (state, []Command) with no I/O, no clock
 // reads, and no goroutines.
 package engine
@@ -12,8 +12,7 @@ import (
 // terminalPolicy reports how [Step] treats a trigger delivered to an instance
 // that has already reached a terminal status (StatusCompleted, StatusFailed,
 // StatusTerminated). It is declared per trigger and enforced once, in dispatch,
-// rather than hand-copied into individual handlers — the sprawl that shape
-// produced is what ADR-0165 replaced.
+// rather than hand-copied into individual handlers.
 //
 // StatusCompensating is NOT terminal, so an in-flight compensation walk is
 // unaffected by any of these.
@@ -72,7 +71,7 @@ const (
 // "why did my trigger do nothing".
 //
 // StatusCompensating is not terminal (see [Status.IsTerminal]), so an in-flight
-// compensation walk is unaffected by any of this. See ADR-0165.
+// compensation walk is unaffected by any of this.
 type Trigger interface {
 	isTrigger()
 	OccurredAt() time.Time
@@ -80,7 +79,7 @@ type Trigger interface {
 	// instance. It is deliberately NOT implemented on baseTrigger: every trigger
 	// type must declare its own, so a new trigger fails to compile until its
 	// author has made the decision. That compile error is the mechanism. Do not
-	// add a default. See ADR-0165.
+	// add a default.
 	terminalPolicy() terminalPolicy
 }
 
@@ -104,14 +103,14 @@ type StartInstance struct {
 	Vars map[string]any
 	// StartNodeID is the start node to seed. Empty resolves the definition's
 	// manual (trigger-less, caller-driven) start; non-empty seeds that specific
-	// start node (ADR-0121). Set via NewStartInstanceAtNode.
+	// start node. Set via NewStartInstanceAtNode.
 	StartNodeID string
 }
 
 // terminalPolicy: starting an instance is a synchronous external API call, and a
 // terminal instance that accepted one would flip back to StatusRunning with
 // EndedAt still set, seed a second start token, and re-mint its tasks. The caller
-// must be told. See ADR-0165.
+// must be told.
 func (StartInstance) terminalPolicy() terminalPolicy { return rejectWithError }
 
 // ActionCompleted reports that a action.Action finished successfully.
@@ -132,16 +131,15 @@ type ActionCompleted struct {
 // terminalPolicy: an action result arrives from a worker the engine dispatched.
 // The worker cannot distinguish a no-op from success and would retry an error,
 // so a result for an instance that died while the action ran is swallowed.
-// See ADR-0165.
 //
-// The route this closes, migrated here from the per-handler guard ADR-0165
-// deleted: three terminal paths keep s.Tokens (handleUnhandledError's
+// The route this closes, migrated here from the deleted per-handler guard:
+// three terminal paths keep s.Tokens (handleUnhandledError's
 // immediate-fail branch, handleSubInstanceFailed's tail, and applyTerminate —
 // only forceTerminate and handleCancelRequested's immediate branch nil them), so
 // a surviving sibling still carries its AwaitCommand, and tokenAwaiting matches
 // on AwaitCommand alone with no status check. drive has no status guard either,
 // so that token could run to an end event and flip a FAILED instance to
-// Completed. ADR-0161's liveAwaiters filter does not cover it: that drops
+// Completed. The liveAwaiters filter does not cover it: that drops
 // commands emitted in the SAME step, whereas this one was dispatched earlier and
 // is already in flight. Guarding inside handleActionCompleted's `tok == nil`
 // branch could not see the case at all, which is why the check has to precede
@@ -180,7 +178,6 @@ type ActionFailed struct {
 
 // terminalPolicy: same asynchronous-worker reasoning as ActionCompleted — a
 // failure report for an instance that is already dead has nothing left to fail.
-// See ADR-0165.
 //
 // The route, migrated here from the deleted per-handler guard, is the symmetric
 // twin of ActionCompleted's and is real rather than theoretical. An ActionFailed
@@ -202,8 +199,8 @@ func NewStartInstance(at time.Time, vars map[string]any) StartInstance {
 }
 
 // NewStartInstanceAtNode builds a StartInstance trigger that seeds the given
-// start node explicitly, instead of resolving the definition's manual start
-// (ADR-0121). nodeID must identify one of the definition's start nodes.
+// start node explicitly, instead of resolving the definition's manual start.
+// nodeID must identify one of the definition's start nodes.
 //
 // Delivering the result to an already-terminal instance is refused with
 // [ErrInstanceTerminal]; see [StartInstance].
@@ -258,7 +255,7 @@ func NewActionFailed(at time.Time, commandID, errMsg string, retryable bool, opt
 // [humantask.Completion], which additionally carries the completing actor and
 // the completion time. The two are deliberately named apart so a file importing
 // both does not have to disambiguate, and so a reader can tell at a glance which
-// one is being handled (ADR-0146 amendment 2).
+// one is being handled.
 //
 // Outcome is recorded on the task's completion audit either way, and is
 // validated against the user task's declared outcomes when the node declares
@@ -285,9 +282,9 @@ type CompletionInput struct {
 //   - The instance is already terminal (StatusCompleted, StatusFailed,
 //     StatusTerminated) — [ErrInstanceTerminal]. See [Trigger] for the three
 //     terminal outcomes.
-//   - The task itself is already Completed or Cancelled — [ErrTaskNotOpen].
-//     ADR-0163 closes a task while the instance keeps running, so a closed task
-//     on a live instance is reachable and the instance-status key cannot see it.
+//   - The task itself is already Completed or Cancelled — [ErrTaskNotOpen]. A
+//     task can be closed while the instance keeps running, so a closed task on a
+//     live instance is reachable and the instance-status key cannot see it.
 //
 // A TaskID that names no task record at all reports humantask.ErrTaskNotFound,
 // which is what the layer above the engine already reported for an unknown id.
@@ -307,7 +304,7 @@ type HumanCompleted struct {
 // reproduced routes — a surviving token whose AwaitCommand still matched drove
 // on and appended a post-mortem history visit, and on a single-token instance it
 // flipped StatusFailed to StatusCompleted whose second terminal event was
-// suppressed. See ADR-0165.
+// suppressed.
 func (HumanCompleted) terminalPolicy() terminalPolicy { return rejectWithError }
 
 // HumanCandidatesResolved reports the set of actors the runtime resolved as
@@ -340,7 +337,6 @@ type HumanCandidatesResolved struct {
 // terminalPolicy: the runtime feeds a resolved candidate set back on its own
 // schedule, the same round trip a service action takes. Restating candidates on
 // a dead instance is pointless, not an error the resolver can act on.
-// See ADR-0165.
 //
 // The route, migrated here from the deleted per-handler guard: it is reached
 // when a sibling branch terminates the instance in the same step that opened
@@ -365,7 +361,7 @@ type HumanClaimed struct {
 // terminalPolicy: an actor clicking "claim" is a synchronous external caller.
 // Left unguarded this re-opened a task the terminal transition had already
 // cancelled, flipping its state back to Claimed and emitting an UpdateTask
-// against a dead instance. See ADR-0165.
+// against a dead instance.
 func (HumanClaimed) terminalPolicy() terminalPolicy { return rejectWithError }
 
 // HumanReassigned reports that a human-task node was reassigned from one actor
@@ -386,7 +382,7 @@ type HumanReassigned struct {
 
 // terminalPolicy: same route and same reasoning as HumanClaimed — an admin
 // reassigning is a synchronous external caller, and the unguarded handler forged
-// a Claim on a cancelled task. See ADR-0165.
+// a Claim on a cancelled task.
 func (HumanReassigned) terminalPolicy() terminalPolicy { return rejectWithError }
 
 // NewHumanCompleted builds a HumanCompleted trigger stamped with the given time,
@@ -450,7 +446,7 @@ type TimerFired struct {
 
 // terminalPolicy: the scheduler fires timers on its own schedule and a timer
 // armed before the instance died can always land after it. This is the engine's
-// own machinery reporting in, not a caller to inform. See ADR-0165.
+// own machinery reporting in, not a caller to inform.
 //
 // The route, migrated here from the deleted per-handler guard: an unhandled
 // error can fail an instance without sweeping its sibling boundary, deadline, or
@@ -487,7 +483,7 @@ type SignalReceived struct {
 // every instance awaiting the name, so an error from a single dead target must
 // not fail the publish for the live ones. Left unguarded this merged the
 // signal's Payload into a dead instance's Variables and drove a surviving token
-// to a post-mortem end event. See ADR-0165.
+// to a post-mortem end event.
 func (SignalReceived) terminalPolicy() terminalPolicy { return rejectSilently }
 
 // NewSignalReceived builds a SignalReceived trigger stamped with the given time.
@@ -518,7 +514,7 @@ type MessageReceived struct {
 // terminalPolicy: a message that correlates to no live token is already
 // documented as a clean no-op, so a message that correlates to a token on a dead
 // instance must be one too — the delivering broker has nothing to retry.
-// Reproduced identically to SignalReceived. See ADR-0165.
+// Reproduced identically to SignalReceived.
 func (MessageReceived) terminalPolicy() terminalPolicy { return rejectSilently }
 
 // NewMessageReceived builds a MessageReceived trigger stamped with the given time.
@@ -555,7 +551,7 @@ type SubInstanceCompleted struct {
 // terminalPolicy: the child's completion is relayed by calllink.CallNotifier,
 // which marks the link notified and must not retry — its idempotency branch keys
 // on ErrTokenNotFound, and a parent that died while the child ran is a normal
-// race, not a fault. See ADR-0165.
+// race, not a fault.
 //
 // The route, migrated here from the deleted per-handler guard: CallNotifier.DrainOnce
 // performs no parent-status check, so the parent can have gone terminal at any
@@ -587,7 +583,7 @@ func NewSubInstanceCompleted(at time.Time, commandID string, output map[string]a
 //
 // The engine treats this as an error thrown at the call-activity node: when
 // that node carries a boundary error event whose ErrorCode matches Err, the
-// engine routes to it instead of failing the parent (ADR-0128). When no
+// engine routes to it instead of failing the parent. When no
 // boundary matches, the engine marks the instance failed (StatusFailed) with a
 // FailInstance command.
 //
@@ -601,13 +597,13 @@ type SubInstanceFailed struct {
 	// CommandID matches the StartSubInstance.CommandID that started the child.
 	CommandID string
 	// Err is the error message from the failed child instance; also used as
-	// the error code for parent boundary-event matching (ADR-0128).
+	// the error code for parent boundary-event matching.
 	Err string
 }
 
 // terminalPolicy: same relay and same reasoning as SubInstanceCompleted — a
 // child failure reported to an already-dead parent has no boundary left to route
-// to. See ADR-0165.
+// to.
 //
 // The route, migrated here from the deleted per-handler guard: with a matching
 // error boundary the unguarded handler routes to recovery and drives, flipping a
@@ -635,7 +631,7 @@ func NewSubInstanceFailed(at time.Time, commandID, errMsg string) SubInstanceFai
 // is NOT re-run). An empty ToNode means "roll back everything" — the instance
 // ends in StatusTerminated when all records are exhausted.
 //
-// Sub-process compensation (ADR-0013 → ADR-0039 → ADR-0162): every scope close
+// Sub-process compensation: every scope close
 // archives its accumulated CompensationRecords by scope (keyed by the sub-process
 // node ID) before closeScope is called — the normal sub-process exit, both
 // event-sub-process exits, and the two abnormal teardowns (error boundary,
@@ -658,12 +654,11 @@ func NewSubInstanceFailed(at time.Time, commandID, errMsg string) SubInstanceFai
 //   - A rollback carrying RESUME intent — a targeted walk (ToNode non-empty) or
 //     a reverse-and-resume (ReverseNode non-empty) — is refused with
 //     [ErrInstanceTerminal], because completing it would leave the instance
-//     running again (ADR-0109 hardening, ADR-0164).
+//     running again.
 //   - A PLAIN full rollback (ToNode and ReverseNode both empty) with
 //     compensation records still to walk is allowed through and compensates
 //     normally. Rolling back a finished instance whose records survive is a
-//     legitimate admin action, and this is the case ADR-0164's carve-out exists
-//     to protect.
+//     legitimate admin action.
 //   - A plain full rollback with nothing left to compensate is refused with
 //     [ErrInstanceTerminal]. There is no compensation to gain, and the walk
 //     would finish immediately through the terminal transition again —
@@ -675,8 +670,8 @@ func NewSubInstanceFailed(at time.Time, commandID, errMsg string) SubInstanceFai
 // empty RootCompensations alone does not mean there is nothing to compensate.
 //
 // On a non-terminal instance none of the above applies. See [Trigger] for the
-// three terminal outcomes and ADR-0165 for why the second condition is decided
-// by the handler rather than by the trigger's type.
+// three terminal outcomes; the second condition is decided by the handler
+// rather than by the trigger's type.
 type CompensateRequested struct {
 	baseTrigger
 	// ToNode is the rollback target node ID. Compensation runs from the most-recently
@@ -706,7 +701,7 @@ type CompensateRequested struct {
 //
 // A rollback carrying RESUME intent — a targeted walk (ToNode) or a
 // reverse-and-resume (ReverseNode) — would leave the instance running again, so
-// it is refused on a terminal instance (ADR-0109 hardening, ADR-0164). A PLAIN
+// it is refused on a terminal instance. A PLAIN
 // full rollback (both empty) must still walk: internal cancel/error paths
 // re-deliver one against an already-terminal instance, and compensating a
 // finished instance whose records are still present is a legitimate admin
@@ -723,14 +718,14 @@ type CompensateRequested struct {
 // a plain full rollback on a terminal instance is refused when there is nothing
 // left to compensate. That predicate reads STATE, not the trigger, and giving
 // this method an *InstanceState would stop the policy being a property of the
-// trigger. See ADR-0165 Decision 5 and hasCompensationRecordsToWalk.
+// trigger. See hasCompensationRecordsToWalk.
 //
-// ⚠ Decision 5's predicate as written in the ADR was inverted — it refused the
-// walk when records SURVIVE and admitted it when they do not. Measurement showed
-// the opposite: with records the walk is real and is ADR-0164 carve-out #1;
-// without them the immediate finish re-stamps the terminal transition, discards
-// any surviving token and overwrites EndedAt, compensating nothing. The
-// decision's intent stands and is implemented with the corrected predicate.
+// ⚠ The obvious predicate here is INVERTED — it refuses the walk when records
+// SURVIVE and admits it when they do not. Measurement showed the opposite: with
+// records the walk is real and must be admitted; without them the immediate
+// finish re-stamps the terminal transition, discards any surviving token and
+// overwrites EndedAt, compensating nothing. The corrected predicate is the one
+// implemented here.
 // So the full contract on a terminal instance is: resume-shaped rollbacks are
 // refused here, a plain full rollback with anything to compensate walks and
 // returns no error, and a plain full rollback with nothing to compensate is
@@ -762,7 +757,7 @@ func NewCompensateRequested(at time.Time, toNode string) CompensateRequested {
 //
 // Delivering this trigger against an already-terminal instance (StatusCompleted,
 // StatusFailed, StatusTerminated) is refused with [ErrInstanceTerminal] rather
-// than resurrecting it (ADR-0109 hardening) — a defense-in-depth guard behind the
+// than resurrecting it — a defense-in-depth guard behind the
 // runtime facade's own terminal pre-check. The plain-full-rollback case described
 // on [CompensateRequested] is not reachable through this constructor: a non-empty
 // startNode makes the trigger resume-shaped, and an empty one produces a
@@ -779,7 +774,7 @@ func NewReverseToStart(at time.Time, startNode string) CompensateRequested {
 // (this is not a full-reverse-to-start walk; see NewReverseToStart for that).
 //
 // Delivering this trigger against an already-terminal instance is refused with
-// [ErrInstanceTerminal] rather than resurrecting it (ADR-0164). The
+// [ErrInstanceTerminal] rather than resurrecting it. The
 // plain-full-rollback case described on [CompensateRequested] is not reachable
 // through this constructor: a non-empty toNode makes the trigger resume-shaped,
 // and an empty one produces a malformed trigger (RestoreTargetVars without
@@ -798,7 +793,7 @@ func NewReverseToNode(at time.Time, toNode string) CompensateRequested {
 //     tokens are consumed, outstanding timers and boundary/gateway arms are
 //     cancelled, Status becomes StatusTerminated and FailInstance{Err:"cancelled"}
 //     is the terminal command.
-//   - With compensation records present, it compensates FIRST (ADR-0034): Status
+//   - With compensation records present, it compensates FIRST: Status
 //     becomes StatusCompensating and the walk runs to its end, which is where the
 //     same StatusTerminated / FailInstance{Err:"cancelled"} terminal is emitted.
 //
@@ -827,13 +822,13 @@ type CancelRequested struct {
 // it gets, so rejectSilently satisfies that loop exactly as the previous
 // tolerate-it behaviour did, without the damage.
 //
-// It was reclassified from allowOnTerminal by the rule-#9 audit. Left tolerant
-// it kept a live resurrection route: forceTerminate never clears
+// It was reclassified from allowOnTerminal. Left tolerant it kept a live
+// resurrection route: forceTerminate never clears
 // RootCompensations, so the handler set StatusCompensating on an already-
 // Completed instance, re-fired every compensation InvokeAction against a dead
 // instance, overwrote the terminal status and EndedAt, and published a SECOND
 // terminal event — terminalOutboxEvent suppresses only when the previous status
-// was terminal, and by then it was Compensating. See ADR-0165.
+// was terminal, and by then it was Compensating.
 func (CancelRequested) terminalPolicy() terminalPolicy { return rejectSilently }
 
 // NewCancelRequested builds a CancelRequested trigger stamped with the given time.
@@ -850,7 +845,7 @@ func NewCancelRequested(at time.Time) CancelRequested {
 //
 // Delivered to an already-terminal instance (StatusCompleted, StatusFailed,
 // StatusTerminated) it is refused with [ErrInstanceTerminal]. An incident can
-// outlive the instance that raised it — ADR-0164 deliberately keeps an incident
+// outlive the instance that raised it — the engine deliberately keeps an incident
 // whose token survived a terminal transition — so an admin can reach one and try
 // to clear it. The refusal is reported rather than silent because an admin told
 // nothing would reasonably conclude the process had resumed. Because
@@ -872,10 +867,10 @@ type ResolveIncident struct {
 // instance — silently. An admin who resolves an incident on a dead instance and
 // is told nothing will reasonably believe the process resumed, so the refusal is
 // now visible. It reaches them as HTTP 422 through machinery that already
-// exists, because the sentinel wraps ErrInvalidTransition. See ADR-0165.
+// exists, because the sentinel wraps ErrInvalidTransition.
 //
 // The route, migrated here from the deleted per-handler guard — and the reason
-// the refusal must happen BEFORE the incident is removed. ADR-0164 Decision 3's
+// the refusal must happen BEFORE the incident is removed. The
 // removeOrphanedIncidents sweep is what makes it reachable: it deliberately
 // KEEPS an incident whose token survived a terminal transition, which is exactly
 // the state (StatusFailed, a live TokenIncident token, a live incident) an admin
@@ -887,10 +882,10 @@ type ResolveIncident struct {
 // instance with its incident already gone — neither re-raisable nor
 // re-resolvable.
 //
-// ⚠ The standing lesson this route carries: ADR-0164 Decision 3's rationale
-// enumerated only the READ consumers of s.Incidents, and this is the WRITE
-// consumer. When a decision changes a data structure's lifetime, enumerate its
-// WRITERS.
+// ⚠ The standing lesson this route carries: the rationale for keeping those
+// incidents enumerated only the READ consumers of s.Incidents, and this is the
+// WRITE consumer. When a decision changes a data structure's lifetime, enumerate
+// its WRITERS.
 func (ResolveIncident) terminalPolicy() terminalPolicy { return rejectWithError }
 
 // NewResolveIncident builds a ResolveIncident trigger stamped with the given time.
@@ -921,8 +916,8 @@ const (
 	// arrive at a worker.
 	CompensationRetry CompensationDisposition = iota
 	// CompensationSkip gives up on the stalled record and advances the walk,
-	// exactly as a returned ActionFailed does (ADR-0034 Decision 4's best-effort
-	// skip). It is the only verb accepted on a resuming walk.
+	// exactly as a returned ActionFailed does (best-effort skip). It is the only
+	// verb accepted on a resuming walk.
 	CompensationSkip
 	// CompensationAbandon ends the walk and terminates the instance, retaining
 	// the records the walk never dispatched. Accepted ONLY on a walkAdmin walk —
@@ -945,7 +940,7 @@ func (d CompensationDisposition) String() string {
 }
 
 // ResolveCompensationStall is the operator's escape from a compensation walk
-// whose dispatched action stopped reporting back (ADR-0175).
+// whose dispatched action stopped reporting back.
 //
 // Such a walk is stuck AND invisible: it advances only on a trigger carrying the
 // cursor's command id, and — for a walk started by beginCompensation — the
@@ -980,7 +975,7 @@ type ResolveCompensationStall struct {
 // refusal must be visible. An operator who abandons a walk on an already-dead
 // instance and is told nothing would reasonably believe it worked. Mirrors
 // ResolveIncident, and reaches an HTTP admin as a conflict because
-// ErrInstanceTerminal wraps ErrInvalidTransition (ADR-0165).
+// ErrInstanceTerminal wraps ErrInvalidTransition.
 func (ResolveCompensationStall) terminalPolicy() terminalPolicy { return rejectWithError }
 
 // NewResolveCompensationStall builds the escape trigger for an explicitly

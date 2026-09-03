@@ -1,7 +1,7 @@
 package engine_test
 
 // step_compensation_outcome_test.go — regression lock for the non-zero outcome
-// branch of stepCompensationFinish (Fix 2 from the Task-1 code review).
+// branch of stepCompensationFinish.
 //
 // The branch that emits FailInstance{Err: FinalErr} and applies a non-default
 // FinalStatus shipped in commit dfc8b49 but was only indirectly covered. This

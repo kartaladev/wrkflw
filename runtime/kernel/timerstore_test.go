@@ -78,11 +78,11 @@ func TestMemTimerStore(t *testing.T) {
 }
 
 // var _ kernel.TimerWriter = (*kernel.MemTimerStore)(nil) is the compile-time
-// check that MemTimerStore satisfies the write-side capability (ADR-0134).
+// check that MemTimerStore satisfies the write-side capability.
 var _ kernel.TimerWriter = (*kernel.MemTimerStore)(nil)
 
 // TestMemTimerStoreTimerWriter exercises the TimerWriter capability
-// (UpsertJob/DeleteJob/DeleteJobByTimerID) added by ADR-0134: the runtime
+// (UpsertJob/DeleteJob/DeleteJobByTimerID): the runtime
 // JobStore delegates writes to this port. Kind must round-trip because it is
 // a new JobSpec field with no analogue on ArmedTimer's pre-existing Arm/Cancel
 // path.
@@ -188,7 +188,7 @@ func TestProcessDriverPersistsAndClearsTimer(t *testing.T) {
 // internal/persistence/store/timerstore_conformance_test.go
 // (TestTimerStoreArmedTimer): one recurring and one one-shot timer under the same
 // instance, so the two contract tests can be read side by side as the two halves
-// of the ADR-0159 mem-vs-SQL parity claim.
+// of the mem-vs-SQL parity claim.
 //
 // NextRun values are Truncate(time.Millisecond) because the SQL half round-trips
 // through TIMESTAMPTZ / DATETIME(6) / TEXT columns whose resolution stops short of
@@ -217,7 +217,7 @@ func armedTimerFixtures(base time.Time) (recurring, oneshot kernel.ArmedTimer) {
 }
 
 // TestMemTimerStoreArmedTimer pins the [kernel.TimerStore.ArmedTimer] point-lookup
-// contract on the in-memory reference implementation (ADR-0159).
+// contract on the in-memory reference implementation.
 //
 // It is the mem-side half of the mem-vs-SQL parity assertion: every case here has
 // a counterpart in the SQL store's conformance suite, which runs the identical

@@ -1,6 +1,6 @@
 package engine_test
 
-// retry_test.go — black-box tests for Task 5: schedule a retry timer on a
+// retry_test.go — black-box tests for scheduling a retry timer on a
 // retryable action failure.
 
 import (

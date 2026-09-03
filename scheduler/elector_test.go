@@ -87,8 +87,8 @@ func TestSchedulerWithTimerElector(t *testing.T) {
 }
 
 // TestSchedulerElectorHeartbeatStepsDown proves the façade threads its scheduler
-// clock and a configurable heartbeat interval into the backend leader elector
-// (ADR-0061): after the leader's dedicated backend is severed out-of-band,
+// clock and a configurable heartbeat interval into the backend leader
+// elector: after the leader's dedicated backend is severed out-of-band,
 // advancing the shared fake clock past one heartbeat interval makes the elector
 // step down — closing the split-brain window through the public façade.
 func TestSchedulerElectorHeartbeatStepsDown(t *testing.T) {
@@ -145,7 +145,7 @@ func TestSchedulerElectorHeartbeatStepsDown(t *testing.T) {
 }
 
 // TestSchedulerElectorOnLeadershipAcquired proves the backend elector's
-// on-leadership-acquired hook (Option A, ADR-0072) fires through the façade: when
+// on-leadership-acquired hook fires through the façade: when
 // this instance wins leadership the registered callback fires. Wiring it to
 // ProcessDriver.RehydrateTimers re-arms persisted timers on a new leader after
 // failover.

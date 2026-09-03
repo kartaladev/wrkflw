@@ -1,8 +1,8 @@
-// Command authenticated_tasks demonstrates ADR-0189's identity seam end to end, for
+// Command authenticated_tasks demonstrates the identity seam end to end, for
 // all three HTTP adapters.
 //
 // The human-task verbs (claim, complete, reassign) authorize against an actor the
-// CONSUMER supplies. Before ADR-0189 that actor came from the request body, so any
+// CONSUMER supplies. Previously that actor came from the request body, so any
 // caller could post {"actor":{"id":"alice","roles":["manager"]}} and be believed. It
 // now comes from the request context and from nowhere else.
 //
@@ -59,7 +59,7 @@ var errNoCredential = errors.New("no credential")
 //
 // ⚠ It verifies a bearer token against a secret rather than trusting a header that
 // merely NAMES a user. An example about authentication must not teach header-trusting:
-// a header a client controls is exactly the self-asserted actor ADR-0189 removed.
+// a header a client controls is exactly the self-asserted actor this seam removed.
 func verifyCredential(authorization string) (authz.Actor, error) {
 	const scheme = "Bearer "
 	if !strings.HasPrefix(authorization, scheme) {
@@ -86,7 +86,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("ADR-0189 — the actor comes from the context, never from the body")
+	fmt.Println("The actor comes from the context, never from the body")
 	fmt.Println(strings.Repeat("=", 72))
 
 	for _, probe := range []struct {
@@ -109,7 +109,7 @@ func run() error {
 
 	fmt.Println("\n" + strings.Repeat("=", 72))
 	fmt.Println("A body naming a manager never promotes the caller: the identity that decides")
-	fmt.Println("is the one the middleware verified. See SECURITY.md for the per-framework idiom.")
+	fmt.Println("is the one the middleware verified.")
 	return nil
 }
 
@@ -119,8 +119,9 @@ type result struct {
 	note   string
 }
 
-// forgedBody is what a pre-ADR-0189 attacker would send. Every probe below posts it,
-// so each line shows the body being ignored rather than merely unused.
+// forgedBody is what an attacker would send against a body-supplied actor. Every
+// probe below posts it, so each line shows the body being ignored rather than
+// merely unused.
 const forgedBody = `{"actor":{"id":"alice","roles":["manager"]}}`
 
 func runStdlib(def *model.ProcessDefinition) ([]result, error) {

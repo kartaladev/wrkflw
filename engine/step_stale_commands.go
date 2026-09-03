@@ -43,13 +43,13 @@ func filterableCommand(c Command) bool {
 // The terminal exclusion is the mirror image: a step that starts a walk and then
 // force-terminates would otherwise keep a compensation action alive for a
 // terminated instance, whose ActionCompleted would land on a
-// non-StatusCompensating state and fail. Since ADR-0164 endInstance also zeroes
-// the cursor at every terminal site, so this exclusion is now defence in depth
-// rather than the only defence — it still earns its place, because the token
-// half below has no such backstop.
+// non-StatusCompensating state and fail. endInstance also zeroes the cursor at
+// every terminal site, so this exclusion is now defence in depth rather than the
+// only defence — it still earns its place, because the token half below has no
+// such backstop.
 //
-// Empty values are skipped: an empty key names nothing (ADR-0152), and admitting
-// it would turn every malformed command id into a live awaiter. See ADR-0161.
+// Empty values are skipped: an empty key names nothing, and admitting it would
+// turn every malformed command id into a live awaiter.
 func liveAwaiters(s *InstanceState) map[string]struct{} {
 	out := make(map[string]struct{}, len(s.Tokens)+1)
 	// A terminal instance can never consume a resumption trigger, so nothing it
@@ -98,14 +98,14 @@ func liveAwaiters(s *InstanceState) map[string]struct{} {
 // consumer-supplied and ("", nil) is a legal return, so an empty id means a
 // malformed command, not a stale one — today that fails loudly via
 // ErrTokenNotFound, and dropping it would replace the error with a permanently
-// parked instance. Only three kinds are filtered; see ADR-0161 for why
-// FireAndForget InvokeActions and every ScheduleTimer are deliberately exempt.
+// parked instance. Only three kinds are filtered; FireAndForget InvokeActions
+// and every ScheduleTimer are deliberately exempt.
 //
 // ctx is used ONLY for trace-correlated logging: every drop emits one Warn
 // record, because a suppressed command leaves no other trace anywhere — no
 // error, no event, no history entry — and an operator asking "why did this
 // refund never run?" would otherwise have nothing to work from. This is the site
-// class Step's doc comment reserves ctx for (ADR-0129).
+// class Step's doc comment reserves ctx for.
 func dropStaleTokenCommands(ctx context.Context, s *InstanceState, cmds []Command) []Command {
 	// Pre-scan. Step runs this on every trigger, and a delivery carrying no
 	// filterable kind at all (ScheduleTimer, CancelTimer, UpdateTask,
@@ -155,9 +155,9 @@ func dropStaleTokenCommands(ctx context.Context, s *InstanceState, cmds []Comman
 				logDrop("AwaitHuman", cmd.TaskID)
 				// The record was minted in this same step and the runtime was
 				// never told about it. Cancel it so the ActiveTasks projection
-				// (ADR-0142, which filters on IsOpen) stops advertising a task
+				// (which filters on IsOpen) stops advertising a task
 				// nothing can complete, and keep the record itself so the
-				// NodeVisit.TaskID audit link stays resolvable (ADR-0145).
+				// NodeVisit.TaskID audit link stays resolvable.
 				//
 				// Clone before the record escapes: the command is handed to a
 				// consumer-supplied TaskStore while the record it was built from is

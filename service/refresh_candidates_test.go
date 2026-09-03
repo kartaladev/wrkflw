@@ -98,9 +98,8 @@ func newRefreshFixture(t *testing.T, ctx context.Context, withResolver bool) ref
 	return refreshFixture{svc: svc, resolver: resolver, tasks: tasks, taskID: taskID}
 }
 
-// TestRefreshTaskCandidates covers ProcessEngine.RefreshTaskCandidates
-// (ADR-0150) over an approval process parked at a user task eligible to the
-// "manager" role.
+// TestRefreshTaskCandidates covers ProcessEngine.RefreshTaskCandidates over an
+// approval process parked at a user task eligible to the "manager" role.
 func TestRefreshTaskCandidates(t *testing.T) {
 	t.Parallel()
 

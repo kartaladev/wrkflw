@@ -20,7 +20,7 @@ func (activateJobFakeData) Get(context.Context) (map[string]any, error) { return
 func (activateJobFakeData) Static() bool                                { return true }
 
 // TestActivateJob_ImplClosedFacadeOpen_ReturnsPublicSentinel reproduces the
-// graceful-shutdown race (ADR-0133): Activate/Schedule pass the façade's own
+// graceful-shutdown race: Activate/Schedule pass the façade's own
 // s.closed check in ensureStarted, then release s.mu and return the live
 // impl; a concurrent Close (or ctx-cancel) can set impl.closed before
 // activateJob calls impl.ScheduleJob. That call returns the INTERNAL

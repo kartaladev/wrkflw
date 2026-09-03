@@ -4,7 +4,7 @@ import "context"
 
 // InstanceOwnership decides whether THIS process is the single writer for an instance,
 // and therefore whether its mutable state may be cached and served from memory
-// by a CachingInstanceStore (ADR-0020).
+// by a CachingInstanceStore.
 //
 // Caching mutable instance state is safe only under a single-writer-per-instance
 // guarantee: a stale cached read would otherwise drive a routing decision and
@@ -21,7 +21,7 @@ type InstanceOwnership interface {
 	// Release relinquishes ownership of instanceID. A CachingInstanceStore must evict
 	// the instance's cached state when ownership is relinquished — relinquish
 	// through CachingInstanceStore.Release so the cache stays coherent (a re-acquired
-	// instance must not serve a stale cached entry, ADR-0020).
+	// instance must not serve a stale cached entry).
 	Release(ctx context.Context, instanceID string) error
 }
 
@@ -34,7 +34,7 @@ type InstanceOwnership interface {
 // ownership, so pairing it with a persistence.CachingInstanceStore across more than one
 // replica is a stale-read footgun: every replica would cache the same instance
 // and serve its own out-of-date snapshot, firing a routing decision and
-// side-effects before the version-CAS could reject the write (ADR-0020, ADR-0054).
+// side-effects before the version-CAS could reject the write.
 // For ANY multi-replica deployment use a real lease —
 // persistence.NewAdvisoryLockOwnership — so only the owning replica caches.
 // persistence.NewCachingInstanceStore logs a one-time Warn when it is constructed

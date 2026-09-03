@@ -13,10 +13,10 @@ import (
 
 // Pruner deletes safely-eligible rows from the unbounded-growth tables so a
 // consumer's scheduled retention job can keep them from overwhelming the
-// database (ADR-0052). Every method deletes only rows older than a
+// database. Every method deletes only rows older than a
 // caller-supplied cutoff that are provably safe to drop, and returns the number
 // of rows deleted. Pruning cadence and cutoffs are the consumer's
-// responsibility — see docs/retention.md.
+// responsibility.
 //
 // All DELETE operations run against the pool directly (not inside a
 // transaction) because retention pruning is a background maintenance operation
@@ -27,7 +27,7 @@ import (
 // format-compatible with the values written by the store layer on every
 // backend. On SQLite (TimestampsAsText) this ensures that the lexicographic
 // TEXT comparison is apples-to-apples with the fixed-width RFC3339 strings
-// stored in the relevant columns (ADR-0080, ADR-0151) — the fixed width is what
+// stored in the relevant columns — the fixed width is what
 // makes string order equal chronological order here.
 //
 // Processed-message dedup records are pruned through [Deduper.Prune];
@@ -137,7 +137,7 @@ func (p *Pruner) PruneCallLinks(ctx context.Context, cutoff time.Time) (int64, e
 // loses that ancestry for the affected hops and removes the backstop, so
 // re-fire of a predecessor's terminal event after pruning could re-chain a
 // successor. Choose a cutoff far beyond any window in which a terminal event
-// could be redelivered. See docs/retention.md.
+// could be redelivered.
 func (p *Pruner) PruneChainLinks(ctx context.Context, cutoff time.Time) (int64, error) {
 	q, err := database.From(p.conn)
 	if err != nil {
@@ -182,7 +182,7 @@ func (p *Pruner) PruneProcessedMessages(ctx context.Context, cutoff time.Time) (
 // any window in which a timer could still fire or be rescheduled.
 //
 // Compensation-retry rows (kind = [engine.TimerCompensationRetry]) are excluded
-// unconditionally, at any cutoff (ADR-0179). Such a row is the only thing that
+// unconditionally, at any cutoff. Such a row is the only thing that
 // will resume its compensation walk: between the compensation action's failure
 // and the backoff firing the walk makes no forward progress and holds no token
 // of its own, and the retry budget's exhaustion is reachable only by the timer
@@ -195,17 +195,16 @@ func (p *Pruner) PruneProcessedMessages(ctx context.Context, cutoff time.Time) (
 //
 // ⚠ This closes the retention-job route to a stranded walk, and only that route.
 // A retry row skipped by the runtime's job-store load at boot, or never
-// rehydrated at all, still strands its walk; the escape there is ADR-0175's
-// operator verbs. Do not read this exclusion as making a lost retry timer
+// rehydrated at all, still strands its walk; the escape there is the operator
+// verbs. Do not read this exclusion as making a lost retry timer
 // impossible.
 //
 // Recurring rows (trigger_kind outside [nonRecurringTriggerKinds]) are excluded
-// even when next_run is expired: under D16, next_run is written once when the
+// even when next_run is expired: next_run is written once when the
 // timer is armed and never updated on each recurrence, so an expired next_run
 // on a recurring row does not mean the timer is done firing — deleting it would
-// drop a still-armed durable row. This is a known caveat, not a full fix; see
-// docs/production-checklist.md § timer pruning for the deferred run-count
-// follow-up that will let recurring rows be pruned precisely too.
+// drop a still-armed durable row. This is a known caveat, not a full fix: a
+// deferred run-count follow-up will let recurring rows be pruned precisely too.
 //
 // This method mirrors the MySQL-specific PruneTimers extension and is available
 // on all three dialects in the neutral store.
@@ -241,25 +240,25 @@ func (p *Pruner) PruneTimers(ctx context.Context, cutoff time.Time) (int64, erro
 // number of rows deleted. It takes no cutoff — the epoch sentinel is structural,
 // not a retention policy.
 //
-// Such a row is never-due by construction. ADR-0176 stopped the engine writing
-// a zero next_run for a recurring trigger it could not schedule, but it did not
-// reclaim the rows already stored, and [Pruner.PruneTimers] provably cannot: its
-// trigger_kind IN-list is exactly [nonRecurringTriggerKinds], so the reachable
-// set and the orphan set are disjoint by construction — no cutoff makes
-// PruneTimers see an orphan. Such a row heads the keyset index forever, pinning
-// [TimerStore.Stats] NextFireAt at 0001-01-01 (ADR-0181).
+// Such a row is never-due by construction. The engine no longer writes a zero
+// next_run for a recurring trigger it could not schedule, but that change did
+// not reclaim the rows already stored, and [Pruner.PruneTimers] provably
+// cannot: its trigger_kind IN-list is exactly [nonRecurringTriggerKinds], so
+// the reachable set and the orphan set are disjoint by construction — no cutoff
+// makes PruneTimers see an orphan. Such a row heads the keyset index forever,
+// pinning [TimerStore.Stats] NextFireAt at 0001-01-01.
 //
 // This is a second, disjoint predicate and deliberately NOT a widening of
 // [Pruner.PruneTimers]' IN-list. Widening that list would make an expired
-// next_run on a recurring row eligible for deletion — but under D16 next_run is
+// next_run on a recurring row eligible for deletion — but next_run is
 // written once when a recurring timer is armed and never updated per
 // recurrence, so an expired next_run there does not mean the timer is done
-// firing. Deleting those rows is exactly the bug ADR-0134 fixed, and the reason
-// the IN-list exists.
+// firing. Deleting those rows is a known bug, and the reason the IN-list
+// exists.
 //
 // The threshold is the Unix epoch, not an equality against the zero instant.
 // SQLite stores next_run as TEXT and compares it lexicographically, and rows
-// written with the pre-ADR-0151 trimmed encoding ("0001-01-01T00:00:00Z") are
+// written with the legacy trimmed encoding ("0001-01-01T00:00:00Z") are
 // still readable — see [parseTimeText] — but are not byte-equal to the
 // fixed-width zero ("0001-01-01T00:00:00.000000000Z"). An equality predicate
 // silently misses those rows and reports success. The epoch also sits inside

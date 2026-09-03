@@ -18,7 +18,7 @@ import (
 // def is the top-level definition. Both are provided by drive().
 type stepCtx struct {
 	// ctx is the Step caller's context, threaded through for trace-correlated
-	// logging ONLY (ADR-0129) — never inspected for control flow. Storing it on
+	// logging ONLY — never inspected for control flow. Storing it on
 	// this struct is an accepted exception to "never store a context in a
 	// struct": stepCtx is a short-lived, request-scoped bundle constructed fresh
 	// by drive() for the duration of a single Step call and never persisted or
@@ -29,7 +29,7 @@ type stepCtx struct {
 	s    *InstanceState
 	at   time.Time
 	// pol is the per-Step policy resolved once by dispatch and threaded here, so
-	// every strategy evaluates through the same evaluator (ADR-0056) and reads
+	// every strategy evaluates through the same evaluator and reads
 	// the same granularity. The remaining StepOptions fields stay in Step() scope
 	// for the ActionFailed handler (effectiveRetryPolicy) only.
 	pol stepPolicy
@@ -114,7 +114,7 @@ func (receiveTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 // SendMessage command (carrying the resolved correlation key and a copy of the
 // instance variables) and AUTO-ADVANCE the token along its single outgoing flow.
 // The engine does not park or wait for delivery — the consumer-wired message sink
-// owns routing (intra-engine delivery, external publish, or both); ADR-0060.
+// owns routing (intra-engine delivery, external publish, or both).
 type sendTaskStrategy struct{}
 
 func (sendTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
@@ -152,10 +152,10 @@ func (startEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 type endEventStrategy struct{}
 
 func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	// A non-normal EndEvent short-circuits the per-scope completion logic below
-	// (ADR-0127). EndTerminate cancels ALL remaining parallel work and ends the
-	// whole instance at the outcome-selected status (ADR-0119); EndError throws
-	// ev.ErrorCode from the token's scope.
+	// A non-normal EndEvent short-circuits the per-scope completion logic below.
+	// EndTerminate cancels ALL remaining parallel work and ends the whole instance
+	// at the outcome-selected status; EndError throws ev.ErrorCode from the
+	// token's scope.
 	if ev, ok := node.(event.EndEvent); ok {
 		switch ev.Behavior {
 		case event.EndTerminate:
@@ -212,10 +212,10 @@ func (endEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 // gone AND no compensation walk is outstanding. The token is always parked
 // after this (drive() sees stopped=true).
 //
-// The cursor conjunct is ADR-0168. startCompensationWalk consumes the throwing
-// token before parking the walk on Compensating.ActiveCmdID, so a sibling
-// branch draining the last token makes len(Tokens) == 0 read true while the
-// rollback is still outstanding; without the conjunct this site published
+// The cursor conjunct exists because startCompensationWalk consumes the
+// throwing token before parking the walk on Compensating.ActiveCmdID, so a
+// sibling branch draining the last token makes len(Tokens) == 0 read true while
+// the rollback is still outstanding; without the conjunct this site published
 // CompleteInstance for a process whose compensation never finished, and the
 // walk's own ActionCompleted was then refused by dispatch's terminal guard.
 // Status.IsTerminal() cannot serve here: StatusCompensating is deliberately
@@ -240,7 +240,7 @@ func exitSubprocessScope(c *stepCtx, currentScopeID string) ([]Command, bool, er
 	if c.s.tokensInScope(currentScopeID) != 0 {
 		return cmds, true, nil
 	}
-	// A compensation throw walk still needs this scope (ADR-0171): hold the exit
+	// A compensation throw walk still needs this scope: hold the exit
 	// exactly as the not-yet-drained return above does. Nothing is lost by
 	// waiting — the walk's own resume places a token at the throw's successor
 	// INSIDE this scope, and that token re-runs this exit once the cursor is
@@ -295,10 +295,10 @@ func exitSubprocessScope(c *stepCtx, currentScopeID string) ([]Command, bool, er
 // already closed".
 func exitEventSubprocessScope(c *stepCtx, currentScopeID, parentScopeID string) ([]Command, bool, error) {
 	// A descendant scope holding a live token must keep this scope from being
-	// pruned: closeScope cascades (ADR-0130), so closing here would orphan that
+	// pruned: closeScope cascades, so closing here would orphan that
 	// token and wedge the instance permanently. The self check upstream (in
 	// exitSubprocessScope) is exact-match and cannot see it — this site had NO
-	// descendant check at all (ADR-0162 problem 6). stop=false matches the other
+	// descendant check at all. stop=false matches the other
 	// "not drained yet" returns on this path: stop=true would halt drive and park
 	// the instance rather than letting the remaining tokens advance.
 	if c.s.hasChildScopeWithTokens(currentScopeID, "") {
@@ -331,7 +331,7 @@ func exitRootEventSubprocessScope(c *stepCtx, currentScopeID string) ([]Command,
 		return cmds, false, nil
 	}
 	// Subtree, not the immediate scope: a grandchild holding the live token must
-	// keep the root from being declared drained (ADR-0162).
+	// keep the root from being declared drained.
 	if c.s.hasChildScopeWithTokens("", currentScopeID) {
 		return cmds, false, nil
 	}
@@ -343,13 +343,13 @@ func exitRootEventSubprocessScope(c *stepCtx, currentScopeID string) ([]Command,
 	// TestCompensationWalkBlocksRootEventSubprocessCompletion drives.
 	//
 	// Instance completes: all tokens gone, no compensation walk outstanding
-	// (ADR-0168 — see exitRootScope for why the cursor conjunct is needed), no
+	// (see exitRootScope for why the cursor conjunct is needed), no
 	// active root children. endInstance's own cancelAllScheduledWork retires the
 	// root ESP arms (and everything else the instance still owns), so the arm
 	// retirement below is NOT hoisted above this branch: doing so would put
 	// CancelTimers on both sides of CompleteInstance and break the
 	// [task cancels…, terminal, scheduled-work cancels…] order every terminal path
-	// now emits (ADR-0164).
+	// now emits.
 	if len(c.s.Tokens) == 0 && c.s.Compensating.ActiveCmdID == "" {
 		return append(cmds, c.s.endInstance(StatusCompleted, c.at,
 			CompleteInstance{Result: copyVars(c.s.Variables)})...), true, nil
@@ -363,26 +363,26 @@ func exitRootEventSubprocessScope(c *stepCtx, currentScopeID string) ([]Command,
 	// own scope with the walk outstanding.
 	//
 	// This comment previously read "DEFENSIVE, and unreachable today", reasoning
-	// that "nothing can be left for len(c.s.Tokens) != 0 to find". ADR-0168's
+	// that "nothing can be left for len(c.s.Tokens) != 0 to find". The cursor
 	// conjunct changed this tail's entry condition, so both halves are restated
 	// rather than inherited. Measured without the conjunct on
 	// TestRootEventSubprocessExitBlocksCompletionUnderRootWalk, which reaches this
-	// site with a ROOT-scope walk the ADR-0171 hold cannot match: the instance
-	// went `completed`, published CompleteInstance, and the walk's InvokeAction
-	// was dropped as stale in the same step. On the completing path the root ESP
+	// site with a ROOT-scope walk compensationWalkHoldsScope cannot match: the
+	// instance went `completed`, published CompleteInstance, and the walk's
+	// InvokeAction was dropped as stale in the same step. On the completing path the root ESP
 	// arms are retired by endInstance's cancelAllScheduledWork, not here.
 	//
-	// This tail retires NOTHING, and that is a correction to ADR-0168 Decision 3.
-	// It used to call removeEventTriggeredSubprocessArmsForScope("") — cleanup
-	// written when the tail was believed to run only as an instance finished, and
-	// documented afterwards as an "accepted cost". It is not a cost that can be
+	// This tail retires NOTHING, and that is a correction. It used to call
+	// removeEventTriggeredSubprocessArmsForScope("") — cleanup written when the
+	// tail was believed to run only as an instance finished, and documented
+	// afterwards as an "accepted cost". It is not a cost that can be
 	// accepted: the deferral this tail implements can end in a RESUME, and the
 	// resume does not re-arm (finishPlan.rearmRootESP is set only on the
 	// full-reverse resume). Measured on the fixture
 	// TestRootEventSubprocessExitKeepsRootArmsWhenTheWalkCanResume drives, arms
 	// went 1 → 0 here, the walk resumed the instance to `running`, and a second
 	// delivery of the arm's signal opened no scope at all — a NON-interrupting
-	// root event sub-process, which ADR-0124 makes repeatable, silently stopped
+	// root event sub-process, which is repeatable, silently stopped
 	// being triggerable.
 	//
 	// Dropping the call leaks nothing. The arms retired here belong to the ROOT
@@ -427,13 +427,12 @@ func exitNestedEventSubprocessScope(c *stepCtx, currentScopeID, parentScopeID st
 		// Enclosing scope is still working → close the child only and leave it
 		// running. Deliberately EXACT-match, not subtree: a non-interrupting event
 		// sub-process running alongside carries its own ScopeID, and counting the
-		// subtree here would make a scope wait forever on a sibling it does not own
-		// (ADR-0162).
+		// subtree here would make a scope wait forever on a sibling it does not
+		// own.
 		return cmds, false, nil
 	}
 	// No tokens in enclosing scope. Check if any other children still running —
-	// SUBTREE-wide, so a grandchild holding the live token blocks the exit
-	// (ADR-0162).
+	// SUBTREE-wide, so a grandchild holding the live token blocks the exit.
 	if c.s.hasChildScopeWithTokens(parentScopeID, currentScopeID) {
 		return cmds, false, nil
 	}
@@ -450,11 +449,11 @@ func exitNestedEventSubprocessScope(c *stepCtx, currentScopeID, parentScopeID st
 	// own cancelAllScheduledWork owns the sweep, and retiring them here first would
 	// put CancelTimers on both sides of CompleteInstance, breaking the
 	// [task cancels…, terminal, scheduled-work cancels…] order every terminal path
-	// now emits (ADR-0164). closeScope only prunes s.Scopes, so deferring the call
+	// now emits. closeScope only prunes s.Scopes, so deferring the call
 	// past it is state-equivalent.
 	// Archive the enclosing scope's records before pruning it: it may have
 	// recorded compensable work before it drained — whether an interrupt emptied
-	// it or it completed normally and waited on this child (ADR-0162). Harmless
+	// it or it completed normally and waited on this child. Harmless
 	// when cancelScopeSubtree already archived it on the interrupting path:
 	// archiveCompensations nils the scope's records, so the second call returns
 	// at its len == 0 guard.
@@ -470,9 +469,9 @@ func exitNestedEventSubprocessScope(c *stepCtx, currentScopeID, parentScopeID st
 	// If the ENCLOSING sub-process node itself carries a CompensateAction, record
 	// it in the grandparent scope — the same step exitRegularSubprocessScope
 	// takes, in the same position (after the scope is closed, before the resume).
-	// This exit closes that scope in strictly more cases since ADR-0162 added the
-	// child-scope deferral to the regular exit, so omitting the record here left
-	// the sub-process silently non-compensable. A record written here cannot
+	// This exit closes that scope in strictly more cases since the child-scope
+	// deferral was added to the regular exit, so omitting the record here left the
+	// sub-process silently non-compensable. A record written here cannot
 	// dangle on the error return below: Step discards the working clone whenever
 	// a handler returns an error, so the state carrying it never escapes.
 	recordSubProcessCompensation(c, grandparentDef, enclosingNodeID, grandparentScopeID)
@@ -480,10 +479,9 @@ func exitNestedEventSubprocessScope(c *stepCtx, currentScopeID, parentScopeID st
 	if found := resumeInParentScope(c, grandparentDef, enclosingNodeID, grandparentScopeID); !found {
 		if grandparentScopeID == "" {
 			// Root scope: no outgoing flows from the sub-process → instance completes,
-			// unless a compensation walk is still outstanding (ADR-0168 — see
-			// exitRootScope).
+			// unless a compensation walk is still outstanding (see exitRootScope).
 			//
-			// ⚠ CORRECTED (ADR-0172). This comment previously claimed the conjunct
+			// ⚠ CORRECTED. This comment previously claimed the conjunct
 			// "DOES discriminate:
 			// TestCompensationWalkBlocksNestedEventSubprocessCompletion reaches it,
 			// and without the conjunct that fixture completed the instance", and
@@ -523,8 +521,7 @@ func exitRegularSubprocessScope(c *stepCtx, currentScopeID, subNodeID, parentSco
 	// sub-processes running alongside, or a nested sub-process still working).
 	// SUBTREE-wide: a grandchild holding the live token leaves its own parent
 	// scope empty, so a direct-children scan would declare the subtree drained
-	// and closeScope would prune the grandchild out from under that token
-	// (ADR-0162).
+	// and closeScope would prune the grandchild out from under that token.
 	if c.s.hasChildScopeWithTokens(currentScopeID, "") {
 		// Still waiting for child scopes to drain. Do not exit this scope yet.
 		return cmds, false, nil
@@ -562,7 +559,7 @@ func exitRegularSubprocessScope(c *stepCtx, currentScopeID, subNodeID, parentSco
 // (exitRegularSubprocessScope) and exitNestedEventSubprocessScope, which prunes
 // the enclosing scope whenever a nested event sub-process is the last thing
 // running inside it — because it outlived a normal drain or because an interrupt
-// emptied the scope around it (ADR-0162). Living at only the first of the two is
+// emptied the scope around it. Living at only the first of the two is
 // what made a sub-process closed by the event-sub-process path silently
 // non-compensable.
 //
@@ -600,7 +597,7 @@ func resumeInParentScope(c *stepCtx, parentDef *model.ProcessDefinition, enclosi
 	return true
 }
 
-// forceTerminate implements a force-termination end event (ADR-0119): it cancels
+// forceTerminate implements a force-termination end event: it cancels
 // all remaining parallel work — open tasks, timers, boundaries/arms, and event
 // sub-process arms — then ends the instance at the outcome-selected status
 // (OutcomeAbort → StatusTerminated + FailInstance, OutcomeComplete →
@@ -618,7 +615,7 @@ func resumeInParentScope(c *stepCtx, parentDef *model.ProcessDefinition, enclosi
 func forceTerminate(c *stepCtx, ev event.EndEvent) ([]Command, bool, error) {
 	// Close every open visit and drop all tokens (including this end-event token).
 	// This runs BEFORE endInstance so its removeOrphanedIncidents sweep sees the
-	// empty token set and retires the incidents those tokens carried (ADR-0164).
+	// empty token set and retires the incidents those tokens carried.
 	for i := range c.s.Tokens {
 		tok := &c.s.Tokens[i]
 		c.s.closeVisitAs(tok.ID, tok.NodeID, c.at, CloseKindTerminated)
@@ -656,7 +653,7 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 	// An embedded sub-process is entered INLINE at its MANUAL (trigger-less)
 	// start; any event-triggered starts in the nested def are ESP-style arms
 	// handled by armEventTriggeredSubprocesses below, not the inline entry point. Once
-	// multi-start became legal in nested defs (ADR-0121), innerStarts[0] could be
+	// multi-start became legal in nested defs, innerStarts[0] could be
 	// an event-start, so resolve the manual start explicitly.
 	manualStart, msErr := resolveManualStart(sp.Subprocess)
 	if msErr != nil {
@@ -746,7 +743,7 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 		Vars: copyVars(c.s.Variables),
 	}
 	// Link the open visit to the task so the rendered history can resolve the
-	// task's claim/completion audit (ADR-0145). Done for the immediate-manual
+	// task's claim/completion audit. Done for the immediate-manual
 	// case too: that visit closes in the same step but still names its task.
 	c.s.setVisitTask(tok.ID, node.ID(), taskID)
 	if ut.Manual && ut.ManualImmediate {
@@ -758,7 +755,7 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 		// The record carries NEITHER a Claim NOR a Completion: no actor claimed it and
 		// none completed it. This deliberately does NOT mirror handleHumanCompleted,
 		// which records a Completion from the completing actor's trigger. It is why
-		// humantask.Validate leaves the completion axis unconstrained (ADR-0183), and
+		// humantask.Validate leaves the completion axis unconstrained, and
 		// why the deferred completion rule must carve this path out.
 		ht.State = humantask.Completed
 		c.s.Tasks = append(c.s.Tasks, ht)
@@ -876,7 +873,7 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 			Kind:    TimerIntermediate,
 		})
 		tok.State = TokenWaiting
-		// Dual-write (ADR-0177): AwaitCommand stays the dispatch key that
+		// Dual-write: AwaitCommand stays the dispatch key that
 		// handleTimerFired's fall-through routes on; AwaitTimer is the
 		// enumeration marker TimerTokenWaiters reads, because AwaitCommand alone
 		// cannot say whether the id names a timer, a task or an action command.
@@ -927,7 +924,7 @@ type exclusiveGatewayStrategy struct{}
 func (exclusiveGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
 	target, err := selectExclusiveTarget(c.tdef, c.s, node, c.pol.eval)
 	if err != nil {
-		// cmds is carried here for a future error-handling plan (Plan 8);
+		// cmds is carried here for a future error-handling path;
 		// Step currently discards StepResult on error, so partial commands
 		// are intentionally not delivered today.
 		return nil, false, err
@@ -1091,7 +1088,7 @@ func (callActivityStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Co
 // intermediateThrowEventStrategy handles KindIntermediateThrowEvent node entry.
 // A throw either emits a signal (broadcast, fire-and-forget) or, with no
 // signal set, parks for future plans (e.g. message/error throw). Compensation
-// throws are handled by the separate compensationThrowEventStrategy (ADR-0120);
+// throws are handled by the separate compensationThrowEventStrategy;
 // IntermediateThrowEvent does not carry compensation behaviour.
 type intermediateThrowEventStrategy struct{}
 
@@ -1117,8 +1114,8 @@ func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 	return cmds, false, nil
 }
 
-// compensationThrowEventStrategy handles KindCompensationThrowEvent node entry
-// (ADR-0120). A compensation throw runs completed compensable activities'
+// compensationThrowEventStrategy handles KindCompensationThrowEvent node entry.
+// A compensation throw runs completed compensable activities'
 // compensation actions in reverse order, then RESUMES past the throw node
 // (throw-then-continue — it never terminates the instance). It handles two
 // forms, distinguished by CompensateRef:
@@ -1137,11 +1134,11 @@ func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 //
 // Like the targeted branch, a scope-wide throw with no eligible records or no
 // outgoing flow auto-advances (fire-and-forget); an overlapping walk already in
-// flight defers this throw (ADR-0071 serialization, one walk at a time).
+// flight defers this throw (serialization, one walk at a time).
 type compensationThrowEventStrategy struct{}
 
 // deferCompensationThrow parks tok behind the compensation walk already in
-// flight (ADR-0071 serialization, one walk at a time). The token is re-driven
+// flight (serialization, one walk at a time). The token is re-driven
 // through the throw strategy when that walk finishes (popOneDeferredThrow).
 func deferCompensationThrow(s *InstanceState, tok *Token) {
 	tok.State = TokenWaiting
@@ -1159,7 +1156,7 @@ func deferCompensationThrow(s *InstanceState, tok *Token) {
 // must be the throw token's scope read BEFORE the call, since consumeToken
 // invalidates tok's slot in s.Tokens.
 //
-// It also PINS records onto the cursor (ADR-0171). A throw resumes past itself,
+// It also PINS records onto the cursor. A throw resumes past itself,
 // so sibling branches keep running while the walk is in flight; one of them
 // reaching its scope's end event archives and closes that scope, nilling the
 // live slice the cursor's ScopeID names. Snapshotting here makes the walk's
@@ -1179,19 +1176,19 @@ func startCompensationWalk(c *stepCtx, cmds []Command, tok *Token, records []Com
 	cursor.ActiveCmdID = cmdID
 	c.s.Compensating = cursor
 	// The first record is dispatched HERE rather than through
-	// stepCompensationAdvance, so its ownership hand-off happens here too
-	// (ADR-0173). Without it a single-record targeted walk would leave its one
-	// record in the archive for a later walk to re-run.
+	// stepCompensationAdvance, so its ownership hand-off happens here too.
+	// Without it a single-record targeted walk would leave its one record in the
+	// archive for a later walk to re-run.
 	c.s.consumeDispatchedRecord(len(records) - 1)
 	rec := records[len(records)-1]
 	c.s.recordCompensationDispatch(cmdID)
 	cmds = append(cmds, compensationInvoke(rec, cmdID))
 	// This is the throw walk's FIRST dispatch, and one of the five compensation
-	// dispatch sites that must arm the stall timer (ADR-0175): beginCompensation,
+	// dispatch sites that must arm the stall timer: beginCompensation,
 	// stepCompensationAdvance, retryStalledCompensation, retryFailedCompensation
-	// (ADR-0179's fifth site) and this one. Leaving it
-	// unarmed would give a single-record throw walk no stall detection at all —
-	// and this is the site the measured deferred-cancel deadlock arises at.
+	// and this one. Leaving it unarmed would give a single-record throw walk no
+	// stall detection at all — and this is the site the measured deferred-cancel
+	// deadlock arises at.
 	cmds = append(cmds, armCompensationStallTimer(c.s, c.pol, rec.NodeID)...)
 	tok.State = TokenWaiting
 	return cmds
@@ -1223,7 +1220,7 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 			// outgoing flow — auto-advance, no InvokeAction emitted.
 			c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
 		} else if c.s.Compensating.ActiveCmdID != "" {
-			// SERIALIZE (ADR-0071): a walk is already in flight — defer this throw.
+			// SERIALIZE: a walk is already in flight — defer this throw.
 			deferCompensationThrow(c.s, tok)
 		} else {
 			// Start the throw compensation walk (resumeNode is non-empty here).
@@ -1231,22 +1228,22 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 				compensationCursor{ArchiveKey: ref}, resumeNode, tokScope)
 		}
 	} else {
-		// Scope-wide throw (ADR-0120): compensate the throwing scope's completed
+		// Scope-wide throw: compensate the throwing scope's completed
 		// compensable activities in reverse, then resume forward.
 		//
 		// consolidateArchiveIntoRoot MUST run only on the path that actually
 		// commits to a walk — it MOVES ArchivedCompensations into RootCompensations
 		// and nils the archive, so running it on a path that never compensates
-		// would silently destroy the archive (review C1). The branch order below
+		// would silently destroy the archive. The branch order below
 		// keeps it off the dead-end and defer paths for exactly that reason.
 		switch {
 		case resumeNode == "":
 			// Dead-end throw (no successor): auto-advance/park without starting a
 			// walk. Do NOT consolidate — a throw that never compensates must leave
-			// ArchivedCompensations intact for a later targeted throw or cancel (C1).
+			// ArchivedCompensations intact for a later targeted throw or cancel.
 			c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
 		case c.s.Compensating.ActiveCmdID != "":
-			// SERIALIZE (ADR-0071): defer this throw behind the in-flight walk. Do
+			// SERIALIZE: defer this throw behind the in-flight walk. Do
 			// NOT consolidate here — merging into RootCompensations under a live
 			// cursor could corrupt the in-flight walk's record source. The deferred
 			// token is re-driven through this strategy when the current walk finishes
@@ -1277,9 +1274,9 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 				c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
 			} else {
 				// Start the scope-wide walk over the records just read from the
-				// throwing scope. startCompensationWalk PINS them onto the cursor
-				// (ADR-0171), so cursorRecords iterates that snapshot and not the
-				// live list a sibling branch may nil mid-walk. The cursor carries
+				// throwing scope. startCompensationWalk PINS them onto the cursor,
+				// so cursorRecords iterates that snapshot and not the live list a
+				// sibling branch may nil mid-walk. The cursor carries
 				// no ArchiveKey, which is what makes walkMode classify the finish
 				// as walkThrowScopeWide: it clears the drained prefix of the
 				// scope's LIVE list (compensate-once) while the snapshot the walk

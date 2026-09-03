@@ -1,10 +1,10 @@
 package engine_test
 
-// step_compensation_duplicate_reply_test.go — ADR-0179 Decision 5: a late or
-// redelivered reply to a compensation command the walk has already moved past is
+// step_compensation_duplicate_reply_test.go — a late or redelivered reply to a
+// compensation command the walk has already moved past is
 // a benign no-op, not ErrTokenNotFound.
 //
-// The defect (backlog 3g): both reply handlers fall through their
+// The defect: both reply handlers fall through their
 // StatusCompensating short-circuit when the reply's CommandID is not the CURRENT
 // ActiveCmdID, reach s.tokenAwaiting(CommandID), find nothing (a compensation
 // walk parks no token on its dispatch), and return ErrTokenNotFound — which
@@ -21,7 +21,7 @@ package engine_test
 //     transition: "i-dup-c3"`.
 //   - POST-FINISH on a RESUMING walk: a compensation-throw walk has finished and
 //     resumed the instance at afterThrow (StatusRunning). This is the cell
-//     ADR-0179 Decision 5 names as the likeliest in production, and the reason
+//     likeliest to be hit in production, and the reason
 //     the ring lives on InstanceState rather than on the cursor — the cursor is
 //     zeroed at both finish sites, so a cursor-resident set could not cover it.
 //     Measured RED: `no token awaiting command: ... "throw-dup-c3"`.
@@ -29,7 +29,7 @@ package engine_test
 // A post-finish CANCEL-walk fixture is deliberately NOT used: it would be
 // vacuous. Measured on this tree with the predicate present, a reply to the
 // resulting TERMINATED instance returns err=<nil> even for a command id that was
-// never dispatched at all — ADR-0165's terminal dispatch guard short-circuits
+// never dispatched at all — the terminal dispatch guard short-circuits
 // before either handler is entered, so such a row passes with the predicate
 // absent.
 
@@ -126,7 +126,7 @@ func driveToSupersededReply(t *testing.T, def *model.ProcessDefinition, at time.
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusCompensating, res.State.Status,
 		"control: the walk must still be MID-flight — a terminal instance would be "+
-			"short-circuited by ADR-0165's dispatch guard and the row could not fail")
+			"short-circuited by the terminal dispatch guard and the row could not fail")
 	require.NotEmpty(t, invokeIDForAction(res.Commands, "undo-alpha"),
 		"control: the walk must have SUPERSEDED undo-beta with undo-alpha, or there "+
 			"is no late reply to test")
@@ -142,7 +142,7 @@ func driveToSupersededReply(t *testing.T, def *model.ProcessDefinition, at time.
 // This is the cell that makes the ring's placement on InstanceState load-bearing:
 // stepCompensationFinish zeroes s.Compensating here, so a cursor-resident id set
 // would have been erased along with it. The instance is StatusRunning at the end,
-// NOT terminal, so ADR-0165's dispatch guard does not stand in front of the
+// NOT terminal, so the terminal dispatch guard does not stand in front of the
 // handler and the row can genuinely fail.
 func driveToFinishedResumingWalk(t *testing.T, def *model.ProcessDefinition, at time.Time) (engine.InstanceState, string) {
 	t.Helper()
@@ -162,7 +162,7 @@ func driveToFinishedResumingWalk(t *testing.T, def *model.ProcessDefinition, at 
 	require.NoError(t, err)
 	require.Equal(t, engine.StatusRunning, r5.State.Status,
 		"control: the throw walk RESUMES the instance — a terminal one would be "+
-			"short-circuited by ADR-0165's dispatch guard and the row could not fail")
+			"short-circuited by the terminal dispatch guard and the row could not fail")
 
 	return r5.State, undoB
 }
@@ -195,7 +195,7 @@ func TestActiveCompensationCommandIsNotTreatedAsDuplicate(t *testing.T) {
 		"the walk is still draining its second record")
 }
 
-// TestLateCompensationReplyIsABenignNoOp covers ADR-0179 Decision 5 across both
+// TestLateCompensationReplyIsABenignNoOp covers the late-reply no-op across both
 // reply paths (handleActionCompleted and handleActionFailed) and both
 // non-vacuous duplicate cells (mid-walk superseded, and post-finish on a walk
 // that resumed).

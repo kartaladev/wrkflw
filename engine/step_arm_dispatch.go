@@ -31,14 +31,14 @@ func dispatchArmCascade(
 	onMatch func(),
 	gw func() *armedEvent, boundary func() *boundaryArm, eventSub func() *eventTriggeredSubprocessArm,
 ) (cmds []Command, matched bool, err error) {
-	// ADR-0172: a DYING instance spawns no new work. The guard sits AHEAD of every
+	// A DYING instance spawns no new work. The guard sits AHEAD of every
 	// lookup, not inside the fire functions, for two reasons:
 	//
 	//   - it covers all three arm families, not just event sub-processes; and
 	//   - onMatch runs BEFORE the fire, merging the trigger payload and marking
 	//     the delivery matched. A fire that silently no-ops behind onMatch would
 	//     therefore CONSUME the message and short-circuit the caller's
-	//     fall-through — the same silent-swallow this ADR exists to remove,
+	//     fall-through — the same silent-swallow this guard exists to remove,
 	//     reintroduced on the message and timer paths.
 	//
 	// Returning matched=false lets the caller fall through to its own token

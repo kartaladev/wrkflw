@@ -33,7 +33,7 @@ type DeliverSignalRequest struct {
 // DeliverMessageRequest carries the parameters for delivering a message.
 // The driver's internal message-waiter table routes the message to the
 // correct instance by (Name, CorrelationKey), or starts a new instance from a
-// unique message-start event when none is waiting (ADR-0121) — without needing
+// unique message-start event when none is waiting — without needing
 // the caller to know which instance is waiting or which definition to use.
 type DeliverMessageRequest struct {
 	// Name is the message name.
@@ -87,7 +87,7 @@ type ReassignTaskRequest struct {
 }
 
 // RefreshTaskCandidatesRequest carries the parameters for re-resolving the
-// candidate actors of an open human task (ADR-0150).
+// candidate actors of an open human task.
 type RefreshTaskCandidatesRequest struct {
 	// TaskID is the opaque token that identifies the human task.
 	TaskID string
@@ -116,7 +116,7 @@ type ResolveIncidentRequest struct {
 }
 
 // ResolveCompensationStallRequest carries an operator's escape from a
-// compensation walk whose dispatched action stopped reporting back (ADR-0175).
+// compensation walk whose dispatched action stopped reporting back.
 type ResolveCompensationStallRequest struct {
 	// InstanceID identifies the process instance whose walk is stalled.
 	InstanceID string

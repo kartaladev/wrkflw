@@ -9,7 +9,7 @@ import (
 var ErrNilDependency = errors.New("workflow-store: nil required dependency")
 
 // ErrTxRolledBack is returned by Store.RunInTx when a joined participant
-// marked the shared transaction rollback-only (ADR-0134) — success must mean
+// marked the shared transaction rollback-only — success must mean
 // COMMITTED, so RunInTx surfaces this instead of the nil the owner's honoring
 // Commit would otherwise return.
 var ErrTxRolledBack = errors.New("workflow-store: run in tx: rolled back by participant")

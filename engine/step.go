@@ -41,7 +41,7 @@ type StepOptions struct {
 	// timeout-capable evaluator (e.g. expreval.New(expreval.WithTimeout(d)),
 	// which satisfies ConditionEvaluator) to bound evaluation latency and guard
 	// against expression-DoS. Doing so trades the deterministic-replay guarantee
-	// for that protection (ADR-0049, ADR-0056) — an explicit, opt-in choice.
+	// for that protection — an explicit, opt-in choice.
 	Evaluator ConditionEvaluator
 	// IDGenerator mints the ids the engine stamps on tokens, tasks, commands, timers,
 	// incidents, and scopes. nil (the default) keeps the deterministic
@@ -51,8 +51,8 @@ type StepOptions struct {
 	IDGenerator IDGenerator
 	// CompensationStallAfter bounds how long a dispatched compensation action may
 	// go without reporting back before the engine raises a stall incident against
-	// the walk (ADR-0175). ZERO DISABLES detection, and zero is the default: with
-	// it unset no stall timer is scheduled and no command stream changes shape.
+	// the walk. ZERO DISABLES detection, and zero is the default: with it unset
+	// no stall timer is scheduled and no command stream changes shape.
 	//
 	// A compensation walk advances only on a trigger carrying the cursor's
 	// command id, and holds no tokens and no other timers — so without this
@@ -67,10 +67,10 @@ type StepOptions struct {
 	// A per-node tier is deliberate backlog, not scope.
 	CompensationStallAfter time.Duration
 	// CompensationRetryPolicy makes a compensation action that replies
-	// ActionFailed be RE-DISPATCHED after a backoff instead of skipped
-	// (ADR-0179). nil DISABLES retry, and nil is the default: with it unset the
-	// command stream keeps ADR-0034 Decision 4's skip-and-advance timing exactly,
-	// and only the always-on WARN + IncidentCompensationFailed are new.
+	// ActionFailed be RE-DISPATCHED after a backoff instead of skipped. nil
+	// DISABLES retry, and nil is the default: with it unset the command stream
+	// keeps the skip-and-advance timing exactly, and only the always-on WARN +
+	// IncidentCompensationFailed are new.
 	//
 	// The budget is PER RECORD (compensationCursor.RetryAttempts, zeroed whenever
 	// the walk advances), so a walk draining ten records gives each of them
@@ -81,10 +81,9 @@ type StepOptions struct {
 	// path's own MaxElapsed term reads tok.RetryStartedAt. MaxAttempts and
 	// NonRetryableErrors are honoured, and so is ActionFailed.Retryable.
 	//
-	// ⚠ On exhaustion the walk SKIPS AND CONTINUES; it never parks (ADR-0179
-	// Decision 7). Parking would reverse ADR-0034's safety argument that a failed
-	// compensation never strands the instance. The incident is the durable record
-	// that it happened.
+	// ⚠ On exhaustion the walk SKIPS AND CONTINUES; it never parks. Parking would
+	// reverse the safety argument that a failed compensation never strands the
+	// instance. The incident is the durable record that it happened.
 	//
 	// ⚠ One engine-wide policy is a deliberate v1 simplification, the same
 	// trade-off CompensationStallAfter documents. A per-node tier is backlog.
@@ -94,7 +93,7 @@ type StepOptions struct {
 // stepPolicy bundles the per-Step policy values that the drive,
 // error-propagation and compensation call chains all thread together. It is
 // resolved ONCE per Step (resolvePolicy) and passed by value, so every strategy
-// and handler in one Step reads the same evaluator (ADR-0056) and the same
+// and handler in one Step reads the same evaluator and the same
 // granularity — the property the previously hand-threaded (mode, eval) pair
 // carried by convention across fourteen signatures.
 type stepPolicy struct {
@@ -105,11 +104,11 @@ type stepPolicy struct {
 	eval ConditionEvaluator
 	// stallAfter is StepOptions.CompensationStallAfter. Zero disables stall
 	// detection; it reaches armCompensationStallTimer's call sites through this
-	// field (ADR-0175).
+	// field.
 	stallAfter time.Duration
 	// compensationRetry is StepOptions.CompensationRetryPolicy. nil disables
 	// compensation retry; it reaches handleActionFailed's compensation
-	// short-circuit and retryFailedCompensation through this field (ADR-0179).
+	// short-circuit and retryFailedCompensation through this field.
 	// Carried un-normalized, exactly as CompensationStallAfter is carried raw —
 	// the decision site normalizes once, mirroring effectiveRetryPolicy.
 	compensationRetry *model.RetryPolicy
@@ -139,7 +138,7 @@ type StepResult struct {
 // the commands the runtime must perform. It is pure: it does not mutate st.
 //
 // ctx is used ONLY for trace-correlated, context-aware logging (slog.*Context
-// calls at the engine's deliberate silent no-op sites, ADR-0129) — it carries
+// calls at the engine's deliberate silent no-op sites) — it carries
 // no cancellation semantics and is never inspected for control flow. Passing a
 // context that is already Done, or a nil-adjacent context.TODO(), does not
 // change the (state, commands) result: Step remains deterministic and safe to
@@ -151,13 +150,13 @@ type StepResult struct {
 // and does not detect ambiguous multi-unconditional configurations.
 func Step(ctx context.Context, def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error) {
 	// Reject a malformed trigger before any work: an empty identity key names no
-	// record, so there is nothing to dispatch it to (ADR-0152). Running before
+	// record, so there is nothing to dispatch it to. Running before
 	// cloneState keeps a rejected trigger free of side effects.
 	if err := validateTriggerKey(trg); err != nil {
 		return StepResult{}, err
 	}
-	// A reassignment naming nobody would mint a Claimed task no inbox can see
-	// (ADR-0183). Rejected here, beside the identity-key check and ahead of
+	// A reassignment naming nobody would mint a Claimed task no inbox can see.
+	// Rejected here, beside the identity-key check and ahead of
 	// cloneState, so a malformed trigger has no side effects at all.
 	if r, ok := trg.(HumanReassigned); ok && r.To == "" {
 		return StepResult{}, fmt.Errorf("%w: %T.To", ErrEmptyReassignTarget, trg)
@@ -165,7 +164,7 @@ func Step(ctx context.Context, def *model.ProcessDefinition, st InstanceState, t
 	s := cloneState(st)
 	sp := &s
 	// Install the id-generation seam on the working clone for the duration of
-	// this step (ADR-0149). The mint sites live in helpers that cannot return an
+	// this step. The mint sites live in helpers that cannot return an
 	// error, so a generator failure is recorded on the state and converted into
 	// this call's error below — the partially-built state is never returned.
 	sp.ids = idSource{gen: opt.IDGenerator}
@@ -177,7 +176,7 @@ func Step(ctx context.Context, def *model.ProcessDefinition, st InstanceState, t
 	if idErr := sp.ids.err; idErr != nil {
 		return StepResult{}, idErr
 	}
-	// Drop the commands whose awaiter this step destroyed (ADR-0161). drive
+	// Drop the commands whose awaiter this step destroyed. drive
 	// accumulates every token's commands in one pass, so a later token can cancel
 	// an earlier one's park — forceTerminate nils s.Tokens, handleUnhandledError
 	// fails the instance while LEAVING siblings parked, propagateError tears down
@@ -199,9 +198,9 @@ func Step(ctx context.Context, def *model.ProcessDefinition, st InstanceState, t
 // Step can wrap every handler return with the id-generation seam's setup and
 // teardown in one place.
 func dispatch(ctx context.Context, def *model.ProcessDefinition, sp *InstanceState, trg Trigger, opt StepOptions) (StepResult, error) {
-	// One structural guard replacing the per-handler copies (ADR-0165). It lives
+	// One structural guard replacing the per-handler copies. It lives
 	// here rather than in Step so Step's validateTriggerKey and cloneState keep
-	// running first: a malformed trigger (ADR-0152) is a shape defect and must
+	// running first: a malformed trigger is a shape defect and must
 	// lose to this state-dependent check, and a rejected trigger must still be
 	// judged against a private clone rather than the caller's state.
 	//
@@ -219,7 +218,7 @@ func dispatch(ctx context.Context, def *model.ProcessDefinition, sp *InstanceSta
 		// instance_id/trigger/status/outcome on every line, plus the trigger's own
 		// identity field when it has one. Collapsing eight per-handler guards into
 		// one must not cost the operator that field: "why did my timer do nothing"
-		// is answered by timer_id, not by the trigger's type name (ADR-0165).
+		// is answered by timer_id, not by the trigger's type name.
 		// triggerIdentityAttr reads the same registry validateTriggerKey uses, so
 		// there is no second mapping — and no per-trigger message map — to drift.
 		if policy == rejectSilently || policy == rejectWithError {
@@ -246,7 +245,7 @@ func dispatch(ctx context.Context, def *model.ProcessDefinition, sp *InstanceSta
 			return StepResult{}, fmt.Errorf("%w (status %v)", ErrInstanceTerminal, sp.Status)
 		case allowOnTerminal:
 			// Fall through to the handler: the trigger deliberately operates on a
-			// terminal instance (a plain full rollback, ADR-0164's carve-out).
+			// terminal instance (a plain full rollback, the deliberate carve-out).
 		}
 	}
 
@@ -344,8 +343,8 @@ func drive(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, 
 			}
 			cmds = append(cmds, produced...)
 			if halt {
-				// Error-behavior end event (EndEvent with Behavior==EndError,
-				// ADR-0127): exit drive() entirely (the instance is terminal or
+				// Error-behavior end event (EndEvent with Behavior==EndError):
+				// exit drive() entirely (the instance is terminal or
 				// propagateError already drained/routed all tokens), not just this
 				// token.
 				return cmds, nil

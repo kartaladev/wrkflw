@@ -32,8 +32,8 @@ const (
 	//     cancelled. Both belong on this rung regardless, because the question
 	//     the rung answers is what the harness is blocked ON, not whether the
 	//     block is clearable.
-	//   - WALK-SCOPED (engine.IncidentCompensationStall, ADR-0175, and
-	//     engine.IncidentCompensationFailed, ADR-0179). These park no token: they
+	//   - WALK-SCOPED (engine.IncidentCompensationStall and
+	//     engine.IncidentCompensationFailed). These park no token: they
 	//     carry an empty TokenID because a compensation walk is not driven by a
 	//     token of its own, and ResolveIncident REFUSES them with
 	//     engine.ErrIncidentNotResolvable. The escape verbs are retry, skip and
@@ -126,7 +126,7 @@ type Park struct {
 	// HasArmedTimers reports whether the instance has any armed timer a harness
 	// may legitimately fire.
 	//
-	// ⚠ It EXCLUDES a compensation-stall timer (ADR-0175). Such a record is a
+	// ⚠ It EXCLUDES a compensation-stall timer. Such a record is a
 	// DETECTION deadline, not work the instance waits on: counting it would make
 	// [AutoTimers] fire it by itself and manufacture the very stall incident the
 	// window exists to detect.
@@ -134,12 +134,12 @@ type Park struct {
 	// The predicate is engine.InstanceState.HasArmedTimers rather than a
 	// re-derivation here. A consumer CAN read the kinds — [engine.TimerKind] is
 	// exported and [engine.InstanceState.TimerWaiters] surfaces one per armed
-	// timer (ADR-0177) — but which kinds are excludable is the engine's decision
+	// timer — but which kinds are excludable is the engine's decision
 	// to make and to keep current, not a rule a harness should copy.
 	HasArmedTimers bool
 	// Incidents holds the instance's open incident records — EVERY one of them,
 	// including a walk-scoped compensation record that was outranked by a lower
-	// rung (ADR-0179; such a record raises [ReasonIncident] only when nothing
+	// rung (such a record raises [ReasonIncident] only when nothing
 	// actionable is parked). It is the harness's visibility surface, and it is
 	// populated from the snapshot before any rung is evaluated, so it is
 	// independent of which rung fired — nothing is hidden by the rung split.
@@ -196,13 +196,13 @@ func IsTerminal(s engine.Status) bool {
 // does not match and the park falls through to [ReasonUnknown]. A handler with no
 // case for it Passes, and drive then reports [ErrUnhandledPark]. Measured
 // reason="unknown" on both a hand-built snapshot and a real mid-walk state
-// produced by the engine (ADR-0168, which widens the routes reaching that state;
+// produced by the engine (the routes reaching that state have since widened;
 // it is reachable through whole-instance rollback regardless). It bites a
 // consumer classifying a STORED mid-walk snapshot: measured, the default
 // synchronous drive loop completes the walk inside one ApplyTrigger and never
 // parks on it.
 //
-// ADR-0179 narrows the gap at one point, measured on an engine-built state: a
+// The gap is narrowed at one point, measured on an engine-built state: a
 // walk paused on an armed engine.TimerCompensationRetry backoff classifies
 // [ReasonTimer], because that timer is forward work the engine reports through
 // HasArmedTimers. [AutoTimers] fires it and the walk re-dispatches. Every other
@@ -229,9 +229,9 @@ func Classify(state engine.InstanceState) Park {
 	}
 	// Delegate to the engine's waiter authorities rather than re-deriving from
 	// Token.AwaitSignal/AwaitMessage: those cover only the FIRST of four sources,
-	// silently dropping boundary, event-gateway and event-subprocess arms
-	// (ADR-0166). The authorities may return duplicates; Park documents these
-	// fields as distinct, so dedup here.
+	// silently dropping boundary, event-gateway and event-subprocess arms.
+	// The authorities may return duplicates; Park documents these fields as
+	// distinct, so dedup here.
 	p.AwaitingSignals = distinctStrings(state.SignalWaiters())
 	p.AwaitingMessages = distinctWaiters(state.MessageWaiters())
 
@@ -270,7 +270,7 @@ func Classify(state engine.InstanceState) Park {
 	// [ReasonUnknown]: such a record is a report that something failed, not a park
 	// a harness has any verb for, so it must not displace one that IS actionable.
 	// It stays above ReasonUnknown because with nothing else parked it is the most
-	// informative thing to report — ADR-0175 consequence (c).
+	// informative thing to report.
 	case len(state.Incidents) > 0:
 		p.Reason = ReasonIncident
 		p.Node = incidentNode(state)
@@ -322,7 +322,7 @@ func distinctWaiters(in []engine.MessageWaiter) []engine.MessageWaiter {
 
 // awaitNode returns the node id of the first token matching pred, falling back to
 // the first waiting token's node when no token carries the await at all. That
-// fallback is the arm-derived case (ADR-0166 D5): a boundary, event-gateway or
+// fallback is the arm-derived case: a boundary, event-gateway or
 // event-subprocess arm sets no Token.AwaitSignal/AwaitMessage, so Node would
 // otherwise collapse to "" and degrade both errors a consumer sees
 // ([ErrUnhandledPark], [ErrDriveLimitExceeded]). The arm's OWN node stays
@@ -340,7 +340,7 @@ func awaitNode(state engine.InstanceState, pred func(engine.Token) bool) string 
 // a boundary, event-gateway or event-subprocess arm, and no token carries the
 // matching await.
 //
-// It exists for the timer promotion in harnessEnv.classify (ADR-0166 D3). Once
+// It exists for the timer promotion in harnessEnv.classify. Once
 // arms compete in the ladder, an arm-derived ReasonSignal would otherwise displace
 // ReasonAsyncChild/ReasonUnknown and silently disable [AutoTimers] on any
 // definition carrying a live arm. Only an arm-derived reason yields to the timer;
@@ -393,11 +393,11 @@ func hasIncidentToken(tokens []engine.Token) bool {
 //     ordinary timer, signal, message or command wait classified as an incident
 //     the harness had no verb for and drive reported [ErrUnhandledPark].
 //   - A walk-scoped record must STILL raise the reason when nothing actionable is
-//     parked. ADR-0175 shipped engine.IncidentCompensationStall reaching
-//     [ReasonIncident] as an intended consequence, and told consumers to handle a
-//     stall by switching on the incident's Kind. Dropping the rung to
-//     [ReasonUnknown] would silently retract that, so the last rung sits ABOVE
-//     unknown rather than replacing it.
+//     parked. engine.IncidentCompensationStall reaching [ReasonIncident] is an
+//     intended consequence, and consumers are told to handle a stall by
+//     switching on the incident's Kind. Dropping the rung to [ReasonUnknown]
+//     would silently retract that, so the last rung sits ABOVE unknown rather
+//     than replacing it.
 //
 // ⚠ An earlier revision expressed the first point as a yield term on the single
 // rung — a walk-scoped incident raised the reason only when [Park.HasArmedTimers]
@@ -413,7 +413,7 @@ func hasIncidentToken(tokens []engine.Token) bool {
 // token-parked one coexist routinely — a cancel walk raises its own incident
 // while an earlier action failure still sits open — and slice position says
 // nothing about which is which. The runtime's cause-of-death resolvers had the
-// same positional defect (ADR-0179).
+// same positional defect.
 //
 // The test is TokenID rather than Kind: it is the property the rung actually
 // depends on (is a token stuck here?), so a compensation kind added later needs
@@ -435,7 +435,8 @@ func tokenScopedIncident(incidents []engine.Incident) *engine.Incident {
 //
 // The last fallback is not decorative. It is how a stall park keeps naming the
 // record it was compensating (measured: node "b"), which a plain Incidents[0] read
-// gave it before ADR-0179 and which dropping the fallback silently took away.
+// gave it in an earlier revision and which dropping the fallback silently
+// took away.
 func incidentNode(state engine.InstanceState) string {
 	stuckTokenNode := func() string {
 		return firstNodeWhere(state.Tokens, func(t engine.Token) bool { return t.State == engine.TokenIncident })
@@ -465,15 +466,14 @@ func incidentNode(state engine.InstanceState) string {
 //     the plain timer intermediate catch (token parks on the timer id) and the
 //     retry backoff (token parks on the TimerRetry record's id). This is a set
 //     membership test against the engine's own enumeration
-//     ([engine.InstanceState.TimerWaiters], ADR-0177), NOT an attempt to read
-//     meaning out of an identity — the thing ADR-0152 forbids. It is also why
-//     Token.AwaitTimer is not used here: AwaitTimer is unset on a token stored
-//     before ADR-0177 and unset on a retry park, while AwaitCommand has always
-//     been persisted.
+//     ([engine.InstanceState.TimerWaiters]), NOT an attempt to read meaning out
+//     of an identity, which is forbidden. It is also why Token.AwaitTimer is not
+//     used here: AwaitTimer is unset on a token persisted by an older version
+//     and unset on a retry park, while AwaitCommand has always been persisted.
 //   - An in-flight event-based gateway carrying a timer arm. Its token parks on
 //     an "evtgw:" sentinel no handler can deliver, so the timer race IS the park;
 //     yielding to that command wait would leave the gateway unresolvable by
-//     AutoTimers, which is what it did before ADR-0177 widened HasArmedTimers.
+//     AutoTimers, which is what it did before HasArmedTimers was widened.
 //
 // Everything else — a timer boundary arm, a timer-triggered event sub-process
 // arm — is secondary. Measured on engine-built states (instance "i"):

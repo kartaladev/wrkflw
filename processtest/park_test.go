@@ -96,8 +96,7 @@ func TestClassify(t *testing.T) {
 			// the shape the engine actually produces. Measured on an engine-built
 			// retry exhaustion: kind=IncidentAction tokenID="p1-t1" nodeID="call",
 			// token state=TokenIncident. The fixture used to carry neither, which
-			// since ADR-0179 is a walk-scoped record that deliberately yields to
-			// the signal rung.
+			// is a walk-scoped record that deliberately yields to the signal rung.
 			name: "incident takes precedence over signal",
 			state: engine.InstanceState{
 				Status:    engine.StatusRunning,
@@ -199,19 +198,19 @@ func TestClassify(t *testing.T) {
 //	Classify(InstanceState{Status: StatusCompensating})        → reason="unknown"
 //	Classify(real mid-walk state, activeCmd="i1-c2" tokens=0)  → reason="unknown"
 //
-// The real state came from the engine's own ADR-0168 fixture
+// The real state came from the engine's own fixture
 // (TestCompensationWalkInFlightBlocksCompletion): status=compensating tokens=0
 // activeCmd="i1-c2" tasks=2 (both closed) timers=0 boundaries=0 armed=0. It
 // classifies identically to the literal below because Classify never reads the
 // cursor — which is the gap. The literal is therefore a faithful stand-in, and
 // is used because Compensating's type is unexported and cannot be built here.
 //
-// ADR-0168 widens the routes that reach this state (an ordinary in-definition
+// The routes that reach this state have widened (an ordinary in-definition
 // compensation throw now defers completion instead of racing it); the state was
-// already reachable on main through whole-instance rollback, so this pin is not
-// a consequence of that change.
+// already reachable through whole-instance rollback, so this pin is not a
+// consequence of that change.
 //
-// How bad is it, measured rather than assumed: driving the ADR-0168 fixture
+// How bad is it, measured rather than assumed: driving that fixture
 // through the Harness with an ordinary synchronous catalog action does NOT hit
 // the gap. The runtime performs the walk's compensating InvokeAction and feeds
 // its ActionCompleted back inside the same ApplyTrigger, so the walk finishes
@@ -224,9 +223,9 @@ func TestClassify(t *testing.T) {
 //
 // The real fix is a ReasonCompensation whose Park surfaces the awaited command
 // id, so a handler can deliver the walk's ActionCompleted. That is deliberately
-// out of scope for this bundle. It is the same class of defect as backlog item
-// 6b (Park.HasArmedTimers is false for a timer-arm-only park, leaving it
-// undriveable) — processtest cannot see a park the engine tracks off-token.
+// out of scope for this bundle. It is the same class of defect as a
+// timer-arm-only park whose Park.HasArmedTimers is false, leaving it
+// undriveable — processtest cannot see a park the engine tracks off-token.
 //
 // What makes this test fail: it discriminates on Classify's fallthrough arm AND
 // on the fixture's status. Both verified by mutation, byte-clean restore after
@@ -276,8 +275,8 @@ func TestClassifyPinsUnknownReasonForCompensationWalkPark(t *testing.T) {
 	// and drive turns a passed park into ErrUnhandledPark. The contrast that keeps
 	// this from being vacuous is the existing "AutoTimers drives a timer flow to
 	// completion" case in handlers_test.go: AutoTimers does not pass on the one
-	// park it handles. (An inline ReasonTimer contrast IS constructible since
-	// ADR-0177 gave Token.AwaitTimer its own waiter source — see armedTimerToken
+	// park it handles. (An inline ReasonTimer contrast IS constructible now that
+	// Token.AwaitTimer has its own waiter source — see armedTimerToken
 	// in park_compensation_failure_test.go. The claim previously made here, that
 	// InstanceState.Timers' unexported element type made one impossible, was true
 	// only of the RECORD source.)

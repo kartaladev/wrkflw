@@ -209,9 +209,9 @@ func TestTimerFiredCounter(t *testing.T) {
 }
 
 // TestTimerArmsRefusedCounter asserts wrkflw_timer_arms_refused_total is
-// incremented when an arm is refused because the scheduler cannot run it
-// (ADR-0176). Without it, a refused arm is a WARN line and nothing else: the
-// instance parks on a timer node that will never fire, and the only trace is
+// incremented when an arm is refused because the scheduler cannot run it.
+// Without it, a refused arm is a WARN line and nothing else: the instance
+// parks on a timer node that will never fire, and the only trace is
 // grep-able text — which is not something an operator can alert on.
 //
 // What makes it fail without the counter: the refusal path in timerJobsFor

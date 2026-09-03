@@ -10,8 +10,8 @@ import (
 )
 
 // TestNewScheduledTimerJob_CalendarNextRunHonorsNowLocation verifies that
-// newScheduledTimerJob resolves NextRun in the location of the now it is given
-// (ADR-0137); the runtime passes now.In(scheduler location) at its call sites.
+// newScheduledTimerJob resolves NextRun in the location of the now it is given;
+// the runtime passes now.In(scheduler location) at its call sites.
 func TestNewScheduledTimerJob_CalendarNextRunHonorsNowLocation(t *testing.T) {
 	plusTwo := time.FixedZone("plusTwo", 2*60*60)
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, plusTwo)
@@ -36,7 +36,7 @@ func (f locFake) Location() *time.Location { return f.loc }
 
 // TestSchedulingLocation verifies driver.schedulingLocation resolves the
 // runtime's compute location from the driver's scheduler: the capability zone
-// when the scheduler reports one, or time.UTC when it does not (ADR-0137).
+// when the scheduler reports one, or time.UTC when it does not.
 func TestSchedulingLocation(t *testing.T) {
 	plusThree := time.FixedZone("plusThree", 3*60*60)
 	cases := []struct {

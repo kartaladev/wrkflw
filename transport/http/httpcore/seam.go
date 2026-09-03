@@ -117,8 +117,8 @@ type CustomizeConfig[R any] struct {
 	// nil-safe: ResolveConfig defaults it to the [authz.ContextWithActor] seam, which
 	// refuses with [ErrUnauthenticated] when nothing authenticated the caller.
 	//
-	// ⚠ The transport reads the actor from HERE and from nowhere else. Before
-	// ADR-0189 it read `actor`/`by` out of the request body, which any caller could
+	// ⚠ The transport reads the actor from HERE and from nowhere else. An older
+	// version read `actor`/`by` out of the request body, which any caller could
 	// forge; those DTO fields no longer exist and a body still carrying them is
 	// ignored.
 	RequestActor RequestActorFunc
@@ -134,18 +134,18 @@ type CustomizeConfig[R any] struct {
 	// its post-loop nil-guard block: a time.Duration has no nil, so a post-loop guard
 	// could not distinguish "unset" from an explicit 0 (= disabled).
 	RequestActorTimeout time.Duration
-	// Disclosure widens what an UNIDENTIFIED caller may see (ADR-0190).
+	// Disclosure widens what an UNIDENTIFIED caller may see.
 	//
 	// The zero value is the closed posture: a caller the transport could not identify
 	// receives structural fields only — no process variables, actors, notes or policy.
 	// An identified caller is unaffected and always receives full fidelity.
 	//
 	// ⚠ "Identified" means the configured [RequestActorFunc] returned an actor with a
-	// non-empty ID. It is deliberately stricter than the guard ADR-0189 applies to a
+	// non-empty ID. It is deliberately stricter than the guard applied to a
 	// claimant: a kiosk actor {ID:"", Roles:["kiosk"]} may act on a task and still receive
 	// the projection, because an actor with no ID is unattributable.
 	//
-	// Set [authz.DiscloseAll] to opt out completely and restore the pre-ADR-0190 shape.
+	// Set [authz.DiscloseAll] to opt out completely and restore the unprojected shape.
 	//
 	// ⚠ Unlike MaxBodyBytes, this needs no "was it set" flag: WithDisclosure() with no
 	// categories and never calling it are the SAME posture, so a nil map is unambiguous.
@@ -213,8 +213,8 @@ func ResolveConfig[R any](opts ...CustomizeOption[R]) CustomizeConfig[R] {
 	// The three task endpoints take the resolver as their only added argument and have
 	// no sight of the config, so a separately-carried timeout would have been silently
 	// inert at every adapter — which is exactly what it was until this composition
-	// landed, found independently by two implementers. Wrapping keeps ADR-0189's "one
-	// added argument, no branch" true instead of falsifying it.
+	// landed, found independently by two implementers. Wrapping keeps the endpoints'
+	// "one added argument, no branch" shape true instead of falsifying it.
 	//
 	// Composed AFTER the option loop, so WithRequestActor and WithRequestActorTimeout
 	// may be passed in either order.
@@ -251,7 +251,7 @@ func WithRequestActor[R any](fn RequestActorFunc) CustomizeOption[R] {
 // restore process variables, [authz.DiscloseActors] for claim/candidate identities,
 // [authz.DiscloseNotes] for completion notes, [authz.DisclosePolicy] for the embedded
 // definition and flow conditions. Pass [authz.DiscloseAll] to opt out of projection
-// entirely and restore the exact pre-ADR-0190 wire shape.
+// entirely and restore the exact unprojected wire shape.
 //
 // ⚠ The polarity is deliberate: a consumer WIDENS disclosure explicitly, rather than
 // narrowing it from an open default. Adding a category is a deliberate act; forgetting one

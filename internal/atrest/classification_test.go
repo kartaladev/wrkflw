@@ -15,7 +15,7 @@ import (
 )
 
 // TestClassificationCoversTheSchemaExactly is the completeness and
-// staleness guard (ADR-0187 D6): every column the discovered schema
+// staleness guard: every column the discovered schema
 // actually declares must carry a stated class, and no classification
 // entry may name a column the schema no longer declares.
 func TestClassificationCoversTheSchemaExactly(t *testing.T) {
@@ -55,13 +55,12 @@ func TestClassificationCoversTheSchemaExactly(t *testing.T) {
 		"a classification entry naming an absent column is stale — delete it, or the next "+
 			"unclassified column hides under it")
 
-	assert.Len(t, atrest.Classification, 87, "87 = 79 wrkflw_* + 8 casbin_rule (E6)")
+	assert.Len(t, atrest.Classification, 87, "87 = 79 wrkflw_* + 8 casbin_rule")
 }
 
-// TestClassificationPerClassCounts asserts the exact per-class counts
-// from the spec's classification section (E6) rather than re-deriving
-// them from prose — four of the six refuted the author's own pre-count
-// estimates.
+// TestClassificationPerClassCounts asserts the exact per-class counts of
+// the stated classification rather than re-deriving them from prose —
+// four of the six refuted the author's own pre-count estimates.
 func TestClassificationPerClassCounts(t *testing.T) {
 	t.Parallel()
 	counts := map[atrest.Class]int{}
@@ -75,14 +74,14 @@ func TestClassificationPerClassCounts(t *testing.T) {
 		atrest.ClassFreeform:  11,
 		atrest.ClassPolicy:    8,
 		atrest.ClassActor:     5,
-	}, counts, "E6; four of these six refuted the author's own pre-count estimates")
+	}, counts, "four of these six refuted the author's own pre-count estimates")
 }
 
-// TestNormalizedKeySetAgreesAcrossDialects is the dialect-invariance pin
-// (ADR-0187): once D2b's normalization is applied, the wrkflw_* key set
-// declared by each dialect's migrations must be identical. casbin_rule is
-// deliberately excluded (prefix "wrkflw_" only) because it is
-// postgres-only by construction (E3), and its absence elsewhere is not a
+// TestNormalizedKeySetAgreesAcrossDialects is the dialect-invariance pin:
+// once the MySQL journal-trigger normalization is applied, the wrkflw_* key
+// set declared by each dialect's migrations must be identical. casbin_rule
+// is deliberately excluded (prefix "wrkflw_" only) because it is
+// postgres-only by construction, and its absence elsewhere is not a
 // divergence.
 func TestNormalizedKeySetAgreesAcrossDialects(t *testing.T) {
 	t.Parallel()
@@ -92,7 +91,7 @@ func TestNormalizedKeySetAgreesAcrossDialects(t *testing.T) {
 	schemas, err := atrest.LoadSchemas(root)
 	require.NoError(t, err)
 
-	// wrkflw_* only: casbin_rule is postgres-only by construction (E3) and its
+	// wrkflw_* only: casbin_rule is postgres-only by construction and its
 	// absence elsewhere is not a divergence.
 	pg := atrest.ColumnKeysWithPrefix(schemas["postgres"], "wrkflw_")
 	my := atrest.ColumnKeysWithPrefix(schemas["mysql"], "wrkflw_")
@@ -102,9 +101,9 @@ func TestNormalizedKeySetAgreesAcrossDialects(t *testing.T) {
 	assert.ElementsMatch(t, pg, sq, "postgres vs sqlite normalized key set")
 	assert.Len(t, pg, 79)
 
-	// Sorted-order pin (fix round 1, finding 2 — MINOR): ColumnKeysWithPrefix's doc
-	// contract promises keys sorted by (Table, Column); Task 7 consumes that
-	// order from another package. ElementsMatch above is order-independent
+	// Sorted-order pin: ColumnKeysWithPrefix's doc
+	// contract promises keys sorted by (Table, Column); another package consumes
+	// that order. ElementsMatch above is order-independent
 	// and cannot pin this, so compare pg against an independently-sorted
 	// copy of itself with assert.Equal — a dropped sort call almost never
 	// coincides with the sorted order across 79 map-iterated entries.
@@ -154,7 +153,7 @@ func TestKeySetMatcherFires(t *testing.T) {
 		"and must be stable for identical input — a matcher that reports everything is as "+
 			"useless as one that reports nothing")
 
-	// Prefix-exclusion pin (fix round 1, finding 1 — IMPORTANT): the two
+	// Prefix-exclusion pin: the two
 	// assertions above depend only on the planted key divergence
 	// (t.only_in_pg) and pass even if the prefix filter is dropped
 	// entirely (every column of every table would then leak into pgKeys,
@@ -179,10 +178,10 @@ func TestClaimedByIsTwoDifferentColumns(t *testing.T) {
 
 	assert.Equal(t, atrest.ClassActor,
 		atrest.Classification[atrest.ColumnKey{Table: "wrkflw_human_task", Column: "claimed_by"}],
-		"a human principal: ADR-0098 calls it the scalar projection of claim.actor.id")
+		"a human principal: the scalar projection of claim.actor.id")
 	assert.Equal(t, atrest.ClassReference,
 		atrest.Classification[atrest.ColumnKey{Table: "wrkflw_call_links", Column: "claimed_by"}],
-		"a worker lease owner: WithCallLinkLease(owner string, ttl) — not a person (E7)")
+		"a worker lease owner: WithCallLinkLease(owner string, ttl) — not a person")
 }
 
 // TestDefinitionEligibilityFieldsAreTheDeclaredSet pins the premise behind the
@@ -190,8 +189,8 @@ func TestClaimedByIsTwoDifferentColumns(t *testing.T) {
 // authorization policy a stored definition carries is exactly the three
 // Eligible* fields NodeWire declares. Adding a fourth (say EligibleGroups)
 // would widen what that column holds, and the location's Detail — published
-// verbatim in SECURITY.md, where it names the three by their JSON keys — would
-// silently understate it.
+// verbatim in the generated security document, where it names the three by
+// their JSON keys — would silently understate it.
 //
 // What makes this test fail: any field whose name begins with "Eligible" being
 // added to, removed from, or renamed in definition/model.NodeWire. Verified by
@@ -220,12 +219,12 @@ func TestDefinitionEligibilityFieldsAreTheDeclaredSet(t *testing.T) {
 }
 
 // TestPolicyAtRestLocationsIncludesTheInstanceSnapshot is the regression test
-// for backlog 141.
+// for the missing fourth policy-at-rest location.
 //
 // What makes it fail before the fix: PolicyAtRestLocations names three
 // locations and omits wrkflw_instances.snapshot, which carries the full
 // authz.AuthzSpec via engine.InstanceState.Tasks[].Eligibility. The published
-// SECURITY.md count is therefore short by one.
+// count is therefore short by one.
 //
 // ⚠ The completeness guard in render.go cannot catch this: it fails only for a
 // ClassPolicy column, and wrkflw_instances.snapshot is ClassFreeform — the
@@ -242,5 +241,5 @@ func TestPolicyAtRestLocationsIncludesTheInstanceSnapshot(t *testing.T) {
 	}
 	assert.True(t, found,
 		"wrkflw_instances.snapshot holds every in-flight task's Eligibility (an authz.AuthzSpec) "+
-			"and must be listed, or SECURITY.md understates where policy is durable")
+			"and must be listed, or the generated document understates where policy is durable")
 }

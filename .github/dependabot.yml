@@ -14,8 +14,13 @@ updates:
         patterns:
           - "go.opentelemetry.io/*"
     ignore:
-      # gocron is HARD-PINNED to v2.21.2 per CLAUDE.md / ADR — do not let
-      # Dependabot bump it. Remove this entry only via an ADR.
+      # gocron is held at its current version deliberately. Its one-shot
+      # semantics are load-bearing here: WithLimitedRuns(1) must fire exactly
+      # once and then report the timer as consumed via NextRun. A minor bump
+      # has changed that behaviour before, and the change is silent — nothing
+      # fails to compile. scheduler/internal/gocron/bump_regression_test.go
+      # locks the current semantics; take a bump only by hand, with that test
+      # green.
       - dependency-name: "github.com/go-co-op/gocron/v2"
 
   - package-ecosystem: github-actions

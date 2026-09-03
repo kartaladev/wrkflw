@@ -1,9 +1,9 @@
 package engine_test
 
-// ADR-0175 — a breached stall window raises an incident and changes nothing else.
+// A breached stall window raises an incident and changes nothing else.
 //
-// The fire handler is a case in handleTimerFired's path-4 Kind switch. Since
-// ADR-0178 that switch sits BEHIND a !spawnsNewWork() refusal, so on a DYING
+// The fire handler is a case in handleTimerFired's path-4 Kind switch. That
+// switch sits BEHIND a !spawnsNewWork() refusal, so on a DYING
 // instance the record reaches the switch only because that refusal EXEMPTS the
 // walk-scoped kinds (TimerKind.firesOnDyingInstance). The exemption is
 // load-bearing: the
@@ -13,7 +13,7 @@ package engine_test
 // needs to see wedged. A blanket guard would silence detection precisely there.
 //
 // ⚠ Path 4 is NOT inherently safe on a dying instance: a TimerInWait reminder
-// was measured emitting a real InvokeAction from there — the hole ADR-0178's
+// was measured emitting a real InvokeAction from there — the hole that
 // refusal closes. This handler is safe only because it emits NOTHING, a
 // constraint on the handler, not a property inherited from its location.
 
@@ -62,7 +62,7 @@ func TestStallTimerFireRaisesIncidentAndNothingElse(t *testing.T) {
 
 	assert.Empty(t, res.Commands,
 		"the stall handler must emit NO commands: path 4 runs on dying instances too, "+
-			"and emitting there is the measured ADR-0172 hole")
+			"and emitting there is the measured hole")
 
 	require.Len(t, res.State.Incidents, 1, "the breach raises exactly one incident")
 	inc := res.State.Incidents[0]
@@ -140,14 +140,15 @@ func TestLateStallTimerFireIsDropped(t *testing.T) {
 //
 // Both triggers route through stepCompensationAdvance, which is why the sweep
 // lives there and not in handleActionCompleted: a sweep placed in the completion
-// handler would miss the ActionFailed row entirely (ADR-0034 Decision 4 makes a
-// failed compensation a best-effort skip that still advances).
+// handler would miss the ActionFailed row entirely (a failed compensation is a
+// best-effort skip that still advances).
 //
 // ⚠ The shared assertion below checks that no STALL incident survives, not that
-// the incident list is empty. It asserted emptiness until ADR-0179, which raises
-// an IncidentCompensationFailed on the ActionFailed row — a walk-scoped record
-// about a different fact. Emptiness would now conflate "the stall was retired"
-// (what this test is about) with "nothing else may ever be recorded here".
+// the incident list is empty. It once asserted emptiness, but the engine now
+// raises an IncidentCompensationFailed on the ActionFailed row — a walk-scoped
+// record about a different fact. Emptiness would now conflate "the stall was
+// retired" (what this test is about) with "nothing else may ever be recorded
+// here".
 func TestStallIncidentRetiredWhenWalkMovesOn(t *testing.T) {
 	type testCase struct {
 		name    string
@@ -177,7 +178,7 @@ func TestStallIncidentRetiredWhenWalkMovesOn(t *testing.T) {
 				assert.NotNil(t, invokeActionNamed(res.Commands, "c2"),
 					"a failed compensation is a best-effort skip that still advances")
 				require.Len(t, res.State.Incidents, 1,
-					"the stall is retired, but ADR-0179 leaves the FAILURE on the record")
+					"the stall is retired, but the FAILURE is left on the record")
 				assert.Equal(t, engine.IncidentCompensationFailed, res.State.Incidents[0].Kind)
 			},
 		},
@@ -208,7 +209,8 @@ func TestStallIncidentRetiredWhenWalkMovesOn(t *testing.T) {
 	}
 }
 
-// TestNormalTerminalFinishLeavesNoStallIncident is T10c — the A-4 measurement.
+// TestNormalTerminalFinishLeavesNoStallIncident covers a stalled walk that
+// recovers on its own.
 //
 // A walk that stalls, is noticed, and then RECOVERS on its own must terminate
 // with its real cause of death. Without the retirement sweep this was measured
@@ -216,7 +218,7 @@ func TestStallIncidentRetiredWhenWalkMovesOn(t *testing.T) {
 // time, runtime/outbox.go's terminalEventErr and runtime/processdriver_action.go's
 // terminalErr both returned Incidents[0] unconditionally, so the recovered walk
 // published "compensation action stalled" instead of "cancelled" — to the outbox,
-// and to a call-activity parent. ADR-0179 put both behind the causeOfDeathIncident
+// and to a call-activity parent. Both are now behind the causeOfDeathIncident
 // allow-list (IncidentAction only), so that mis-publication is no longer the
 // failure mode; the retained record is still counted in incident_count, rendered
 // by the service/ audit view and returned on InstanceState.Incidents.
@@ -257,15 +259,15 @@ func TestNormalTerminalFinishLeavesNoStallIncident(t *testing.T) {
 //
 // stepCompensationAdvance retires the incident for every walk that MOVES ON. A
 // walk killed mid-flight never advances, so nothing retires it there. The
-// measured abandonment route (ADR-0173) is a force-termination end event: the
+// measured abandonment route is a force-termination end event: the
 // throw walk is live, a sibling branch's recovery task completes into an
 // EndTerminate, and forceTerminate → endInstance ends the instance while the
 // stalled command is still outstanding.
 //
 // Without the sweep the stall incident survives on the terminal instance, where
 // incident_count, the service/ audit view and every reader of
-// InstanceState.Incidents report a stall that is over. (Pre-ADR-0179 it was also
-// what terminalEventErr published as the cause of death; the causeOfDeathIncident
+// InstanceState.Incidents report a stall that is over. (It was also once what
+// terminalEventErr published as the cause of death; the causeOfDeathIncident
 // allow-list — IncidentAction only — closed that route.)
 func TestForceTerminationSweepsOpenStallIncident(t *testing.T) {
 	ctx := t.Context()

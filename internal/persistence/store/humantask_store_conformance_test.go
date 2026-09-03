@@ -75,7 +75,7 @@ func TestHumanTaskStoreConformance(t *testing.T) {
 		t.Run("assigned_to_filters_by_claimed_by_and_sorts", func(t *testing.T) {
 			// Seed tasks: two claimed by "bob", one by "carol", one unclaimed.
 			// Every claim carries a real timestamp: claimed_at is the presence
-			// discriminator (ADR-0148 amendment 2), and a zero time.Time is outside
+			// discriminator, and a zero time.Time is outside
 			// the MySQL DATETIME range anyway.
 			claimedAt := time.Date(2026, 7, 28, 6, 0, 0, 0, time.UTC)
 			tasks := []humantask.HumanTask{
@@ -174,7 +174,7 @@ func TestHumanTaskStoreConformance(t *testing.T) {
 			assert.True(t, found, "%s: eve must see tok-role as claimable (by role)", b.name)
 		})
 
-		// audit_columns_round_trip is the ADR-0148 guardrail: the normalized
+		// audit_columns_round_trip is the audit guardrail: the normalized
 		// wrkflw_human_task row must carry the FULL claim/completion audit, not a
 		// bare claimant id. Each case applies its seeds in order (the second seed
 		// exercises the dialect's upsert-conflict SET list) and then re-reads the
@@ -252,7 +252,7 @@ func TestHumanTaskStoreConformance(t *testing.T) {
 				{
 					// Presence is keyed on the timestamp, never on the id: an empty
 					// claimant id is a legitimate value, and keying on it would
-					// resurrect the fabricated/dropped-claim bug of amendment 1 §4.
+					// resurrect the fabricated/dropped-claim bug.
 					name: "claim with an empty actor id still reads back as a claim",
 					seeds: []humantask.HumanTask{{
 						TaskID:     "tok-audit-anonclaim-" + b.name,
@@ -389,8 +389,8 @@ func TestHumanTaskStoreConformance(t *testing.T) {
 			}
 		})
 
-		// audit_columns_are_queryable_as_sql is the whole point of ADR-0148
-		// amendment 2: the audit scalars live in typed columns, so a reporting
+		// audit_columns_are_queryable_as_sql is the whole point of the normalized
+		// audit: the audit scalars live in typed columns, so a reporting
 		// query filters on them in SQL instead of scanning every row and decoding
 		// JSON in Go. Each assertion is a plain SQL predicate over one column.
 		t.Run("audit_columns_are_queryable_as_sql", func(t *testing.T) {
@@ -444,7 +444,7 @@ func TestHumanTaskStoreConformance(t *testing.T) {
 				"%s: claimed_at must be a queryable column", b.name)
 			assert.Equal(t, claimedID, gotID, "%s: only the claimed row has a claimed_at", b.name)
 
-			// The headline reporting query of ADR-0148 amendment 2: "every task
+			// The headline reporting query of the normalized audit: "every task
 			// completed with outcome X", answered by an index-friendly predicate
 			// rather than by decoding JSON for every row in Go.
 			var gotOutcomeID, gotNote, gotCompletedBy string
@@ -578,7 +578,7 @@ func TestHumanTaskStoreConformance(t *testing.T) {
 			}
 		})
 
-		// The claim invariant (ADR-0183) is enforced on WRITE. For direction R1 it
+		// The claim invariant is enforced on WRITE. In one direction it
 		// cannot be enforced on read at all — a state='claimed' row whose claimed_at
 		// is NULL is indistinguishable from one that was never claimed — so Upsert is
 		// the only seam there is.
@@ -586,7 +586,7 @@ func TestHumanTaskStoreConformance(t *testing.T) {
 		// The two leading rows are POSITIVE CONTROLS, and they are load-bearing:
 		// without them the rejection rows would prove only that a row which was never
 		// written cannot be listed, which no implementation could fail. The second
-		// control also pins the ADR-0148 amendment 1 §4 kiosk shape as LEGAL, so a
+		// control also pins the kiosk shape as LEGAL, so a
 		// guard that over-rejects an empty claimant fails here too.
 		//
 		// The follow-on inbox checks use assert.*, not require.*, deliberately:
@@ -677,7 +677,7 @@ func TestHumanTaskStoreConformance(t *testing.T) {
 					},
 				},
 				{
-					// ADR-0148 amendment 1 §4: the kiosk claimant is anonymous but
+					// The kiosk claimant is anonymous but
 					// carries roles. Claimed + an EMPTY claimant is legal, and a
 					// design round that rejected it was reversed.
 					name: "control: the kiosk shape (claimed, empty claimant) stays legal",
@@ -851,7 +851,7 @@ func TestHumanTaskStoreConformance(t *testing.T) {
 				"%s: claimed_at is its own column and survives the corrupt remainder", b.name)
 		})
 
-		// ADR-0148's degrade must not trade one silent corruption for another. A
+		// The degrade must not trade one silent corruption for another. A
 		// task returned with State Claimed/Completed but a nil Claim/Completion
 		// reads as "never claimed" to every consumer — the exact invariant
 		// [humantask.HumanTask] documents against — so an inbox would offer a Claim

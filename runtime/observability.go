@@ -53,7 +53,7 @@ func newDriverObs(opts ...observability.Option) *driverObs {
 		actionRetries:     tel.Int64Counter("wrkflw_action_retries_total", "Service-action retries scheduled."),
 		actionFailures:    tel.Int64Counter("wrkflw_action_failures_total", "Service-action invocations that returned an error."),
 		timerFired:        tel.Int64Counter("wrkflw_timer_fired_total", "Timer callbacks that fired and delivered a TimerFired trigger."),
-		timerArmsRefused:  tel.Int64Counter("wrkflw_timer_arms_refused_total", "Timer arms refused because the scheduler could not run them (ADR-0176)."),
+		timerArmsRefused:  tel.Int64Counter("wrkflw_timer_arms_refused_total", "Timer arms refused because the scheduler could not run them."),
 		incidentsRaised:   tel.Int64Counter("wrkflw_incidents_raised_total", "Incidents raised."),
 		incidentsResolved: tel.Int64Counter("wrkflw_incidents_resolved_total", "Incidents resolved."),
 		humanTasks:        tel.Int64Counter("wrkflw_human_tasks_total", "Human-task lifecycle transitions."),

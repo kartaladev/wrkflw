@@ -1,11 +1,8 @@
 package engine_test
 
-// step_compensation_error_cancel_test.go — Task 2: route cancel and
-// unhandled-error terminal paths through the compensation walk before
-// terminating, and make compensation best-effort.
-//
-// Design: docs/specs/2026-06-23-compensation-on-error-cancel-design.md
-// ADR: 0034.
+// step_compensation_error_cancel_test.go — cancel and unhandled-error terminal
+// paths route through the compensation walk before terminating, and
+// compensation is best-effort.
 
 import (
 	"testing"
@@ -444,7 +441,7 @@ func TestRedeliveredCancelIdempotent(t *testing.T) {
 }
 
 // TestNoDoubleCompensationAfterArchiveConsolidate is the no-double-compensation
-// invariant test for ADR-0039 archive-by-scope. It verifies that:
+// invariant test for archive-by-scope. It verifies that:
 //
 //  1. A sub-process with a compensable task closes → record in ArchivedCompensations
 //  2. CancelRequested → consolidation merges archive into RootCompensations →

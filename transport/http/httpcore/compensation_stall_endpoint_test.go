@@ -1,6 +1,6 @@
 package httpcore_test
 
-// ADR-0175 — the admin endpoint carrying the three compensation-stall escapes.
+// The admin endpoint carrying the three compensation-stall escapes.
 
 import (
 	"testing"

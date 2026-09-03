@@ -85,7 +85,7 @@ type Completion struct {
 // corresponding lifecycle event occurs, and both carry the full [authz.Actor] the
 // engine observed rather than a bare ID.
 //
-// DueAt is reserved for Plan 5 (deadline / timer integration) and is left nil here.
+// DueAt is reserved for deadline / timer integration and is left nil here.
 type HumanTask struct {
 	// TaskID uniquely identifies this task instance (matches the engine token).
 	TaskID string
@@ -107,7 +107,7 @@ type HumanTask struct {
 	Completion *Completion
 	// CreatedAt is the wall-clock time at which the task was created.
 	CreatedAt time.Time
-	// DueAt is the optional deadline (Plan 5; nil in this implementation).
+	// DueAt is the optional deadline (nil in this implementation).
 	DueAt *time.Time
 	// Vars is a snapshot of the process Variables at task-creation time, used for
 	// attribute-based eligibility predicates that reference data variables
@@ -197,7 +197,7 @@ type TaskStore interface {
 	// returning an error wrapping [ErrInvalidTask]. Call
 	// [Validate] rather than re-deriving the rule; the read path relies on the
 	// invariant holding, and the runtime refuses to commit a step that would project
-	// a task violating it (ADR-0183). Verify your implementation with
+	// a task violating it. Verify your implementation with
 	// processtest.RunTaskStoreConformance.
 	Upsert(ctx context.Context, t HumanTask) error
 	// Get returns the task for the given token or [ErrTaskNotFound].

@@ -95,7 +95,7 @@ func main() {
 		}),
 	})
 
-	// One fake clock drives the engine and the scheduler (ADR-0003).
+	// One fake clock drives the engine and the scheduler.
 	startAt := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
 	clk := clockwork.NewFakeClockAt(startAt)
 
@@ -115,7 +115,7 @@ func main() {
 	// event-gateway message arm as a message waiter, so a delivered message with the
 	// matching name+correlation key resumes exactly this instance.
 	// The driver resolves a correlated instance's definition from its own
-	// snapshot via the registry, so the definition must be registered (ADR-0121).
+	// snapshot via the registry, so the definition must be registered.
 	reg := kernel.NewMemDefinitionRegistry()
 	if err := reg.Register(def); err != nil {
 		log.Fatal("register:", err)

@@ -43,7 +43,7 @@ type ProcessInstance interface {
 
 // NewProcessInstance fuses a definition (may be nil) and instance state into a
 // ProcessInstance. Exported so consumers and tests can fabricate one. The
-// marshalled document embeds a non-nil definition (ADR-0144); the engine-level
+// marshalled document embeds a non-nil definition; the engine-level
 // opt-out [WithoutEmbeddedDefinition] applies to instances the ProcessEngine
 // hands out, not to one fabricated here.
 func NewProcessInstance(def *model.ProcessDefinition, st engine.InstanceState) ProcessInstance {
@@ -107,7 +107,7 @@ func (p processInstance) MarshalJSON() ([]byte, error) {
 // cost two scalars, and are the stable key a consumer routes, groups or filters
 // on — so they are emitted unconditionally, even for an instance whose template
 // could not be resolved. `definition` is the whole template, EMBEDDED rather
-// than summarized (ADR-0144): it marshals through its own canonical snake_case
+// than summarized: it marshals through its own canonical snake_case
 // wire, so the document is self-contained and there is no derived projection to
 // keep in sync, but it is omitted when the definition is unresolved.
 //
@@ -128,9 +128,9 @@ type instanceJSON struct {
 	Tasks      []taskJSON      `json:"tasks,omitempty"`
 	Incidents  []incidentJSON  `json:"incidents,omitempty"`
 	// Compensating projects the in-flight compensation walk's cursor, and is
-	// omitted entirely when no walk is in flight (ADR-0175 decision 5). It is what
+	// omitted entirely when no walk is in flight. It is what
 	// makes a WEDGED instance findable: a stalled walk never dispatches again, so
-	// an instance already stalled before ADR-0175 shipped raises no incident and
+	// an instance that stalled under an older version raises no incident and
 	// would otherwise be invisible. It also carries the command id the three
 	// escape verbs require.
 	Compensating *compensatingJSON `json:"compensating,omitempty"`
@@ -159,13 +159,13 @@ type nodeVisitJSON struct {
 	EnteredAt time.Time  `json:"entered_at"`
 	LeftAt    *time.Time `json:"left_at,omitempty"`
 	// TaskID links a user-task visit to its `tasks` entry; CloseKind names why
-	// the visit closed and is emitted only for an abnormal close (ADR-0145).
+	// the visit closed and is emitted only for an abnormal close.
 	TaskID    string `json:"task_id,omitempty"`
 	CloseKind string `json:"close_kind,omitempty"`
 }
 
 // compensatingJSON is the in-flight compensation walk's operator-facing
-// projection (ADR-0175).
+// projection.
 //
 // ⚠ ActiveCommandID exposes an internal command id. That is a deliberate trade:
 // without it an operator cannot name the stalled dispatch, and every escape verb
@@ -174,7 +174,7 @@ type nodeVisitJSON struct {
 // The exposure is narrower than an earlier revision of this comment claimed. It
 // said this leaks an "<instance>-cN sequence oracle"; that form is only the
 // DETERMINISTIC FALLBACK nextID uses when no IDGenerator is injected (pure-engine
-// tests and replay). The runtime always injects the xid generator (ADR-0149), and
+// tests and replay). The runtime always injects the xid generator, and
 // the same generator mints the token and task ids this document already exposes
 // as tokens[].id and tasks[].task_id — so in a product deployment this field adds
 // no ordering signal a reader did not already have.
@@ -202,8 +202,8 @@ type incidentJSON struct {
 	//
 	//   - "IncidentAction" — a service action that failed and exhausted its
 	//     retries. It parks a token and IS cleared by resolve-incident.
-	//   - "IncidentCompensationStall" (ADR-0175) and "IncidentCompensationFailed"
-	//     (ADR-0179) — walk-scoped: token_id is empty, because a compensation walk
+	//   - "IncidentCompensationStall" and "IncidentCompensationFailed" —
+	//     walk-scoped: token_id is empty, because a compensation walk
 	//     is not driven by a token of its own. resolve-incident REFUSES both and
 	//     names the three escape verbs (retry, skip, abandon) instead.
 	//   - "IncidentDefinitionDefect" — a token that reached a node no trigger can
@@ -216,7 +216,7 @@ type incidentJSON struct {
 	//
 	// ⚠ Do NOT route on slice position. A walk-scoped record and a token-parked
 	// one coexist routinely, and `incidents[0]` says nothing about which is which
-	// — the positional read is the defect ADR-0179 fixed in the runtime's own
+	// — the positional read is the defect fixed in the runtime's own
 	// cause-of-death resolvers.
 	Kind      string    `json:"kind"`
 	TokenID   string    `json:"token_id"`
@@ -227,7 +227,7 @@ type incidentJSON struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// taskJSON is the human-task audit projection (ADR-0147). The actor, claim and
+// taskJSON is the human-task audit projection. The actor, claim and
 // completion types carry their own wire tags, so they are EMBEDDED verbatim
 // rather than re-mapped here: an actor renders as {id, roles?, attributes?}
 // exactly as the engine observed it, and a slot the consumer's ActorResolver
@@ -236,7 +236,7 @@ type incidentJSON struct {
 // Claim is nil while the task is Unclaimed. Completion is nil until the task is
 // completed BY AN ACTOR — an immediate manual task is marked Completed inline by
 // the engine with no actor, so a "completed" state does not imply a completion
-// record (ADR-0147 amendment #5).
+// record.
 type taskJSON struct {
 	TaskID     string                `json:"task_id"`
 	NodeID     string                `json:"node_id"`

@@ -117,7 +117,7 @@ func main() {
 	}
 
 	// The driver resolves a correlated instance's definition from its own
-	// snapshot via the registry, so the definition must be registered (ADR-0121).
+	// snapshot via the registry, so the definition must be registered.
 	reg := kernel.NewMemDefinitionRegistry()
 	if err := reg.Register(def); err != nil {
 		log.Fatal("register:", err)

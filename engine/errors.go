@@ -43,13 +43,12 @@ var (
 	// It is deliberately a sibling of, not a parent of, [ErrTokenNotFound]: callers
 	// such as the call-link notifier key their idempotency branch on
 	// [ErrTokenNotFound] and must not swallow a terminal-instance rejection.
-	// See ADR-0165.
 	ErrInstanceTerminal = fmt.Errorf("workflow-engine: instance is terminal: %w", ErrInvalidTransition)
 
 	// ErrTaskNotOpen is returned when a trigger that requires an open human task is
 	// delivered to one already Completed or Cancelled. This is a second key the
-	// instance-status guard cannot see: ADR-0163 closes a task while the instance
-	// keeps running, so a closed task on a live instance is reachable.
+	// instance-status guard cannot see: a task can close while the instance keeps
+	// running, so a closed task on a live instance is reachable.
 	//
 	// Among the triggers, [HumanClaimed], [HumanReassigned] and [HumanCompleted]
 	// report it, because each of them answers a synchronous external caller.
@@ -63,7 +62,7 @@ var (
 	// "no such task" from "too late". It wraps [ErrInvalidTransition] for the same
 	// classification reason as [ErrInstanceTerminal]. runtime/task aliases this, so
 	// errors.Is(err, task.ErrTaskNotOpen) and errors.Is(err, engine.ErrTaskNotOpen)
-	// both hold. See ADR-0165.
+	// both hold.
 	ErrTaskNotOpen = fmt.Errorf("workflow-engine: human task is not open: %w", ErrInvalidTransition)
 
 	// ErrInstanceAlreadyStarted is returned when [StartInstance] is delivered to an
@@ -88,7 +87,7 @@ var (
 	//
 	// It wraps [ErrInvalidTransition] for the same classification reason as
 	// [ErrInstanceTerminal] — the instance exists and is in the wrong state for this
-	// trigger. See ADR-0180.
+	// trigger.
 	ErrInstanceAlreadyStarted = fmt.Errorf("workflow-engine: instance has already been started: %w", ErrInvalidTransition)
 
 	// ErrCancelNotApplicable is returned when a [CancelRequested] is DROPPED: a
@@ -118,7 +117,6 @@ var (
 	// It wraps [ErrInvalidTransition] for the same classification reason as
 	// [ErrInstanceTerminal], so the service layer classifies it as its ErrConflict
 	// and the HTTP transports answer 422 rather than a 500 with an empty body.
-	// See ADR-0180.
 	ErrCancelNotApplicable = fmt.Errorf("workflow-engine: cancel is not applicable while a compensation walk is in flight: %w", ErrInvalidTransition)
 
 	// ErrNoCompensationWalk is returned when a [ResolveCompensationStall] escape
@@ -128,8 +126,7 @@ var (
 	// An error rather than a no-op: every verb answers a synchronous operator, and
 	// an operator told nothing would reasonably believe the escape worked. It
 	// wraps [ErrInvalidTransition] for the same classification reason as
-	// [ErrInstanceTerminal], so it reaches an HTTP admin as a conflict. See
-	// ADR-0175.
+	// [ErrInstanceTerminal], so it reaches an HTTP admin as a conflict.
 	ErrNoCompensationWalk = fmt.Errorf("workflow-engine: no compensation walk in flight: %w", ErrInvalidTransition)
 
 	// ErrCompensationCommandMismatch is returned when a [ResolveCompensationStall]
@@ -139,8 +136,7 @@ var (
 	// already moved on and is refused rather than acting on whatever is in flight
 	// NOW. Without the match a compensation action was measured running TWICE,
 	// with the original completion then rejected as "no token awaiting command" —
-	// which an at-least-once action transport turns into a redelivery loop. See
-	// ADR-0175.
+	// which an at-least-once action transport turns into a redelivery loop.
 	ErrCompensationCommandMismatch = fmt.Errorf("workflow-engine: compensation command id does not match the walk in flight: %w", ErrInvalidTransition)
 
 	// ErrStallIncidentNotFound is returned when a [ResolveCompensationStall]
@@ -148,7 +144,7 @@ var (
 	//
 	// Deliberately NOT the idempotent no-op [ResolveIncident] uses for an unknown
 	// id: an operator who mistypes an incident id must not silently receive a
-	// walk-wide action they did not ask for. See ADR-0175.
+	// walk-wide action they did not ask for.
 	ErrStallIncidentNotFound = fmt.Errorf("workflow-engine: no open compensation-stall incident with that id: %w", ErrInvalidTransition)
 
 	// ErrCompensationWalkResumes is returned when abandon is attempted on a
@@ -160,14 +156,14 @@ var (
 	// Measured, abandoning a targeted throw DESTROYED its un-run stalled record
 	// and left the instance running; on a scope-wide throw it cleared the whole
 	// drained prefix. Skip is the verb that works on these walks — it drains them
-	// to their natural resume — so no escape is lost. See ADR-0175.
+	// to their natural resume — so no escape is lost.
 	ErrCompensationWalkResumes = fmt.Errorf("workflow-engine: cannot abandon a compensation walk that resumes; use skip: %w", ErrInvalidTransition)
 
 	// ErrIncidentNotResolvable is returned when [ResolveIncident] names an
 	// incident whose kind it cannot act on. handleResolveIncident whitelists a
 	// single kind — [IncidentAction] — so it refuses every other kind: today
-	// [IncidentCompensationStall] (ADR-0175) and [IncidentCompensationFailed]
-	// (ADR-0179), and any kind appended after them inherits the refusal.
+	// [IncidentCompensationStall] and [IncidentCompensationFailed], and any kind
+	// appended after them inherits the refusal.
 	//
 	// The refusal exists to prevent data loss, not merely to be tidy.
 	// handleResolveIncident removes the incident BEFORE looking up its token and
@@ -177,7 +173,6 @@ var (
 	// resolve-incident endpoint would delete the only record that the walk had
 	// stalled — or that a compensation action had failed — making it invisible as
 	// well as unresolved. The message names the verbs that do work.
-	// See ADR-0175, ADR-0179.
 	ErrIncidentNotResolvable = fmt.Errorf(
 		"workflow-engine: this incident is not resolvable with resolve-incident; "+
 			"use the compensation-walk verbs (retry, skip, abandon): %w", ErrInvalidTransition)
@@ -189,13 +184,13 @@ var (
 	// ErrManualTaskPayload is returned when a wait-mode manual UserTask is completed
 	// with a non-empty output, outcome, or note. A manual task is a form-less
 	// checkpoint; supplying a payload is a caller error. Immediate-mode manual tasks
-	// never take a trigger. See ADR-0118.
+	// never take a trigger.
 	ErrManualTaskPayload = errors.New("workflow-engine: manual user task cannot carry a completion payload")
 
 	// ErrInvalidOutcome is returned when a UserTask completion carries an outcome
 	// the node does not declare. Validation fails closed: once a node declares
 	// outcomes, only those are accepted. A node declaring none is unconstrained —
-	// any outcome at all completes it. See ADR-0146.
+	// any outcome at all completes it.
 	ErrInvalidOutcome = errors.New("workflow-engine: completion outcome is not declared by the user task")
 
 	// ErrOutcomeRequired is returned when a UserTask that declares outcomes is
@@ -205,7 +200,7 @@ var (
 	// [ErrNoMatchingFlow]. It is deliberately distinct from [ErrInvalidOutcome] so
 	// a caller can tell "you sent nothing" from "you sent a value I do not accept".
 	// A manual UserTask is exempt — it is forbidden from declaring outcomes
-	// ([model.ErrManualTaskOutcome]) and completes on a bare trigger. See ADR-0146.
+	// ([model.ErrManualTaskOutcome]) and completes on a bare trigger.
 	ErrOutcomeRequired = errors.New("workflow-engine: user task requires a completion outcome")
 
 	// ErrEmptyTriggerKey is returned when an inbound trigger's identity key is
@@ -214,7 +209,7 @@ var (
 	//
 	// It is deliberately NOT wrapped in [ErrInvalidTransition]: the instance state is
 	// irrelevant here, the trigger itself is malformed. Transports classify it 400,
-	// alongside the other caller-correctable input sentinels. See ADR-0152.
+	// alongside the other caller-correctable input sentinels.
 	ErrEmptyTriggerKey = errors.New("workflow-engine: trigger identity key is empty")
 
 	// ErrEmptyReassignTarget reports a HumanReassigned trigger whose To names no
@@ -227,6 +222,6 @@ var (
 	// *identity key* naming one specific record, and To is a required field rather
 	// than the trigger's identity — TaskID already is. Like it, this is not wrapped
 	// in [ErrInvalidTransition]: the instance state is irrelevant, the trigger
-	// itself is malformed. Transports classify it 400. See ADR-0183.
+	// itself is malformed. Transports classify it 400.
 	ErrEmptyReassignTarget = errors.New("workflow-engine: reassignment target is empty")
 )

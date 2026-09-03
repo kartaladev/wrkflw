@@ -157,7 +157,7 @@ func deepCopyBounded(v any, budget int) (any, bool) {
 // into an error that ClassifyError maps to 401 or 503.
 //
 // ⚠ It never returns a zero actor with a nil error. An unresolved identity is a
-// refusal, never a downgrade — that is the whole of ADR-0189.
+// refusal, never a downgrade.
 // RequestActor resolves the AUTHENTICATED principal for one request, or returns an
 // error that ClassifyError maps to 401 or 503.
 //

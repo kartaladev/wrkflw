@@ -260,7 +260,7 @@ func TestMySQLOutboxStatsQuery(t *testing.T) {
 }
 
 // TestMySQLTimestampsCapabilities verifies the timestamp-codec flag and the
-// three lister-query methods added in Task 9.
+// three lister-query methods.
 func TestMySQLTimestampsCapabilities(t *testing.T) {
 	t.Parallel()
 

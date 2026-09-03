@@ -67,7 +67,7 @@ func TestWithInstanceMapperOverrides(t *testing.T) {
 	}
 }
 
-// TestMaxBodyBytesDefaultAndDisable pins ADR-0186's inbound body cap, and
+// TestMaxBodyBytesDefaultAndDisable pins the inbound body cap, and
 // specifically WHERE the default is applied. MaxBodyBytes is a plain int64, not
 // a pointer, which works only because ResolveConfig seeds 1 MiB in its STRUCT
 // LITERAL — before the option loop runs. An int64 has no nil, so a post-loop

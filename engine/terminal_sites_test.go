@@ -1,10 +1,10 @@
 package engine_test
 
-// terminal_sites_test.go — backlog 9. ADR-0164 established that every terminal
-// transition routes through InstanceState.endInstance, and recorded the fact as
-// a COUNT: "all eight sites route through it". The count was 8 when written and
-// is 10 today (re-derived from source 2026-08-20), so the prose was false in
-// three places and nothing noticed.
+// terminal_sites_test.go — every terminal transition routes through
+// InstanceState.endInstance. That fact was once recorded as a COUNT: "all eight
+// sites route through it". The count was 8 when written and is 10 today
+// (re-derived from source 2026-08-20), so the prose was false in three places
+// and nothing noticed.
 //
 // A number in prose rots. The invariant does not, so this file pins the
 // invariant instead: endInstance is the ONLY function that assigns a terminal
@@ -65,7 +65,7 @@ func TestEndInstanceIsTheSoleTerminalStatusWriter(t *testing.T) {
 			}
 			for _, pos := range terminalStatusAssignments(fn) {
 				t.Errorf("%s:%d: %s assigns a terminal Status directly; every terminal "+
-					"transition must route through endInstance (ADR-0164)",
+					"transition must route through endInstance",
 					path, fset.Position(pos).Line, fn.Name.Name)
 			}
 		}

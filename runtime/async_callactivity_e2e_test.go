@@ -1,7 +1,7 @@
 package runtime_test
 
 // async_callactivity_e2e_test.go — cross-cutting e2e scenarios for the async
-// call-activity track (Task 8). All scenarios run on the in-memory path:
+// call-activity track. All scenarios run on the in-memory path:
 // MemInstanceStore + MemCallLinkStore + runtime.CallNotifier.
 //
 // Scenarios:
@@ -145,7 +145,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be StatusRunning (parked at call activity)")
 
 	// Child ids are derived from the call command's id, which the engine's
-	// IDGenerator mints (ADR-0149) — so resolve them through the link store
+	// IDGenerator mints — so resolve them through the link store
 	// rather than assuming an id FORMAT.
 	childID := soleChildOf(ctx, t, cl, parentID)
 	grandchildID := soleChildOf(ctx, t, cl, childID)
@@ -218,7 +218,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 //     no-boundary fallback, which routes through endInstance: it sets
 //     StatusFailed, cancels open tasks, emits FailInstance and cancels all
 //     timers/arms. It does NOT drop the parent's tokens — a sibling branch keeps
-//     its token, and its AwaitCommand with it, ADR-0164).
+//     its token, and its AwaitCommand with it).
 //   - The delivered Err text is non-empty.
 //
 // This scenario reuses asyncFailingChildDef / asyncFailingParentDef fixtures
@@ -274,7 +274,7 @@ func TestFailurePathCallActivity(t *testing.T) {
 	// Engine behavior (handleSubInstanceFailed, no matching boundary): finds the
 	// parked token by CommandID, then routes through endInstance — StatusFailed,
 	// open tasks cancelled, FailInstance emitted in the canonical position AFTER
-	// those cancels (ADR-0164 Decision 1 moved it there from FIRST), then all
+	// those cancels (moved there from FIRST), then all
 	// timers/arms cancelled. Tokens are NOT dropped. So the parent must reach
 	// StatusFailed after DrainOnce.
 	notified, err := notifier.DrainOnce(ctx)
@@ -506,7 +506,7 @@ func TestOptOutCallActivityPreservesError(t *testing.T) {
 	// The child instance should exist in the store and be StatusRunning (it
 	// parked at the human task; no async mechanism to continue it). This driver
 	// opts OUT of call-link tracking, so there is no link to resolve the child's
-	// id through — and the id itself is opaque (ADR-0149). List the store and
+	// id through — and the id itself is opaque. List the store and
 	// take the instance that is not the parent.
 	page, listErr := store.List(ctx, kernel.InstanceFilter{})
 	require.NoError(t, listErr)

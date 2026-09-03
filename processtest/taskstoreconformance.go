@@ -21,8 +21,7 @@ import (
 // Only non-fatal assertions are used behind it: there is no FailNow. That is
 // necessary but not sufficient for reporting everything a case finds — the
 // REJECTED leg does report every break it finds, but the LEGAL leg stops at
-// the first one via a plain early `return` (backlog 47); see
-// checkTaskStoreConformance.
+// the first one via a plain early `return`; see checkTaskStoreConformance.
 type conformanceReporter interface {
 	Helper()
 	Errorf(format string, args ...any)
@@ -33,7 +32,7 @@ type conformanceReporter interface {
 // It is what stops the not-listed assertions on the rejected leg from passing
 // vacuously: a store whose AssignedTo and ClaimableBy always return nothing
 // satisfies every one of them for the wrong reason, and passed this entire
-// suite before this existed (ADR-0184).
+// suite before this existed.
 type inboxExpectation int
 
 const (
@@ -162,7 +161,7 @@ func taskStoreConformanceCases() []taskStoreConformanceCase {
 		},
 		{
 			name:     "claimed_by_an_empty_kiosk_claimant_is_accepted",
-			why:      "ADR-0148 amendment 1 §4's kiosk claimant is anonymous but carries roles; rejecting it would break a blessed shape",
+			why:      "a kiosk claimant is anonymous but carries roles; rejecting it would break a legal shape",
 			task:     task("wrkflw-conformance-kiosk", humantask.Claimed, claim(authz.Actor{Roles: []string{"kiosk"}})),
 			legal:    true,
 			listedBy: inboxNone, // the claimant has no ID; there is no inbox to ask about
@@ -188,7 +187,7 @@ func taskStoreConformanceCases() []taskStoreConformanceCase {
 // deviations through t. On the REJECTED leg it never stops early: a store gets
 // told about all of its contract breaks in one run. On the LEGAL leg it DOES
 // stop at the first break — a plain `return` after the Upsert and the Get
-// checks — so a store that fails both sees only the first (backlog 47).
+// checks — so a store that fails both sees only the first.
 func checkTaskStoreConformance(ctx context.Context, t conformanceReporter, store humantask.TaskStore, c taskStoreConformanceCase) {
 	t.Helper()
 
@@ -222,9 +221,9 @@ func checkTaskStoreConformance(ctx context.Context, t conformanceReporter, store
 // neither inbox query. Get alone cannot establish that: a store that writes
 // first and validates afterwards can hide the row from Get — or filter Get
 // differently from its list queries — while AssignedTo and ClaimableBy still
-// return it. That leaked row is the double-listing shape ADR-0183 exists to
-// close, where one task is offered to a claimant AND to everyone eligible to
-// claim it.
+// return it. That leaked row is the double-listing shape the claim invariant
+// exists to close, where one task is offered to a claimant AND to everyone
+// eligible to claim it.
 //
 // ⚠ Which query can discriminate differs per shape, and neither is redundant:
 //   - Unclaimed carrying a claim → BOTH would list it (the double listing);
@@ -257,7 +256,7 @@ func checkTaskStoreRejectedTaskIsNotListed(ctx context.Context, t conformanceRep
 //
 // Without it the not-listed assertions on the rejected leg are VACUOUS: a store
 // whose AssignedTo and ClaimableBy always return nothing satisfies every one of
-// them, and passed this entire suite before ADR-0184. This is the check that
+// them, and passed this entire suite before this existed. This is the check that
 // establishes the queries answer at all, so the negative ones mean something.
 //
 // Shapes declaring inboxNone are skipped rather than asserted absent: a store may
@@ -313,7 +312,7 @@ func taskStoreConformanceIDs(tasks []humantask.HumanTask) []string {
 }
 
 // RunTaskStoreConformance verifies that a [humantask.TaskStore] implementation
-// upholds the contract documented on TaskStore.Upsert (ADR-0183): every task
+// upholds the contract documented on TaskStore.Upsert: every task
 // failing [humantask.Validate] is rejected with [humantask.ErrInvalidTask], and a
 // rejected write persists nothing — neither readable through Get nor listed by
 // AssignedTo or ClaimableBy, the pair of queries that would otherwise offer one
@@ -324,25 +323,25 @@ func taskStoreConformanceIDs(tasks []humantask.HumanTask) []string {
 // not list this row".
 //
 // It also asserts the other half of that contract — the shapes a store must
-// ACCEPT and read back, including ADR-0148 amendment 1 §4's kiosk claim (Claimed
-// with a claimant carrying roles but no ID), and the Completed/Cancelled shapes
+// ACCEPT and read back, including the kiosk claim (Claimed with a claimant
+// carrying roles but no ID), and the Completed/Cancelled shapes
 // that are deliberately unconstrained on the claim axis. A store that rejects
 // everything therefore cannot pass.
 //
-// Since ADR-0184, acceptance is not the whole story: two of the accepted
+// Acceptance is not the whole story: two of the accepted
 // controls must also reach the inbox their shape belongs in. The Unclaimed
 // control must be returned by ClaimableBy for an actor holding the "manager"
 // role (the role its Eligibility grants), and the Claimed control by
 // AssignedTo(its claimant). A store whose list queries always return nothing —
 // conforming on every other check, including the rejected leg's not-listed
 // assertions, which such a store satisfies vacuously — now FAILS these two
-// controls, where before ADR-0184 it passed the whole suite. Over-listing —
+// controls, where before it passed the whole suite. Over-listing —
 // returning a shape from a broader query than the contract requires — is a
 // deliberate NON-GOAL: this helper asserts presence where the contract demands
 // it and absence only for a rejected write, never absence for an accepted shape
 // that simply isn't required to reach a given inbox.
 //
-// Adopting ADR-0183 is a SILENT break for a consumer's own TaskStore: the
+// Adopting this contract is a SILENT break for a consumer's own TaskStore: the
 // interface signature is unchanged, so nothing recompiles differently and a
 // non-conforming store keeps accepting contradictory rows. This helper is how a
 // consumer finds out.

@@ -1,8 +1,8 @@
 package runtime_test
 
-// ADR-0179 Decision 2 — the runtime surface that makes compensation retry
-// REACHABLE. The engine knob is engine.StepOptions.CompensationRetryPolicy; this
-// file pins the ProcessDriver option that threads a consumer's policy into it.
+// The runtime surface that makes compensation retry REACHABLE. The engine knob
+// is engine.StepOptions.CompensationRetryPolicy; this file pins the
+// ProcessDriver option that threads a consumer's policy into it.
 
 import (
 	"context"
@@ -99,14 +99,14 @@ func retrySagaCatalog(rec *callRecorder) action.Catalog {
 // What makes it fail before the option exists: WithCompensationRetryPolicy is
 // undefined, so the file does not compile. Once defined but NOT threaded into the
 // engine.StepOptions literal in ProcessDriver's Step call, the "on" leg still
-// takes ADR-0034 Decision 4's skip-and-advance path — no timer is ever armed and
+// takes the skip-and-advance path — no timer is ever armed and
 // undoA is invoked — which is exactly what the control leg measures. So the two
 // legs cannot both pass unless the policy actually reached the engine.
 func TestWithCompensationRetryPolicyThreadsIntoTheEngine(t *testing.T) {
 	t.Parallel()
 
 	// A control run with the option UNSET must behave exactly as it did before
-	// ADR-0179: undoB fails, the walk SKIPS it and runs undoA, and nothing is
+	// retry existed: undoB fails, the walk SKIPS it and runs undoA, and nothing is
 	// scheduled. That is the "nil disables, and nil is the default" promise,
 	// checked rather than assumed.
 	clkOff := clockwork.NewFakeClock()
@@ -155,7 +155,7 @@ func TestWithCompensationRetryPolicyThreadsIntoTheEngine(t *testing.T) {
 	assert.True(t, on.Armed, "and the failure arms a compensation-retry backoff")
 	assert.Equal(t, clkOn.Now().Add(30*time.Second), on.FireAt,
 		"the backoff is the policy's InitialInterval, undiminished — the compensation path "+
-			"deliberately does not jitter (ADR-0179 Decision 3)")
+			"deliberately does not jitter")
 }
 
 // TestCompensationRetryPolicyIsCopiedFromTheCaller pins the copy-on-call

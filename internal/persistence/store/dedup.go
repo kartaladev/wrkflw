@@ -14,7 +14,7 @@ import (
 
 // Deduper records processed message IDs in wrkflw_processed_message so an
 // at-least-once consumer can achieve exactly-once effect (idempotent-consumer
-// pattern, ADR-0018). This type is dialect-neutral and operates on any backend
+// pattern). This type is dialect-neutral and operates on any backend
 // that provides the wrkflw_processed_message table.
 //
 // The dedup record joins the caller's ambient transaction (via
@@ -25,7 +25,7 @@ type Deduper struct {
 	conn    any // *pgxpool.Pool or *sql.DB
 	dialect dialect.Dialect
 	// clk is the time source for the processed_at stamp written by
-	// [Deduper.Seen] (ADR-0138).
+	// [Deduper.Seen].
 	clk clockwork.Clock
 }
 
@@ -34,7 +34,7 @@ type Deduper struct {
 type DeduperOption func(*Deduper)
 
 // WithDeduperClock overrides the clock used for the processed_at stamp written
-// by [Deduper.Seen] (ADR-0138). The default is [clockwork.NewRealClock]. A nil
+// by [Deduper.Seen]. The default is [clockwork.NewRealClock]. A nil
 // clock is ignored (the default is kept). [Deduper.Prune] is unaffected: its
 // cutoff is supplied by the caller.
 //
@@ -104,7 +104,7 @@ func (d *Deduper) Seen(ctx context.Context, subscriber, messageID string) (first
 	// sub-second precision, while Prune formats its cutoff as fixed-width RFC3339.
 	// Writing processed_at explicitly here ensures the stored string is always in
 	// the same fixed-width form as the cutoff, so lexicographic comparison in
-	// Prune is correct on all backends (ADR-0151).
+	// Prune is correct on all backends.
 	stmt := d.dialect.Rebind(
 		d.dialect.InsertIgnorePrefix() +
 			` INTO wrkflw_processed_message (subscriber, message_id, processed_at)

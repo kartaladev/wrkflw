@@ -62,7 +62,7 @@ func notifierParentDef() *model.ProcessDefinition {
 	}
 }
 
-// TestCallNotifierResumesParkedParent is the headline e2e for Task 4.
+// TestCallNotifierResumesParkedParent is the headline e2e for the CallNotifier.
 //
 // Sequence:
 //  1. Parent calls a child that parks on a human task → parent is StatusRunning.
@@ -106,7 +106,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be StatusRunning (parked at call activity)")
 
 	// The child id is derived from the call command's id, which the driver's
-	// IDGenerator mints (ADR-0149) and is opaque — read it off the recorded link.
+	// IDGenerator mints and is opaque — read it off the recorded link.
 	children, childrenErr := cl.ChildrenOf(ctx, parentID)
 	require.NoError(t, childrenErr)
 	require.Len(t, children, 1, "the parent must have recorded exactly one child link")
@@ -163,7 +163,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 }
 
 // TestNewCallNotifierDefaultClockNoPanic verifies that NewCallNotifier works
-// without a positional clock argument (ADR-0138: clock defaults to clockwork.NewRealClock()).
+// without a positional clock argument (the clock defaults to clockwork.NewRealClock()).
 func TestNewCallNotifierDefaultClockNoPanic(t *testing.T) {
 	cl := kernel.NewMemCallLinkStore()
 	deliver := calllink.CallDeliverFunc(func(_ context.Context, _ *model.ProcessDefinition, _ string, _ engine.Trigger) error {
@@ -176,7 +176,7 @@ func TestNewCallNotifierDefaultClockNoPanic(t *testing.T) {
 }
 
 // TestNewCallNotifierWithClockOption verifies that WithClock injects
-// a fake clock whose time flows into delivered trigger timestamps (ADR-0138).
+// a fake clock whose time flows into delivered trigger timestamps.
 func TestNewCallNotifierWithClockOption(t *testing.T) {
 	ctx := t.Context()
 
@@ -235,7 +235,7 @@ func (s *drainSignalingCallLinkStore) ClaimPending(ctx context.Context, limit in
 }
 
 // TestCallNotifier_TickIsClockDriven proves Run's poll ticker is routed
-// through the injected clock (ADR-0138): under a clockwork.FakeClock, no wall
+// through the injected clock: under a clockwork.FakeClock, no wall
 // time passes, so only fc.Advance(poll) — not real time — can produce the
 // second drain.
 func TestCallNotifier_TickIsClockDriven(t *testing.T) {
@@ -376,12 +376,12 @@ func terminalParentDef() *model.ProcessDefinition {
 }
 
 // TestCallNotifierRetiresLinkWhenParentIsTerminal pins the CROSS-LAYER contract
-// that ADR-0164's terminal guard on handleSubInstanceCompleted depends on.
+// that the terminal guard on handleSubInstanceCompleted depends on.
 //
 // DrainOnce keys its idempotency off the delivery error
 // (runtime/calllink/notifier.go): it retries only when the error is non-nil AND
 // not engine.ErrTokenNotFound, and marks the link notified on success OR
-// ErrTokenNotFound alike. Before ADR-0164 a terminal parent produced
+// ErrTokenNotFound alike. Previously a terminal parent produced
 // ErrTokenNotFound (or, worse, silently resumed); it now produces a nil error
 // from the guard. Both land on the SAME branch, so the link is still retired.
 //
@@ -491,7 +491,7 @@ func TestCallNotifierRetiresLinkWhenParentIsTerminal(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusFailed, parentAfter.Status,
 		"the parent must still be Failed: a child completing after its parent died "+
-			"must never flip the parent to Completed (ADR-0164)")
+			"must never flip the parent to Completed")
 	assert.NotContains(t, parentAfter.Variables, "childResult",
 		"a dead parent must not absorb the child's output either")
 }

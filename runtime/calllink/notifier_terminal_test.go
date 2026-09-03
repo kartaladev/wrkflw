@@ -19,7 +19,7 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
-// ── ADR-0165 cross-layer pins ────────────────────────────────────────────────
+// ── Cross-layer pins ─────────────────────────────────────────────────────────
 //
 // SubInstanceCompleted and SubInstanceFailed are classified rejectSilently, so
 // engine.Step returns (state, nil) — not an error — when the parent instance is
@@ -87,7 +87,7 @@ func (s *stubCallLinkStore) ListRunningChildren(context.Context, string) ([]kern
 
 // TestCallNotifierMarksLinkNotifiedWhenParentIsTerminal pins the cross-layer
 // consequence of classifying SubInstanceCompleted / SubInstanceFailed as
-// rejectSilently (ADR-0165): a terminal parent absorbs the resume trigger with a
+// rejectSilently: a terminal parent absorbs the resume trigger with a
 // nil error, so DrainOnce takes its SUCCESS arm and the durable link stops being
 // re-claimed. Were either trigger reclassified to rejectWithError, delivery
 // would return engine.ErrInstanceTerminal — not engine.ErrTokenNotFound — and
@@ -216,7 +216,7 @@ func TestCallNotifierMarksLinkNotifiedWhenParentIsTerminal(t *testing.T) {
 	}
 }
 
-// TestTerminalSentinelsAreSiblingsNotNested pins the shape of the two ADR-0165
+// TestTerminalSentinelsAreSiblingsNotNested pins the shape of the two terminal
 // sentinels relative to the one CallNotifier.DrainOnce keys on.
 //
 // engine.ErrInstanceTerminal, engine.ErrTaskNotOpen and engine.ErrTokenNotFound
@@ -271,7 +271,7 @@ func TestTerminalSentinelsAreSiblingsNotNested(t *testing.T) {
 			name:   "ErrInstanceTerminal does not wrap ErrTaskNotOpen",
 			err:    engine.ErrInstanceTerminal,
 			target: engine.ErrTaskNotOpen,
-			assert: mustNotMatch("the two ADR-0165 sentinels are siblings of each other too"),
+			assert: mustNotMatch("the two terminal sentinels are siblings of each other too"),
 		},
 		{
 			name:   "ErrInstanceTerminal wraps ErrInvalidTransition",

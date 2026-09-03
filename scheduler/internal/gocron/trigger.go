@@ -96,7 +96,7 @@ func Cron(expr string) TriggerDef { return TriggerDef{kind: triggerDefCron, cron
 // Daily builds a recurring TriggerDef that fires every interval days,
 // optionally at specified wall-clock times. The live scheduler resolves
 // these in its configured location — time.UTC by default, or the zone set
-// via WithLocation (ADR-0136). Omitting at defaults to midnight.
+// via WithLocation. Omitting at defaults to midnight.
 func Daily(interval uint, at ...ClockTime) TriggerDef {
 	return TriggerDef{kind: triggerDefDaily, interval: interval, atTimes: at}
 }
@@ -104,8 +104,8 @@ func Daily(interval uint, at ...ClockTime) TriggerDef {
 // Weekly builds a recurring TriggerDef that fires every interval weeks on
 // the given weekdays, optionally at specified wall-clock times. The live
 // scheduler resolves these in its configured location — time.UTC by
-// default, or the zone set via WithLocation (ADR-0136). Omitting at
-// defaults to midnight.
+// default, or the zone set via WithLocation. Omitting at defaults to
+// midnight.
 func Weekly(interval uint, days []time.Weekday, at ...ClockTime) TriggerDef {
 	return TriggerDef{kind: triggerDefWeekly, interval: interval, weekdays: days, atTimes: at}
 }
@@ -113,8 +113,8 @@ func Weekly(interval uint, days []time.Weekday, at ...ClockTime) TriggerDef {
 // Monthly builds a recurring TriggerDef that fires every interval months on
 // the given days of the month, optionally at specified wall-clock times. The
 // live scheduler resolves these in its configured location — time.UTC by
-// default, or the zone set via WithLocation (ADR-0136). Omitting at defaults
-// to midnight.
+// default, or the zone set via WithLocation. Omitting at defaults to
+// midnight.
 func Monthly(interval uint, days []int, at ...ClockTime) TriggerDef {
 	return TriggerDef{kind: triggerDefMonthly, interval: interval, days: days, atTimes: at}
 }

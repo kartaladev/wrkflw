@@ -219,7 +219,7 @@ func TestBoundaryActionFireOnce(t *testing.T) {
 	}
 }
 
-// TestBoundaryActionFireOnErrorBoundary verifies Fix 1: when an error boundary
+// TestBoundaryActionFireOnErrorBoundary verifies that when an error boundary
 // carries WithBoundaryAction("notify"), the fire-once InvokeAction is emitted
 // (FireAndForget:true) when the error is caught — for BOTH direct-attachment
 // (ActionFailed on root-level svc) and enclosing-scope (error escapes from

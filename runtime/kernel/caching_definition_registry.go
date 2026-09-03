@@ -30,7 +30,7 @@ type cacheEntry struct {
 //     via [singleflight.Group].
 //   - Error responses (including [ErrDefinitionNotFound]) are NOT cached so that
 //     transient failures do not persist beyond the next call.
-//   - TTL is measured using the injected [clockwork.Clock] (per ADR-0138); callers
+//   - TTL is measured using the injected [clockwork.Clock]; callers
 //     may pass a fake clock in tests to advance time deterministically.
 //
 // Definitions are immutable per (defID, version), so caching them without

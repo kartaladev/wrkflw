@@ -19,7 +19,7 @@ import (
 )
 
 // ChainEvent is the broker-agnostic input to a chaining decision, projected from
-// a terminal outbox event (ADR-0045). The watermill adapter (eventing) builds it
+// a terminal outbox event. The watermill adapter (eventing) builds it
 // from the message topic + metadata + body; the runtime core never sees
 // watermill.
 type ChainEvent struct {
@@ -27,7 +27,7 @@ type ChainEvent struct {
 	PredecessorID string
 	// PredecessorDefinitionRef is the id:version reference of the instance that
 	// reached a terminal state, carried end-to-end through the outbox by the
-	// built-in publisher/relay (ADR-0047) so a SuccessorPolicy can route on the
+	// built-in publisher/relay so a SuccessorPolicy can route on the
 	// predecessor's definition. It is the zero Qualifier when a consumer pipeline
 	// does not set the "definition_ref" metadata key.
 	PredecessorDefinitionRef model.Qualifier
@@ -57,7 +57,7 @@ type InstanceStarter interface {
 	Drive(ctx context.Context, def *model.ProcessDefinition, instanceID string, vars map[string]any) (engine.InstanceState, error)
 }
 
-// Chainer is the broker-agnostic process-instance chaining core (ADR-0045). It
+// Chainer is the broker-agnostic process-instance chaining core. It
 // applies a SuccessorPolicy to a terminal ChainEvent and, when a successor is
 // decided, records the lineage link then starts the successor as a fresh,
 // independent root instance. It is idempotent and safe under at-least-once

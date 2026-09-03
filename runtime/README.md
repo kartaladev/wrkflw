@@ -36,7 +36,7 @@ The package also provides:
 ## Package layout
 
 `runtime` is decomposed into concept-oriented sub-packages with a strictly
-one-directional import graph (ADR-0087). Import direction:
+one-directional import graph. Import direction:
 `kernel ← {calllink, chain, signal, task, monitor}`; `kernel, signal ← runtime`
 (root); `view` is an independent leaf.
 
@@ -52,7 +52,7 @@ one-directional import graph (ADR-0087). Import direction:
 | `view` | `.../runtime/view` | `InstanceSnapshot` / `ActionableView` read-model DTOs and `StatusString`. Independent leaf (imports only `engine`/`definition`/`humantask`). |
 
 The reference driver type is `ProcessDriver` (constructed with
-`runtime.NewProcessDriver`); it was named `Runner` before ADR-0087.
+`runtime.NewProcessDriver`); it was named `Runner` in earlier releases.
 
 ## Quickstart
 
@@ -202,7 +202,7 @@ to resume a parked instance:
 err := r.DeliverMessage(ctx, messageName, correlationKey, payload)
 ```
 
-Def-less (ADR-0121): correlates to the single instance currently waiting for a
+Def-less: correlates to the single instance currently waiting for a
 `ReceiveTask` or message catch event with the given name and correlation key and
 delivers a `MessageReceived` trigger to it. On a miss, creates a new instance at
 the unique registered message-start matching `messageName`, deterministically
@@ -242,7 +242,7 @@ Re-arms every persisted armed timer on the scheduler. Requires `WithScheduler`,
 the past fires immediately; a re-fire of an already-consumed timer is an
 idempotent engine no-op.
 
-> **Self-rehydration (ADR-0102, ADR-0134).** When you use the driver's own
+> **Self-rehydration.** When you use the driver's own
 > default scheduler (i.e. you did not pass `WithScheduler`), the scheduler
 > **self-rehydrates all armed timers automatically on `ProcessDriver.Start(ctx)`**
 > via `scheduler.JobStore.Load`. This is wired internally through a provider
@@ -555,7 +555,7 @@ if err != nil { log.Fatal(err) }
 
 The production `InstanceStore` implementation lives in the neutral
 `internal/persistence/store` parametrized by an `internal/persistence/dialect` (Postgres,
-MySQL, or SQLite — ADR-0081/0082). It satisfies the `kernel.InstanceStore` interface.
+MySQL, or SQLite). It satisfies the `kernel.InstanceStore` interface.
 Wire it via the `persistence` package's exported constructors — consumers do not import
 `internal/` directly:
 
@@ -570,7 +570,7 @@ All three backends expose relay/lister/store constructors: `New*` (unprefixed) f
 ## Process-instance chaining
 
 Chaining automatically starts a new, **independent** top-level instance when
-another reaches a terminal state — completed, failed, or terminated (ADR-0045).
+another reaches a terminal state — completed, failed, or terminated.
 The predecessor fully ends and releases its resources; the successor is a fresh
 root instance that outlives it. This is *not* the parent→child nesting of an
 async call activity (`StartSubInstance`); it is sequential chaining of
@@ -584,7 +584,7 @@ and returns a `SuccessorDecision`:
 | Field | Type | Description |
 |---|---|---|
 | `PredecessorID` | `string` | The instance that reached a terminal state. |
-| `PredecessorDefinitionRef` | `string` | The `"defID:version"` of the predecessor, carried end-to-end through the outbox (ADR-0047) so a policy can route on the predecessor's definition. Empty only for pre-ADR-0047 events. |
+| `PredecessorDefinitionRef` | `string` | The `"defID:version"` of the predecessor, carried end-to-end through the outbox so a policy can route on the predecessor's definition. Empty only for events emitted by older releases. |
 | `Outcome` | `ChainOutcome` | The terminal outcome that fired the event (`OutcomeCompleted` / `OutcomeFailed` / `OutcomeTerminated`). |
 | `Result` | `map[string]any` | The event payload: terminal variables (completed) or `{"error": …}` (failed/terminated). |
 
@@ -627,7 +627,7 @@ watermill stays in `eventing`; `runtime` never imports it. `Handle` is
 idempotent — a redelivered terminal event is a clean no-op. See
 [`ExampleChainer`](chainer_example_test.go).
 
-> **Terminal events are status-accurate (ADR-0046).** Each terminal status emits
+> **Terminal events are status-accurate.** Each terminal status emits
 > exactly one event: completed→`instance.completed`, failed→`instance.failed`,
 > terminated→`instance.terminated`. A cancelled instance now emits
 > `instance.terminated` (previously `instance.failed`), and an admin full-rollback

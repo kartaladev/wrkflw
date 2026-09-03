@@ -79,7 +79,7 @@ type triggerEnvelope struct {
 	Jitter            float64        `json:"jitter,omitempty"`
 	IncidentID        string         `json:"incident_id,omitempty"`
 	AddAttempts       int            `json:"add_attempts,omitempty"`
-	// Disposition is ADR-0175's retry/skip/abandon selector.
+	// Disposition is the retry/skip/abandon selector.
 	//
 	// A POINTER, so the two requirements hold together: omitempty keeps the field
 	// out of the other 16 kinds' payloads (this envelope is shared by all of

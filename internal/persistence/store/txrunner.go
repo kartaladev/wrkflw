@@ -8,7 +8,7 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
-// Compile-time check: *Store satisfies the TxRunner capability (ADR-0134).
+// Compile-time check: *Store satisfies the TxRunner capability.
 var _ kernel.TxRunner = (*Store)(nil)
 
 // RunInTx runs fn inside one store transaction: every write method invoked
@@ -35,7 +35,7 @@ func (s *Store) RunInTx(ctx context.Context, fn func(context.Context) error) err
 		return err
 	}
 
-	// Rollback-only detection (ADR-0134): a joined participant's Rollback marks
+	// Rollback-only detection: a joined participant's Rollback marks
 	// the unit rollback-only; the owner Commit would then roll back and return
 	// nil. Surface that as an error — success must mean COMMITTED.
 	if transaction.RollbackOnly(txCtx) {

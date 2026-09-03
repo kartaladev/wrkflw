@@ -107,7 +107,7 @@ type TimerStatsCollector struct {
 // now, in whole seconds, clamped at zero.
 //
 // Three inputs must all clamp rather than subtract. nextFireAt is nil when no
-// timer is armed at all; a stored row can carry the zero time (ADR-0181), which
+// timer is armed at all; a stored row can carry the zero time, which
 // would otherwise report a ~2000-year age; and a HEALTHY timer is in the future,
 // which would otherwise report a negative age. Zero therefore means "nothing is
 // late", and is the value a well-behaved scheduler emits continuously.

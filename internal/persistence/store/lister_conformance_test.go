@@ -219,7 +219,7 @@ func TestListerProjectsFields(t *testing.T) {
 }
 
 // TestListerStartedAtUTC verifies that StartedAt survives the round-trip with UTC location
-// on all dialects (ADR-0080). Uses a non-UTC timezone for the test.
+// on all dialects. Uses a non-UTC timezone for the test.
 func TestListerStartedAtUTC(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
 		s, err := store.New(b.conn, b.dialect)

@@ -92,7 +92,7 @@ func TestActorFromContextClonesOnTheWayOut(t *testing.T) {
 
 // TestActorContextCloneDepth pins what the seam ACTUALLY guarantees. Actor.Clone
 // clones Attributes ONE LEVEL DEEP by its own godoc, so a nested value stays
-// shared. ADR-0189 states this rather than claiming full isolation — and the
+// shared. That is the stated contract rather than full isolation — and the
 // transport seam deep-copies separately, which is what makes the per-request
 // marshal safe.
 func TestActorContextCloneDepth(t *testing.T) {

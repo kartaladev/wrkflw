@@ -1,7 +1,7 @@
 package engine_test
 
-// reverse_instance_test.go — black-box tests for Task 3 (ADR-0109): the core
-// engine change that turns a FULL compensation walk carrying a ReverseNode into
+// reverse_instance_test.go — black-box tests for the core engine change that
+// turns a FULL compensation walk carrying a ReverseNode into
 // a resume-at-start (StatusRunning, optional var reset) instead of terminating.
 // The cancel/error terminate path (full walk with NO ReverseNode) must remain
 // behaviorally identical — TestFullCompensation_WithoutReverse_StillTerminates
@@ -46,9 +46,9 @@ func findInvokeActionID(t *testing.T, cmds []engine.Command, name string) string
 // completed by the tests below: driving the "do" action to completion
 // auto-advances the token onto "park" and stops there, so the instance is
 // StatusRunning (not Completed) — with svc's compensation already recorded —
-// by the time a reverse is requested. This is the shape Fork A's terminal
-// guard (ADR-0109 hardening) requires: reverse only ever needs to work
-// against a Running instance.
+// by the time a reverse is requested. This is the shape the reverse
+// terminal-instance guard requires: reverse only ever needs to work against a
+// Running instance.
 func reverseSvcDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-rev", Version: 1,
@@ -87,9 +87,9 @@ func TestReverseToStart_ResumesAtStartWithResetVars(t *testing.T) {
 	// Precondition for the reverse below: the flow auto-drives svc -> park within
 	// the same Step call, and park's InvokeAction is deliberately left uncompleted,
 	// so the instance is RUNNING (parked on "park") — not completed — when reverse
-	// is requested. This is the shape Fork A's terminal guard requires: reverse
-	// must work against a Running instance that already carries compensation
-	// records.
+	// is requested. This is the shape the reverse terminal-instance guard
+	// requires: reverse must work against a Running instance that already
+	// carries compensation records.
 	require.Equal(t, engine.StatusRunning, r2.State.Status, "instance must be running (parked) before reverse")
 	require.Nil(t, r2.State.EndedAt, "running instance must not have EndedAt stamped")
 
@@ -178,11 +178,11 @@ func TestReverseToStart_ZeroRecords_StillResumesAtStart(t *testing.T) {
 // records, same NodeID "svc"). "park" is a plain (non-compensable) ServiceTask
 // whose InvokeAction is intentionally never completed: exiting the loop drives
 // the token onto "park" and stops there, so the driven-to-completion state is
-// StatusRunning (parked), not Completed — the shape Fork A's terminal guard
-// requires. This shape lets a single such state serve two different reverse
-// scenarios below: a FULL reverse (walks all 4 records: prep, svc, svc, svc)
-// and a PARTIAL reverse targeting "prep" (walks only the 3 svc records,
-// excluding — but retaining — prep's own).
+// StatusRunning (parked), not Completed — the shape the reverse
+// terminal-instance guard requires. This shape lets a single such state serve
+// two different reverse scenarios below: a FULL reverse (walks all 4 records:
+// prep, svc, svc, svc) and a PARTIAL reverse targeting "prep" (walks only the
+// 3 svc records, excluding — but retaining — prep's own).
 func reverseLoopDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-rev-loop", Version: 1,
@@ -429,8 +429,8 @@ func reverseCompletableDef() *model.ProcessDefinition {
 	}
 }
 
-// TestReverseToStart_RejectsTerminalInstance is the Fork A (ADR-0109 hardening)
-// regression: a reverse trigger (NewReverseToStart, i.e. CompensateRequested
+// TestReverseToStart_RejectsTerminalInstance pins the terminal-instance guard
+// on reverse: a reverse trigger (NewReverseToStart, i.e. CompensateRequested
 // with ReverseNode != "") against an already-terminal instance (Completed,
 // Failed, or Terminated) must return a workflow-engine error instead of
 // silently resurrecting the instance. This closes the TOCTOU race between the
@@ -517,8 +517,8 @@ func TestReverseToStart_RejectsTerminalInstance(t *testing.T) {
 	}
 }
 
-// TestCompensateRequested_DuringActiveWalk is the Fork C (ADR-0109 hardening)
-// regression: stepCompensateRequested's mid-walk guard (StatusCompensating &&
+// TestCompensateRequested_DuringActiveWalk is the mid-walk-guard regression:
+// stepCompensateRequested's mid-walk guard (StatusCompensating &&
 // ActiveCmdID != "") today silently no-ops ANY CompensateRequested delivered
 // while a compensation walk is already in flight — including a reverse
 // trigger (ReverseNode != ""). The runtime facade admits a reverse against a
@@ -572,8 +572,8 @@ func TestCompensateRequested_DuringActiveWalk(t *testing.T) {
 			},
 		},
 		{
-			// FU#1 sharpened this: WithTargetNode(X) emits NewReverseToNode, which
-			// sets RestoreTargetVars (not ReverseNode). Before this case's fix, the
+			// WithTargetNode(X) emits NewReverseToNode, which sets RestoreTargetVars
+			// (not ReverseNode). Before this case's fix, the
 			// mid-walk guard only recognized ReverseNode != "" as facade-originated
 			// reverse intent, so a target reverse arriving mid-walk fell through to
 			// the silent no-op below — the caller believed ReverseInstance(id,
@@ -618,9 +618,9 @@ func TestCompensateRequested_DuringActiveWalk(t *testing.T) {
 	}
 }
 
-// TestReverseToStart_CancelMidWalk_TerminatesNotResumes is the Fork B (ADR-0109
-// hardening, #2) regression: a CancelRequested delivered while a full REVERSE
-// walk is mid-flight must PREEMPT the reverse — the instance terminates
+// TestReverseToStart_CancelMidWalk_TerminatesNotResumes is the
+// cancel-preempts-reverse regression: a CancelRequested delivered while a full
+// REVERSE walk is mid-flight must PREEMPT the reverse — the instance terminates
 // (StatusTerminated + FailInstance{"cancelled"}) instead of resuming Running at
 // start.
 //
@@ -692,7 +692,7 @@ func TestReverseToStart_CancelMidWalk_TerminatesNotResumes(t *testing.T) {
 // park node, the shape used throughout this file), so an instance can be driven
 // into StatusRunning (parked, compensation recorded) with a root-level,
 // TIMER-triggered event sub-process armed. The event sub-process is an
-// activity.SubProcess with an event-triggered inner start (ADR-0122), with NO
+// activity.SubProcess with an event-triggered inner start, with NO
 // incoming sequence flow:
 //
 //	start → svc(compensable) → park → end
@@ -732,8 +732,8 @@ func reverseWithRootESPDef() *model.ProcessDefinition {
 	}
 }
 
-// TestReverseToStart_RearmsRootEventSubprocess is the Fork D (ADR-0109
-// hardening, finding #1) regression: a full reverse (WithFullReverse) resets
+// TestReverseToStart_RearmsRootEventSubprocess is the root-ESP re-arm
+// regression: a full reverse (WithFullReverse) resets
 // the instance to start and re-runs it, but the resume path never re-arms
 // ROOT-scope event sub-processes the way a genuine handleStartInstance does
 // (armEventTriggeredSubprocesses(def, s, "", at, eval)) — so a root-level ESP's timer
@@ -799,8 +799,8 @@ func TestReverseToStart_RearmsRootEventSubprocess(t *testing.T) {
 		"re-armed root-ESP arm must carry a freshly minted TimerID, not the stale original")
 }
 
-// TestCompensateRequested_ResetVarsWithoutReverseNode is the T6 (ADR-0109
-// hardening, finding #5) regression: CompensateRequested is a public,
+// TestCompensateRequested_ResetVarsWithoutReverseNode is the T6 regression:
+// CompensateRequested is a public,
 // directly-constructible struct, so a caller can build one by hand expressing
 // reverse intent (ResetVars: true) while leaving ReverseNode empty — e.g.
 // engine.CompensateRequested{ResetVars: true} — instead of going through
@@ -862,8 +862,9 @@ func TestCompensateRequested_ResetVarsWithoutReverseNode(t *testing.T) {
 	assert.Equal(t, wantRecords, before.RootCompensations, "caller's compensation records must be unchanged after a rejected trigger")
 }
 
-// TestCompensateRequested_RestoreTargetVarsWithoutToNode is the F1.2 (FU#1)
-// regression: CompensateRequested is a public, directly-constructible struct,
+// TestCompensateRequested_RestoreTargetVarsWithoutToNode is the
+// hand-built-trigger regression: CompensateRequested is a public,
+// directly-constructible struct,
 // so a caller can build one by hand expressing target-reverse intent
 // (RestoreTargetVars: true) while leaving ToNode empty — e.g.
 // engine.CompensateRequested{RestoreTargetVars: true} — instead of going
@@ -921,8 +922,9 @@ func TestCompensateRequested_RestoreTargetVarsWithoutToNode(t *testing.T) {
 	assert.Equal(t, wantRecords, before.RootCompensations, "caller's compensation records must be unchanged after a rejected trigger")
 }
 
-// TestCancelRequestedTerminate_CancelsRootEventSubprocessTimer is the FU#2 /
-// Task F2.2 regression: a CancelRequested arriving while compensation records
+// TestCancelRequestedTerminate_CancelsRootEventSubprocessTimer is the
+// applyTerminate ESP-drain regression: a CancelRequested arriving while
+// compensation records
 // exist runs the compensation walk to a TERMINATE finish (applyTerminate,
 // step_compensation.go), which sweeps s.Timers and s.ArmedEvents/s.Boundaries
 // (cancelAllTimers / cancelAllArmsAndBoundaries) but — before this fix — never
@@ -965,9 +967,10 @@ func TestCancelRequestedTerminate_CancelsRootEventSubprocessTimer(t *testing.T) 
 		"applyTerminate must cancel the surviving root-ESP timer, not just the walk's own timers/arms")
 }
 
-// TestImmediateTerminatePaths_CancelRootEventSubprocessTimer is the FU#2 /
-// Task F2.3 regression: the two "immediate" (no compensation records)
-// terminal paths — handleCancelRequested's no-records branch (step_triggers.go)
+// TestImmediateTerminatePaths_CancelRootEventSubprocessTimer is the
+// immediate-terminate ESP-drain regression: the two "immediate" (no
+// compensation records) terminal paths — handleCancelRequested's no-records
+// branch (step_triggers.go)
 // and propagateError's no-records unhandled-error branch (step_errors.go) —
 // both sweep s.Timers and s.ArmedEvents/s.Boundaries but, before this fix,
 // never drained s.EventTriggeredSubprocesses, leaking a root-level timer-armed event
@@ -1064,14 +1067,15 @@ func rootESPWithCallActivityDef() *model.ProcessDefinition {
 	}
 }
 
-// TestSubInstanceFailedTerminate_CancelsRootEventSubprocessTimer is the FU#2 /
-// Task F2.4 regression (a 4th terminal site found by whole-branch review):
+// TestSubInstanceFailedTerminate_CancelsRootEventSubprocessTimer is the
+// SubInstanceFailed ESP-drain regression (a 4th terminal site found by
+// whole-branch review):
 // handleSubInstanceFailed (a parent instance fails because a child
 // call-activity's sub-instance failed) sweeps s.Timers and
 // s.ArmedEvents/s.Boundaries via cancelAllTimers + cancelAllArmsAndBoundaries
 // but, before this fix, never drained s.EventTriggeredSubprocesses — leaking a
 // root-level, timer-armed event sub-process's scheduled timer past this
-// terminal path, the same class of leak FU#2 fixed at the other three sites.
+// terminal path, the same class of leak fixed at the other three sites.
 func TestSubInstanceFailedTerminate_CancelsRootEventSubprocessTimer(t *testing.T) {
 	t0 := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
 	def := rootESPWithCallActivityDef()
@@ -1103,8 +1107,8 @@ func TestSubInstanceFailedTerminate_CancelsRootEventSubprocessTimer(t *testing.T
 		"SubInstanceFailed terminate must cancel the surviving root-ESP timer")
 }
 
-// TestReverseToNode_RestoresTargetStartOfVisitVariables (FU#1, Task F1.3) pins the
-// CORE contract: a NewReverseToNode(at, X) — carrying RestoreTargetVars — restores
+// TestReverseToNode_RestoresTargetStartOfVisitVariables pins the CORE
+// contract: a NewReverseToNode(at, X) — carrying RestoreTargetVars — restores
 // s.Variables to X's OWN start-of-visit snapshot (the Input captured on X's
 // compensation record, i.e. the variables as they stood when execution first
 // arrived at X, before X ran) when the partial-rollback walk resumes at X. A raw

@@ -29,8 +29,8 @@ func topicsOf(evs []kernel.OutboxEvent) []string {
 	return out
 }
 
-// TestCancelEmitsInstanceTerminated is the ADR-0046 regression: a cancelled
-// instance reaches StatusTerminated and must publish a single
+// TestCancelEmitsInstanceTerminated is the terminal-event regression: a
+// cancelled instance reaches StatusTerminated and must publish a single
 // "instance.terminated" event — NOT the old, status-inaccurate "instance.failed".
 func TestCancelEmitsInstanceTerminated(t *testing.T) {
 	fc := clockwork.NewFakeClock()
@@ -63,7 +63,7 @@ func TestCancelEmitsInstanceTerminated(t *testing.T) {
 
 	topics := topicsOf(store.Events())
 	assert.Contains(t, topics, "instance.terminated", "cancel must emit instance.terminated")
-	assert.NotContains(t, topics, "instance.failed", "cancel must NOT emit instance.failed (ADR-0046)")
+	assert.NotContains(t, topics, "instance.failed", "cancel must NOT emit instance.failed")
 }
 
 // TestCompleteEmitsInstanceCompleted guards the unchanged happy path: a normally

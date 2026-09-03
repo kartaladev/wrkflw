@@ -2,7 +2,7 @@ package engine
 
 // step_cancel_test.go — white-box tests for cancelTokenWaits.
 //
-// ADR-0152 regression: cancelTokenWaits sweeps a token's waits by task key
+// Empty-key regression: cancelTokenWaits sweeps a token's waits by task key
 // (tok.AwaitCommand). A token parked on a signal/message, or simply active, has an
 // empty AwaitCommand. Because TimerRetry records carry no TaskID, an unguarded sweep
 // matched every retry timer in the INSTANCE — including retries owned by tokens in

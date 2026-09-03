@@ -32,7 +32,7 @@ type ActionableTask struct {
 	// Claim records who claimed the task and when; nil when unclaimed.
 	Claim *humantask.Claim `json:"claim,omitempty"`
 	// Candidates holds the resolved actors eligible to act on this task, rendered
-	// verbatim as {id, roles, attributes} (ADR-0147).
+	// verbatim as {id, roles, attributes}.
 	Candidates []authz.Actor `json:"candidates,omitempty"`
 	// AllowedActions lists the outgoing sequence flows from this task's node,
 	// derived from the process definition. When def is nil, this is nil (no

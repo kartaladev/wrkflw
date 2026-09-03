@@ -1,4 +1,4 @@
-// Package main demonstrates the unified force-termination End event (ADR-0119):
+// Package main demonstrates the unified force-termination End event:
 // an EndEvent built with event.WithForceTermination ends the WHOLE instance the
 // moment a token reaches it, sweeping every other in-flight branch — not just
 // the branch that reached the end.
@@ -71,7 +71,7 @@ func abortRun(ctx context.Context) {
 
 	driver := newDriver()
 
-	fmt.Println("--- Loan Review: Force-Termination Abort (ADR-0119) ---")
+	fmt.Println("--- Loan Review: Force-Termination Abort ---")
 	const instanceID = "loan-review-abort-001"
 	final, err := driver.Drive(ctx, def, instanceID, nil)
 	if err != nil {

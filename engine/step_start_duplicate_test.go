@@ -1,11 +1,11 @@
 package engine_test
 
-// step_start_duplicate_test.go — ADR-0180 decision 1: a second StartInstance on an
+// step_start_duplicate_test.go — a second StartInstance on an
 // already-started instance is refused instead of superimposing a second start.
 //
 // Measured on `main` before the guard: Step(StartInstance) on a live instance
 // returned err=<nil> and took tokens 1 → 2, tasks 1 → 2, overwriting
-// StartVariables. See docs/specs/2026-08-13-engine-visibility-and-truthfulness.md §3a.
+// StartVariables.
 
 import (
 	"testing"
@@ -40,10 +40,10 @@ func startGuardDef() *model.ProcessDefinition {
 	}
 }
 
-// TestSecondStartInstanceIsRefused pins ADR-0180 decision 1 across the three rows
-// the audit demanded. Rows (a) and (b) pass under a StartedAt-only predicate;
-// row (c) is the one that fails it, because engine.Step is public API and the
-// caller supplies the trigger's OccurredAt — a zero one leaves StartedAt.IsZero().
+// TestSecondStartInstanceIsRefused pins the refusal across three rows. Rows (a)
+// and (b) pass under a StartedAt-only predicate; row (c) is the one that fails
+// it, because engine.Step is public API and the caller supplies the trigger's
+// OccurredAt — a zero one leaves StartedAt.IsZero().
 func TestSecondStartInstanceIsRefused(t *testing.T) {
 	t.Parallel()
 

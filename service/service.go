@@ -66,7 +66,7 @@ type Messaging interface {
 
 	// DeliverMessage routes a message to a waiting instance via the driver's
 	// internal message-waiter table, or starts a new instance from a unique
-	// message-start event when none is waiting (ADR-0121). The definition is
+	// message-start event when none is waiting. The definition is
 	// resolved by the driver, not supplied by the caller.
 	DeliverMessage(ctx context.Context, req DeliverMessageRequest) error
 }
@@ -83,7 +83,7 @@ type InstanceOps interface {
 	ResolveIncident(ctx context.Context, req ResolveIncidentRequest) (ProcessInstance, error)
 
 	// ResolveCompensationStall applies an operator's escape from a compensation
-	// walk whose dispatched action stopped reporting back (ADR-0175): retry
+	// walk whose dispatched action stopped reporting back: retry
 	// re-dispatches the stalled record, skip gives it up and advances the walk,
 	// and abandon ends the walk and terminates the instance.
 	//
@@ -101,7 +101,7 @@ type InstanceOps interface {
 	// instance has already reached a terminal state, and also when the engine
 	// DROPPED the cancel because an admin partial rollback owns the instance —
 	// that cancel will never terminate anything, and the caller is told so rather
-	// than given a 200 for nothing (ADR-0180).
+	// than given a 200 for nothing.
 	CancelInstance(ctx context.Context, req CancelInstanceRequest) (ProcessInstance, error)
 }
 
@@ -382,10 +382,9 @@ func (e *ProcessEngine) DeliverSignal(ctx context.Context, req DeliverSignalRequ
 		// No ErrInvalidTransition classification here: SignalReceived uses
 		// broadcast semantics in the engine — a non-empty signal name matching
 		// no awaiting token is a clean no-op, never a wrong-state error, and
-		// there is nothing to reclassify on this path (see ADR-0026). Since
-		// ADR-0152 an EMPTY signal name is no longer part of that no-op case:
-		// it is rejected upstream by Step as engine.ErrEmptyTriggerKey, which
-		// surfaces here unmodified.
+		// there is nothing to reclassify on this path. An EMPTY signal name is
+		// no longer part of that no-op case: it is rejected upstream by Step as
+		// engine.ErrEmptyTriggerKey, which surfaces here unmodified.
 		return nil, fmt.Errorf("workflow-service: deliver signal: %w", err)
 	}
 	return e.instance(def, newSt), nil
@@ -393,7 +392,7 @@ func (e *ProcessEngine) DeliverSignal(ctx context.Context, req DeliverSignalRequ
 
 // DeliverMessage routes a message to a waiting instance via the driver's
 // message-waiter table, or starts a new instance from a unique message-start
-// event when none is waiting (ADR-0121). The driver resolves the definition
+// event when none is waiting. The driver resolves the definition
 // itself — from the correlated instance's own snapshot, or from the registered
 // message-start definitions — so the caller supplies no def reference.
 // No-op when the message matches neither a waiting instance nor a message-start.
@@ -401,7 +400,7 @@ func (e *ProcessEngine) DeliverMessage(ctx context.Context, req DeliverMessageRe
 	if err := e.driver.DeliverMessage(ctx, req.Name, req.CorrelationKey, req.Payload); err != nil {
 		// No ErrInvalidTransition classification here: DeliverMessage routes via
 		// the driver's waiter table and no-ops when no instance is waiting, so a
-		// wrong-state error is not produced on this path (see ADR-0026).
+		// wrong-state error is not produced on this path.
 		return fmt.Errorf("workflow-service: deliver message: %w", err)
 	}
 	return nil
@@ -451,8 +450,7 @@ func (e *ProcessEngine) ReassignTask(ctx context.Context, req ReassignTaskReques
 }
 
 // RefreshTaskCandidates re-resolves the eligible actors of an open human task,
-// issues a HumanCandidatesResolved trigger, and returns the updated instance
-// (ADR-0150).
+// issues a HumanCandidatesResolved trigger, and returns the updated instance.
 //
 // A task's candidates are resolved once, when the task is created, but the actor
 // registry behind the [humantask.ActorResolver] is not static: people join and
@@ -529,7 +527,7 @@ func (e *ProcessEngine) ResolveCompensationStall(ctx context.Context, req Resolv
 
 // CancelInstance resolves the instance's definition, rejects an already-terminal
 // instance with ErrConflict, and delegates to ProcessDriver.CancelInstance. A
-// cancel the engine dropped is likewise ErrConflict (ADR-0180); the driver has
+// cancel the engine dropped is likewise ErrConflict; the driver has
 // still cancelled the instance's async children by then.
 func (e *ProcessEngine) CancelInstance(ctx context.Context, req CancelInstanceRequest) (ProcessInstance, error) {
 	def, st, err := e.resolveDefinition(ctx, req.InstanceID)
@@ -540,7 +538,7 @@ func (e *ProcessEngine) CancelInstance(ctx context.Context, req CancelInstanceRe
 		return nil, fmt.Errorf("%w: instance %q is already terminal", ErrConflict, req.InstanceID)
 	}
 	st, err = e.driver.CancelInstance(ctx, def, req.InstanceID)
-	// A DROPPED cancel (ADR-0180) is a state conflict, not a transport-level
+	// A DROPPED cancel is a state conflict, not a transport-level
 	// failure: a compensation walk owns the instance, so this cancel did nothing
 	// and never will. Classified explicitly rather than left to the engine
 	// sentinel's ErrInvalidTransition wrapping, so a consumer of THIS layer keys

@@ -8,5 +8,5 @@ package kernel
 // own package path: keeping a single stable scope is the observability contract
 // callers' dashboards and alerts depend on. Defining it once here (the leaf all
 // those packages import) means a module rename touches exactly one line and the
-// three call sites cannot silently drift (ADR-0087).
+// three call sites cannot silently drift.
 const InstrumentationScope = "github.com/kartaladev/wrkflw/runtime"

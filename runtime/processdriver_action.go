@@ -77,10 +77,10 @@ const (
 //
 //   - the parent's own engine counter segment ("c3") when commandID has the
 //     engine's built-in "<parentInstanceID>-c<N>" form — the id shape [engine.Step]
-//     mints when no IDGenerator is injected. Kept verbatim so ids derived before
-//     ADR-0149 still resolve to the same child.
+//     mints when no IDGenerator is injected. Kept verbatim so ids derived by an
+//     older version still resolve to the same child.
 //   - otherwise a short fixed-length digest of the whole command id. The runtime
-//     injects an opaque generator (xid by default, ADR-0149), whose ids carry no
+//     injects an opaque generator (xid by default), whose ids carry no
 //     counter segment; embedding one verbatim would grow the child id by ~25
 //     characters per nesting level, so a chain far shallower than maxCallDepth
 //     would overflow the instance_id column with an opaque driver error instead of
@@ -227,7 +227,7 @@ func (driver *ProcessDriver) overrideRetryPolicy(def *model.ProcessDefinition, s
 // defines. It cannot live in perform(): perform runs AFTER the commit, and a
 // perform error aborts the remaining command queue — so a rejection there commits
 // the state, drops the later commands, raises no incident, and leaves the token
-// parked on a command that will never be answered. Measured; see ADR-0183.
+// parked on a command that will never be answered. Measured.
 //
 // It mirrors [ProcessDriver.resolveHumanCandidates], which runs pre-commit for a
 // related reason. Only UpdateTask is inspected: AwaitHuman has a single emit
@@ -253,8 +253,8 @@ func validateTaskCommands(cmds []engine.Command) error {
 // This runs before the step's snapshot is captured, unlike [ProcessDriver.perform],
 // which runs after the commit: the instance view is a pure projection over the
 // persisted snapshot, so a post-commit write would be invisible to every later
-// reader (ADR-0147 amendment #1). Resolving here also means a resolver failure
-// aborts the step cleanly instead of leaving a committed instance parked on a
+// reader. Resolving here also means a resolver failure aborts the step cleanly
+// instead of leaving a committed instance parked on a
 // task the store never received.
 //
 // It is a no-op when the step emitted no AwaitHuman command, so the resolver is
@@ -283,7 +283,7 @@ func (driver *ProcessDriver) resolveHumanCandidates(ctx context.Context, st *eng
 		// inside it — a registry-backed resolver typically hands back values that
 		// alias its own state. Aliasing here would let a later registry update
 		// rewrite the candidate list of an already-committed instance, and that
-		// list is audit data (ADR-0147). The engine's own ingest path
+		// list is audit data. The engine's own ingest path
 		// (handleHumanCandidatesResolved) clones for the same reason.
 		task.Candidates = authz.CloneActors(actors)
 	}
@@ -324,10 +324,9 @@ func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefi
 		// Nothing to perform post-commit for any of these — each is already
 		// delivered inside the Commit tx:
 		//   - CompleteInstance / FailInstance: the terminal outbox event is derived
-		//     status-driven by terminalOutboxEvent at the deliverLoop terminal edge
-		//     (ADR-0046).
+		//     status-driven by terminalOutboxEvent at the deliverLoop terminal edge.
 		//   - SendMessage: delivered as a message.<Name> outbox event in this step's
-		//     AppliedStep.Events (ADR-0067).
+		//     AppliedStep.Events.
 		return nil, nil
 
 	case engine.AwaitHuman:
@@ -339,7 +338,7 @@ func (driver *ProcessDriver) perform(ctx context.Context, def *model.ProcessDefi
 	// NOTE: engine.ScheduleTimer and engine.CancelTimer never reach perform —
 	// the deliverLoop handles them entirely on its commit path (in-tx durable
 	// persist via the runtime jobStore, post-commit scheduler
-	// activate/deactivate — ADR-0134) and skips them before dispatching here.
+	// activate/deactivate) and skips them before dispatching here.
 
 	case engine.ThrowSignal:
 		return driver.performThrowSignal(ctx, cmd)
@@ -426,7 +425,7 @@ func (driver *ProcessDriver) performInvokeAction(ctx context.Context, def *model
 // command. It is best-effort and fire-and-forget: the action runs for its side
 // effect, any failure is logged, and a result is NEVER fed back nor an error
 // returned — the instance is already terminal and cancellation must report
-// success regardless (ADR-0028).
+// success regardless.
 func (driver *ProcessDriver) performCancelAction(ctx context.Context, def *model.ProcessDefinition, cmd engine.InvokeCancelAction) (engine.Trigger, error) {
 	a, ok := driver.resolveActionName(def, cmd.Name)
 	if !ok {
@@ -436,7 +435,7 @@ func (driver *ProcessDriver) performCancelAction(ctx context.Context, def *model
 	}
 	// Cancel actions run for their side effect only and MUST NOT crash the
 	// terminal-cancel path, so recover is always forced on here regardless of a
-	// per-action WithRecover(false) — best-effort semantics (ADR-0028). The
+	// per-action WithRecover(false) — best-effort semantics. The
 	// per-action execution timeout is still honoured.
 	bare, timeout, _ := driver.effectiveActionPolicy(a)
 	cctx, cancel := actionContextFor(ctx, timeout)

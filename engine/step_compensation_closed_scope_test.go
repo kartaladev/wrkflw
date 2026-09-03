@@ -1,6 +1,7 @@
 package engine
 
-// step_compensation_closed_scope_test.go — backlog 10.
+// step_compensation_closed_scope_test.go — telling a closed scope from an empty
+// one.
 //
 // compensationRecordsForScope returned a bare []CompensationRecord, so its two
 // distinct answers were indistinguishable to every caller:
@@ -140,7 +141,7 @@ func TestCompensationRecordsForScopeReportsClosedScope(t *testing.T) {
 // TestCompensationThrowInClosedScopeIsRefusedUpstream is the REACHABILITY
 // probe, kept as a regression pin because it REFUTED the filed defect.
 //
-// Backlog 10 claims the harm is that "a compensation throw whose scope has
+// The filed defect claims the harm is that "a compensation throw whose scope has
 // already been closed auto-advances silently". Executed, that does not happen:
 // drive() resolves defForScope(def, s, tok.ScopeID) for every active token
 // BEFORE dispatching to any node strategy, and defForScope hard-errors on a

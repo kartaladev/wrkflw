@@ -1,4 +1,4 @@
-// Package main demonstrates a scope-wide compensation throw (ADR-0120):
+// Package main demonstrates a scope-wide compensation throw:
 // throw-then-continue, non-terminating, intra-process compensation.
 //
 // Flow:

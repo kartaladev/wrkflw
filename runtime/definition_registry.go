@@ -26,7 +26,7 @@ var (
 	// with an already-registered message-start — either on a different
 	// definition, or on another start node within the same definition
 	// (message-start names must be unique; structural validation does not
-	// catch the intra-definition case). See ADR-0121.
+	// catch the intra-definition case).
 	ErrDuplicateMessageStart = errors.New("workflow-runtime: duplicate message start name")
 )
 
@@ -70,7 +70,7 @@ func DefaultDefinitionRegistry() *kernel.MemDefinitionRegistry {
 //   - [ErrDuplicateMessageStart] (wrapped with the colliding name) if any of
 //     def's message-start names is already claimed by another registered
 //     definition's message-start, or is repeated on two of def's own start
-//     nodes (see ADR-0121).
+//     nodes.
 //
 // For init-time wiring where a registration failure is a programming error use
 // [MustRegisterDefinition].
@@ -136,7 +136,7 @@ func checkMessageStartUnique(reg *kernel.MemDefinitionRegistry, def *model.Proce
 	// Compare only against the LATEST version of each OTHER def id: a
 	// MemDefinitionRegistry retains every registered version so in-flight
 	// instances resume, but only the latest version holds an active message-start
-	// subscription (ADR-0121 Camunda semantics). A superseded version's name must
+	// subscription (Camunda semantics). A superseded version's name must
 	// therefore not cause a false collision, and a redeploy that keeps the same
 	// name is still allowed via the existing existing.ID == def.ID skip.
 	for _, existing := range latestPerID(reg.ListDefinitions(context.Background())) {
@@ -163,7 +163,7 @@ func checkMessageStartUnique(reg *kernel.MemDefinitionRegistry, def *model.Proce
 // that carry a non-empty MessageName) into a set. It returns
 // [ErrDuplicateMessageStart] when the same name is declared on two different
 // start nodes of def itself — a case structural validation does not catch,
-// since ADR-0121 permits any number of event-triggered start events.
+// since any number of event-triggered start events is permitted.
 func messageStartNames(def *model.ProcessDefinition) (map[string]bool, error) {
 	// Kept rather than folded into startEvents' own nil handling: a nil def must
 	// yield a nil map, not the non-nil empty one the loop below would return.
@@ -228,7 +228,7 @@ func warnForceTermination(def *model.ProcessDefinition) {
 // event-triggered start. Such a SubProcess is treated as an event sub-process —
 // the engine arms it at its event-triggered start — so its manual-start branch
 // is dead (never entered). This is a foot-gun, not wrong behaviour, so it is a
-// WARN rather than a validation error (ADR-0122 review). Only top-level
+// WARN rather than a validation error. Only top-level
 // SubProcess nodes are inspected, mirroring forceTerminationWarnings.
 func mixedSubprocessStartWarnings(def *model.ProcessDefinition) []string {
 	if def == nil {

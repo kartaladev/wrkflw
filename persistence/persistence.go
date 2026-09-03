@@ -1,5 +1,5 @@
 // Package persistence is the consumer-facing façade over the neutral
-// persistence store (ADR-0008). It exposes constructors, stable port/interface
+// persistence store. It exposes constructors, stable port/interface
 // types, options, and re-exported sentinels so library consumers never have to
 // import internal persistence packages directly.
 //
@@ -126,7 +126,7 @@ func storeRelayOption(o store.RelayOption) RelayOption {
 
 // WithListenNotify makes the relay LISTEN on wrkflw_outbox and drain on each
 // NOTIFY (emitted by a Store configured with WithOutboxNotify), keeping the poll
-// interval as a fallback (ADR-0022). Opt-in; default off. Postgres-only — MySQL
+// interval as a fallback. Opt-in; default off. Postgres-only — MySQL
 // has no LISTEN/NOTIFY and its relay is poll-only.
 func WithListenNotify() RelayOption {
 	return func(c *relayConfig) { c.listenNotify = true }
@@ -163,7 +163,7 @@ var (
 	// layer, and the day anything in service's transitive closure needs
 	// persistence that becomes a hard import cycle surfacing as a build break in
 	// unrelated work. A test-package assertion gives the same compile-time
-	// protection with no production edge (ADR-0159).
+	// protection with no production edge.
 )
 
 // ErrInstanceExists is returned by Store.Create when an instance id already
@@ -212,7 +212,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 // Use this together with NewCachingDefinitionRegistry to cache hot definitions.
 //
 // Pass [WithDefinitionClock] to control the created_at stamp PutDefinition
-// writes (ADR-0138). Zero-option call sites compile unchanged.
+// writes. Zero-option call sites compile unchanged.
 func NewDefinitionStore(pool *pgxpool.Pool, opts ...DefinitionOption) (DefinitionStore, error) {
 	return store.NewDefinitionStore(pool, dialect.NewPostgres(), buildDefinitionOptions(opts)...)
 }
@@ -244,7 +244,7 @@ func NewCachingDefinitionRegistry(backing kernel.DefinitionRegistry, ttl time.Du
 // persistence.WithRelayClock, persistence.WithMaxDeliveryAttempts, and
 // persistence.WithRelayBackoff. The relay isolates publish failures per row
 // (a poison event never blocks healthy peers) and quarantines a row to a
-// dead-letter status after MaxDeliveryAttempts (ADR-0017).
+// dead-letter status after MaxDeliveryAttempts.
 func NewRelay(pool *pgxpool.Pool, pub kernel.OutboxPublisher, opts ...RelayOption) (Relay, error) {
 	var cfg relayConfig
 	for _, o := range opts {
@@ -326,7 +326,7 @@ func NewLister(pool *pgxpool.Pool) (kernel.InstanceLister, error) {
 }
 
 // NewAdvisoryLockOwnership constructs a multi-process [kernel.InstanceOwnership]
-// backed by Postgres session advisory locks (ADR-0020), for use with
+// backed by Postgres session advisory locks, for use with
 // [NewCachingInstanceStore] across multiple replicas sharing one database.
 //
 // It holds a dedicated pool connection for its lifetime; close the returned
@@ -355,10 +355,10 @@ func NewAdvisoryLockOwnership(ctx context.Context, pool *pgxpool.Pool) (kernel.I
 // NewCallLinkStore constructs the Postgres-backed kernel.CallLinkStore (read/claim
 // side). It provides ClaimPending, MarkNotified, and LookupChild over the
 // wrkflw_call_links table. The write side is fused into Store.Create /
-// Store.Commit (ADR-0025); use OpenPostgres for that.
+// Store.Commit; use OpenPostgres for that.
 //
 // Pass [WithCallLinkLease] and [WithCallLinkClock] to opt in to lease-based
-// multi-replica exclusivity (ADR-0031). Existing zero-option call sites compile
+// multi-replica exclusivity. Existing zero-option call sites compile
 // unchanged.
 //
 // Migrate must have been applied before the first call to any method.
@@ -377,14 +377,14 @@ func NewCallLinkStore(pool *pgxpool.Pool, opts ...CallLinkOption) (kernel.CallLi
 
 // NewTimerStore returns a kernel.TimerStore backed by Postgres. It backs
 // ProcessDriver.RehydrateTimers (explicit re-arm) and, via runtime.NewJobStore's
-// Load, the scheduler's own automatic self-rehydration on Start (ADR-0134) —
+// Load, the scheduler's own automatic self-rehydration on Start —
 // both read the same durable ListArmed rows and re-arm with scheduler.Scheduler.Activate.
 // The pool must already have migrations applied.
 //
 // Alongside ListArmed, the returned store serves kernel.TimerStore's ArmedTimer
 // point lookup: a primary-key-exact read of a single (instanceID, timerID) pair,
 // so the timer-fire path can ask whether the timer that just fired is recurring
-// without reading the whole armed table (ADR-0159). A missing row is
+// without reading the whole armed table. A missing row is
 // (zero, false, nil) — not-found is not an error.
 //
 // The concrete store additionally satisfies service.TimerAdmin — Stats plus the
@@ -406,7 +406,7 @@ func NewTimerStore(pool *pgxpool.Pool) (kernel.TimerStore, error) {
 }
 
 // NewChainLinkStore constructs the Postgres-backed kernel.ChainLinkStore for
-// process-instance chaining lineage (ADR-0045): Record persists one
+// process-instance chaining lineage: Record persists one
 // predecessor->successor hop (a unique (predecessor, outcome) is the
 // exactly-once backstop), LookupBySuccessor and ListByPredecessor serve
 // ancestry/audit queries. Migrate must have been applied before the first call.
@@ -419,7 +419,7 @@ func NewTimerStore(pool *pgxpool.Pool) (kernel.TimerStore, error) {
 //	chainer, err := chain.NewChainer(runner, policy, chain.WithChainLinks(links))
 //
 // Pass [WithChainLinkClock] to control the created_at fallback Record uses when
-// a link carries a zero CreatedAt (ADR-0138). Zero-option call sites compile
+// a link carries a zero CreatedAt. Zero-option call sites compile
 // unchanged.
 func NewChainLinkStore(pool *pgxpool.Pool, opts ...ChainLinkOption) (kernel.ChainLinkStore, error) {
 	return store.NewChainLinkStore(pool, dialect.NewPostgres(), buildChainLinkOptions(opts)...)
@@ -432,7 +432,7 @@ func NewChainLinkStore(pool *pgxpool.Pool, opts ...ChainLinkOption) (kernel.Chai
 // opts are forwarded to calllink.NewCallNotifier; use calllink.WithClock
 // to inject a fake clock in tests.
 //
-// For lease-based multi-replica exclusivity (ADR-0031), build the CallLinkStore
+// For lease-based multi-replica exclusivity, build the CallLinkStore
 // explicitly via [NewCallLinkStore] with [WithCallLinkLease] and pass it to
 // [calllink.NewCallNotifier] directly:
 //
