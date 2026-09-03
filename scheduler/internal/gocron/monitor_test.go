@@ -19,7 +19,7 @@ import (
 )
 
 // jobRunsTotalMetric/jobDurationSecondsMetric are the metric names monitor.go
-// registers (ADR-0134 production item ①). Mirrored here as string literals
+// registers. Mirrored here as string literals
 // rather than importing an unexported constant — this file lives in the
 // black-box gocron_test package.
 const (
@@ -110,7 +110,7 @@ func recordsWithLevelAndKey(h *captureHandler, lvl slog.Level, key string) bool 
 }
 
 // TestGocronScheduler_MonitorStatus verifies the gocron-native Monitor +
-// EventListener wiring (ADR-0134 production item ①): job outcomes flow into
+// EventListener wiring: job outcomes flow into
 // the wrkflw_scheduler_job_runs_total counter and
 // wrkflw_scheduler_job_duration_seconds histogram (both attributed by
 // status), and a panicking task is recovered by gocron (the scheduler stays

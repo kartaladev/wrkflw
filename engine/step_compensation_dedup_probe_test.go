@@ -1,17 +1,17 @@
 package engine_test
 
-// step_compensation_dedup_probe_test.go — ADR-0071 dedup investigation.
+// step_compensation_dedup_probe_test.go — dedup investigation.
 //
-// The HANDOVER flagged a "partial-rollback record-retention hazard (no
-// recordCompensation dedup)". This probe attempts to reproduce a genuine
-// DOUBLE-record of the same activity execution. The hypothesis under test is the
-// spec's: the ActionCompleted call site (step_triggers.go) is already idempotent
+// A "partial-rollback record-retention hazard (no recordCompensation dedup)"
+// was flagged. This probe attempts to reproduce a genuine DOUBLE-record of the
+// same activity execution. The hypothesis under test: the ActionCompleted call
+// site (step_triggers.go) is already idempotent
 // because a duplicate/stale ActionCompleted for the same CommandID hits
 // tokenAwaiting -> ErrTokenNotFound BEFORE reaching recordCompensation.
 //
 // If this probe ever shows a SECOND record appearing for one execution, that is a
-// reproducing failure and recordCompensation needs a (token-id+node-id) dedup. As
-// of ADR-0071 it does NOT reproduce: the duplicate is rejected with
+// reproducing failure and recordCompensation needs a (token-id+node-id) dedup.
+// Today it does NOT reproduce: the duplicate is rejected with
 // ErrTokenNotFound and exactly one record exists.
 
 import (

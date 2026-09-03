@@ -1,6 +1,6 @@
 package engine
 
-// White-box, deliberately: the record-ownership helpers ADR-0173 adds are
+// White-box, deliberately: the record-ownership helpers are
 // unexported, and the behaviour that matters — which record leaves the archive
 // slot, and whether the map is left non-nil but empty — is not observable from
 // the public Step API in isolation. The end-to-end routes are covered
@@ -37,7 +37,7 @@ func archiveActions(s *InstanceState, key string) []string {
 }
 
 // TestDropArchiveRecordAt covers the single helper every archive deletion routes
-// through, including the map-nilling that spec §5.7 requires on BOTH paths: a
+// through, including the map-nilling required on BOTH paths: a
 // non-nil empty ArchivedCompensations is a gratuitous difference in a persisted,
 // JSON-projected shape, and it already occurs on main via applyFinish's
 // pre-existing whole-key delete.
@@ -67,7 +67,7 @@ func TestDropArchiveRecordAt(t *testing.T) {
 			key:   "outer", index: 0,
 			assert: func(t *testing.T, s *InstanceState) {
 				assert.Nil(t, s.ArchivedCompensations,
-					"an emptied archive must be nil, not a non-nil empty map (spec §5.7)")
+					"an emptied archive must be nil, not a non-nil empty map")
 			},
 		},
 		{
@@ -115,7 +115,7 @@ func TestDropArchiveRecordAt(t *testing.T) {
 
 // TestConsumeDispatchedRecord pins which slot a dispatch consumes from, and the
 // two cursors that must be left ENTIRELY alone: one with no pinned snapshot
-// (pre-ADR-0171 — the audit's Critical) and one with no teardown window.
+// (a cursor written by an older version) and one with no teardown window.
 func TestConsumeDispatchedRecord(t *testing.T) {
 	t.Parallel()
 
@@ -158,7 +158,7 @@ func TestConsumeDispatchedRecord(t *testing.T) {
 			},
 		},
 		{
-			name: "a cursor with NO pinned snapshot is left alone (pre-ADR-0171)",
+			name: "a cursor with NO pinned snapshot is left alone (legacy shape)",
 			cursor: compensationCursor{
 				ActiveCmdID: "c1", ScopeID: "s1", Records: nil, ResumeNode: "n",
 				TeardownArchiveKey: "outer", TeardownArchiveOffset: 0, TeardownArchiveCount: 2,
@@ -334,9 +334,9 @@ func TestArchiveCompensationsPartitionsAScopeAtMostOnce(t *testing.T) {
 // TestOwnershipToleratesACorruptPersistedCursor pins that a cursor arriving from
 // a persisted row cannot drive the pure engine core into a panic.
 //
-// This is not a hardening nicety — it is the invariant ADR-0171 already states on
+// This is not a hardening nicety — it is the invariant already stated on
 // compensationCursor.Records ("nil on a cursor deserialized from a row written
-// before ADR-0171 — that is the case cursorRecords' live-read fallback and
+// by an older version — that is the case cursorRecords' live-read fallback and
 // stepCompensationAdvance's bounds check exist for") and that clearRecordsPrefix
 // enforces for this very field with an explicit "(defensive)" clamp. InstanceState
 // is persisted as whole-struct JSON by internal/persistence/store, `Compensating`

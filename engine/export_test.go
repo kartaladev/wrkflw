@@ -57,7 +57,7 @@ func CancelOpenTasks(s *InstanceState) []Command {
 // EndInstance exposes (*InstanceState).endInstance for engine_test. The eight
 // terminal sites are all reachable through Step, so this shim exists for the one
 // case no production path can construct: an [Incident] whose TokenID is empty,
-// which the orphaned-incident sweep must treat as naming nothing (ADR-0152).
+// which the orphaned-incident sweep must treat as naming nothing.
 func EndInstance(s *InstanceState, status Status, at time.Time, terminal Command) []Command {
 	return s.endInstance(status, at, terminal)
 }
@@ -119,7 +119,7 @@ func BeginCompensation(ctx context.Context, def *model.ProcessDefinition, s *Ins
 // validly carry an attached boundary timer/signal/message event (definition
 // validation allows it), but callActivityStrategy.enter (engine/step_nodes.go)
 // only checks the direct-attachment ERROR-boundary case via findDirectBoundary
-// (ADR-0128) and never arms non-error boundary siblings. This helper lets a
+// and never arms non-error boundary siblings. This helper lets a
 // test simulate "an arm exists for this host" independent of whether/when that
 // gap is closed, so the cleanup path (e.g. handleSubInstanceFailed's
 // consume callback) is verified in isolation.

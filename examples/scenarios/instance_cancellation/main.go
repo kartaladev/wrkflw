@@ -9,16 +9,16 @@
 //  1. runs the definition-level CancelActions (in declared order) best-effort —
 //     these are compensating/cleanup Actions (release a hold, notify a
 //     customer, roll back an external side effect). A CancelAction that fails or
-//     is unresolved is logged and skipped; it never fails the cancel (ADR-0028).
+//     is unresolved is logged and skipped; it never fails the cancel.
 //  2. clears all live tokens and marks the instance StatusTerminated, and
 //  3. reconciles the human-task projection: every parked task is marked
-//     Cancelled so it no longer surfaces in an inbox query (ADR-0088).
+//     Cancelled so it no longer surfaces in an inbox query.
 //
 // When definition-level compensation records exist, cancel runs the reverse-order
 // compensation walk first (see the compensation_saga scenario); here there are
 // none, so termination is immediate. When CallLinks and a DefinitionRegistry are
 // both wired, CancelInstance also propagates recursively to running async child
-// instances (ADR-0032) — see the call_activity scenario for parent/child wiring.
+// instances — see the call_activity scenario for parent/child wiring.
 //
 // Flow:
 //

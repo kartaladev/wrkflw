@@ -26,7 +26,7 @@ import (
 // then "crashed", is re-armed by a FRESH driver over the SAME store and fires at
 // its ORIGINAL absolute instant — not restart-time + duration. Without the
 // persisted next_run + trigger descriptor the fresh driver would either not
-// re-arm at all (Plan-2 regression) or restart the delay from now.
+// re-arm at all or restart the delay from now.
 //
 // Proving this on Postgres (primary prod DB) and MySQL — not just SQLite —
 // exercises the 3-dialect next_run/trigger_kind/trigger_payload migration end to
@@ -55,7 +55,7 @@ func TestRehydrateTimersDurable(t *testing.T) {
 // assertDurableTimerRehydration runs the identical arm→crash→rehydrate→fire-at-
 // original-instant scenario against one dialect. It goes entirely through the
 // store/timerStore/scheduler abstractions, so the body is dialect-neutral (no
-// raw SQL, no dialect.Name() branching per ADR-0080).
+// raw SQL, no dialect.Name() branching).
 func assertDurableTimerRehydration(t *testing.T, conn any, dlct dialect.Dialect) {
 	t.Helper()
 
@@ -89,7 +89,7 @@ func assertDurableTimerRehydration(t *testing.T, conn any, dlct dialect.Dialect)
 		require.NoError(t, err)
 	}
 
-	// The timer id is minted by the driver's IDGenerator (ADR-0149) and opaque —
+	// The timer id is minted by the driver's IDGenerator and opaque —
 	// read it back from the durable row the crashed process left behind.
 	persisted, err := timerStore.ListArmed(t.Context())
 	require.NoError(t, err)

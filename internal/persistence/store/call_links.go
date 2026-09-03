@@ -58,7 +58,7 @@ func WithCallLinkClock(clk clockwork.Clock) CallLinkOption {
 // CallLinkStore is the vendor-neutral, dialect-parametrised
 // [kernel.CallLinkStore] and [kernel.CallLineageReader]. It covers the
 // read/claim side of the parent↔child call-activity correlation; the write side
-// is fused into [Store.Create] and [Store.Commit] (ADR-0025).
+// is fused into [Store.Create] and [Store.Commit].
 //
 // SQL is written once with ? placeholders and converted to the backend's native
 // form via [dialect.Dialect.Rebind]. The leased-claim path branches on dialect

@@ -1,4 +1,4 @@
-// Package stdlib_test — inbound request-body cap (ADR-0186 phase 2).
+// Package stdlib_test — the inbound request-body cap.
 //
 // These tests are deliberately separate TestXxx functions rather than one table,
 // even though several POST to /instances: each carries a distinct FALSIFIER (the
@@ -181,7 +181,7 @@ func TestUnderCapBehaviourIsUnchanged(t *testing.T) {
 			// Cap ACTIVE and far above these bodies: the point is that an active
 			// cap changes nothing for a body under it.
 			//
-			// ⚠ DiscloseAll is required, not incidental. ADR-0190 projects the
+			// ⚠ DiscloseAll is required, not incidental. The adapter projects the
 			// response for a caller it cannot identify, and this mount has no
 			// authentication — so without the opt-out the assertions below would
 			// fail on the DISCLOSURE change and stop testing the body cap at all.
@@ -198,7 +198,7 @@ func TestUnderCapBehaviourIsUnchanged(t *testing.T) {
 
 // resolveIncidentPath is the ONE route whose body is genuinely optional:
 // POST /admin/instances/{id}/incidents/{incidentID}/resolve discards its decode
-// error by design. ADR-0095 keeps admin routes out of Mount, so these tests
+// error by design. Admin routes are kept out of Mount, so these tests
 // mount AdminRoutes explicitly.
 const resolveIncidentPath = "/admin/instances/no-such/incidents/inc-1/resolve"
 

@@ -1,10 +1,10 @@
 package engine_test
 
-// step_terminal_test.go — ADR-0164 Decision 1 and 3: every terminal transition
-// runs through the one endInstance path, which clears the compensation cursor
-// and retires the incidents whose token the transition dropped.
+// step_terminal_test.go — every terminal transition runs through the one
+// endInstance path, which clears the compensation cursor and retires the
+// incidents whose token the transition dropped.
 //
-// The tail of the file pins the two behaviour NORMALIZATIONS the ADR declares —
+// The tail of the file pins the two behaviour NORMALIZATIONS that came with it —
 // normal completion now retires the scheduled work it used to leave armed, and
 // the one site that emitted its terminal command first now emits it in the
 // canonical position — plus the third completion site (the no-outgoing-flow exit
@@ -40,7 +40,7 @@ import (
 
 var terminalT0 = time.Date(2026, 8, 4, 9, 0, 0, 0, time.UTC)
 
-// TestForceTerminationClearsCompensationCursor pins ADR-0164's stale-cursor
+// TestForceTerminationClearsCompensationCursor pins the stale-cursor
 // defect: startCompensationWalk stamps s.Compensating, and before this change no
 // terminal transition cleared it. A step that starts a walk and then
 // force-terminates therefore committed StatusTerminated WITH a live cursor
@@ -151,13 +151,13 @@ func raiseIncidentOnFlaky(t *testing.T, def *model.ProcessDefinition, instanceID
 }
 
 // TestTerminalFailureKeepsIncidentOfSurvivingToken is the guard against
-// over-delivering on ADR-0163's invariant. handleUnhandledError's immediate
+// over-delivering on incident retirement. handleUnhandledError's immediate
 // branch leaves s.Tokens in place, so the incident's token survives the terminal
 // transition and the incident must survive with it: runtime/outbox.go's
 // terminalEventErr reports the concrete failure in instance.failed from the first
 // incident runtime's causeOfDeathIncident allow-list admits — an IncidentAction,
 // which is what this fixture's exhausted branch raises — and the service/ audit
-// view renders them after the instance is terminal (ADR-0164 Decision 3).
+// view renders them after the instance is terminal.
 //
 // A wholesale s.Incidents = nil in endInstance MUST fail this test.
 func TestTerminalFailureKeepsIncidentOfSurvivingToken(t *testing.T) {
@@ -209,7 +209,7 @@ func TestTerminalFailureKeepsIncidentOfSurvivingToken(t *testing.T) {
 // TestForceTerminationClearsOrphanedIncident is the other half of the pair.
 // forceTerminate drops every token without going through cancelTokenWaits, so
 // the incident raised against the dropped token is orphaned: nothing can resolve
-// it and it describes a token that no longer exists (ADR-0164 Decision 3).
+// it and it describes a token that no longer exists.
 func TestForceTerminationClearsOrphanedIncident(t *testing.T) {
 	t.Parallel()
 
@@ -248,7 +248,7 @@ func TestForceTerminationClearsOrphanedIncident(t *testing.T) {
 // the orphaned-incident sweep. tokenByID("") returns nil, so a naive
 // "no token ⇒ orphaned" test deletes an incident that names NO token at all —
 // the exact inversion removeIncidentsForToken guards against with its own
-// `if tokenID == ""` early return (ADR-0152: an empty key names nothing, and
+// `if tokenID == ""` early return (an empty key names nothing, and
 // admitting it would let a blank ID wipe the incident list).
 //
 // No production path builds such an incident today: the only construction site
@@ -271,7 +271,7 @@ func TestTerminalTransitionKeepsIncidentWithEmptyTokenID(t *testing.T) {
 	engine.EndInstance(&s, engine.StatusFailed, terminalT0, engine.FailInstance{Err: "boom"})
 
 	require.Len(t, s.Incidents, 1,
-		"an incident with an empty TokenID names no token, so it is never orphaned (ADR-0152)")
+		"an incident with an empty TokenID names no token, so it is never orphaned")
 	assert.Equal(t, "inc-empty", s.Incidents[0].ID)
 }
 
@@ -335,7 +335,7 @@ func driveToForceTerminatedWithBothRecords(t *testing.T, def *model.ProcessDefin
 	return r3.State
 }
 
-// TestTerminalResumeGuard pins ADR-0164 Decision 2/4: a CompensateRequested
+// TestTerminalResumeGuard pins the terminal-resume rule: a CompensateRequested
 // shape that would RESUME an already-terminal instance (a non-empty ToNode,
 // whether from a raw partial rollback or the NewReverseToNode facade path, both
 // of which leave ReverseNode empty) must be rejected, while a PLAIN full
@@ -344,7 +344,7 @@ func driveToForceTerminatedWithBothRecords(t *testing.T, def *model.ProcessDefin
 // against an already-terminal instance, and compensating a completed instance
 // whose records are still present is a legitimate admin action.
 //
-// ⚠ ADR-0165 moved WHERE that rejection happens without changing WHETHER it
+// ⚠ A rework moved WHERE that rejection happens without changing WHETHER it
 // happens. CompensateRequested is the one trigger whose terminalPolicy reads its
 // receiver: rejectWithError when ReverseNode or ToNode is set, allowOnTerminal
 // otherwise. dispatch's single guard therefore refuses the first two cases
@@ -353,8 +353,8 @@ func driveToForceTerminatedWithBothRecords(t *testing.T, def *model.ProcessDefin
 // The cases below assert engine.ErrInstanceTerminal instead of the old
 // "cannot resume a terminal instance" string, which no longer exists; the
 // wrapped ErrInvalidTransition classification (409/422) is identical either way.
-// This test remains ADR-0109's only pin and carve-out #1's only regression
-// cover, which is why it was rewritten rather than dropped.
+// This test remains the only regression cover for both the rejection and the
+// full-rollback carve-out, which is why it was rewritten rather than dropped.
 //
 // All three cases share one fixture (resumableForceTerminatedDef) and one
 // drive helper (driveToForceTerminatedWithBothRecords) — engine.Step clones
@@ -390,7 +390,7 @@ func TestTerminalResumeGuard(t *testing.T) {
 			// NewReverseToNode (behind ProcessDriver.ReverseInstance(...,
 			// WithTargetNode(n))) sets ToNode and RestoreTargetVars but leaves
 			// ReverseNode empty, so it also slipped past the old guard — the case
-			// that makes the ADR-0109 correction honest.
+			// that makes the correction honest.
 			trigger: engine.NewReverseToNode(terminalT0.Add(time.Hour), "svc"),
 			assert: func(t *testing.T, r engine.StepResult, err error) {
 				require.Error(t, err)
@@ -401,7 +401,7 @@ func TestTerminalResumeGuard(t *testing.T) {
 			},
 		},
 		{
-			// Unchanged by ADR-0165, and deliberately so: this shape's policy is
+			// Unchanged by that rework, and deliberately so: this shape's policy is
 			// allowOnTerminal, so dispatch's guard falls through to the handler and
 			// the walk runs exactly as before. It is the row that stops the new
 			// blanket guard from swallowing the one CompensateRequested shape that
@@ -428,12 +428,12 @@ func TestTerminalResumeGuard(t *testing.T) {
 	}
 }
 
-// TestActionCompletedOnTerminalInstanceIsNoOp pins audit finding O1
-// (pre-existing): an ActionCompleted whose command is owned by NOTHING — no
+// TestActionCompletedOnTerminalInstanceIsNoOp pins pre-existing behaviour: an
+// ActionCompleted whose command is owned by NOTHING — no
 // token awaits it and no compensation cursor claims it — must be tolerated as a
 // no-op, exactly like handleResolveIncident already tolerates a missing token,
 // rather than surfaced as ErrTokenNotFound. A terminal instance can never
-// consume a resumption trigger, so ADR-0165's dispatch guard drops it and the
+// consume a resumption trigger, so the dispatch guard drops it and the
 // state comes back untouched.
 //
 // The route this test was originally built on no longer exists. It used to
@@ -441,7 +441,7 @@ func TestTerminalResumeGuard(t *testing.T) {
 // NORMALLY while the walk's InvokeAction was still in flight — a
 // CompensateThrow consumes only its OWN token (startCompensationWalk's
 // consumeToken), so the sibling's end event saw an empty Tokens and completed.
-// ADR-0168 closes that: the three NORMAL-completion guards in step_nodes.go
+// That route is now closed: the three NORMAL-completion guards in step_nodes.go
 // (exitRootScope, exitRootEventSubprocessScope, exitNestedEventSubprocessScope)
 // additionally require Compensating.ActiveCmdID == "", so a normal completion can
 // no longer land underneath a live walk. Explicit termination is deliberately
@@ -451,14 +451,14 @@ func TestTerminalResumeGuard(t *testing.T) {
 // the only remaining route from a live compensation walk to a terminal instance
 // still carrying a dispatched compensation command. It does NOT leave that walk
 // "outstanding" — force-termination CLEARS the cursor, which is exactly what
-// TestForceTerminationClearsCompensationCursor pins (ADR-0164), and post-0168
+// TestForceTerminationClearsCompensationCursor pins, and with those guards
 // no reachable state combines a terminal instance with a live cursor. Measured
 // at step 3 under this fixture: status "terminated", Tokens nil, ActiveCmdID
 // "". So what arrives at step 4 is an unowned command, not an in-flight one.
 //
 // OutcomeAbort is named explicitly because OutcomeComplete is the ZERO value:
 // written without an outcome, this fixture would publish a CompleteInstance
-// while a rollback is unfinished — the very shape ADR-0168 exists to prevent —
+// while a rollback is unfinished — the very shape those guards prevent —
 // and enshrine it in the permanent suite as sanctioned.
 //
 // The sibling branch is a ServiceTask ("hold"), not a bare flow straight to
@@ -601,7 +601,7 @@ func TestActionCompletedOnTerminalInstanceIsNoOp(t *testing.T) {
 // AwaitCommand intact (step_stale_commands.go says exactly this). tokenAwaiting
 // matches on AwaitCommand alone with no status check, so the sibling's own
 // in-flight ActionCompleted — dispatched in an EARLIER step, hence untouched by
-// ADR-0161's same-step liveAwaiters filter — still resolves to a live token.
+// the same-step liveAwaiters filter — still resolves to a live token.
 // Without a guard at the TOP of the handler, that token is merged and driven
 // forward on a dead instance, reaches its end event as the last remaining
 // token, and exitRootScope flips a FAILED instance to Completed. The second
@@ -685,7 +685,8 @@ func TestActionCompletedOnFailedInstanceWithSurvivingSiblingIsNoOp(t *testing.T)
 // token outlived a terminal transition is dispatched normally. When the
 // sibling's node carries an error boundary, propagateError routes to it, the
 // recovery path runs to a normal end as the last remaining token, and
-// exitRootScope flips a FAILED instance to Completed — exactly the C1 defect,
+// exitRootScope flips a FAILED instance to Completed — exactly the same
+// resurrection defect,
 // through a different handler. (Without a boundary the same lookup instead
 // emits a DUPLICATE FailInstance and re-runs endInstance on an
 // already-terminal instance.)
@@ -790,7 +791,7 @@ func invokeCommandIDForAction(t *testing.T, cmds []engine.Command, name string) 
 // exitRootEventSubprocessScope's `tokensInScope("") > 0` early return, so nothing
 // on the event-sub-process exit path ever retires the arm. Completing "hold"
 // later drives the root token to root-end, and the instance completes through
-// exitRootScope — the path that swept nothing before ADR-0164.
+// exitRootScope — the path that swept nothing in older versions.
 func nonInterruptingRootTimerEventSubprocessDef() *model.ProcessDefinition {
 	espBody := &model.ProcessDefinition{
 		ID: "ni-root-timer-esp-body", Version: 1,
@@ -819,12 +820,12 @@ func nonInterruptingRootTimerEventSubprocessDef() *model.ProcessDefinition {
 	}
 }
 
-// TestCompletionRetiresNonInterruptingRootEventSubprocessArm pins ADR-0164's
+// TestCompletionRetiresNonInterruptingRootEventSubprocessArm pins the
 // normalization of NORMAL completion: since every terminal site routes through
 // endInstance, whose cancelAllScheduledWork retires every arm the instance still
 // owns, a completed instance no longer carries a live root-level
-// non-interrupting event-sub-process arm (nor its scheduled timer). ADR-0124's
-// repeatability decision is untouched — the arm stays armed for as long as the
+// non-interrupting event-sub-process arm (nor its scheduled timer). The
+// repeatability rule is untouched — the arm stays armed for as long as the
 // instance runs; only its survival INTO a terminal snapshot is withdrawn.
 //
 // The scenario is pinned to the exitRootScope completion path, and that pinning
@@ -985,22 +986,22 @@ func nestedEventSubprocessNoOutgoingFlowDef() *model.ProcessDefinition {
 }
 
 // TestNestedEventSubprocessRootExitWithNoOutgoingFlowCompletes pins the third
-// terminal site ADR-0164 rerouted through endInstance: the completion block
+// terminal site rerouted through endInstance: the completion block
 // inside exitNestedEventSubprocessScope, reached when the enclosing sub-process
 // node sits at the ROOT scope and has no outgoing sequence flow, so the exit
-// completes the instance instead of resuming it. Phase 1's task review found that
-// block 0-covered both before and after the rewrite — its behaviour-equivalence
-// rested on inspection alone.
+// completes the instance instead of resuming it. That block was 0-covered both
+// before and after the rewrite — its behaviour-equivalence rested on inspection
+// alone.
 //
 // The instance must complete with the canonical terminal command order
-// [task cancels…, terminal, scheduled-work cancels…] (ADR-0164 Decision 1), which
+// [task cancels…, terminal, scheduled-work cancels…], which
 // is what distinguishes the endInstance routing from the pre-delivery inline
 // sequence at this site.
 //
 // The open task is INJECTED rather than driven. No production path reaches this
 // completion with an open task: it requires zero tokens, and every path that
 // removes a token from a live instance goes through cancelTokenWaits, which
-// cancels the task attached to it (ADR-0163). The record is appended directly for
+// cancels the task attached to it. The record is appended directly for
 // the same reason TestTerminalTransitionKeepsIncidentWithEmptyTokenID assembles
 // its incident by hand — the sweep's position in the emitted order is a contract
 // this site owes every future caller, and it is unobservable otherwise.
@@ -1125,8 +1126,8 @@ func subInstanceWithOpenTaskAndArmDef() *model.ProcessDefinition {
 	}
 }
 
-// TestSubInstanceFailedEmitsFailInstanceAfterTaskCancels pins ADR-0164
-// Decision 1 at the one terminal site that emitted the other order.
+// TestSubInstanceFailedEmitsFailInstanceAfterTaskCancels pins the canonical
+// terminal command order at the one site that emitted the other order.
 // handleSubInstanceFailed used to emit FailInstance FIRST and only then reconcile
 // the human-task projection and cancel the scheduled work; routing it through
 // endInstance moved the terminal command to the canonical position, so all eight
@@ -1193,7 +1194,7 @@ func TestSubInstanceFailedEmitsFailInstanceAfterTaskCancels(t *testing.T) {
 // The "hold" branch is what turns the instance terminal, in a SEPARATE Step from
 // the one that parks the survivor. That separation is load-bearing: it makes the
 // survivor's command genuinely in flight ACROSS steps, exactly as a real
-// dispatched action or a real child instance is, so ADR-0161's same-step
+// dispatched action or a real child instance is, so the same-step
 // liveAwaiters filter cannot be what suppresses it.
 //
 // The failure is an error end event with no matching boundary and no
@@ -1362,7 +1363,7 @@ func TestSubInstanceFailedOnFailedInstanceWithSurvivingSiblingIsNoOp(t *testing.
 }
 
 // TestResolveIncidentOnFailedInstanceWithSurvivingSiblingIsRejected pins the
-// route that ADR-0164's own Decision 3 opened.
+// route that keeping a surviving token's incident opened.
 //
 // removeOrphanedIncidents deliberately KEEPS an incident whose token survived a
 // terminal transition. That is exactly the state — StatusFailed, a live
@@ -1372,17 +1373,17 @@ func TestSubInstanceFailedOnFailedInstanceWithSurvivingSiblingIsNoOp(t *testing.
 // action REALLY RUNS against a dead instance.
 //
 // The follow-on damage is what makes this worse than a wasted invocation: that
-// action's ActionCompleted is then swallowed by the guard ADR-0164 added,
+// action's ActionCompleted is then swallowed by the terminal-dispatch guard,
 // leaving the token permanently TokenActive on a terminal instance with its
 // incident already deleted — it can be neither re-raised nor re-resolved.
-// Decision 3's rationale enumerated only READ consumers of s.Incidents; this is
-// the WRITE consumer nobody considered.
+// The rationale for keeping it enumerated only READ consumers of s.Incidents;
+// this is the WRITE consumer nobody considered.
 //
-// ⚠ ADR-0165 changed the OUTCOME this test pins, which is why it was rewritten
-// (and renamed off "IsNoOp") rather than dropped: ADR-0164 shipped the refusal
-// as a SILENT no-op, so an admin was told their resolution worked when it did
-// not. ResolveIncident's caller is a synchronous admin API, so ADR-0165
-// classifies it rejectWithError and the refusal is now surfaced as
+// ⚠ A later rework changed the OUTCOME this test pins, which is why it was
+// rewritten (and renamed off "IsNoOp") rather than dropped: the refusal first
+// shipped as a SILENT no-op, so an admin was told their resolution worked when
+// it did not. ResolveIncident's caller is a synchronous admin API, so the
+// refusal is now classified rejectWithError and surfaced as
 // engine.ErrInstanceTerminal — which wraps ErrInvalidTransition, the
 // classification service/ already maps to a conflict. The state post-conditions
 // below are unchanged and remain this test's real payload: they are what would
@@ -1421,7 +1422,7 @@ func TestResolveIncidentOnFailedInstanceWithSurvivingSiblingIsRejected(t *testin
 	incTokenID := r2.State.Incidents[0].TokenID
 
 	// Now the sibling branch fails the instance, WITHOUT dropping tokens — so
-	// Decision 3's narrow sweep keeps the incident whose token survived.
+	// the narrow sweep keeps the incident whose token survived.
 	holdCmd := invokeCommandIDForAction(t, r1.Commands, "hold-action")
 	r3, err := engine.Step(t.Context(), def, r2.State,
 		engine.NewActionCompleted(terminalT0.Add(2*time.Second), holdCmd, nil), engine.StepOptions{})
@@ -1429,7 +1430,7 @@ func TestResolveIncidentOnFailedInstanceWithSurvivingSiblingIsRejected(t *testin
 	require.Equal(t, engine.StatusFailed, r3.State.Status,
 		"control: the unhandled error must have FAILED the instance")
 	require.Len(t, r3.State.Incidents, 1,
-		"control: Decision 3 KEEPS an incident whose token survived — that retention "+
+		"control: the sweep KEEPS an incident whose token survived — that retention "+
 			"is precisely what makes this route reachable")
 
 	// An admin resolves the incident on the dead instance.
@@ -1448,8 +1449,8 @@ func TestResolveIncidentOnFailedInstanceWithSurvivingSiblingIsRejected(t *testin
 	// step_terminal_policy_test.go) rather than r4.State: Step returns the ZERO
 	// StepResult on error, so a caller that receives one keeps r3.State. Written
 	// this way the post-conditions mean the same thing whether the refusal is
-	// silent or surfaced — which is exactly what let them survive ADR-0165's
-	// change of outcome unedited.
+	// silent or surfaced — which is exactly what let them survive that change of
+	// outcome unedited.
 	after := committedAfter(r3.State, r4, err)
 	assert.Equal(t, engine.StatusFailed, after.Status,
 		"resolving an incident must not revive a terminal instance")

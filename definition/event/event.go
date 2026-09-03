@@ -3,7 +3,7 @@
 // Import it to construct events (event.NewStart, …) and, via its init, to
 // register their (de)serialization with the definition package. An event
 // sub-process is authored as an activity.SubProcess whose inner start is
-// event-triggered (ADR-0122); it is not a distinct kind.
+// event-triggered; it is not a distinct kind.
 package event
 
 import (
@@ -76,7 +76,7 @@ type EndBehavior int
 const (
 	// EndNormal is a plain completion point (BPMN: no event definition).
 	EndNormal EndBehavior = iota
-	// EndTerminate force-terminates the whole instance (ADR-0119). Payload:
+	// EndTerminate force-terminates the whole instance. Payload:
 	// TerminationReason + Outcome.
 	EndTerminate
 	// EndError throws a workflow error caught by a boundary error event (BPMN
@@ -98,7 +98,7 @@ func (b EndBehavior) String() string {
 }
 
 // EndEvent is the workflow end event: a normal process completion point. Its
-// Behavior discriminator (ADR-0127) selects one of three behaviors. With
+// Behavior discriminator selects one of three behaviors. With
 // EndTerminate (via WithForceTermination) it terminates the whole instance —
 // cancelling remaining parallel tokens, timers, boundaries, event sub-process
 // arms, and open tasks — and ends at the Outcome-selected status carrying
@@ -106,9 +106,9 @@ func (b EndBehavior) String() string {
 // workflow error caught by an enclosing boundary error event.
 type EndEvent struct {
 	model.Base
-	// Behavior selects what happens when a token reaches this end event
-	// (ADR-0127). EndNormal (default) completes; EndTerminate force-terminates
-	// the instance; EndError throws ErrorCode.
+	// Behavior selects what happens when a token reaches this end event.
+	// EndNormal (default) completes; EndTerminate force-terminates the
+	// instance; EndError throws ErrorCode.
 	Behavior EndBehavior
 	// TerminationReason is recorded on EndTerminate (empty otherwise).
 	TerminationReason string

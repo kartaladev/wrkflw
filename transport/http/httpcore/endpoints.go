@@ -59,7 +59,7 @@ func GetInstance(ctx context.Context, svc service.Service, id string, mapper fun
 // transport-side view construction is needed.
 //
 // proj, when non-nil, projects the state before it is marshalled; withholdDef additionally
-// drops the embedded definition (ADR-0190). Both come from the adapter's per-request
+// drops the embedded definition. Both come from the adapter's per-request
 // disclosure decision — see [DisclosingProjection] and [WithholdDefinition].
 //
 // ⚠ The projected instance is built by [service.ProjectFor], NOT by

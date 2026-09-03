@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"slices"
 	"sync"
 	"testing"
@@ -40,7 +39,7 @@ func TestProcessInstanceStateAndDefinition(t *testing.T) {
 	assert.Equal(t, st, pi.State())
 }
 
-// TestProcessInstanceMarshalEnvelope pins the ProcessInstance envelope (ADR-0144):
+// TestProcessInstanceMarshalEnvelope pins the ProcessInstance envelope:
 // the definition template is embedded verbatim under "definition" via its own
 // canonical MarshalJSON, the derived projections it supersedes (action_bindings
 // and the top-level scoped_actions mirror) are gone, and the incident audit is
@@ -228,7 +227,7 @@ func TestProcessInstanceMarshalDefinitionIdentity(t *testing.T) {
 	}
 }
 
-// TestProcessInstanceMarshalTasks pins the human-task audit shape (ADR-0147):
+// TestProcessInstanceMarshalTasks pins the human-task audit shape:
 // candidates, claim and completion are rendered by embedding the humantask /
 // authz types, which carry their own wire tags — the view adds no DTO and no
 // re-mapping, so an actor is passed through verbatim as {id, roles?, attributes?}.
@@ -321,8 +320,8 @@ func TestProcessInstanceMarshalTasks(t *testing.T) {
 		},
 		{
 			// A Manual && ManualImmediate user task is marked Completed inline by
-			// the engine, with no actor and no Completion record (ADR-0147
-			// amendment #5). "completed" therefore does NOT imply a completion key.
+			// the engine, with no actor and no Completion record. "completed"
+			// therefore does NOT imply a completion key.
 			name: "immediate manual task is completed with no completion record",
 			task: humantask.HumanTask{
 				TaskID: "t-4",
@@ -376,8 +375,8 @@ func TestProcessInstanceMarshalTasks(t *testing.T) {
 	}
 }
 
-// TestProcessInstanceMarshalHistory pins the node-visit audit linkage
-// (ADR-0145): a user-task visit carries the task_id of the task it minted, and
+// TestProcessInstanceMarshalHistory pins the node-visit audit linkage: a
+// user-task visit carries the task_id of the task it minted, and
 // close_kind is emitted only for an ABNORMAL close — a normal advance omits it.
 func TestProcessInstanceMarshalHistory(t *testing.T) {
 	t.Parallel()
@@ -927,11 +926,6 @@ func TestProcessInstanceActiveTasksDefensiveCopy(t *testing.T) {
 	}
 }
 
-// sampleDocumentPath is the canonical target shape for the marshalled
-// ProcessInstance document (ADR-0144/0145/0147). It is authored by hand and this
-// package's fixtures reproduce it, so a drift in either direction fails loudly.
-const sampleDocumentPath = "../docs/specs/assets/process-instance-sample.json"
-
 // sampleDefinition builds the "order-approval" template of the sample document
 // through the public Go authoring API. Flow ids are the builder's auto-generated
 // "source->target" form, which is exactly what the sample records.
@@ -1082,31 +1076,6 @@ func sampleState() engine.InstanceState {
 	}
 }
 
-// TestProcessInstanceMarshalMatchesSampleDocument asserts the whole marshalled
-// document against docs/specs/assets/process-instance-sample.json — the canonical
-// target shape of the audit view.
-//
-// The fixture is built through the Go API rather than the HTTP transport simply
-// because it is the cheaper way to drive a whole graph deterministically.
-//
-// ⚠ It is NOT because the transport cannot carry attributes. It used to be: ADR-0147
-// amendment #5 recorded that httpcore.Actor was {id, roles} only, so claim.actor and
-// completion.actor could never carry attributes over HTTP. ADR-0189 deleted that type
-// and the actor now reaches the engine whole, so the limitation is gone.
-// The comparison is marshal-side only — scoped_actions is derived, marshal-only
-// state (ADR-0144), so a JSON→struct→JSON round trip would drop it.
-func TestProcessInstanceMarshalMatchesSampleDocument(t *testing.T) {
-	t.Parallel()
-
-	want, err := os.ReadFile(sampleDocumentPath)
-	require.NoError(t, err)
-
-	got, err := json.Marshal(service.NewProcessInstance(sampleDefinition(t), sampleState()))
-	require.NoError(t, err)
-
-	assert.JSONEq(t, string(want), string(got))
-}
-
 // countingIDGenerator returns a deterministic counter generator ("id-1", "id-2",
 // …) so an engine-driven fixture has stable ids. Product wiring uses idgen.XID().
 func countingIDGenerator() idgen.Generator {
@@ -1130,9 +1099,8 @@ func countingIDGenerator() idgen.Generator {
 //
 // The whole graph runs on a deterministic id generator, so the document is
 // reproducible; the transport is bypassed for convenience, not necessity.
-// ⚠ ADR-0189 removed httpcore.Actor and the HTTP path now carries actor attributes,
-// so ADR-0147 amendment #5's "over HTTP those two slots can never carry attributes"
-// no longer holds.
+// ⚠ httpcore.Actor is gone and the HTTP path now carries actor attributes, so
+// "over HTTP those two slots can never carry attributes" does NOT hold.
 func TestProcessInstanceMarshalFromDrivenEngine(t *testing.T) {
 	t.Parallel()
 
@@ -1267,7 +1235,7 @@ func TestProcessInstanceMarshalFromDrivenEngine(t *testing.T) {
 }
 
 // TestProcessInstanceMarshalDefinitionEmbedPolicy pins the embed opt-out: the
-// ADR-0144 embed stays the DEFAULT, service.WithoutEmbeddedDefinition() drops
+// embed stays the DEFAULT, service.WithoutEmbeddedDefinition() drops
 // the `definition` key from every document the facade hands out, and neither
 // setting touches the def_id / def_version identity or the Definition() Go
 // accessor.
@@ -1286,7 +1254,7 @@ func TestProcessInstanceMarshalDefinitionEmbedPolicy(t *testing.T) {
 			opts: nil,
 			assert: func(t *testing.T, doc map[string]any, pi service.ProcessInstance) {
 				def, ok := doc["definition"].(map[string]any)
-				require.True(t, ok, "the ADR-0144 embed is the default")
+				require.True(t, ok, "the embed is the default")
 				assert.Equal(t, "greeting", def["id"])
 				assert.NotNil(t, pi.Definition())
 			},
@@ -1350,7 +1318,7 @@ func TestProcessInstanceMarshalDefinitionEmbedPolicy(t *testing.T) {
 // TestNewProcessInstanceEmbedsByDefault pins the exported fabrication
 // constructor: it is unaffected by the engine-level opt-out and always embeds a
 // non-nil definition, so a consumer building a ProcessInstance by hand keeps the
-// ADR-0144 self-contained document.
+// self-contained document.
 func TestNewProcessInstanceEmbedsByDefault(t *testing.T) {
 	t.Parallel()
 

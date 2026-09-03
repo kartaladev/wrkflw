@@ -1,7 +1,7 @@
 package processtest_test
 
-// ADR-0175 — a compensation-stall timer must not look like an ordinary armed
-// timer to a consumer's test harness.
+// A compensation-stall timer must not look like an ordinary armed timer to a
+// consumer's test harness.
 
 import (
 	"testing"
@@ -67,8 +67,8 @@ func stalledCompensationState(t *testing.T) engine.InstanceState {
 	return res.State
 }
 
-// TestStallTimerIsExcludedFromHasArmedTimers pins the decision ADR-0175 makes
-// about this shipped consumer harness.
+// TestStallTimerIsExcludedFromHasArmedTimers pins the decision this shipped
+// consumer harness makes about a stall timer.
 //
 // A TimerCompensationStall record is a DETECTION deadline, not work the instance
 // is waiting to do. Counting it as an armed timer has two consequences, both

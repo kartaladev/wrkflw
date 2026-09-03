@@ -69,7 +69,7 @@ func (j *joinedQuerier) Rollback(_ context.Context) error {
 // RollbackOnly reports whether the ambient transaction stashed in ctx (by
 // [Begin]) has been marked rollback-only by a joined participant's Rollback
 // (see [joinedQuerier.Rollback]). It is false when ctx carries no ambient
-// handle. The store package's RunInTx (ADR-0134) uses this to detect the case
+// handle. The store package's RunInTx uses this to detect the case
 // where a joined participant already rolled back the shared unit — the
 // owner's subsequent Commit would honor the mark and roll back, returning
 // nil, which that RunInTx must instead surface as its own rolled-back

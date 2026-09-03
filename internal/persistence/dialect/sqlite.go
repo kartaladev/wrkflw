@@ -135,8 +135,8 @@ func (sqliteDialect) IncidentCountExpr() string {
 // so the predicate uses the same explicit OR decomposition as MySQL.
 // Note: started_at is stored as fixed-width RFC3339 TEXT, so lexicographic < and
 // = comparisons work correctly. Both properties are required: UTC normalisation
-// (ADR-0080) and a fixed-width fraction (ADR-0151). A trimmed fraction — what
-// time.RFC3339Nano emits — would silently mis-order this cursor.
+// and a fixed-width fraction. A trimmed fraction — what time.RFC3339Nano
+// emits — would silently mis-order this cursor.
 func (sqliteDialect) KeysetCursorPredicate() string {
 	return "AND (started_at < ? OR (started_at = ? AND instance_id < ?)) "
 }
@@ -172,9 +172,8 @@ func (sqliteDialect) ArmedTimerKeysetArgs(nextRun any, instanceID, timerID strin
 }
 
 // TimestampsAsText reports that SQLite stores timestamp columns as fixed-width
-// RFC3339 TEXT strings (ADR-0080, ADR-0151). The modernc.org/sqlite driver does
-// not natively encode time.Time to ISO8601; callers must format values as UTC
-// RFC3339 with nine fractional digits before binding — never time.RFC3339Nano,
-// whose trimmed fraction breaks lexicographic ordering — and parse them back
-// when scanning.
+// RFC3339 TEXT strings. The modernc.org/sqlite driver does not natively encode
+// time.Time to ISO8601; callers must format values as UTC RFC3339 with nine
+// fractional digits before binding — never time.RFC3339Nano, whose trimmed
+// fraction breaks lexicographic ordering — and parse them back when scanning.
 func (sqliteDialect) TimestampsAsText() bool { return true }

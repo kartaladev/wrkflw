@@ -12,8 +12,8 @@ import (
 )
 
 // TestPgxNotifier_BackoffIsClockDriven proves the pgxNotifier reconnect
-// backoff wait (waitBackoff) is routed through the injected clockwork.Clock
-// (ADR-0138): under a clockwork.FakeClock, no wall time passes, so only
+// backoff wait (waitBackoff) is routed through the injected clockwork.Clock:
+// under a clockwork.FakeClock, no wall time passes, so only
 // fc.Advance(pgxNotifierReconnectBackoff) — not real time — can unblock it.
 // A second case proves an already-cancelled context short-circuits the wait
 // and returns ctx.Err() without waiting on the clock at all.

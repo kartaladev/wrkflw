@@ -5,8 +5,6 @@ package engine_test
 // UpdateTask command is emitted so the TaskStore no longer surfaces it in an
 // inbox query for a terminated instance.
 //
-// ADR: 0088
-//
 // The compensation-first branch is covered by a separate standalone test below
 // because its setup shape (a completed compensable node before cancel) diverges
 // from the homogeneous "park → cancel" table cases.
@@ -218,7 +216,7 @@ func TestCancelWithCompensationReconcilesOpenTasks(t *testing.T) {
 
 	require.Equal(t, engine.StatusCompensating, r2.State.Status)
 
-	// Positional (ADR-0088 ordering): the task cancel now comes from
+	// Positional ordering: the task cancel now comes from
 	// beginCompensation's own preCmds rather than an explicit prepend, so pin
 	// that it still lands before the walk's InvokeAction.
 	ia := requireCompensationStart(t, r2.Commands)
@@ -236,7 +234,7 @@ func TestCancelWithCompensationReconcilesOpenTasks(t *testing.T) {
 // TestInterruptingBoundaryCancelsHostTask asserts that an interrupting boundary
 // firing on a UserTask host in a LATER step than the one that minted the task
 // closes that task: the record goes Cancelled and exactly one UpdateTask is
-// emitted. Before ADR-0163 the host token was consumed while the task stayed
+// emitted. Previously the host token was consumed while the task stayed
 // unclaimed and open, leaving an inbox entry on a still-running instance that
 // no token could ever complete.
 func TestInterruptingBoundaryCancelsHostTask(t *testing.T) {
@@ -313,9 +311,9 @@ func errorBoundaryOverSubProcessWithUserTaskDef() *model.ProcessDefinition {
 
 // TestErrorBoundaryTeardownCancelsUserTaskAcrossStepBoundary asserts that an
 // error boundary tearing down an enclosing sub-process scope cancels a UserTask
-// parked on a sibling branch inside that scope. Before ADR-0163 the task stayed
+// parked on a sibling branch inside that scope. Previously the task stayed
 // unclaimed and open on a COMPLETED instance, and whether it did depended on
-// step granularity: ADR-0161's stale-command filter cancels it when the mint and
+// step granularity: the stale-command filter cancels it when the mint and
 // the teardown collapse into one step, and nothing cancels it when they do not.
 // Step granularity is not a property a definition author can see or control.
 func TestErrorBoundaryTeardownCancelsUserTaskAcrossStepBoundary(t *testing.T) {

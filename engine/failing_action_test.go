@@ -23,7 +23,7 @@ func TestEffectiveRetryPolicyPrecedence(t *testing.T) {
 	nodeBare := activity.NewServiceTask("t", activity.WithTaskAction("a"))
 
 	// A node whose policy carries the two safety-only fields the action tier
-	// cannot express (ADR-0126 field-merge).
+	// cannot express (field-merge).
 	nodeSafetyPolicy := &model.RetryPolicy{
 		MaxAttempts:        7,
 		InitialInterval:    time.Second,
@@ -85,7 +85,7 @@ func TestEffectiveRetryPolicyPrecedence(t *testing.T) {
 			},
 		},
 		{
-			// Field-merge (ADR-0126): the action override wins on the four fields
+			// Field-merge: the action override wins on the four fields
 			// it can express, but the node's safety-only fields (MaxElapsed,
 			// NonRetryableErrors) — which action.RetrySpecs cannot express — are
 			// PRESERVED, not dropped.

@@ -1,5 +1,5 @@
 // Package mysql provides the MySQL-backed leader [scheduler.Elector] for
-// multi-replica single-leader timer firing (ADR-0059, ADR-0102). It is the
+// multi-replica single-leader timer firing. It is the
 // database-specific layer: importing database/sql here is expected and keeps the
 // public scheduler façade neutral of any DB driver.
 package mysql
@@ -50,7 +50,7 @@ func WithClock(clk clockwork.Clock) Option {
 
 // WithHeartbeatInterval overrides how often the elected leader re-validates its
 // dedicated connection (default: an internal sane value). It bounds the residual
-// split-brain window to at most one interval (ADR-0061). A non-positive value is
+// split-brain window to at most one interval. A non-positive value is
 // ignored.
 func WithHeartbeatInterval(d time.Duration) Option {
 	return func(s *settings) {
@@ -63,7 +63,7 @@ func WithHeartbeatInterval(d time.Duration) Option {
 // WithOnLeadershipAcquired registers a callback invoked each time this elector
 // wins (or re-wins) leadership. It runs asynchronously and never blocks timer
 // firing. Wire it to runtime.ProcessDriver.RehydrateTimers so a new leader re-arms
-// the persisted timer set on leadership acquisition (Option A, ADR-0072). A nil
+// the persisted timer set on leadership acquisition. A nil
 // value is ignored.
 func WithOnLeadershipAcquired(fn func(context.Context)) Option {
 	return func(s *settings) {

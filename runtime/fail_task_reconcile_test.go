@@ -23,7 +23,7 @@ import (
 )
 
 // TestProcessDriverUnhandledFailureCancelsParkedTask is the end-to-end counterpart to
-// TestProcessDriverCancelInstanceCancelsParkedTask (ADR-0089): when a parallel branch
+// TestProcessDriverCancelInstanceCancelsParkedTask: when a parallel branch
 // fails unhandled while another branch is parked at a UserTask, the instance
 // fails and the parked task is Cancelled in the TaskStore — not orphaned in an
 // inbox query.

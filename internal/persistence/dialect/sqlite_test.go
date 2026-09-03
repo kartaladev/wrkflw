@@ -197,7 +197,7 @@ func TestSQLiteOutboxStatsQuery(t *testing.T) {
 }
 
 // TestSQLiteTimestampsCapabilities verifies the timestamp-codec flag and the
-// three lister-query methods added in Task 9.
+// three lister-query methods.
 func TestSQLiteTimestampsCapabilities(t *testing.T) {
 	t.Parallel()
 
@@ -257,7 +257,7 @@ func TestSQLiteTimestampsCapabilities(t *testing.T) {
 // non-sqlite errors are not classified as unique violations or retryable
 // conflicts. Positive classification (real *sqlite.Error with a known code)
 // requires a live SQLite connection; those cases are covered by the
-// conformance suite in Task 7+.
+// conformance suite.
 func TestSQLiteErrorClassification_NilAndNonSQLite(t *testing.T) {
 	t.Parallel()
 

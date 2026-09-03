@@ -1,6 +1,6 @@
 package engine_test
 
-// ADR-0175 — detection of a stalled compensation walk.
+// Detection of a stalled compensation walk.
 //
 // A compensation walk advances ONLY on a trigger carrying the cursor's
 // ActiveCmdID. If the dispatched action never reports back, the instance holds
@@ -36,13 +36,13 @@ func stallTimerRecords(s engine.InstanceState) []engine.TimerRecordView {
 	return out
 }
 
-// TestBeginCompensationArmsStallTimer is T1: a CancelRequested walk started by
+// TestBeginCompensationArmsStallTimer covers a CancelRequested walk started by
 // beginCompensation arms exactly one TimerCompensationStall, carrying the
 // command id of the compensation action it guards.
 //
 // The record must be walk-scoped, not token-scoped: beginCompensation's prologue
 // cancels every token, so a Token-keyed record would name a token that no longer
-// exists — and ADR-0152 makes an empty key name no record, which is exactly the
+// exists — and an empty key names no record, which is exactly the
 // property that keeps token-keyed cleanup from sweeping it.
 func TestBeginCompensationArmsStallTimer(t *testing.T) {
 	state := runThreeCompensableActivities(t)
@@ -78,13 +78,13 @@ func TestBeginCompensationArmsStallTimer(t *testing.T) {
 	assert.Equal(t, undo.CommandID, recs[0].CommandID,
 		"the record must carry the guarded ActiveCmdID, or a late fire cannot be told from a live one")
 	assert.Empty(t, recs[0].Token,
-		"an empty Token names no record (ADR-0152), so token-keyed cleanup never sweeps it")
+		"an empty Token names no record, so token-keyed cleanup never sweeps it")
 	assert.Equal(t, "step3", recs[0].NodeID)
 }
 
-// TestZeroWindowDisablesStallDetection is T2: with CompensationStallAfter unset
-// (the zero default) the walk's command stream and its timer bookkeeping are
-// both byte-identical to a build without this feature.
+// TestZeroWindowDisablesStallDetection pins that with CompensationStallAfter
+// unset (the zero default) the walk's command stream and its timer bookkeeping
+// are both byte-identical to a build without this feature.
 //
 // The command list is an explicit GOLDEN captured by probing this fixture — no
 // test can assert equality against another git revision, so the list is written
@@ -138,13 +138,13 @@ func TestZeroWindowLeavesThrowWalkTimersUntouched(t *testing.T) {
 		"a disabled feature must not rewrite the persisted timers shape from null to []")
 }
 
-// TestScopeWideThrowFirstDispatchArmsStallTimer is T1c — the gap the design audit
-// found (C1).
+// TestScopeWideThrowFirstDispatchArmsStallTimer covers the gap the design audit
+// found.
 //
 // The dispatch sites are not just beginCompensation and stepCompensationAdvance:
 // startCompensationWalk is the compensation THROW walk's FIRST dispatch and
-// lives in a different file (retryStalledCompensation, ADR-0175's own operator
-// escape, is the fourth). Leaving startCompensationWalk unarmed leaves a throw
+// lives in a different file (retryStalledCompensation, the operator escape, is
+// the fourth). Leaving startCompensationWalk unarmed leaves a throw
 // walk undetected until its second record — and a single-record throw walk
 // undetected entirely. It is also the site at which the measured
 // deferred-cancel deadlock arises.
@@ -174,7 +174,7 @@ func TestScopeWideThrowFirstDispatchArmsStallTimer(t *testing.T) {
 	assert.Equal(t, "svcB", recs[0].NodeID)
 }
 
-// TestCompensationAdvanceRearmsStallTimer is T2b: each advance cancels the
+// TestCompensationAdvanceRearmsStallTimer pins that each advance cancels the
 // previous stall timer and arms a fresh one carrying the NEW ActiveCmdID.
 //
 // The re-arm must be cancel-THEN-arm. Two live records would let the stale one
@@ -213,7 +213,7 @@ func TestCompensationAdvanceRearmsStallTimer(t *testing.T) {
 	assert.Equal(t, "step2", second[0].NodeID)
 }
 
-// TestResumeFinishCancelsStallTimer is T2c: a RESUME finish cancels the
+// TestResumeFinishCancelsStallTimer pins that a RESUME finish cancels the
 // outstanding stall timer.
 //
 // Only TERMINAL finishes reach cancelAllTimers via endInstance. The four resume
@@ -333,7 +333,7 @@ func TestTerminalFinishCancelsStallTimerExactlyOnce(t *testing.T) {
 }
 
 // TestCompensationCursorStampsWalkStartTime covers the `compensating_since`
-// half of ADR-0175 decision 5.
+// stamp.
 //
 // An operator hunting wedged instances lists status=compensating and needs to
 // tell a walk that started 20 seconds ago from one that has been stuck for a

@@ -1,7 +1,7 @@
 package engine
 
-// step_compensation_failure_visibility_test.go — ADR-0179 Decision 1: a
-// compensation action that replies ActionFailed must leave a trace.
+// step_compensation_failure_visibility_test.go — a compensation action that
+// replies ActionFailed must leave a trace.
 //
 // Before this, handleActionFailed's StatusCompensating short-circuit skipped the
 // record in total silence — measured on 2026-08-17 against the base of this
@@ -100,8 +100,8 @@ func driveToCompensationWalk(t *testing.T, def *model.ProcessDefinition, at time
 	return r4.State, invokeIDForAction(t, r4.Commands, "undo-beta")
 }
 
-// TestFailedCompensationActionIsVisible covers ADR-0179 Decision 1 on both of the
-// node-resolution branches: the in-flight record is readable, and it is not.
+// TestFailedCompensationActionIsVisible covers both node-resolution branches:
+// the in-flight record is readable, and it is not.
 //
 // No ctx modifier and no cancelled-context row: ctx reaches this code path for
 // slog correlation only, and no branch of it consults Done or Err — cancellation
@@ -154,7 +154,7 @@ func TestFailedCompensationActionIsVisible(t *testing.T) {
 				assert.Equal(t, failedAt, inc.CreatedAt)
 
 				assert.Equal(t, "undo-alpha", invokeActionName(res.Commands),
-					"ADR-0034 Decision 4 is preserved: the walk skips the record and advances")
+					"the walk skips the record and advances")
 			},
 		},
 		{
@@ -162,7 +162,7 @@ func TestFailedCompensationActionIsVisible(t *testing.T) {
 			def:  twoCompensableDef(),
 			at:   failedAt,
 			setup: func(t *testing.T, _ *model.ProcessDefinition, at time.Time) (InstanceState, string) {
-				// A walk persisted before ADR-0171: no pinned Records, and the scope
+				// A walk persisted by an older version: no pinned Records, and the scope
 				// its ScopeID names has since been closed, so cursorRecords falls back
 				// to a live read that now returns nothing. NextIndex still says 1.
 				// This is the shape that panics an unguarded records[NextIndex].

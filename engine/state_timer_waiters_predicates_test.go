@@ -1,7 +1,7 @@
 package engine
 
 // state_timer_waiters_predicates_test.go — white-box tests for the two TimerKind
-// predicates that replaced the single walkScoped() boolean (ADR-0179 Decision 4).
+// predicates that replaced the single walkScoped() boolean.
 //
 // They live in an in-package file because both predicates are unexported and
 // because the HasArmedTimers control below plants a timerRecord directly.
@@ -20,7 +20,7 @@ import (
 
 // TestTimerKindPredicates pins the two answers walkScoped() used to conflate.
 // The pair exists because TimerCompensationRetry answers them DIFFERENTLY: it
-// belongs to a compensation walk (so ADR-0178's dying-instance guard must let it
+// belongs to a compensation walk (so the dying-instance guard must let it
 // through, exactly like a stall timer) yet it is forward work (so HasArmedTimers
 // must SEE it, unlike a stall timer, which is a detection deadline whose firing
 // manufactures the very incident it exists to detect).
@@ -75,7 +75,7 @@ func TestTimerKindPredicates(t *testing.T) {
 			kind: TimerCompensationStall,
 			assert: func(t *testing.T, firesOnDyingInstance, detectionOnly bool) {
 				assert.True(t, firesOnDyingInstance,
-					"ADR-0175: the terminating walks are the ones an operator most needs to see wedged")
+					"the terminating walks are the ones an operator most needs to see wedged")
 				assert.True(t, detectionOnly,
 					"firing a stall deadline manufactures the incident the window exists to detect")
 			},
@@ -87,7 +87,7 @@ func TestTimerKindPredicates(t *testing.T) {
 				assert.True(t, firesOnDyingInstance,
 					"the retry belongs to the walk, and a terminating walk must still be able to roll back")
 				assert.False(t, detectionOnly,
-					"ADR-0179: the retry exists to RE-DISPATCH; a harness must be able to fire it")
+					"the retry exists to RE-DISPATCH; a harness must be able to fire it")
 			},
 		},
 	}
@@ -107,14 +107,14 @@ func TestTimerKindPredicates(t *testing.T) {
 // consumer driving the engine through processtest would then see
 // Classify.Reason="unknown", AutoTimers fires=false and ErrUnhandledPark.
 //
-// The stall row is the opposite direction: it is the ADR-0175 behaviour, and it
+// The stall row is the opposite direction: it is the pre-existing behaviour, and it
 // is the regression guard that the split did not invert the answer the shipped
 // kind already had.
 //
 // ⚠ LIMIT OF THIS TEST. Nothing arms a TimerCompensationRetry yet, so the record
 // is planted DIRECTLY in the fixture. The end-to-end control — that a REAL
 // compensation-retry backoff measures HasArmedTimers()==true — belongs to the
-// step that lands retryFailedCompensation (ADR-0179 P1-D) and is NOT covered
+// step that lands retryFailedCompensation and is NOT covered
 // here. Do not assume it is.
 func TestHasArmedTimersDistinguishesRetryFromStall(t *testing.T) {
 	t.Parallel()

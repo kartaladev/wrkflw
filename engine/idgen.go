@@ -4,7 +4,7 @@ import "fmt"
 
 // IDGenerator mints the opaque identifiers the engine stamps on the objects it
 // creates while stepping: tokens, human tasks, action commands, timers,
-// incidents, and sub-process scopes (ADR-0149).
+// incidents, and sub-process scopes.
 //
 // It is a SEAM, not a policy: the engine core is deterministic and
 // wall-clock-free by design, so it never picks an id strategy of its own. With

@@ -8,8 +8,8 @@ import (
 )
 
 // CompensationRecord is a record of a completed compensable activity within a
-// scope. Plan 8 (compensation/rollback) populates these records when an activity
-// with a non-empty CompensateAction completes; it walks them in reverse
+// scope. The engine appends one when an activity with a non-empty
+// CompensateAction completes; a compensation walk visits them in reverse
 // completion order when rolling back the scope.
 //
 // Fields:
@@ -43,8 +43,8 @@ type CompensationRecord struct {
 //   - NodeID: the BPMN node (typically a sub-process) that opened this scope.
 //   - ParentID: the ID of the enclosing scope, or "" if this is a root scope.
 //   - Compensations: ordered list of completed compensable activities inside
-//     this scope, accumulated as activities finish. Plan 8 reads this list in
-//     reverse order when rolling back the scope.
+//     this scope, accumulated as activities finish. A compensation walk reads
+//     this list in reverse order when rolling back the scope.
 type Scope struct {
 	// ID is the unique scope identifier (deterministic, no clock/random).
 	ID string
@@ -53,19 +53,18 @@ type Scope struct {
 	// ParentID is the enclosing scope's ID, or "" for a root scope.
 	ParentID string
 	// Compensations records completed compensable activities in entry order.
-	// Plan 8 (compensation) populates and consumes this list.
+	// The engine's compensation machinery populates and consumes this list.
 	Compensations []CompensationRecord
 }
 
 // compensationCursor tracks progress through an in-flight reverse-order
-// compensation walk (ADR-0039, ADR-0071, ADR-0109, ADR-0116, ADR-0120). It is
-// set when a CompensateRequested trigger arrives and cleared when the walk
-// completes.
+// compensation walk. It is set when a CompensateRequested trigger arrives and
+// cleared when the walk completes.
 //
 // Every field except Records is a plain scalar. Records is a slice whose
-// elements carry an Input map, so cloneState deep-copies it explicitly
-// (ADR-0171) — a plain struct copy would share the backing array and the
-// records' maps with the original.
+// elements carry an Input map, so cloneState deep-copies it explicitly — a
+// plain struct copy would share the backing array and the records' maps with
+// the original.
 type compensationCursor struct {
 	// ScopeID identifies the scope being compensated ("" = root).
 	// Ignored when ArchiveKey is non-empty (archive walk).
@@ -76,10 +75,10 @@ type compensationCursor struct {
 	//
 	// It selects cursorRecords' source — ArchivedCompensations[ArchiveKey]
 	// rather than the live scope or RootCompensations — only when Records is
-	// nil, i.e. for a cursor persisted before ADR-0171. On every cursor this
-	// build writes, the pinned Records wins.
+	// nil, i.e. for a cursor persisted by an older version. On every cursor
+	// this build writes, the pinned Records wins.
 	ArchiveKey string
-	// Records pins the walk's record source at walk start (ADR-0171). When
+	// Records pins the walk's record source at walk start. When
 	// non-nil it is what cursorRecords iterates, in place of the live scope /
 	// archive read; the walk's indices are then immune to anything that mutates
 	// or destroys that source mid-flight.
@@ -97,9 +96,9 @@ type compensationCursor struct {
 	// source is always RootCompensations (its scopeID is the const "") which no
 	// scope teardown can nil.
 	//
-	// nil on a cursor deserialized from a row written before ADR-0171 — that is
-	// the case cursorRecords' live-read fallback and stepCompensationAdvance's
-	// bounds check exist for.
+	// nil on a cursor deserialized from a row written by an older version —
+	// that is the case cursorRecords' live-read fallback and
+	// stepCompensationAdvance's bounds check exist for.
 	Records []CompensationRecord
 	// ResumeNode is the node to place a token at when the compensation throw
 	// walk finishes (the throw event's single successor). When non-empty,
@@ -114,9 +113,10 @@ type compensationCursor struct {
 	// ToNode is the rollback target node ID (exclusive). Empty = full rollback.
 	ToNode string
 	// ReverseNode, when non-empty, makes the FULL-rollback finish resume at this
-	// node (StatusRunning) instead of terminating — the ReverseInstance full-reverse
-	// form (ADR-0109). Kept DISTINCT from ResumeNode (the compensation-throw resume)
-	// so the throw-walk branch is never triggered by a reverse-to-start walk.
+	// node (StatusRunning) instead of terminating — the ReverseInstance
+	// full-reverse form. Kept DISTINCT from ResumeNode (the compensation-throw
+	// resume) so the throw-walk branch is never triggered by a reverse-to-start
+	// walk.
 	ReverseNode string
 	// ReverseResetVars, when true, resets Variables to StartVariables when the
 	// full-rollback finish resumes at ReverseNode.
@@ -124,25 +124,25 @@ type compensationCursor struct {
 	// RestoreTargetVars, when true, makes the PARTIAL-rollback finish (ToNode
 	// non-empty) restore Variables to ToNode's own start-of-visit snapshot — the
 	// Input captured on ToNode's most-recent compensation record — instead of
-	// leaving the current variables untouched (FU#1, ADR-0116). Carried on the
-	// cursor (all-scalar) from the CompensateRequested trigger; the snapshot map
+	// leaving the current variables untouched. Carried on the cursor
+	// (all-scalar) from the CompensateRequested trigger; the snapshot map
 	// itself is resolved at finish time and lives on the transient finishPlan, so
 	// the cursor stays value-copyable by cloneState with no map to deep-copy.
 	// Zero (false) for every other walk — admin partial rollback keeps current
-	// vars, matching ADR-0109's original WithTargetNode contract.
+	// vars, matching WithTargetNode's original contract.
 	RestoreTargetVars bool
 	// StartRecordCount is the number of records present in the throwing scope
-	// when a SCOPE-WIDE compensation throw walk started (ADR-0120). The walk
-	// drains exactly the prefix [0 .. StartRecordCount-1] in reverse; on finish,
-	// only that prefix is cleared (compensate-once), retaining any record a still-
-	// running sibling appended mid-walk at index >= StartRecordCount (review A1).
+	// when a SCOPE-WIDE compensation throw walk started. The walk drains exactly
+	// the prefix [0 .. StartRecordCount-1] in reverse; on finish, only that
+	// prefix is cleared (compensate-once), retaining any record a still-running
+	// sibling appended mid-walk at index >= StartRecordCount.
 	// Zero for every other walk (targeted throw, admin/cancel/error), which clear
 	// their whole record source instead. Carried on the cursor (scalar) so
 	// cloneState stays a plain value copy.
 	StartRecordCount int
 	// TeardownArchiveKey, TeardownArchiveOffset and TeardownArchiveCount locate
 	// the TEARDOWN WINDOW: the records a mid-walk scope teardown parked in
-	// ArchivedCompensations on this walk's behalf (ADR-0173).
+	// ArchivedCompensations on this walk's behalf.
 	//
 	// When a teardown that cannot be deferred destroys the scope a scope-wide
 	// throw walk is draining, archiveCompensations keeps the records the walk has
@@ -153,12 +153,12 @@ type compensationCursor struct {
 	// consumeDispatchedRecord then removes one as each is dispatched, so the
 	// window always holds exactly the un-dispatched remainder, and
 	// applyPlanRecordClearing removes whatever survives to the finish (normally
-	// nothing). Removing them only at the finish was the shape ADR-0173 first
-	// designed, and it halved the abandoned-walk double-run instead of closing it.
+	// nothing). Removing them only at the finish was the shape first designed,
+	// and it halved the abandoned-walk double-run instead of closing it.
 	//
 	// TeardownArchiveKey == "" means NO TEARDOWN HAPPENED. That is the value on
-	// every untorn-down walk and on every cursor persisted before ADR-0173, which
-	// is why this needs no data migration in that direction.
+	// every untorn-down walk and on every cursor persisted by an older version,
+	// which is why this needs no data migration in that direction.
 	//
 	// All three are plain scalars, keeping this struct value-copyable by
 	// cloneState (see the Records comment above).
@@ -173,20 +173,19 @@ type compensationCursor struct {
 	// created, and deliberately survives every advance: an operator hunting wedged
 	// instances needs to tell a walk that started seconds ago from one stuck for a
 	// day, and a timestamp restamped on each dispatch would make a slow-but-healthy
-	// walk look permanently fresh (ADR-0175 decision 5, projected as
-	// `compensating_since`).
+	// walk look permanently fresh (projected as `compensating_since`).
 	StartedAt time.Time
 	// ActiveCmdID is the CommandID of the compensation InvokeAction currently
 	// in flight. Cleared when the step completes.
 	//
-	// ⚠ It SURVIVES an ActionFailed that takes the retry branch (ADR-0179
-	// Decision 3) and keeps naming the FAILED command until the backoff fires and
-	// re-dispatches. That is what lets the retry timer's fire handler make the
-	// same late-fire check handleCompensationStallFired makes.
+	// ⚠ It SURVIVES an ActionFailed that takes the retry branch and keeps naming
+	// the FAILED command until the backoff fires and re-dispatches. That is what
+	// lets the retry timer's fire handler make the same late-fire check
+	// handleCompensationStallFired makes.
 	ActiveCmdID string
 	// RetryAttempts counts the compensation-retry attempts already spent on the
-	// record CURRENTLY in flight (ADR-0179 Decision 3). Zero means the record has
-	// failed no times yet, or has not been dispatched yet.
+	// record CURRENTLY in flight. Zero means the record has failed no times yet,
+	// or has not been dispatched yet.
 	//
 	// ⚠ It is PER RECORD, not per walk: stepCompensationAdvance zeroes it wherever
 	// it moves NextIndex — the single advance site in the package. Without that
@@ -198,7 +197,7 @@ type compensationCursor struct {
 	// Records comment above).
 	RetryAttempts int
 	// RetryTimerID is the TimerID of the TimerCompensationRetry backoff armed for
-	// ActiveCmdID, or "" when no backoff is in flight (ADR-0179 Decision 3).
+	// ActiveCmdID, or "" when no backoff is in flight.
 	//
 	// ⚠ Non-empty is the ONLY thing that makes a redelivered ActionFailed for the
 	// still-active command idempotent. InstanceState's dispatched-id ring
@@ -206,8 +205,7 @@ type compensationCursor struct {
 	// excludes ActiveCmdID, and must, or every normal reply would be a duplicate
 	// and the walk would never advance. Without this field a redelivery raises a
 	// SECOND incident, arms a SECOND retry timer and doubles the attempt count,
-	// leaving two timers dispatching the same record: the double-refund hazard
-	// ADR-0034's post-acceptance fix exists to prevent.
+	// leaving two timers dispatching the same record: a double-refund hazard.
 	//
 	// A plain scalar, for the same reason as RetryAttempts.
 	RetryTimerID string
@@ -246,14 +244,14 @@ const (
 	// archive entry and RETAINS RootCompensations.
 	walkThrowTargeted
 	// walkThrowScopeWide is a scope-wide compensation-throw resume (ResumeNode
-	// set, ArchiveKey empty, ADR-0120): finish clears the StartRecordCount
+	// set, ArchiveKey empty): finish clears the StartRecordCount
 	// prefix of the throwing scope's own live records.
 	walkThrowScopeWide
 	// walkPartial is a partial-rollback resume to ToNode (ResumeNode and
 	// ReverseNode both empty): finish resumes at ToNode with records RETAINED.
 	walkPartial
 	// walkReverse is a ReverseInstance full-reverse resume (ReverseNode set,
-	// ResumeNode and ToNode both empty, ADR-0109): finish clears records and
+	// ResumeNode and ToNode both empty): finish clears records and
 	// optionally resets Variables before resuming at ReverseNode.
 	walkReverse
 )
@@ -298,13 +296,12 @@ func (c compensationCursor) walkMode() walkMode {
 // consume a deferred cancel, so it resumes with PendingCancel still true, and
 // treating it as dying silences arms on a LIVE instance.
 //
-// ⚠ walkReverse RESUMES, yet is reported as terminating — deliberately, per
-// ADR-0172 Decision 1a. A reverse resume sets ResetVars and re-arms every root
-// event sub-process (finishPlan.rearmRootESP); letting an arm fire into it was
-// measured producing two concurrent tokens, the event sub-process body's
-// variables wiped underneath it, and an INTERRUPTING one-shot arm resurrected
-// while its body still runs. Widening this is rearmRootESP's problem, not the
-// arm-fire path's.
+// ⚠ walkReverse RESUMES, yet is reported as terminating — deliberately. A
+// reverse resume sets ResetVars and re-arms every root event sub-process
+// (finishPlan.rearmRootESP); letting an arm fire into it was measured producing
+// two concurrent tokens, the event sub-process body's variables wiped underneath
+// it, and an INTERRUPTING one-shot arm resurrected while its body still runs.
+// Widening this is rearmRootESP's problem, not the arm-fire path's.
 func (c compensationCursor) walkTerminates(pendingCancel bool) bool {
 	switch c.walkMode() {
 	case walkAdmin, walkReverse:
@@ -372,7 +369,7 @@ func (s *InstanceState) tokensInScope(scopeID string) int {
 
 // archiveCompensations moves the Compensations of the scope identified by scopeID
 // into ArchivedCompensations keyed by that scope's NodeID (the sub-process node
-// that opened the scope). On normal sub-process exit (ADR-0039) scope identity is
+// that opened the scope). On normal sub-process exit scope identity is
 // preserved for scope-targeted compensation, and records are still reachable by
 // the root/instance walk via consolidateArchiveIntoRoot. A sub-process entered more than once accumulates
 // records in the same archive slot. No-op if the scope has no records or is not
@@ -406,7 +403,7 @@ func (s *InstanceState) archiveCompensations(scopeID string) {
 // terminal transition closes no scope: without it a record for an activity that
 // completed inside a still-open sub-process is unreachable forever — no
 // records-exist predicate consults an open scope, and consolidateArchiveIntoRoot
-// drains only the archive (ADR-0174).
+// drains only the archive.
 //
 // It deliberately does NOT remove the Scope entries. Closing them belongs to
 // endInstance, which is what makes this safe to call at the two sites where the
@@ -416,23 +413,18 @@ func (s *InstanceState) archiveCompensations(scopeID string) {
 // A live scope-wide walk's already-dispatched records are DROPPED by
 // partitionForLiveWalk, so harvesting cannot re-run them — ⚠ but ONLY when that walk
 // PINNED its records. scopeWideWalkDraining requires len(cur.Records) > 0, so a cursor
-// persisted before ADR-0171 (Records == nil, reachable only by deserializing such a row)
-// bypasses the partition entirely and its already-dispatched prefix IS re-archived.
-// That row then inherits the double-run ADR-0173 deliberately left it — see
+// persisted by an older version (Records == nil, reachable only by deserializing such
+// a row) bypasses the partition entirely and its already-dispatched prefix IS
+// re-archived. That row then inherits an accepted double-run — see
 // scopeWideWalkDraining's own doc — rather than the exactly-once guarantee every pinned
-// cursor gets. Deliberate and documented, not an oversight — it is the accepted bound
-// recorded under "BOUND: a pre-ADR-0171 unpinned cursor keeps ADR-0173's accepted
-// double-run" in docs/specs/2026-08-11-dying-instance-harvests-open-scopes.md, and
-// flagged in ADR-0174's own Consequences correction. (This previously read
-// "ADR-0174 §5.3", which dangled twice over: ADR-0174 has no numbered sections, and
-// the bound lives in the SPEC, not the ADR.)
+// cursor gets. Deliberate and documented, not an oversight.
 //
 // ⚠ Only the drop protects; the teardown WINDOW that archiveCompensations stamps onto
 // s.Compensating is discarded by endInstance's cursor clear on the very next line. That
 // is sound only because the one site reached with a live cursor (forceTerminate, via
 // endInstance) is a terminal transition where the walk never advances again. A harvest
 // added at a site where the walk CONTINUES would silently reintroduce the residue
-// ADR-0173's archiveWindow* fields exist to remove.
+// the archiveWindow* fields exist to remove.
 //
 // Scopes are visited in slice order, which is parent-before-child (openScope appends a
 // child after its parent). Order across scopes does not affect the resulting walk:
@@ -454,7 +446,7 @@ func (s *InstanceState) harvestOpenScopeCompensations() {
 
 // partitionForLiveWalk splits a scope's records at the indices of a scope-wide
 // compensation throw walk that is draining that very scope, so a teardown which
-// CANNOT be deferred hands each record to exactly one owner (ADR-0173).
+// CANNOT be deferred hands each record to exactly one owner.
 //
 // Three ranges, where drained = min(StartRecordCount, len(records)) and NextIndex
 // is the record currently in flight (the walk counts DOWN):
@@ -465,8 +457,8 @@ func (s *InstanceState) harvestOpenScopeCompensations() {
 //     WINDOWED, so an abandoned walk leaves them recoverable; consumeDispatchedRecord
 //     removes each as the walk reaches it.
 //   - [drained ..] — appended by a live sibling mid-walk. ARCHIVED unwindowed:
-//     genuinely uncompensated, and ADR-0120 review A1's rule that they survive now
-//     holds across a teardown too.
+//     genuinely uncompensated, and the rule that they survive now holds across a
+//     teardown too.
 //
 // Returns (records to archive, window length, whether a window was established).
 // windowed is returned separately from windowCount > 0 because a walk that has
@@ -487,7 +479,7 @@ func (s *InstanceState) partitionForLiveWalk(scopeID string, records []Compensat
 	// input, so the missing clamp was a regression, not an inherited gap.
 	//
 	// clearRecordsPrefix clamps the SAME field for the same reason (its "(defensive)"
-	// note), and ADR-0171's bounds check in stepCompensationAdvance exists for this
+	// note), and the bounds check in stepCompensationAdvance exists for this
 	// exact threat. This is that convention, not a new one.
 	drained := min(max(s.Compensating.StartRecordCount, 0), len(records))
 	undispatched := min(max(s.Compensating.NextIndex, 0), drained)
@@ -499,7 +491,7 @@ func (s *InstanceState) partitionForLiveWalk(scopeID string, records []Compensat
 }
 
 // scopeWideWalkDraining reports whether a live scope-wide compensation throw walk
-// owns the records of the scope identified by scopeID (ADR-0173).
+// owns the records of the scope identified by scopeID.
 //
 // Three conjuncts, and no more. Two obvious-looking others were measured
 // NON-DISCRIMINATING by two independent auditors and deliberately left out:
@@ -514,11 +506,11 @@ func (s *InstanceState) partitionForLiveWalk(scopeID string, records []Compensat
 //     asked about it.
 //
 // len(Records) > 0 is the one that is NOT obvious and IS load-bearing: it selects
-// a walk with a PINNED record source (ADR-0171). Without a snapshot a walk cannot
+// a walk with a PINNED record source. Without a snapshot a walk cannot
 // dispatch anything once the teardown nils the live source — cursorRecords falls
 // back to a live read that returns nothing and the walk finishes on
 // stepCompensationAdvance's bounds check — so partitioning on its behalf would
-// delete records nobody ever runs. Such a cursor (persisted before ADR-0171,
+// delete records nobody ever runs. Such a cursor (persisted by an older version,
 // reachable after a process restart) is therefore left entirely alone, keeping its
 // prior behaviour including the double-run this delivery closes for every other
 // case. Deliberate: losing the record outright is worse.
@@ -558,7 +550,7 @@ func (s *InstanceState) consolidateArchiveIntoRoot() {
 // emptied map becomes nil rather than a non-nil empty map. That normalization is
 // not cosmetic — InstanceState is persisted as JSON, so `{}` and `null` are a
 // gratuitous difference in a stored shape — and it fixes a wart that PRE-DATES
-// ADR-0173: applyFinish's whole-key delete already produced it (ADR-0173 spec §5.7).
+// the teardown window: applyFinish's whole-key delete already produced it.
 func (s *InstanceState) dropArchiveRecordAt(key string, i int) {
 	recs := s.ArchivedCompensations[key]
 	if i < 0 || i >= len(recs) {
@@ -586,7 +578,7 @@ func (s *InstanceState) deleteArchiveSlot(key string) {
 
 // consumeDispatchedRecord drops the record a compensation walk is dispatching at
 // index idx from whichever archive slot still holds it, so that a walk ABANDONED
-// mid-flight leaves behind exactly the records it never dispatched (ADR-0173).
+// mid-flight leaves behind exactly the records it never dispatched.
 //
 // Two sources can hold it:
 //
@@ -600,13 +592,12 @@ func (s *InstanceState) deleteArchiveSlot(key string) {
 // nothing that remains to be dispatched, which is what keeps these absolute
 // indices valid without any re-basing.
 //
-// len(Records) == 0 — a cursor persisted before ADR-0171, which pinned no
+// len(Records) == 0 — a cursor persisted by an older version, which pinned no
 // snapshot — returns early and is the load-bearing guard, not a defensive one.
 // Such a walk cannot dispatch from a source a teardown has nilled: cursorRecords
 // falls back to a live read that returns nothing, and stepCompensationAdvance's
 // bounds check routes it straight to its finish. Consuming on its behalf would
-// delete records nobody ever runs — the exact loss ADR-0173 rejects its simpler
-// alternative for.
+// delete records nobody ever runs.
 func (s *InstanceState) consumeDispatchedRecord(idx int) {
 	cur := s.Compensating
 	if len(cur.Records) == 0 {
@@ -634,7 +625,7 @@ func (s *InstanceState) consumeDispatchedRecord(idx int) {
 // ALWAYS nil because the root scope is implicit — no Scope entry exists for it —
 // so guarding here would make every root-level teardown a silent no-op. The
 // returned set therefore contains scopeID itself even when no such Scope exists,
-// which is exactly what a root-level teardown needs (ADR-0162).
+// which is exactly what a root-level teardown needs.
 func (s *InstanceState) descendantScopeIDs(scopeID string) map[string]bool {
 	ids := map[string]bool{scopeID: true}
 	for _, sc := range s.Scopes {
@@ -650,7 +641,7 @@ func (s *InstanceState) descendantScopeIDs(scopeID string) map[string]bool {
 // scope with that ID exists (also covering the case where scopeID was already
 // closed). Callers remain responsible for any per-scope cleanup outside s.Scopes
 // (cancelling tokens, arms, timers, archiving compensation records) before
-// invoking closeScope; this only prunes the scope tree itself (ADR-0130).
+// invoking closeScope; this only prunes the scope tree itself.
 //
 // The existence guard is load-bearing and must NOT be pushed into
 // descendantScopeIDs: removing it here would turn closeScope("") — the implicit
@@ -673,9 +664,9 @@ func (s *InstanceState) closeScope(scopeID string) {
 // closeScopeDescendants prunes every scope nested inside scopeID from s.Scopes,
 // KEEPING scopeID itself. The interrupting event-sub-process teardown needs
 // exactly this shape: the enclosing scope stays open so the drain code can
-// detect its children, while its descendants must not survive the interrupt
-// (ADR-0162). No existence guard, for the same reason descendantScopeIDs has
-// none — the root scope is implicit, and its descendants are real.
+// detect its children, while its descendants must not survive the interrupt.
+// No existence guard, for the same reason descendantScopeIDs has none — the
+// root scope is implicit, and its descendants are real.
 func (s *InstanceState) closeScopeDescendants(scopeID string) {
 	doomed := s.descendantScopeIDs(scopeID)
 	out := make([]Scope, 0, len(s.Scopes))
@@ -692,7 +683,7 @@ func (s *InstanceState) closeScopeDescendants(scopeID string) {
 // it. The sub-process drain checks need this rather than tokensInScope: a
 // grandchild scope holding the live token must keep the subtree from being
 // declared drained, or closeScope prunes it and leaves a token naming a scope
-// that no longer exists — which wedges the instance permanently (ADR-0162).
+// that no longer exists — which wedges the instance permanently.
 func (s *InstanceState) tokensInScopeSubtree(scopeID string) int {
 	ids := s.descendantScopeIDs(scopeID)
 	count := 0
@@ -709,7 +700,7 @@ func (s *InstanceState) tokensInScopeSubtree(scopeID string) int {
 // single form of the "can this scope exit yet?" question that all four scope
 // exits in engine/step_nodes.go ask — exitEventSubprocessScope,
 // exitRootEventSubprocessScope, exitNestedEventSubprocessScope and
-// exitRegularSubprocessScope. Before ADR-0162 three of them hand-rolled it over
+// exitRegularSubprocessScope. Previously three of them hand-rolled it over
 // tokensInScope, which sees only DIRECT children, and the fourth had no check at
 // all, which is how the fourth stayed broken.
 //
@@ -725,7 +716,7 @@ func (s *InstanceState) hasChildScopeWithTokens(parentID, exceptID string) bool 
 }
 
 // compensationWalkHoldsScope reports whether an in-flight compensation walk
-// still needs the scope identified by scopeID to exist (ADR-0171).
+// still needs the scope identified by scopeID to exist.
 //
 // A compensation THROW resumes past itself, so sibling branches keep running
 // while its walk is outstanding. A sibling reaching the scope's end event would

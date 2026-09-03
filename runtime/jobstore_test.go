@@ -87,10 +87,10 @@ func TestJobStoreLoadScheduledRebuildsExecutableFire(t *testing.T) {
 
 // TestJobStoreLoadPreservesKindAndNextRun proves that Load's rebuilt
 // descriptor faithfully carries the persisted ArmedTimer's Kind and NextRun
-// (ADR-0134 B1 constraint 5) rather than defaulting to the zero TimerKind. It
-// observes this externally by round-tripping the rebuilt job through Save
-// into a fresh MemTimerStore and inspecting the resulting row — Load and Save
-// are both exercised through the public scheduler.JobStore surface only.
+// rather than defaulting to the zero TimerKind. It observes this externally by
+// round-tripping the rebuilt job through Save into a fresh MemTimerStore and
+// inspecting the resulting row — Load and Save are both exercised through the
+// public scheduler.JobStore surface only.
 func TestJobStoreLoadPreservesKindAndNextRun(t *testing.T) {
 	t.Parallel()
 

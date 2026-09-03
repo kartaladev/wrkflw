@@ -1,11 +1,11 @@
 package engine_test
 
 // step_task_lifetime_guard_test.go — the task-lifetime companion guard on the
-// three human-task handlers (ADR-0165, Decision 6).
+// three human-task handlers.
 //
 // The instance-status guard in dispatch closes one key: a trigger arriving after
 // the instance died. This file covers the SECOND, independent key it cannot see —
-// a task closed while its instance keeps running. ADR-0163 made that reachable:
+// a task closed while its instance keeps running. That case is reachable:
 // an interrupting boundary and a breached deadline both cancel the task attached
 // to the token they consume, and the instance carries on down the alternative
 // path. Every case that exercises the task-lifetime key therefore asserts
@@ -373,8 +373,8 @@ func TestHumanTaskTriggersOnClosedTaskError(t *testing.T) {
 				//
 				// Deliberately scoped to this setup. It is tempting to write "every
 				// terminal path routes through endInstance, so the task is ALWAYS
-				// closed too" — but that is an unverified universal, and ADR-0164
-				// found five resurrection routes across three successive passes,
+				// closed too" — but that is an unverified universal, and five
+				// resurrection routes were found across three successive passes,
 				// each after the previous pass had declared the set closed. The
 				// precedence this case pins does not need the universal to hold.
 				require.ErrorIs(t, err, engine.ErrInstanceTerminal)

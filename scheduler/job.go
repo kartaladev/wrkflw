@@ -101,7 +101,7 @@ func WithManualActivation() JobOption {
 }
 
 // WithoutOverrunProtection opts a recurring job out of the default singleton
-// mode (production item ③): its fires may overlap. It has no effect on
+// mode: its fires may overlap. It has no effect on
 // one-shot jobs, which are never singleton by default.
 func WithoutOverrunProtection() JobOption {
 	return func(c *jobConfig) { c.noOverrun = true }
@@ -128,14 +128,14 @@ func (j *job) Action() JobFunc            { return j.fn }
 func (j *job) Data() DataProvider         { return j.data }
 
 // singleton reports whether concurrent fires of this job must be serialized
-// (production item ③, overrun protection). It defaults to true for jobs
+// (overrun protection). It defaults to true for jobs
 // built from a [Trigger.Recurring] trigger — a slow fire must not overlap
 // its own next fire — and is false for one-shot jobs, which have nothing to
 // overlap. [WithoutOverrunProtection] forces it to false regardless.
 //
 // It is deliberately unexported: Job is public API a consumer may implement
 // directly, but this flag is an internal signal the in-package façade
-// (Tasks 5-11) reads back via a private interface assertion
+// reads back via a private interface assertion
 // (interface{ singleton() bool }) — only code inside package scheduler can
 // spell that assertion, since the method name is unexported. Consumer-
 // implemented Jobs that don't satisfy it fall back to the safe equivalent:

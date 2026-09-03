@@ -14,7 +14,7 @@ import (
 // rebuilds executable Manual timer jobs from the durable TimerStore, resolving
 // each timer's definition via the registry and rebuilding its fire callback
 // via the shared timerFireFunc. Save and Delete give the scheduler a real
-// durable write path (ADR-0134 B1), routed through the driver's TimerWriter
+// durable write path, routed through the driver's TimerWriter
 // capability (nil when no durable TimerStore is configured).
 type jobStore struct {
 	driver *ProcessDriver
@@ -44,22 +44,22 @@ func newJobStore(driver *ProcessDriver) *jobStore { return &jobStore{driver: dri
 //
 // Load also skips, at WARN and without failing the batch, any row whose
 // trigger will not convert and any row that cannot be armed at all — one
-// whose trigger reports no next fire from the current clock (ADR-0176).
+// whose trigger reports no next fire from the current clock.
 // Of the two skip reasons, Pruner.PruneTimers cannot delete a row skipped as
 // NEVER-DUE: its trigger_kind IN-list covers only the non-recurring kinds, and
 // every never-due kind is recurring. Reclaiming one is the separate, disjoint
-// sweep of ADR-0181, reached through the persistence.NeverDueTimerReclaimer
-// capability; until an operator runs it the row stays in the timer store.
+// sweep reached through the persistence.NeverDueTimerReclaimer capability;
+// until an operator runs it the row stays in the timer store.
 // ⚠ Reclaiming the row does not unpark the instance that armed it.
 //
 // A row skipped because its trigger will not CONVERT is a different case and
 // gets no such protection: KindUnset and KindExpr are both non-recurring, so an
 // expired row of either kind is deleted by an ordinary PruneTimers retention
 // pass. Only pre-existing rows can be in that state — timerJobsFor no longer
-// persists an unconvertible trigger — which is also why ADR-0179's second
-// PruneTimers exclusion (engine.TimerCompensationRetry) does not qualify the
-// sentence above: that timer kind is armed with a convertible KindOneTime
-// trigger and postdates every row that can be stuck unconvertible.
+// persists an unconvertible trigger — which is also why the other PruneTimers
+// exclusion (engine.TimerCompensationRetry) does not qualify the sentence
+// above: that timer kind is armed with a convertible KindOneTime trigger and
+// postdates every row that can be stuck unconvertible.
 //
 // Save persists j's typed descriptor via the driver's TimerWriter (recovered
 // by type-asserting j to the runtime's own descriptor-bearing job shape);
@@ -104,7 +104,7 @@ func (j *jobStore) Load(ctx context.Context) ([]scheduler.ScheduledJob, error) {
 			continue
 		}
 		if sj.NextRun().IsZero() {
-			// ADR-0176. Rehydration re-arms from the TRIGGER, not from the
+			// Rehydration re-arms from the TRIGGER, not from the
 			// stored next_run — rehydrateTrigger hands a recurring trigger
 			// back verbatim, and every never-due calendar kind is recurring —
 			// so a zero arm instant here is exactly neverDueNextRun over that
@@ -149,8 +149,8 @@ type timerJobDescriptor interface {
 	descriptor() kernel.JobSpec
 }
 
-// Save persists sj's typed descriptor via the driver's TimerWriter
-// (ADR-0134 B1). It requires sj to be the runtime's own timer job shape
+// Save persists sj's typed descriptor via the driver's TimerWriter.
+// It requires sj to be the runtime's own timer job shape
 // (recovered via the timerJobDescriptor type-assertion) AND to report
 // timerJobKind — the only kind this store is ever registered for
 // (startTimerJobKind timer-starts are deliberately non-durable and never

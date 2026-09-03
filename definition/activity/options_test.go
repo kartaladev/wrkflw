@@ -190,9 +190,9 @@ func TestWithLabel(t *testing.T) {
 	}
 }
 
-// TestUserTaskOutcomeOptions covers the completion-outcome declaration options
-// (ADR-0146): the accepted outcome set and the two mutually-exclusive
-// variable-exposure forms.
+// TestUserTaskOutcomeOptions covers the completion-outcome declaration options:
+// the accepted outcome set and the two mutually-exclusive variable-exposure
+// forms.
 func TestUserTaskOutcomeOptions(t *testing.T) {
 	t.Parallel()
 

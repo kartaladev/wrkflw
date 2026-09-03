@@ -19,8 +19,8 @@ func discloseState() engine.InstanceState {
 
 // TestDisclosingMapper_KeysOnTheRESOLVER_notTheContext is the sharp one.
 //
-// ⚠ Nothing in transport/http ever calls authz.ContextWithActor: ADR-0189 passes the actor
-// to the endpoints as an ARGUMENT. A decision keyed on authz.ActorFromContext is therefore
+// ⚠ Nothing in transport/http ever calls authz.ContextWithActor: the actor reaches the
+// endpoints as an ARGUMENT. A decision keyed on authz.ActorFromContext is therefore
 // ALWAYS false, and would project for authenticated callers too — the "everyone blind"
 // configuration this design exists to avoid. The signal must be the configured resolver,
 // which is what a consumer using WithRequestActor actually populates.
@@ -58,7 +58,7 @@ func TestDisclosingMapper_ProjectsWhenUnidentified(t *testing.T) {
 			return authz.Actor{}, errors.New("upstream down")
 		}},
 		{
-			// ⚠ ADR-0189 refuses the zero actor three lines from its own resolver, and an
+			// ⚠ The transport refuses the zero actor three lines from its own resolver, and an
 			// empty AuthzSpec ALLOWS it. "Present" must mean IDENTIFIED, not non-nil.
 			name: "zero actor returned with a nil error",
 			resolve: func(context.Context) (authz.Actor, error) {
@@ -66,7 +66,7 @@ func TestDisclosingMapper_ProjectsWhenUnidentified(t *testing.T) {
 			},
 		},
 		{
-			// The kiosk claimant ADR-0189 blesses: no ID, only a role.
+			// The kiosk claimant blessed for ACTING: no ID, only a role.
 			name: "kiosk claimant carries no identity",
 			resolve: func(context.Context) (authz.Actor, error) {
 				return authz.Actor{Roles: []string{"kiosk"}}, nil
@@ -133,8 +133,8 @@ func TestDisclosingMapper_WrapsAConsumerMapper(t *testing.T) {
 //
 // ⚠ DiscloseAll is NOT the union of the four categories. Those restore only the fields some
 // category names — 20 of InstanceState's 31 are restorable by none of them, including
-// `incidents` and `compensating`, the projection that makes a WEDGED instance findable
-// (ADR-0175). A union would silently break the operator escape hatch, so the opt-out has to
+// `incidents` and `compensating`, the projection that makes a WEDGED instance findable.
+// A union would silently break the operator escape hatch, so the opt-out has to
 // mean "do not project at all".
 func TestDiscloseAll_SkipsTheProjectionEntirely(t *testing.T) {
 	t.Parallel()

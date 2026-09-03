@@ -28,8 +28,7 @@ type cursorPayload struct {
 // [cursorPayload]. What the discriminator adds is symmetry with
 // [EncodeArmedTimerCursor] — so a third cursor has one obvious shape to copy —
 // and rejection of a future cursor whose field set is a SUBSET of
-// {started_at, instance_id}, which unknown-fields structurally cannot catch
-// (ADR-0160).
+// {started_at, instance_id}, which unknown-fields structurally cannot catch.
 const instanceCursorKind = "instance"
 
 // EncodeCursor produces an opaque keyset cursor for keyset pagination.
@@ -68,8 +67,8 @@ func DecodeCursor(cursor string) (time.Time, string, error) {
 	if p.Kind != instanceCursorKind {
 		return time.Time{}, "", fmt.Errorf("%w: not an instance cursor", ErrBadCursor)
 	}
-	// A cursor is always minted from a real row and ADR-0152 forbids empty
-	// identity keys, so an empty id means the payload was fabricated or
+	// A cursor is always minted from a real row and empty identity keys are
+	// forbidden, so an empty id means the payload was fabricated or
 	// truncated. Under the DESC ordering this listing uses, the resulting key is
 	// the lowest possible one, which matches nothing — a silently empty page
 	// rather than a diagnostic.
@@ -82,8 +81,8 @@ func DecodeCursor(cursor string) (time.Time, string, error) {
 	// the exact failure this cursor family exists to prevent.
 	//
 	// Rejecting it is safe here, and deliberately asymmetric with the
-	// armed-timer sibling: a zero next_run is a legitimate armed value there
-	// (ADR-0159), whereas StartedAt is minted from Trigger.OccurredAt and a
+	// armed-timer sibling: a zero next_run is a legitimate armed value there,
+	// whereas StartedAt is minted from Trigger.OccurredAt and a
 	// zero-StartedAt row sorts LAST under DESC — so a cursor is never
 	// legitimately minted from one.
 	if p.StartedAt.IsZero() {
@@ -155,8 +154,8 @@ type InstanceSummary struct {
 	//   - engine.IncidentAction, created when a retryable action exhausts its
 	//     retry budget (or encounters a non-retryable error). It parks a token
 	//     and IS cleared through ResolveIncident.
-	//   - The walk-scoped kinds — engine.IncidentCompensationStall (ADR-0175)
-	//     and engine.IncidentCompensationFailed (ADR-0179). They park no token,
+	//   - The walk-scoped kinds — engine.IncidentCompensationStall
+	//     and engine.IncidentCompensationFailed. They park no token,
 	//     and ResolveIncident REFUSES both with engine.ErrIncidentNotResolvable
 	//     (it whitelists engine.IncidentAction); the verbs that act on them are
 	//     retry, skip and abandon on the compensation walk.

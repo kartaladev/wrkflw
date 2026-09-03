@@ -13,8 +13,7 @@ import (
 )
 
 // crossCheckAnchors are the fixed anchors every cross-check row is probed at.
-// They are the five instants ADR-0182's probe P-A measured the §3.1 corpus at
-// (docs/specs/2026-08-13-adr-0181-0182-audit-adjudication.md:19), and they are
+// They are the five instants the fixed corpus was measured at, and they are
 // chosen so the anchor-dependent calendar branches are actually reachable: a
 // February (no 31st, and 28 days), a 31-day month, a month end, a Sunday (the
 // weekday the scheduler substitutes for an empty weekday set), and a leap day.
@@ -43,7 +42,7 @@ type crossCheckViolation struct {
 //	spec.NeverDue() == true  =>  Next is !ok at EVERY anchor.
 //
 // The converse is deliberately NOT probed. NeverDue is sound but knowingly not
-// complete (spec §1): Monthly(12,[31]) is !ok in February and ok in August, and
+// complete: Monthly(12,[31]) is !ok in February and ok in August, and
 // cron and the engine-resolved expression forms report false by design, so a
 // two-way "verdict == verdict" assertion is unsatisfiable rather than merely
 // strict. What this catches is UNSOUNDNESS — a NeverDue that refuses a spec
@@ -97,21 +96,21 @@ func reportCrossCheck(t *testing.T, label string, spec schedule.TriggerSpec) boo
 	return neverDue
 }
 
-// TestNeverDueAgreesWithScheduler is the ONLY mitigation for the second source
-// of truth ADR-0182 knowingly accepts: definition/schedule.TriggerSpec.NeverDue
+// TestNeverDueAgreesWithScheduler is the ONLY mitigation for the knowingly
+// accepted second source of truth: definition/schedule.TriggerSpec.NeverDue
 // duplicates, by hand, the anchor-independent !ok branches of
 // scheduler.Trigger.Next. It lives in package runtime (an internal test file)
 // because only here are the real unexported convertTrigger AND Trigger.Next
 // both in scope, so the chain under test is exactly the production chain; a
 // package model_test version would have to hand-roll the conversion — a third
-// copy, blind to conversion drift by construction (ADR-0182 Consequences).
+// copy, blind to conversion drift by construction.
 //
 // Two halves, one property:
 //
-//   - the fixed §3.1 corpus, the regression floor;
+//   - the fixed corpus, the regression floor;
 //   - a DETERMINISTIC generated sweep, because a fixed corpus only ever
 //     re-checks inputs already agreed on. No math/rand and no go test -fuzz:
-//     the gate must be reproducible (spec §6.4).
+//     the gate must be reproducible.
 //
 // Mutation-verified 2026-08-14 against three unsound edits of NeverDue —
 // Weekly's "ALL negative" weakened to "ANY negative", the Monthly day rule's
@@ -197,7 +196,7 @@ func TestNeverDueAgreesWithScheduler(t *testing.T) {
 // crossCheckRow is one labelled spec. There is deliberately no per-row expected
 // verdict and no per-row assert closure: the asserted property is the SAME
 // one-directional implication for every row, and a per-row expectation is
-// exactly the two-way "verdict == verdict" shape audit A-F4 rejected as
+// exactly the two-way "verdict == verdict" shape the audit rejected as
 // unsatisfiable. The per-row verdicts live in
 // definition/schedule/trigger_neverdue_test.go, which is the corpus this table
 // mirrors.
@@ -206,7 +205,7 @@ type crossCheckRow struct {
 	spec  schedule.TriggerSpec
 }
 
-// fixedNeverDueCorpus is the §3.1 corpus, the same specs
+// fixedNeverDueCorpus is the fixed corpus, the same specs
 // definition/schedule/trigger_neverdue_test.go drives TriggerSpec.NeverDue
 // with. Kept in the same order and with the same labels so a drift between the
 // two files is visible in a diff.
@@ -273,7 +272,7 @@ func fixedNeverDueCorpus() []crossCheckRow {
 		{label: "Every(1h)", spec: schedule.Every(time.Hour)},
 		{label: "EveryRandom(5s,10s)", spec: schedule.EveryRandom(5*time.Second, 10*time.Second)},
 
-		// ---- cron is OUT OF SCOPE for the predicate (ADR-0182 §3.2): every
+		// ---- cron is OUT OF SCOPE for the predicate: every
 		// KindCron spec reports false, including the two that genuinely never
 		// fire. They are carried here so the third mutation below — a KindCron
 		// branch returning true — has a due cron row to be caught by.

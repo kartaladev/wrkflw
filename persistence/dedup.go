@@ -11,8 +11,8 @@ import (
 	"github.com/kartaladev/wrkflw/internal/persistence/store"
 )
 
-// Deduper is the stable public interface for idempotent-consumer deduplication
-// (ADR-0018). It records processed message IDs inside the caller's own
+// Deduper is the stable public interface for idempotent-consumer
+// deduplication. It records processed message IDs inside the caller's own
 // business transaction so the dedup record and the side effect commit
 // atomically.
 //
@@ -46,13 +46,13 @@ var _ Deduper = (*store.Deduper)(nil)
 // The consumer must call persistence.Migrate before the first Seen call so the
 // wrkflw_processed_message table exists.
 //
-// Pass [WithDeduperClock] to control the processed_at stamp Seen writes
-// (ADR-0138). Zero-option call sites compile unchanged.
+// Pass [WithDeduperClock] to control the processed_at stamp Seen writes.
+// Zero-option call sites compile unchanged.
 func NewDeduper(pool *pgxpool.Pool, opts ...DeduperOption) (Deduper, error) {
 	return store.NewDeduper(pool, dialect.NewPostgres(), buildDeduperOptions(opts)...)
 }
 
-// NewMySQLDeduper constructs a Deduper backed by a MySQL database (ADR-0018),
+// NewMySQLDeduper constructs a Deduper backed by a MySQL database,
 // using INSERT IGNORE into wrkflw_processed_message. MigrateMySQL must be called
 // before the first Seen call so the table exists.
 //
@@ -60,13 +60,13 @@ func NewDeduper(pool *pgxpool.Pool, opts ...DeduperOption) (Deduper, error) {
 // analog) so the two backends are interchangeable at the consumer site. See the
 // Deduper doc for how Seen participates in the ambient transaction.
 //
-// Pass [WithDeduperClock] to control the processed_at stamp Seen writes
-// (ADR-0138). Zero-option call sites compile unchanged.
+// Pass [WithDeduperClock] to control the processed_at stamp Seen writes.
+// Zero-option call sites compile unchanged.
 func NewMySQLDeduper(db *sql.DB, opts ...DeduperOption) (Deduper, error) {
 	return store.NewDeduper(db, dialect.NewMySQL(), buildDeduperOptions(opts)...)
 }
 
-// NewSQLiteDeduper constructs a Deduper backed by a SQLite database (ADR-0018),
+// NewSQLiteDeduper constructs a Deduper backed by a SQLite database,
 // using INSERT ... ON CONFLICT DO NOTHING into wrkflw_processed_message.
 // MigrateSQLite must be called before the first Seen call so the table exists.
 //
@@ -75,8 +75,8 @@ func NewMySQLDeduper(db *sql.DB, opts ...DeduperOption) (Deduper, error) {
 // consumer site. See the Deduper doc for how Seen participates in the ambient
 // transaction.
 //
-// Pass [WithDeduperClock] to control the processed_at stamp Seen writes
-// (ADR-0138). Zero-option call sites compile unchanged.
+// Pass [WithDeduperClock] to control the processed_at stamp Seen writes.
+// Zero-option call sites compile unchanged.
 func NewSQLiteDeduper(db *sql.DB, opts ...DeduperOption) (Deduper, error) {
 	return store.NewDeduper(db, dialect.NewSQLite(), buildDeduperOptions(opts)...)
 }

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Enforce ADR-0184's sizing rule for `require.Eventually` budgets:
+# Enforce the sizing rule for `require.Eventually` budgets:
 #
 #     eventuallyBudget x (site count in the densest package) < go test -timeout
 #
-# Nothing enforced this before (backlog 48). `scheduler/waitbudget_test.go` states
+# Nothing enforced this before. `scheduler/waitbudget_test.go` states
 # the rule in a doc comment and both `go test` invocations ran at Go's implicit
 # 600s default, so a budget raise or a new batch of Eventually sites could push a
 # mass failure past the binary timeout silently. When that happens the binary dies
@@ -30,9 +30,9 @@
 #
 # SCOPE (stated so nobody over-reads a green run): it covers Eventually sites that
 # pass the shared `eventuallyBudget` constant. A site passing a bare literal is not
-# counted — using the constant is the convention ADR-0184 established, and a literal
+# counted — using the constant is the established convention, and a literal
 # is a separate review problem. `require.Never` budgets are deliberately excluded:
-# a Never budget is paid in full on every GREEN run and is governed by ADR-0184 §4,
+# a Never budget is paid in full on every GREEN run and is governed separately,
 # not by this ceiling.
 #
 # Usage: scripts/check-test-timeout.sh   (from the repo root; no Docker, no network)
@@ -156,7 +156,7 @@ Fix by one of:
     latency — a green run returns as soon as its condition holds);
   * splitting the package so the sites spread across more than one test binary;
   * raising -timeout in BOTH .github/workflows/ci.yml and scripts/coverage.sh, which is a
-    deliberate decision that belongs in an ADR (see ADR-0184).
+    deliberate decision: record why alongside the change.
 EOF
 fi
 

@@ -14,7 +14,7 @@ import (
 // StartEvent carrying a signal, timer, or message trigger — or (zero,false) if
 // none exists (e.g. every start is a manual/trigger-less start). An event
 // sub-process is entered via this triggered start; StartNodes()[0] may be a
-// manual start now that multi-start nested definitions are legal (ADR-0121).
+// manual start now that multi-start nested definitions are legal.
 func eventTriggeredStart(def *model.ProcessDefinition) (event.StartEvent, bool) {
 	for _, raw := range def.StartNodes() {
 		se, ok := raw.(event.StartEvent)
@@ -32,7 +32,7 @@ func eventTriggeredStart(def *model.ProcessDefinition) (event.StartEvent, bool) 
 // if so, returns its nested definition, its event-triggered inner start, and
 // the non-interrupting flag. An event sub-process is an activity.SubProcess
 // whose inner start is event-triggered (signal/timer/message); the
-// non-interrupting flag is read from that start event (ADR-0122). A SubProcess
+// non-interrupting flag is read from that start event. A SubProcess
 // with only a manual/none start is NOT an event sub-process (ok=false) — it
 // stays token-driven inline. The returned inner start is the same one
 // eventTriggeredStart selects, so callers need not re-scan.
@@ -59,7 +59,7 @@ func eventSubprocessNested(raw model.Node) (nested *model.ProcessDefinition, inn
 //
 // The trigger is read from the nested definition's event-triggered start (see
 // eventTriggeredStart), not StartNodes()[0], which may be a manual start under
-// multi-start nested definitions (ADR-0121). Trigger encoding:
+// multi-start nested definitions. Trigger encoding:
 //   - Signal trigger: the event-triggered start's SignalName is non-empty.
 //   - Timer trigger: the event-triggered start's Timer is set (non-zero TriggerSpec).
 //   - Message trigger: the event-triggered start's MessageName is non-empty.
@@ -77,7 +77,7 @@ func armEventTriggeredSubprocesses(def *model.ProcessDefinition, s *InstanceStat
 		}
 		// se is the event-triggered inner start eventSubprocessNested already
 		// resolved (StartNodes()[0] may be a manual start under multi-start nested
-		// defs, ADR-0121) — no re-scan needed.
+		// defs) — no re-scan needed.
 
 		arm := eventTriggeredSubprocessArm{
 			EnclosingScopeID:    enclosingScopeID,
@@ -126,8 +126,8 @@ func armEventTriggeredSubprocesses(def *model.ProcessDefinition, s *InstanceStat
 //  5. Standalone parked token.
 //
 // For interrupting (!ea.NonInterrupting) — every step from 2 to 5 applies to the
-// enclosing scope's whole SUBTREE, not just the enclosing scope itself
-// (ADR-0162); steps 5 and 6 are the two effects that subtree teardown added:
+// enclosing scope's whole SUBTREE, not just the enclosing scope itself;
+// steps 5 and 6 are the two effects that subtree teardown added:
 //  1. Verify the enclosing scope is still active (if not, clean no-op).
 //  2. Cancel ALL tokens in the enclosing scope AND in every scope nested inside
 //     it (consuming them + closing visits).
@@ -154,7 +154,7 @@ func armEventTriggeredSubprocesses(def *model.ProcessDefinition, s *InstanceStat
 //  4. Open a child scope and place a start token — runs alongside.
 //  5. Drive forward.
 func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, ea eventTriggeredSubprocessArm, at time.Time, pol stepPolicy) ([]Command, error) {
-	// ADR-0172: a DYING instance spawns no new work, whichever scope the arm
+	// A DYING instance spawns no new work, whichever scope the arm
 	// belongs to. This replaced a root-scope-only `s.Status != StatusRunning`
 	// check, which was wrong in both directions:
 	//
@@ -199,7 +199,7 @@ func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefi
 		// Not an event sub-process (legacy or SubProcess-form): defensive no-op.
 		// innerStart is the event-triggered start that armed this arm (the one
 		// eventSubprocessNested resolved), not StartNodes()[0] which may be a
-		// manual start under multi-start nested defs (ADR-0121).
+		// manual start under multi-start nested defs.
 		return nil, nil
 	}
 
@@ -208,8 +208,8 @@ func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefi
 	if !ea.NonInterrupting {
 		// Interrupting: cancel every token in the enclosing scope AND in all its
 		// descendant scopes, retire their arms and archive their compensation
-		// records (ADR-0162 — before it, a token an earlier arm had pushed into a
-		// nested sub-process survived the interrupt). Cancellation stays
+		// records (before subtree teardown, a token an earlier arm had pushed into
+		// a nested sub-process survived the interrupt). Cancellation stays
 		// cancelTokenWaits per token, so deadline/reminder timers, in-wait
 		// reminders, boundary arms and event-gateway arms (the "evtgw:" sentinel)
 		// are retired exactly as before — only the set of tokens widens.
@@ -233,14 +233,12 @@ func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefi
 	} else {
 		// Non-interrupting: leave enclosing scope running, spawn alongside. The arm
 		// STAYS armed so it can fire again on the next delivery — BPMN
-		// non-interrupting is repeatable (ADR-0124). Each fire opens its own child
+		// non-interrupting is repeatable. Each fire opens its own child
 		// scope; the arm is retired only when the enclosing scope closes
-		// (removeEventTriggeredSubprocessArmsForScope) or the instance ends. Since
-		// ADR-0164 "the instance ends" covers NORMAL completion too — every terminal
+		// (removeEventTriggeredSubprocessArmsForScope) or the instance ends.
+		// "The instance ends" covers NORMAL completion too — every terminal
 		// site routes through endInstance, whose cancelAllScheduledWork retires the
-		// arm — so a root arm no longer survives into a terminal snapshot. Only
-		// ADR-0124's harmlessness corollary is withdrawn; the repeatability decision
-		// this branch implements stands.
+		// arm — so a root arm does not survive into a terminal snapshot.
 
 		// Open a child scope for the event sub-process, parented to the enclosing scope.
 		// NodeID = the event sub-process node ID.

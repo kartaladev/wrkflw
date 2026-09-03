@@ -7,7 +7,7 @@ import (
 // ProjectFor returns a [ProcessInstance] that renders proj(pi.State()) instead of
 // pi.State(), optionally also withholding the embedded definition.
 //
-// It exists for the HTTP transport's disclosure posture (ADR-0190): a caller the transport
+// It exists for the HTTP transport's disclosure posture: a caller the transport
 // could not identify receives a projection of the instance rather than the whole of it. The
 // transport owns that decision — this function only carries it into the marshalled document,
 // which `service` alone can construct.

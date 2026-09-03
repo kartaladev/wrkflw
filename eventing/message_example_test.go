@@ -10,7 +10,7 @@ func ExampleNewMessageHandler() {
 	// Given a driver — the receiver definition is resolved by the driver itself
 	// (correlate to a running instance, or start from a message-start event), so
 	// DeliverMessage's signature matches MessageDeliverFunc and can be passed as a
-	// method value directly (ADR-0121):
+	// method value directly:
 	var driver *runtime.ProcessDriver
 
 	handler := eventing.NewMessageHandler(driver.DeliverMessage)

@@ -143,7 +143,7 @@ func (c TaskRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpti
 			return
 		}
 		var in httpcore.ClaimInput
-		// Body is OPTIONAL here: since ADR-0189 removed the self-asserted actor,
+		// Body is OPTIONAL here: with the self-asserted actor removed,
 		// httpcore.ClaimInput has NO fields, so a correctly migrated client sends
 		// no body at all. MEASURED against the required-body decoder: a bodyless
 		// POST answered 400 "workflow-httpcore: bad input: EOF".
@@ -214,7 +214,7 @@ func (c TaskRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpti
 // It implements [httpcore.RouteCustomizer][*http.ServeMux].
 // SECURITY: these routes have NO built-in authentication. Mount AdminRoutes only
 // onto a router group already protected by your auth middleware (admin-by-
-// composition, ADR-0095); otherwise the admin endpoints are exposed unauthenticated.
+// composition); otherwise the admin endpoints are exposed unauthenticated.
 type AdminRoutes struct {
 	Svc         service.Service
 	DeadLetters service.DeadLetterAdmin
@@ -281,7 +281,7 @@ func (c AdminRoutes) Customize(mux *http.ServeMux, opts ...httpcore.CustomizeOpt
 			instanceID := req.PathValue("id")
 			var in httpcore.ResolveCompensationStallInput
 			// Body is REQUIRED here, unlike resolve-incident: command_id and
-			// disposition are both mandatory and neither may default (ADR-0175).
+			// disposition are both mandatory and neither may default.
 			if !decodeRequestBody(cfg, w, req, &in) {
 				return
 			}

@@ -10,7 +10,7 @@ import (
 	"github.com/kartaladev/wrkflw/definition/model"
 )
 
-// TestWithLabel_AllKinds covers the human display label options (Task 5):
+// TestWithLabel_AllKinds covers the human display label options:
 // WithLabel on Start/Catch/End/Boundary, plus the ThrowEvent/CompensationThrowEvent
 // dedicated setters, all resolved through model.Node.Label().
 func TestWithLabel_AllKinds(t *testing.T) {

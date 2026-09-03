@@ -4,7 +4,7 @@
 //
 // The engine's hot read paths (instance state on every ApplyTrigger, human-task
 // snapshots on every claim/complete) should be cached so they do not overload
-// the backing store (ADR-0073, ADR-0099). Caching is a thin, opt-in wrapper:
+// the backing store. Caching is a thin, opt-in wrapper:
 // two constructors — persistence.NewCachingInstanceStore and
 // persistence.NewCachingTaskStore — wrap ANY backing store with a cache.Provider
 // substrate, and the wrapped stores drop straight into the normal driver

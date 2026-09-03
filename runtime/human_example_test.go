@@ -100,7 +100,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 
 	// Journal: StartInstance + HumanClaimed + HumanCompleted (Run's StartInstance
 	// plus two ApplyTrigger calls). Candidate resolution rides the SAME commit
-	// that parks the task (ADR-0147 amendment #1), so creating a human task costs
+	// that parks the task, so creating a human task costs
 	// no extra step, no extra commit, and no extra journal entry. A
 	// HumanCandidatesResolved entry here would mean resolution had regressed to a
 	// second, race-losable commit.
@@ -283,8 +283,8 @@ func TestProcessDriverAttributeOverVarsThroughRunner(t *testing.T) {
 	}
 }
 
-// TestHumanTaskCandidatesSurviveReload is the regression test for the defect the
-// rule-#9 audit found: candidates must reach the COMMITTED snapshot, not just the
+// TestHumanTaskCandidatesSurviveReload is the regression test for the defect an
+// audit found: candidates must reach the COMMITTED snapshot, not just the
 // in-memory state the current call happens to return.
 //
 // The instance view is a pure projection over the persisted snapshot
@@ -358,8 +358,8 @@ func (r *blockingResolver) Candidates(ctx context.Context, _ authz.AuthzSpec, _ 
 }
 
 // TestCandidateResolveTimeout verifies that a single candidate resolution is
-// bounded. Resolution runs BEFORE the parking commit (ADR-0147 amendment #1), so
-// an unresponsive ActorResolver would otherwise hold the step open indefinitely
+// bounded. Resolution runs BEFORE the parking commit, so an unresponsive
+// ActorResolver would otherwise hold the step open indefinitely
 // and stall the commit — the driver must not depend on a third-party directory
 // being well-behaved.
 //

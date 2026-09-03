@@ -1,6 +1,6 @@
 package atrest
 
-// The six at-rest sensitivity classes (ADR-0187 §"The classification").
+// The six at-rest sensitivity classes.
 // Classification is dialect-invariant: a column's class is a judgement
 // about its logical role, not its physical type, so the same class
 // applies across postgres/mysql/sqlite.
@@ -47,7 +47,7 @@ type PolicyLocation struct {
 //
 //   - wrkflw_instances.snapshot holds the serialized instance state, and
 //     engine.InstanceState.Tasks carries every in-flight human task whose
-//     Eligibility is a full authz.AuthzSpec (backlog 141).
+//     Eligibility is a full authz.AuthzSpec.
 //   - wrkflw_definitions.definition holds the marshalled process definition
 //     (internal/persistence/store/definitions.go PutDefinition json.Marshals the
 //     whole ProcessDefinition into it), and
@@ -58,8 +58,7 @@ type PolicyLocation struct {
 // three options emits
 // `"eligible_roles":["manager"],"eligible_privileges":["approve:invoice"],"eligible_expr":"vars.amount < 100"`.
 // A consumer who encrypts only the `policy`-classed columns therefore leaves
-// per-node eligibility rules in the clear — the precise harm ADR-0187's Context
-// names.
+// per-node eligibility rules in the clear.
 //
 // The column keeps class `freeform` rather than being reclassified `policy`:
 // one column carries one class, its logical role is "the serialized definition"
@@ -84,7 +83,7 @@ var PolicyAtRestLocations = []PolicyLocation{
 		Detail: "is class `freeform` because it holds the serialized instance state — but " +
 			"engine.InstanceState.Tasks carries every in-flight human task, and each one's " +
 			"`Eligibility` is a full authz.AuthzSpec, so the eligibility rule governing live " +
-			"work is inside that JSON (backlog 141)",
+			"work is inside that JSON",
 	},
 	{
 		Table: "wrkflw_definitions", Column: "definition",
@@ -100,17 +99,16 @@ var PolicyAtRestLocations = []PolicyLocation{
 // keyed by ColumnKey rather than a bare column name because exactly one
 // column name in the schema carries two different classes:
 // wrkflw_human_task.claimed_by (ClassActor, a human principal) and
-// wrkflw_call_links.claimed_by (ClassReference, a worker lease owner —
-// E7) — a map[string]Class would merge them and mis-state one.
+// wrkflw_call_links.claimed_by (ClassReference, a worker lease owner) —
+// a map[string]Class would merge them and mis-state one.
 //
-// This is a stated judgement, not a derivation: it is transcribed
-// verbatim from docs/specs/2026-08-22-at-rest-posture.md § "The
-// classification", which itself survived two adversarial audit rounds.
-// Do not re-derive or second-guess any entry here — see that section
-// for the reasoning behind each. TestClassificationCoversTheSchemaExactly
-// is the completeness and staleness guard that keeps this map honest
-// against the schema the migrations actually declare, and
-// TestClassificationPerClassCounts pins the per-class totals (E6).
+// This is a stated judgement, not a derivation: each entry was decided
+// deliberately and survived two adversarial audit rounds. Do not
+// re-derive or second-guess any entry here.
+// TestClassificationCoversTheSchemaExactly is the completeness and
+// staleness guard that keeps this map honest against the schema the
+// migrations actually declare, and TestClassificationPerClassCounts pins
+// the per-class totals.
 var Classification = map[ColumnKey]Class{
 	// wrkflw_instances (9)
 	{Table: "wrkflw_instances", Column: "instance_id"}: ClassReference,
@@ -161,7 +159,7 @@ var Classification = map[ColumnKey]Class{
 	{Table: "wrkflw_call_links", Column: "parent_instance_id"}: ClassReference,
 	{Table: "wrkflw_call_links", Column: "parent_command_id"}:  ClassReference,
 	{Table: "wrkflw_call_links", Column: "parent_def_id"}:      ClassReference,
-	{Table: "wrkflw_call_links", Column: "claimed_by"}:         ClassReference, // worker lease owner (E7), not a person
+	{Table: "wrkflw_call_links", Column: "claimed_by"}:         ClassReference, // worker lease owner, not a person
 	{Table: "wrkflw_call_links", Column: "parent_def_version"}: ClassScalar,
 	{Table: "wrkflw_call_links", Column: "depth"}:              ClassScalar,
 	{Table: "wrkflw_call_links", Column: "status"}:             ClassScalar,
@@ -196,7 +194,7 @@ var Classification = map[ColumnKey]Class{
 	{Table: "wrkflw_human_task", Column: "node_id"}:          ClassReference,
 	{Table: "wrkflw_human_task", Column: "outcome"}:          ClassReference,
 	{Table: "wrkflw_human_task", Column: "state"}:            ClassScalar,
-	{Table: "wrkflw_human_task", Column: "claimed_by"}:       ClassActor, // human principal (ADR-0098: scalar projection of claim.actor.id)
+	{Table: "wrkflw_human_task", Column: "claimed_by"}:       ClassActor, // human principal (the scalar projection of claim.actor.id)
 	{Table: "wrkflw_human_task", Column: "claim_actor"}:      ClassActor,
 	{Table: "wrkflw_human_task", Column: "completed_by"}:     ClassActor,
 	{Table: "wrkflw_human_task", Column: "completion_actor"}: ClassActor,

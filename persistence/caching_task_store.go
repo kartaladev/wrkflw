@@ -100,8 +100,8 @@ func (s *CachingTaskStore) Upsert(ctx context.Context, t humantask.HumanTask) er
 	// Redundant when the backing store is one of this module's own, which the
 	// TaskStore.Upsert contract already binds to reject the same shapes — but NOT
 	// when it is a consumer's permissive store, which this decorator may equally
-	// wrap. Validating here (ADR-0183 decision point 2) makes the contract hold for
-	// every backing, and keeps a rejected write out of the cache either way.
+	// wrap. Validating here makes the contract hold for every backing, and keeps
+	// a rejected write out of the cache either way.
 	if err := humantask.Validate(t); err != nil {
 		return err
 	}

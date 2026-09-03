@@ -15,7 +15,7 @@ import (
 )
 
 // ChainLinkStore is the vendor-neutral, dialect-parametrised
-// [kernel.ChainLinkStore] (process-instance chaining lineage, ADR-0045). It
+// [kernel.ChainLinkStore] (process-instance chaining lineage). It
 // records one predecessor→successor hop per call to [Record]; the
 // (predecessor_instance_id, outcome) primary key is the exactly-once backstop
 // under at-least-once terminal-event delivery.
@@ -24,14 +24,14 @@ import (
 // [dialect.Dialect.Rebind] for the backend's native placeholder style. The
 // insert-ignore syntax is supplied by the dialect via [InsertIgnorePrefix] and
 // [InsertIgnoreDedup], keeping all per-dialect divergences behind the Dialect
-// abstraction. Timestamp codec follows [timeArg] / [parseTimeText] (ADR-0080).
+// abstraction. Timestamp codec follows [timeArg] / [parseTimeText].
 //
 // ChainLinkStore is safe for concurrent use.
 type ChainLinkStore struct {
 	conn    any // *pgxpool.Pool or *sql.DB
 	dialect dialect.Dialect
 	// clk is the fallback time source for [ChainLinkStore.Record] when the
-	// supplied link carries a zero CreatedAt (ADR-0138).
+	// supplied link carries a zero CreatedAt.
 	clk clockwork.Clock
 }
 
@@ -40,7 +40,7 @@ type ChainLinkStore struct {
 type ChainLinkOption func(*ChainLinkStore)
 
 // WithChainLinkClock overrides the clock [ChainLinkStore.Record] falls back to
-// when the link's CreatedAt is zero (ADR-0138). The default is
+// when the link's CreatedAt is zero. The default is
 // [clockwork.NewRealClock]. A nil clock is ignored (the default is kept).
 //
 // Reachable off-module only through its facade forwarder,
@@ -296,7 +296,7 @@ type chainLinkScanner interface {
 // must be: predecessor_instance_id, outcome, successor_instance_id,
 // predecessor_definition_ref, successor_definition_ref, start_vars, created_at.
 //
-// The created_at column is handled via the time codec (ADR-0080, ADR-0151):
+// The created_at column is handled via the time codec:
 // SQLite stores fixed-width RFC3339 TEXT ([dialect.Dialect.TimestampsAsText] ==
 // true) — never time.RFC3339Nano, whose trimmed fraction breaks the ORDER BY
 // created_at this store relies on — and requires [parseTimeText]; Postgres and
@@ -334,7 +334,7 @@ func (c *ChainLinkStore) scanChainLink(row chainLinkScanner) (kernel.ChainLink, 
 		); err != nil {
 			return kernel.ChainLink{}, err
 		}
-		link.CreatedAt = link.CreatedAt.UTC() // normalise to UTC (ADR-0080)
+		link.CreatedAt = link.CreatedAt.UTC() // normalise to UTC
 	}
 
 	var err error

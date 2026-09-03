@@ -1,4 +1,4 @@
-// Package main demonstrates both manual-task completion modes (ADR-0118): a
+// Package main demonstrates both manual-task completion modes: a
 // form-less human checkpoint that either waits for a bare operator trigger, or
 // auto-completes immediately as a documentation marker.
 //
@@ -7,7 +7,7 @@
 //	start → handOverBadge[UserTask, manual, wait]      → recordOrientation[UserTask, manual, immediate] → end
 //
 // Both nodes carry no eligibility (authorization is deferred to the
-// consumer's transport layer, see ADR-0117):
+// consumer's transport layer):
 //
 //   - handOverBadge uses WithManual(false): the instance parks like any user
 //     task, and the operator completes it with a bare trigger — no claim, no

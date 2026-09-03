@@ -112,7 +112,7 @@ func TestApplyTriggerRejectedWhenDraining(t *testing.T) {
 
 func TestExternalEntryPointsRejectedWhenDraining(t *testing.T) {
 	// Each case funnels through a distinct exported entry point; all must reject
-	// with ErrDriverShuttingDown once the driver is draining (strict quiescence, D1).
+	// with ErrDriverShuttingDown once the driver is draining (strict quiescence).
 	tests := map[string]func(d *runtime.ProcessDriver) error{
 		"Drive": func(d *runtime.ProcessDriver) error {
 			_, err := d.Drive(context.Background(), linearDef(), "i-1", nil)
@@ -165,7 +165,7 @@ func timerStartFireDef() *model.ProcessDefinition {
 func TestTimerStartFire(t *testing.T) {
 	// The timer-start fire callback creates a brand-new instance on each fire — but
 	// only when the driver is admitting work. Once draining, the fire is dropped so
-	// no new instance is created (strict quiescence, D1).
+	// no new instance is created (strict quiescence).
 	type testCase struct {
 		name     string
 		draining bool

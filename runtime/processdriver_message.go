@@ -24,9 +24,9 @@ var ErrAmbiguousMessageStart = errors.New("workflow-runtime: ambiguous message s
 // on it (intermediate catch / message boundary / event-based-gateway arm); the
 // matched instance's definition is resolved from its own snapshot, so the caller
 // need not supply one. When no running waiter matches, the message may START
-// a new instance from a unique message-start event (ADR-0121).
+// a new instance from a unique message-start event.
 //
-// Message-start dedup breadth depends on how the start is configured (ADR-0121):
+// Message-start dedup breadth depends on how the start is configured:
 //
 //   - KEYED (correlationKey != ""): the created instance's id is a pure function
 //     of (name, correlationKey), and Store.Create's ErrInstanceExists is the
@@ -47,7 +47,7 @@ var ErrAmbiguousMessageStart = errors.New("workflow-runtime: ambiguous message s
 // (latest-version) definition.
 func (driver *ProcessDriver) DeliverMessage(ctx context.Context, name, correlationKey string, payload map[string]any) error {
 	// Reject once draining, before the empty-name no-op, so a drained driver refuses
-	// even a would-be no-op (strict quiescence, D1).
+	// even a would-be no-op (strict quiescence).
 	release, ok := driver.admit()
 	if !ok {
 		return ErrDriverShuttingDown
@@ -81,7 +81,7 @@ func (driver *ProcessDriver) DeliverMessage(ctx context.Context, name, correlati
 		return fmt.Errorf("%w: %q", ErrAmbiguousMessageStart, name)
 	}
 
-	// Choose the instance id, which decides dedup breadth (ADR-0121 review):
+	// Choose the instance id, which decides dedup breadth:
 	//   - KEYED (correlationKey != "")     → deterministic id from (name, key);
 	//     concurrent/duplicate/redelivered messages for the same key dedup to one.
 	//   - keyless + MessageStartSingleton  → name-only deterministic id; at most

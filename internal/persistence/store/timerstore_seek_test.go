@@ -19,8 +19,8 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
-// The armed-timer page must SEEK the composite keyset index, not scan the table
-// (ADR-0159). Correctness tests cannot see the difference — a full scan returns
+// The armed-timer page must SEEK the composite keyset index, not scan the
+// table. Correctness tests cannot see the difference — a full scan returns
 // exactly the same rows — so the guard has to read the query planner, and the
 // fixture has to be large enough and the cursor deep enough that a scan and a
 // seek are distinguishable.
@@ -182,7 +182,7 @@ func mysqlSessionStatus(t *testing.T, db *sql.DB, name string) int64 {
 }
 
 // TestTimerStoreListArmedPageSeeksIndex proves, per dialect, that a page deep
-// into the key range is an index SEEK and not a table scan (ADR-0159).
+// into the key range is an index SEEK and not a table scan.
 //
 // It is deliberately NOT built on forEachDialect: the MySQL case needs a
 // single-connection pool it constructs itself (session status counters are

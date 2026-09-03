@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestMigrations_OneFilePerDialect enforces the project requirement (ADR-0132)
-// that every supported database dialect ships a SINGLE consolidated migration
+// TestMigrations_OneFilePerDialect enforces the project requirement that every
+// supported database dialect ships a SINGLE consolidated migration
 // file. Adding a second *.sql file to any dialect directory — reintroducing the
 // incremental-migration style the engine deliberately squashed while
 // pre-release — fails here.

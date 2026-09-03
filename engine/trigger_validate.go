@@ -21,7 +21,7 @@ type triggerKey struct {
 	// field is the Go field name, used in ErrEmptyTriggerKey's message.
 	field string
 	// logKey is the snake_case slog attribute name the same value is logged
-	// under by dispatch's terminal guard (ADR-0165). It is a column of THIS row
+	// under by dispatch's terminal guard. It is a column of THIS row
 	// rather than a derived table so that naming the field, extracting its value
 	// and naming its log attribute stay ONE registration point — a variant
 	// cannot gain an accessor while its log attribute silently goes unnamed.
@@ -35,7 +35,7 @@ type triggerKey struct {
 // Exempt means "may legitimately be empty", NOT "has no identity". TimerFired
 // carries a TimerID that is merely allowed to be blank, and dispatch's terminal
 // guard must still log it — an operator asking "why did my timer do nothing"
-// is not served by instance_id/trigger/status alone (ADR-0165). key's zero
+// is not served by instance_id/trigger/status alone. key's zero
 // value (a nil read) means the variant genuinely carries no single identity
 // field, and the guard then omits the attribute entirely rather than emitting
 // an empty one.
@@ -67,7 +67,7 @@ var (
 		"engine.SignalReceived":          {"Name", "signal_name", func(t Trigger) string { return t.(SignalReceived).Name }},
 		"engine.MessageReceived":         {"Name", "message_name", func(t Trigger) string { return t.(MessageReceived).Name }},
 		"engine.ResolveIncident":         {"IncidentID", "incident_id", func(t Trigger) string { return t.(ResolveIncident).IncidentID }},
-		// ADR-0175: CommandID is REQUIRED and cursor-matched. It is validated here
+		// CommandID is REQUIRED and cursor-matched. It is validated here
 		// rather than in the handler so an empty one is rejected before any state
 		// is touched — an escape verb naming no dispatch is a shape defect, and
 		// acting on "whatever is in flight" was measured double-running a
@@ -84,7 +84,7 @@ var (
 		//
 		// It carries an identity accessor anyway: TimerFired is rejectSilently, so
 		// it is one of the variants dispatch's terminal guard actually logs, and
-		// timer_id is the field an operator needs there (ADR-0165).
+		// timer_id is the field an operator needs there.
 		"engine.TimerFired": {
 			reason: "an empty TimerID is a documented stale-timer no-op",
 			key:    triggerKey{"TimerID", "timer_id", func(t Trigger) string { return t.(TimerFired).TimerID }},
@@ -159,9 +159,9 @@ func triggerTypeName(trg Trigger) string { return fmt.Sprintf("%T", trg) }
 
 // validateTriggerKey rejects a trigger whose identity key is empty.
 //
-// An identity key names one specific record; the empty string names none. Before
-// ADR-0152 an empty key reached the state-layer lookups, where it matched every
-// record whose corresponding field was also empty — a SignalReceived with no name
+// An identity key names one specific record; the empty string names none.
+// Historically an empty key reached the state-layer lookups, where it matched
+// every record whose corresponding field was also empty — a SignalReceived with no name
 // resumed every token not awaiting a signal, and an empty name matched an
 // error-boundary arm, interrupting a live activity. The state helpers now refuse an
 // empty key on their own; this is the outer layer, so a consumer that builds a

@@ -1,7 +1,7 @@
 package authz
 
 // DisclosureCategory names a class of field an HTTP mount may CHOOSE to disclose to a
-// caller the transport could not identify (ADR-0190).
+// caller the transport could not identify.
 //
 // ⚠ This is an ALLOW-list, and the polarity is load-bearing. The zero [DisclosureSet]
 // discloses nothing beyond the structural baseline, so a category nobody thought about is
@@ -33,7 +33,7 @@ const (
 	// DiscloseOperations permits the operator-facing execution cursor: open incidents
 	// (their ids, kinds and nodes) and the compensation cursor.
 	//
-	// ⚠ It exists because withholding these removed ADR-0175's operator escape hatch.
+	// ⚠ It exists because withholding these removed the operator escape hatch.
 	// `compensating.active_command_id` and `incidents[].id` reach the wire on exactly one
 	// route — GET /instances/{id}/snapshot — and ResolveCompensationStall's own error text
 	// tells an operator to read the command id from there. Without a category short of
@@ -50,12 +50,12 @@ const (
 	DisclosePolicy DisclosureCategory = "policy"
 
 	// DiscloseAll is a SENTINEL meaning "do not project at all" — the complete opt-out,
-	// restoring the pre-ADR-0190 wire shape.
+	// restoring the unprojected wire shape.
 	//
 	// ⚠ It is NOT the union of the four categories above, and must never be implemented as
 	// one. Those categories name the fields somebody classified; 20 of engine.InstanceState's
 	// 31 exported fields are restorable by NONE of them — among them `Incidents` and
-	// `Compensating`, the projection that makes a WEDGED instance findable (ADR-0175). A
+	// `Compensating`, the projection that makes a WEDGED instance findable. A
 	// union-shaped DiscloseAll would silently break that operator escape hatch while
 	// advertising itself as a full restoration.
 	DiscloseAll DisclosureCategory = "all"

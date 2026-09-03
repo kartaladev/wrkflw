@@ -1,6 +1,6 @@
 package engine
 
-// state_arms_fanout_test.go — ADR-0158: a broadcast signal fires EVERY matching
+// state_arms_fanout_test.go: a broadcast signal fires EVERY matching
 // arm per family, so the lookups return every matching arm's IDENTITY rather
 // than the first matching arm.
 //
@@ -9,8 +9,8 @@ package engine
 // before an earlier fire addresses the DETACHED array where the removed arm is
 // still intact — dispatching through it would fire an already-retired arm.
 //
-// ⚠ There is deliberately NO SORT. ADR-0158 Decision 2 specified a per-family
-// NonInterrupting sort and execution refuted it in BOTH directions: whether an
+// ⚠ There is deliberately NO SORT. A per-family NonInterrupting sort was
+// specified once and execution refuted it in BOTH directions: whether an
 // earlier arm's effects are destroyable depends on the arm's BODY, not its flag.
 // The "declaration order" rows below exist to keep a sort from coming back.
 
@@ -76,7 +76,7 @@ func TestArmedEventIDsBySignal(t *testing.T) {
 			}},
 			signal: "",
 			assert: func(t *testing.T, got []gatewayArmID) {
-				assert.Empty(t, got, "ADR-0152 defence in depth: an empty key names no arm")
+				assert.Empty(t, got, "defence in depth: an empty key names no arm")
 			},
 		},
 	}
@@ -129,7 +129,7 @@ func TestBoundaryArmIDsBySignal(t *testing.T) {
 				assert.Equal(t, []boundaryArmID{
 					{HostToken: "t1", BoundaryNode: "bndInt"},
 					{HostToken: "t1", BoundaryNode: "bndNI"},
-				}, got, "ADR-0158 Decision 2: declaration order, NOT a NonInterrupting sort")
+				}, got, "declaration order, NOT a NonInterrupting sort")
 			},
 		},
 		{
@@ -153,7 +153,7 @@ func TestBoundaryArmIDsBySignal(t *testing.T) {
 			}},
 			signal: "",
 			assert: func(t *testing.T, got []boundaryArmID) {
-				assert.Empty(t, got, "ADR-0152 defence in depth: an empty key names no arm")
+				assert.Empty(t, got, "defence in depth: an empty key names no arm")
 			},
 		},
 	}
@@ -206,7 +206,7 @@ func TestEventTriggeredSubprocessArmIDsBySignal(t *testing.T) {
 				assert.Equal(t, []eventSubArmID{
 					{EnclosingScopeID: "s1", EventSubprocessNode: "espNI"},
 					{EnclosingScopeID: "s1", EventSubprocessNode: "espInt"},
-				}, got, "ADR-0158 Decision 2: declaration order, NOT a NonInterrupting sort")
+				}, got, "declaration order, NOT a NonInterrupting sort")
 			},
 		},
 		{
@@ -230,7 +230,7 @@ func TestEventTriggeredSubprocessArmIDsBySignal(t *testing.T) {
 			}},
 			signal: "",
 			assert: func(t *testing.T, got []eventSubArmID) {
-				assert.Empty(t, got, "ADR-0152 defence in depth: an empty key names no arm")
+				assert.Empty(t, got, "defence in depth: an empty key names no arm")
 			},
 		},
 	}
@@ -244,12 +244,12 @@ func TestEventTriggeredSubprocessArmIDsBySignal(t *testing.T) {
 	}
 }
 
-// ── …ByID re-resolvers (ADR-0158) ────────────────────────────────────────────
+// ── …ByID re-resolvers ───────────────────────────────────────────────────────
 //
 // A snapshotted identity is re-resolved immediately before its arm fires, and
 // skipped when it no longer resolves. Re-resolution is an EXISTENCE CHECK ONLY:
 // it must never be used to select the NEXT arm, or the non-terminating re-scan
-// that ADR-0158 rejected comes back — a non-interrupting arm stays armed after
+// that was rejected comes back — a non-interrupting arm stays armed after
 // firing, so a re-scan would find the same arm forever.
 
 func TestArmedEventByID(t *testing.T) {
@@ -288,7 +288,7 @@ func TestArmedEventByID(t *testing.T) {
 		t.Parallel()
 
 		assert.Nil(t, state().armedEventByID(gatewayArmID{CatchNode: "catchA"}),
-			"ADR-0152: an empty owner key names no arm, matching removeArmedEventsForGateway")
+			"an empty owner key names no arm, matching removeArmedEventsForGateway")
 	})
 }
 
@@ -319,7 +319,7 @@ func TestBoundaryArmByID(t *testing.T) {
 		s := &InstanceState{Boundaries: []boundaryArm{{BoundaryNode: "bnd", triggerMatch: triggerMatch{Signal: "x"}}}}
 
 		assert.Nil(t, s.boundaryArmByID(boundaryArmID{BoundaryNode: "bnd"}),
-			"ADR-0152: an empty owner key names no arm, matching removeBoundaryArmsForHost")
+			"an empty owner key names no arm, matching removeBoundaryArmsForHost")
 	})
 }
 

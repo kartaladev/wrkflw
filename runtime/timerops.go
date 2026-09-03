@@ -18,7 +18,7 @@ import (
 // the timezone it resolves calendar/cron at-times in (see
 // scheduler.NativeScheduler.Location). The runtime type-asserts its scheduler
 // against this so the NextRun it computes and persists matches the live fire
-// instant under a non-UTC scheduler location (ADR-0137). A scheduler that does
+// instant under a non-UTC scheduler location. A scheduler that does
 // not implement it (foreign doubles) is treated as UTC.
 type locatedScheduler interface {
 	Location() *time.Location
@@ -53,7 +53,7 @@ func (driver *ProcessDriver) reportedSchedulingLocation() (*time.Location, bool)
 // at-times in a non-UTC zone but does not report it was measured persisting
 // NextRun values 7 hours from the instant they actually fire, with no log line
 // at any level — the fallback is the only safe default, but a silent one leaves
-// an operator no way to discover the skew (ADR-0137). It is deliberately warned
+// an operator no way to discover the skew. It is deliberately warned
 // HERE rather than at construction: a driver that never arms a timer never
 // relies on the fallback and has nothing to be told. sync.Once keeps a
 // standing configuration fact from being restated once per armed timer.
@@ -120,22 +120,21 @@ func convertClockTimes(cs []schedule.ClockTime) []scheduler.ClockTime {
 }
 
 // neverDueNextRun reports whether a next-run instant computed from
-// [scheduler.Trigger.Next] is unarmable — the ADR-0176 predicate. Four sites
-// refuse an arm on it, which is exactly the number of timerArmsRefused
-// increments in this package. Two call this function, at the arm sites that
-// compute a next run from a trigger: timerJobsFor and scheduleStartTimerJob.
-// The other two apply the same condition in its own form, on the instant
-// newScheduledTimerJob has already stamped (which is the zero time exactly
-// when this reports true): jobStore.Load, and the post-commit re-check inside
-// deliverLoop added at ADR-0176's /code-review.
+// [scheduler.Trigger.Next] is unarmable. Four sites refuse an arm on it,
+// which is exactly the number of timerArmsRefused increments in this package.
+// Two call this function, at the arm sites that compute a next run from a
+// trigger: timerJobsFor and scheduleStartTimerJob. The other two apply the
+// same condition in its own form, on the instant newScheduledTimerJob has
+// already stamped (which is the zero time exactly when this reports true):
+// jobStore.Load, and the post-commit re-check inside deliverLoop.
 //
 // The two halves catch different things. ok=false is the trigger saying it can
-// never fire; ADR-0176 reconciled that answer with the live scheduler, so it
-// now also refuses the calendar specs gocron would search for without a bound.
+// never fire; that answer is reconciled with the live scheduler, so it also
+// refuses the calendar specs gocron would search for without a bound.
 // A ZERO instant reported as fireable is the belt-and-braces half: it states
-// blocker 2's invariant directly — a zero next_run must never be persisted,
+// the invariant directly — a zero next_run must never be persisted,
 // because MySQL rejects the literal and the other two dialects sort the row to
-// the head of the keyset index forever. No shape in ADR-0176's measured truth
+// the head of the keyset index forever. No shape in the measured truth
 // table reaches that half, and deleting it leaves the arm-site tests green
 // (measured) — TestNeverDueNextRun is what pins it, and it is the guard if
 // Trigger.Next ever reports a zero instant as fireable again.
@@ -145,7 +144,7 @@ func neverDueNextRun(next time.Time, ok bool) bool {
 
 // cancelKey identifies one durable timer row to delete inside the commit
 // transaction — the PK-exact (instanceID, timerID) pair. Cancels carry both
-// parts as a struct; no composite string ids are involved (ADR-0134).
+// parts as a struct; no composite string ids are involved.
 type cancelKey struct {
 	instanceID string
 	timerID    string
@@ -176,7 +175,7 @@ type cancelKey struct {
 // keeps firing on its own schedule and never self-disarms, so it must NOT be
 // cancelled on each fire.
 //
-// armedRecurring answers that in THREE states (ADR-0159):
+// armedRecurring answers that in THREE states:
 //   - (false, true)  genuinely one-shot or genuinely absent → consume the timer,
 //     the pre-recurrence safe default.
 //   - (true, true)   armed with a recurring trigger → leave it alone.
@@ -230,7 +229,7 @@ func (driver *ProcessDriver) timerJobsFor(ctx context.Context, def *model.Proces
 			}
 			next, ok := strig.Next(schedulingNow())
 			if neverDueNextRun(next, ok) {
-				// ADR-0176. Refusing HERE is what keeps the whole defect out of
+				// Refusing HERE is what keeps the whole defect out of
 				// reach: this one site feeds both the in-tx jobStore.Save and
 				// the post-commit Activate, so a refused arm writes no
 				// next_run at all (MySQL rejects the zero literal and loses
@@ -257,7 +256,7 @@ func (driver *ProcessDriver) timerJobsFor(ctx context.Context, def *model.Proces
 		// only consume one-shot (or genuinely absent) timers, and only when
 		// recurrence is determinable at all — a nil armedRecurring (no timer store)
 		// and a lookup that could not answer are treated identically: leave the
-		// fired timer alone (ADR-0159).
+		// fired timer alone.
 		if armedRecurring != nil {
 			if recurring, determinable := armedRecurring(tf.TimerID); determinable && !recurring {
 				cancels = append(cancels, cancelKey{instanceID: instanceID, timerID: tf.TimerID})
@@ -269,14 +268,14 @@ func (driver *ProcessDriver) timerJobsFor(ctx context.Context, def *model.Proces
 
 // armedTimerRecurring reports whether the timer (instanceID, timerID) is
 // currently armed with a recurring trigger, via a single primary-key-exact read
-// (ADR-0159). It replaced a full ListArmed scan: the fire path needs one row, and
+// It replaced a full ListArmed scan: the fire path needs one row, and
 // scanning the whole table on every fire cost O(N) rows plus O(N) trigger decodes
 // to produce one bit.
 //
 // It returns TWO booleans, and the second one matters. determinable is false when
 // the store could not answer — no store configured, or a read failure — and the
 // caller must then leave the fired timer ALONE rather than cancel it. Collapsing
-// that case into recurring == false (as the pre-ADR-0159 single-boolean version
+// that case into recurring == false (as an earlier single-boolean version
 // did) means cancel, so one transient connection error would permanently disarm a
 // recurring job such as an in-wait reminder loop.
 //
@@ -289,13 +288,13 @@ func (driver *ProcessDriver) timerJobsFor(ctx context.Context, def *model.Proces
 // it — but a fire whose applyTrigger fails for a non-CAS reason (e.g. the instance
 // has since completed and been pruned) is dropped, so the row is re-armed every
 // boot and lingers in the admin listing. Pruner.PruneTimers reclaims such a row;
-// it is the required mitigation, not an optional nicety (ADR-0159).
+// it is the required mitigation, not an optional nicety.
 //
-// ⚠ It does NOT reclaim all of them. ADR-0179 excludes engine.TimerCompensationRetry
-// rows from PruneTimers at every cutoff — the backoff is a one-shot, so it lands in
-// exactly the population described above, and the exclusion is what stops a retention
-// pass stranding a compensation walk. A lingering compensation-retry row therefore
-// needs the operator verbs (ADR-0175), not retention.
+// ⚠ It does NOT reclaim all of them. PruneTimers excludes
+// engine.TimerCompensationRetry rows at every cutoff — the backoff is a one-shot,
+// so it lands in exactly the population described above, and the exclusion is what
+// stops a retention pass stranding a compensation walk. A lingering
+// compensation-retry row therefore needs the operator verbs, not retention.
 //
 // It is invoked only for a TimerFired trigger, so the read stays off the hot path
 // of non-timer steps entirely.
@@ -323,11 +322,10 @@ func (driver *ProcessDriver) armedTimerRecurring(ctx context.Context, instanceID
 
 // buildTimerJob assembles the runtime's Manual scheduler job for a process-
 // instance timer: the typed descriptor (kind included, so a durable Save of
-// this job's descriptor faithfully mirrors the persisted ArmedTimer.Kind —
-// ADR-0134 B1), the converted trigger, the engine's standard fire callback
-// wrapped as a [scheduler.JobFunc], and a static data provider carrying the
-// timer's identity. It errors when trig cannot be converted (an unsupported
-// kind).
+// this job's descriptor faithfully mirrors the persisted ArmedTimer.Kind), the
+// converted trigger, the engine's standard fire callback wrapped as a
+// [scheduler.JobFunc], and a static data provider carrying the timer's
+// identity. It errors when trig cannot be converted (an unsupported kind).
 //
 // The wrapped fire deliberately keeps timerFireFunc's internal
 // context.Background() usage: gocron cancels a one-shot's injected per-run ctx
@@ -385,7 +383,7 @@ func (driver *ProcessDriver) timerFireFunc(def *model.ProcessDefinition, instanc
 		// mid-fire during drain). It takes NO inflight slot: an in-flight owned-scheduler
 		// fire is drained by the scheduler Close (Shutdown step 2), which blocks until
 		// gocron joins its running fire jobs — so Shutdown still waits for a mid-flight
-		// fire to finish, and no timer-fire Add can race waitInflight's Wait (closes F2).
+		// fire to finish, and no timer-fire Add can race waitInflight's Wait.
 		fireCtx := context.Background()
 		trg := engine.NewTimerFired(driver.clk.Now(), timerID)
 		driver.obs.timerFired.Add(fireCtx, 1)
@@ -420,7 +418,7 @@ func (driver *ProcessDriver) timerFireFunc(def *model.ProcessDefinition, instanc
 //   - A NON-recurring timer with a valid persisted NextRun is re-armed via
 //     schedule.At(NextRun), so it fires at its ORIGINAL absolute instant. This
 //     correctly handles an AfterDuration one-shot, which would otherwise restart
-//     its delay from "now" (the Plan-2 rehydration regression this closes). A
+//     its delay from "now" (the rehydration regression this closes). A
 //     re-fire of an already-consumed one-shot is an idempotent engine no-op.
 //   - A RECURRING timer is re-armed via its stored Trigger, so the scheduler
 //     recomputes the next occurrence natively.
@@ -456,7 +454,7 @@ func (driver *ProcessDriver) RehydrateTimers(ctx context.Context) error {
 }
 
 // startTimerID computes the stable, unique scheduler timer id for a timer-start
-// event (ADR-0121): a definition's (id, version) and node nodeID. Including
+// event: a definition's (id, version) and node nodeID. Including
 // version is load-bearing — driver.listDefinitions can return MULTIPLE
 // registered versions of the same def id, and a node id like "start" is
 // routinely kept stable across a version bump, so a (defID, nodeID)-only key
@@ -469,8 +467,8 @@ func startTimerID(defID string, version int, nodeID string) string {
 	return fmt.Sprintf("start-timer:%s:%d:%s", defID, version, nodeID)
 }
 
-// startTimerFireFunc builds the fire callback for a timer-start event
-// (ADR-0121). Unlike timerFireFunc — whose fire delivers a TimerFired trigger to
+// startTimerFireFunc builds the fire callback for a timer-start event.
+// Unlike timerFireFunc — whose fire delivers a TimerFired trigger to
 // an EXISTING instance — a timer-start has no instance yet: each fire CREATES a
 // brand-new one, seeded at nodeID via createAtNode with a fresh generated id (so
 // a recurring schedule produces one new instance per occurrence, and concurrent
@@ -552,7 +550,7 @@ func (driver *ProcessDriver) scheduleStartTimerJob(ctx context.Context, def *mod
 	if err != nil {
 		return nil, err
 	}
-	// ADR-0176: refuse a never-due timer-start before it reaches the scheduler.
+	// Refuse a never-due timer-start before it reaches the scheduler.
 	// Both Scheduler implementations this repo ships reject an ok=false trigger
 	// in their own Schedule, but the runtime consumes the PORT — a
 	// consumer-supplied Scheduler is free to arm it, and was measured doing so
@@ -575,7 +573,7 @@ func (driver *ProcessDriver) scheduleStartTimerJob(ctx context.Context, def *mod
 }
 
 // RehydrateStartTimers arms every registered definition's timer-start event on
-// the scheduler (ADR-0121). Call it once at startup, after constructing the
+// the scheduler. Call it once at startup, after constructing the
 // ProcessDriver and registering definitions — it is a separate explicit boot
 // step, sibling to [ProcessDriver.RehydrateTimers]:
 //

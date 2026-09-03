@@ -47,11 +47,11 @@ func ModuleRoot() (string, error) {
 // engine), so discovery only finds directories. MigrationSets is the
 // separate declaration of what each one IS.
 //
-// It fails closed (M1, final review) on a directory that carries *.sql
-// files but sits deeper under a "migrations" ancestor than the two rules
-// above reach — e.g. migrations/postgres/v2/*.sql. Silently discovering
-// nothing there would make those migrations invisible to every downstream
-// at-rest classification while SECURITY.md stays green.
+// It fails closed on a directory that carries *.sql files but sits deeper
+// under a "migrations" ancestor than the two rules above reach — e.g.
+// migrations/postgres/v2/*.sql. Silently discovering nothing there would
+// make those migrations invisible to every downstream at-rest
+// classification while the generated security document stays green.
 func DiscoverMigrationDirs(root string) ([]string, error) {
 	var dirs []string
 
@@ -159,14 +159,13 @@ type MigrationSet struct {
 	Dialects []string
 	// Note documents anything about the set that is not obvious from its
 	// path alone (e.g. that it is conditionally present). Render publishes
-	// this field VERBATIM into SECURITY.md's generated "Data at rest"
-	// section (sourced, not retyped — ADR-0187's "one copy of the fact").
-	// Treat it as consumer-facing prose: never write an internal
-	// evidence-record id here (e.g. "(E3)", pointing at
-	// docs/specs/2026-08-22-adr-0187-measurements.md) — a reader of a
-	// public security document cannot resolve it. State the fact plainly
-	// instead. TestMigrationSetNotesCarryNoInternalEvidenceLabel guards
-	// this.
+	// this field VERBATIM into the generated "Data at rest" section
+	// (sourced, not retyped, so there is one copy of the fact). Treat it as
+	// consumer-facing prose: never write an internal evidence-record id
+	// here (e.g. "(E3)", pointing at an internal measurement record) — a
+	// reader of a public security document cannot resolve it. State the
+	// fact plainly instead.
+	// TestMigrationSetNotesCarryNoInternalEvidenceLabel guards this.
 	Note string
 }
 
@@ -179,8 +178,7 @@ type MigrationSet struct {
 // TestDiscoverMigrationDirs_FindsAllFourAndAllAreDeclared): a discovered
 // directory absent here fails, and an entry here matching no discovered
 // directory fails. Do not "simplify" this into a hardcoded walk — a
-// hardcoded three-directory list is exactly what lost casbin_rule
-// (ADR-0187 D1).
+// hardcoded three-directory list is exactly what lost casbin_rule.
 var MigrationSets = map[string]MigrationSet{
 	"internal/persistence/store/migrations/postgres": {Dialects: []string{"postgres"}},
 	"internal/persistence/store/migrations/mysql":    {Dialects: []string{"mysql"}},
@@ -206,7 +204,7 @@ var MigrationSets = map[string]MigrationSet{
 //
 // MySQL's journal payload column is stored as "trigger_" ("trigger" is a
 // MySQL reserved word — see internal/persistence/dialect.mysql); LoadSchemas
-// normalizes it to the canonical "trigger" name (D2b) before returning, so
+// normalizes it to the canonical "trigger" name before returning, so
 // every downstream consumer sees one column identity across dialects.
 func LoadSchemas(root string) (map[string]Schema, error) {
 	dirs, err := DiscoverMigrationDirs(root)
@@ -251,7 +249,7 @@ func LoadSchemas(root string) (map[string]Schema, error) {
 // directions: a discovered directory absent from MigrationSets fails
 // (its columns would otherwise never be classified), and a MigrationSets
 // entry matching no discovered directory fails (a stale entry hides the
-// next undeclared migration set beneath it — ADR-0187 D1).
+// next undeclared migration set beneath it).
 func reconcileMigrationSets(discovered []string) error {
 	for _, dir := range discovered {
 		if _, ok := MigrationSets[dir]; !ok {
@@ -259,11 +257,11 @@ func reconcileMigrationSets(discovered []string) error {
 		}
 	}
 
-	// Collect every stale entry and sort before reporting (M5, final
-	// review): ranging MigrationSets and returning on the first stale
-	// entry it happened to visit was nondeterministic under Go's
-	// randomised map iteration, and with two or more stale entries the
-	// one actually reported varied run to run.
+	// Collect every stale entry and sort before reporting: ranging
+	// MigrationSets and returning on the first stale entry it happened to
+	// visit was nondeterministic under Go's randomised map iteration, and
+	// with two or more stale entries the one actually reported varied run
+	// to run.
 	var stale []string
 	for declared := range MigrationSets {
 		if !slices.Contains(discovered, declared) {
@@ -321,11 +319,11 @@ func mergeSQLFilesInto(schema Schema, dialectName string, sqlFiles []string) err
 
 // normalizeMySQLJournalTrigger re-keys the MySQL-specific
 // wrkflw_journal.trigger_ column under the canonical wrkflw_journal.trigger
-// name shared by Postgres and SQLite (D2b).
+// name shared by Postgres and SQLite.
 //
 // ⚠ Only the map KEY is canonicalized; Column.Name deliberately keeps the name
 // MySQL's migration actually DECLARES. The canonical key is what cross-dialect
-// set operations (the 6a key-set identity guard, the classification's coverage
+// set operations (the key-set identity guard, the classification's coverage
 // guard, Render's per-dialect row lookup) need; the declared name is what a DBA
 // writing a MySQL migration needs, and Render publishes it. Overwriting Name
 // with the canonical value is how the generated table came to publish "trigger"

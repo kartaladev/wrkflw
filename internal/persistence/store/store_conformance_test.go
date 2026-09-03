@@ -87,7 +87,7 @@ func TestStoreCreateLoadCommit(t *testing.T) {
 		require.NoError(t, err, "%s: load", b.name)
 		require.Equal(t, "i1", got.InstanceID)
 		require.Equal(t, tok, loaded)
-		// TIME round-trip (ADR-0080): StartedAt must survive to the SAME instant, UTC.
+		// TIME round-trip: StartedAt must survive to the SAME instant, UTC.
 		require.True(t, got.StartedAt.Equal(inst.State.StartedAt),
 			"%s: StartedAt must round-trip to same instant: want %v got %v",
 			b.name, inst.State.StartedAt, got.StartedAt)

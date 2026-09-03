@@ -1,12 +1,12 @@
 package engine_test
 
-// step_signal_mid_delivery_terminal_test.go — ADR-0169: a signal delivery stops
+// step_signal_mid_delivery_terminal_test.go: a signal delivery stops
 // dispatching once its own drive has turned the instance terminal.
 //
 // handleSignalReceived is the only handler with more than one arm-dispatch point
 // per delivery (three arm families plus one per snapshotted parked token), so it
 // is the only place where an instance can be `running` when dispatch admits the
-// trigger and terminal a few statements later. ADR-0165's entry guard cannot see
+// trigger and terminal a few statements later. The entry guard cannot see
 // that transition: it happens BETWEEN tiers.
 
 import (
@@ -26,7 +26,7 @@ import (
 
 var midDeliveryT0 = time.Date(2026, 8, 8, 10, 0, 0, 0, time.UTC)
 
-// midDeliveryTerminalDef builds ADR-0169's headline reproduction: one signal
+// midDeliveryTerminalDef builds the headline reproduction: one signal
 // name that both fires an interrupting boundary whose path dies with an uncaught
 // error AND resumes a parked catch token on a sibling branch.
 //
@@ -96,18 +96,18 @@ func deliverMidDeliveryTerminalSignal(t *testing.T) engine.StepResult {
 	return r2
 }
 
-// TestSignalDeliveryStopsAtMidDeliveryTerminal pins ADR-0169's headline
-// behaviour: once tier 2's drive has failed the instance, tier 4 must not resume
-// the sibling catch token.
+// TestSignalDeliveryStopsAtMidDeliveryTerminal pins the headline behaviour:
+// once tier 2's drive has failed the instance, tier 4 must not resume the
+// sibling catch token.
 //
-// Measured on unpatched main (spec §4.2): the surviving token is driven to
+// Measured on unpatched main: the surviving token is driven to
 // taskB, s.Boundaries carries bndT on a FAILED instance, taskB is recorded in
 // History, and a live ScheduleTimer{Token:i1-t3} escapes to the runtime — the
-// last of these is deliberately exempt from ADR-0161's stale-command filter, so
+// last of these is deliberately exempt from the stale-command filter, so
 // nothing contains it.
 //
 // It deliberately asserts WHERE the surviving token is and WHAT it did not do,
-// never len(Tokens). ADR-0164 Decision 3 keeps tokens on the failFast branch, so
+// never len(Tokens). Tokens are kept on the failFast branch, so
 // the count is 1 before this fix and 1 after: an assertion on it could never
 // pass. This test cannot discriminate the guard's PLACEMENT (ahead of the tier-4
 // loop vs inside it) — that is TestSignalDeliveryStopsInsideTheTokenLoop's job.
@@ -139,18 +139,18 @@ func TestSignalDeliveryStopsAtMidDeliveryTerminal(t *testing.T) {
 		"the surviving token stays parked at catchB, still awaiting the signal it never consumed")
 }
 
-// TestAbortedSignalDeliveryKeepsItsPartialCommands pins ADR-0169 Decision 4: an
+// TestAbortedSignalDeliveryKeepsItsPartialCommands pins that an
 // aborted delivery returns the partial commands the earlier tiers legitimately
 // produced — including the FailInstance that made the instance terminal — and
 // nothing after it.
 //
 // The two clauses do different jobs, and only the second can fail today:
 //
-//   - "FailInstance is emitted" is a PIN. It holds on unpatched main too
-//     (spec §4.2). It exists to falsify the rejected alternative
+//   - "FailInstance is emitted" is a PIN. It holds on unpatched main too.
+//     It exists to falsify the rejected alternative
 //     StepResult{State: *s} with nil commands, under which the terminal event's
 //     error payload degrades to "instance failed" and the earlier tiers'
-//     UpdateTask reconciliation is lost (ADR-0089).
+//     UpdateTask reconciliation is lost.
 //   - "no command follows it" is the RED. Today ScheduleTimer is last.
 //
 // The "no command follows" clause is scoped to THIS fixture: it is not a general
@@ -210,7 +210,7 @@ func twoCatchTokensDef() *model.ProcessDefinition {
 	}
 }
 
-// TestSignalDeliveryStopsInsideTheTokenLoop pins ADR-0169 Decision 3: the
+// TestSignalDeliveryStopsInsideTheTokenLoop pins that the
 // re-check belongs INSIDE tier 4's token loop, not only ahead of it.
 //
 // This is the only test in the bundle that discriminates the guard's placement,
@@ -334,8 +334,8 @@ func gatewayWinKillsInstanceDef() *model.ProcessDefinition {
 // 1–3: a gateway win whose own drive kills the instance must not be followed by
 // a boundary arm or an event sub-process arm firing on the same signal.
 //
-// ⚠ It is a PIN, not a RED, and it does NOT discriminate the guard. The plan and
-// spec §8 prescribe it (T9) as a test that "fails today"; EXECUTED, it does not,
+// ⚠ It is a PIN, not a RED, and it does NOT discriminate the guard. It was
+// prescribed as a test that "fails today"; EXECUTED, it does not,
 // and no fixture can make it. Both terminal routes reachable from tier 1 were
 // measured on this fixture, guarded tree vs unpatched main, and the output is
 // byte-identical:
@@ -348,7 +348,7 @@ func gatewayWinKillsInstanceDef() *model.ProcessDefinition {
 //
 // The reason is that every terminal transition routes through endInstance, whose
 // cancelAllScheduledWork drains ArmedEvents, Boundaries AND the event
-// sub-process arms across all scopes (ADR-0164) — so by the time tiers 2 and 3
+// sub-process arms across all scopes — so by the time tiers 2 and 3
 // run their lookups there is nothing left to find. The guard ahead of those two
 // tiers is therefore defence in depth, not a fix for an observable defect; the
 // only observable exposure is tier 4's loop, which owns no arm state and is
@@ -396,7 +396,7 @@ func TestNoArmFiresAfterAMidDeliveryTerminal(t *testing.T) {
 		}
 	}
 	require.Equal(t, 1, parked,
-		"taskB's token survives the failFast branch (ADR-0164 Decision 3), still parked at taskB")
+		"taskB's token survives the failFast branch, still parked at taskB")
 }
 
 // allThreeArmFamiliesDef matches ONE signal name against all three arm families
@@ -465,7 +465,7 @@ func allThreeArmFamiliesDef() *model.ProcessDefinition {
 // else in the repo protects it — measured during the bundle's audit against the
 // existing suite, swapping tier 2 with tier 3 left `go test ./engine/` at
 // EXIT=0, and so did swapping tier 1 with tier 2 (DELETING a tier was caught).
-// ADR-0169 folds the three tiers into a closure slice, where a reorder is a
+// The three tiers are folded into a closure slice, where a reorder is a
 // one-line edit — exactly the mutation a slice literal invites and the one the
 // suite could not see.
 //

@@ -2,7 +2,7 @@ package runtime_test
 
 // eventsub_correlation_e2e_test.go — end-to-end proof that ProcessDriver's
 // message and signal delivery facades correlate to an event sub-process's own
-// trigger arm (ADR-0123). Before the fix, both DeliverMessage and BroadcastSignal
+// trigger arm. Before the fix, both DeliverMessage and BroadcastSignal
 // silently no-op against event-sub arms because the arm is non-token-parked and
 // was omitted from the runtime's waiter/subscription reconciliation.
 
@@ -76,7 +76,7 @@ func TestDeliverMessageFiresMessageEventSubprocess(t *testing.T) {
 			assert: func(t *testing.T, final engine.InstanceState) {
 				assert.Equal(t, engine.StatusRunning, final.Status,
 					"non-interrupting event-sub must not cancel the main path")
-				// Repeatable (ADR-0124): the arm STAYS armed after firing (proves it
+				// Repeatable: the arm STAYS armed after firing (proves it
 				// was NOT a no-op AND that it can fire again on the next delivery).
 				require.Len(t, final.EventTriggeredSubprocesses, 1,
 					"non-interrupting message event-sub stays armed after firing")
@@ -102,7 +102,7 @@ func TestDeliverMessageFiresMessageEventSubprocess(t *testing.T) {
 			store := runtimetest.MustMemStore(t)
 			def := eventSubDef(t, event.WithMessageCorrelator("cancel", "orderId"), tc.nonInterrupting)
 			// DeliverMessage resolves the correlated instance's definition from the
-			// registry (ADR-0121), so register it even though it is never
+			// registry, so register it even though it is never
 			// event-started here.
 			reg := kernel.NewMemDefinitionRegistry()
 			require.NoError(t, reg.Register(def))
@@ -135,7 +135,7 @@ func TestBroadcastSignalFiresSignalEventSubprocess(t *testing.T) {
 			assert: func(t *testing.T, final engine.InstanceState) {
 				assert.Equal(t, engine.StatusRunning, final.Status,
 					"non-interrupting event-sub must not cancel the main path")
-				// Repeatable (ADR-0124): the arm STAYS armed after firing.
+				// Repeatable: the arm STAYS armed after firing.
 				require.Len(t, final.EventTriggeredSubprocesses, 1,
 					"non-interrupting signal event-sub stays armed after firing")
 				require.Len(t, final.Tokens, 1, "main token still parked on await")

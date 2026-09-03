@@ -80,7 +80,7 @@ func TestErrTaskNotFound_IsError(t *testing.T) {
 	assert.Contains(t, humantask.ErrTaskNotFound.Error(), "not found")
 }
 
-// TestHumanTaskAuditModel verifies the ADR-0147 audit shape: Candidates carries
+// TestHumanTaskAuditModel verifies the audit shape: Candidates carries
 // full authz.Actor records (not IDs), Claim captures who claimed and when, and
 // Completion captures who completed, when, with which outcome and note. Claim and
 // Completion are nil until the corresponding lifecycle event occurs.
@@ -277,7 +277,7 @@ func TestHumanTaskClone(t *testing.T) {
 }
 
 // TestClaimCompletionJSONWireShape pins the audit records' wire form. The
-// instance view embeds them directly (ADR-0147 passthrough), so the keys live on
+// instance view embeds them directly (passthrough), so the keys live on
 // the types rather than in each renderer: a claim is {actor, timestamp} and a
 // completion adds {outcome, note}, both omitted when empty.
 func TestClaimCompletionJSONWireShape(t *testing.T) {

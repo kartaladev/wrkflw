@@ -14,7 +14,7 @@ import (
 // terminate payload (Behavior, TerminationReason, Outcome) survive a JSON
 // round-trip through ProcessDefinition's MarshalJSON/UnmarshalJSON, which
 // flattens nodes via the model.NodeWire kind registry. The wire shape carries
-// the name-based endBehavior discriminator (ADR-0127).
+// the name-based endBehavior discriminator.
 func TestEndEventWireRoundTrip(t *testing.T) {
 	t.Parallel()
 

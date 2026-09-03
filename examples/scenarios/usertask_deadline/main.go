@@ -114,7 +114,7 @@ func main() {
 		}),
 	})
 
-	// Fake clock shared by the engine and the scheduler (ADR-0003).
+	// Fake clock shared by the engine and the scheduler.
 	startAt := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
 	clk := clockwork.NewFakeClockAt(startAt)
 

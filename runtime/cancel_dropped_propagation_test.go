@@ -1,7 +1,7 @@
 package runtime_test
 
-// cancel_dropped_propagation_test.go — ADR-0180 decision 2, the half that nearly
-// shipped a regression.
+// cancel_dropped_propagation_test.go — the half that nearly shipped a
+// regression.
 //
 // engine.ErrCancelNotApplicable is a REPORTING outcome, not a propagation-halting
 // error. Two independent sites would otherwise swallow the subtree: CancelInstance
@@ -9,7 +9,6 @@ package runtime_test
 // `continue`s past the recursion. Measured with the naive shape, a terminated
 // parent kept a permanently RUNNING child and grandchild — strictly worse than the
 // silent nil the sentinel replaces.
-// See docs/specs/2026-08-13-engine-visibility-and-truthfulness.md §3b.
 
 import (
 	"context"
@@ -130,7 +129,7 @@ func droppedCancelDriver(t *testing.T, store *kernel.MemInstanceStore, cl *kerne
 	)
 }
 
-// TestDroppedCancelStillPropagates is ADR-0180's anti-regression pair: the
+// TestDroppedCancelStillPropagates is the anti-regression pair: the
 // sentinel must not cost the subtree its cancellation. Row (a) attacks the early
 // return in CancelInstance, row (b) the `continue` in propagateCancel's child
 // loop — two independent sites, so one row cannot cover both.

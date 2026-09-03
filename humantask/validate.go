@@ -21,13 +21,13 @@ var ErrInvalidTask = errors.New("workflow-humantask: invalid task")
 //   - an Unclaimed task must not carry a Claim;
 //   - State must be one of the four declared constants.
 //
-// A Claim whose Actor.ID is empty is deliberately accepted: that is ADR-0148
-// amendment 1 §4's kiosk claimant, anonymous but carrying roles.
+// A Claim whose Actor.ID is empty is deliberately accepted: it is the kiosk
+// claimant, anonymous but carrying roles.
 //
 // Completed and Cancelled are deliberately unconstrained on the claim axis: a task
 // cancelled while held keeps its claim as audit, and an immediate manual task
 // completes without one. The completion axis (Completed implies a Completion) is
-// NOT enforced — see ADR-0183.
+// NOT enforced.
 //
 // Note that Unclaimed is the zero value of [TaskState], so the Unclaimed rule also
 // rejects a task carrying a Claim whose State was never set — including a decode

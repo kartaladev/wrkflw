@@ -8,11 +8,11 @@ import (
 )
 
 // beginMarker and endMarker delimit the generated "Data at rest" section
-// inside SECURITY.md. ReplaceBlock requires both to already be present in
-// the document it splices into — it never invents them, so a SECURITY.md
-// that has never been generated once must have them added by hand exactly
-// once (ADR-0187 decision 9's golden-file "-update" flow starts from a
-// document that already carries an empty marker pair).
+// inside the destination document. ReplaceBlock requires both to already be
+// present in the document it splices into — it never invents them, so a
+// document that has never been generated once must have them added by hand
+// exactly once (the golden-file "-update" flow starts from a document that
+// already carries an empty marker pair).
 const (
 	beginMarker = "<!-- BEGIN at-rest (generated) -->"
 	endMarker   = "<!-- END at-rest -->"
@@ -28,11 +28,11 @@ const (
 // produces the same string both times, because the canonical layout it
 // writes is exactly the layout it looks for on the next call. That
 // property is what lets scripts/gen-at-rest.sh write and then re-assert in
-// a second process (Task 8) and what lets a repeated "-update" run settle
+// a second process and what lets a repeated "-update" run settle
 // rather than drift.
 //
-// It errors if current does not carry both markers, in that order —
-// SECURITY.md must be seeded with an empty marker pair before this
+// It errors if current does not carry both markers, in that order — the
+// destination document must be seeded with an empty marker pair before this
 // package's generator has anything to splice into.
 func ReplaceBlock(current, block string) (string, error) {
 	beginIdx := strings.Index(current, beginMarker)
@@ -79,8 +79,8 @@ var renderDialects = []string{"postgres", "mysql", "sqlite"}
 // exported, because Render is the only reader that needs it by name.
 const casbinMigrationsDir = "internal/authz/casbin/migrations"
 
-// claimedByActorKey is the one column ADR-0187 D8's withdrawal names as the
-// derived warning that survives: an actor-classed column that is indexed.
+// claimedByActorKey is the one column that survives as a derived warning:
+// an actor-classed column that is indexed.
 var claimedByActorKey = ColumnKey{Table: "wrkflw_human_task", Column: "claimed_by"}
 
 // classDescription pairs a Class with the sentence Render's "Classes"
@@ -112,16 +112,15 @@ const casbinRuleTable = "casbin_rule"
 
 // wantCasbinPolicyColumns is the exact shape casbinPolicyColumns requires
 // the derived casbin_rule policy-class column set to equal. It is the
-// single point of comparison for the C1 fix (ADR-0187 final-review
-// finding): render.go must never retype this list as a bare string
-// literal inside the rendered sentence again — see
+// single point of comparison: render.go must never retype this list as a
+// bare string literal inside the rendered sentence again — see
 // TestRenderCasbinPolicyColumnsAreDerivedNotRetyped.
 var wantCasbinPolicyColumns = []string{"ptype", "v0", "v1", "v2", "v3", "v4", "v5"}
 
 // casbinPolicyColumns returns the sorted column names of casbinRuleTable in
 // cls that carry ClassPolicy, deriving the "keyed is a lower bound"
 // paragraph's `casbin_rule.{ptype,v0,...}` sentence from cls rather than a
-// hardcoded literal (C1). If cls carries no casbinRuleTable entry at all
+// hardcoded literal. If cls carries no casbinRuleTable entry at all
 // (e.g. a synthetic fixture that classifies an unrelated schema — see
 // TestRender's distinctness/warning fixtures), it returns (nil, nil) and
 // Render skips the paragraph rather than asserting a fact about a table
@@ -159,13 +158,13 @@ func casbinPolicyColumns(cls map[ColumnKey]Class) ([]string, error) {
 // casbinColumnsAreAbsentFromDialects verifies that every casbin_rule column
 // named in cls is absent from schemas under every name in dialects — the
 // derivation behind the Columns-table legend's "n/a … (every casbin_rule
-// column, in mysql and sqlite)" claim (C1). It errors, naming the column
+// column, in mysql and sqlite)" claim. It errors, naming the column
 // and dialect, the moment any casbin_rule column is found to actually exist
 // in one of dialects — that claim must never be trusted as a static literal
 // again.
 func casbinColumnsAreAbsentFromDialects(schemas map[string]Schema, cls map[ColumnKey]Class, dialects []string) error {
-	// Collect and sort every violation before reporting (the M5 treatment
-	// reconcileMigrationSets already applies): returning on the first one Go's
+	// Collect and sort every violation before reporting, as
+	// reconcileMigrationSets already does: returning on the first one Go's
 	// randomised map iteration happened to visit made the error text vary run to
 	// run whenever more than one column had drifted, and it hid the rest.
 	var violations []string
@@ -210,11 +209,11 @@ func englishNumber(n int) string {
 	return strconv.Itoa(n)
 }
 
-// Render produces the "Data at rest" section body (ADR-0187 decision 9) from
-// schemas (as returned by LoadSchemas) and cls (normally Classification). It
+// Render produces the "Data at rest" section body from schemas (as returned
+// by LoadSchemas) and cls (normally Classification). It
 // contains no BEGIN/END markers — ReplaceBlock owns those.
 //
-// Render is deterministic (ADR-0187 D12): the table's rows are sorted by
+// Render is deterministic: the table's rows are sorted by
 // (table, column) and dialect columns are always emitted in renderDialects
 // order, so two calls over the same input produce byte-identical output
 // despite Go's randomised map iteration.
@@ -225,7 +224,7 @@ func Render(schemas map[string]Schema, cls map[ColumnKey]Class) (string, error) 
 		}
 	}
 
-	// Derive, never retype (C1, ADR-0187 final review): both of these back
+	// Derive, never retype: both of these back
 	// factual claims the "### Columns" section publishes below about
 	// casbin_rule specifically — which of its columns are class `policy`,
 	// and that none of them exist outside postgres. A hardcoded literal
@@ -244,7 +243,7 @@ func Render(schemas map[string]Schema, cls map[ColumnKey]Class) (string, error) 
 
 	b.WriteString("## Data at rest\n\n")
 	b.WriteString("Nothing `wrkflw` stores is encrypted, redacted, or tamper-evident. This section is " +
-		"generated and machine-checked (ADR-0187) from the migrations embedded in this module — " +
+		"generated and machine-checked from the migrations embedded in this module — " +
 		"consumer-supplied migrations are out of scope. If it disagrees with the schema, " +
 		"`TestSecurityMdInSync` fails the build; edit `internal/atrest/render.go`, not this file, " +
 		"and regenerate with `scripts/gen-at-rest.sh`.\n\n")
@@ -325,7 +324,7 @@ func Render(schemas map[string]Schema, cls map[ColumnKey]Class) (string, error) 
 	}
 
 	b.WriteString("No column-level codec and no hash-chained journal ship with this delivery " +
-		"(ADR-0187 D10, the non-goals — see `docs/specs/2026-08-22-at-rest-posture.md` § D10) — " +
+		"(both are explicit non-goals) — " +
 		"nothing in this table implies one exists.\n")
 
 	return b.String(), nil
@@ -423,7 +422,7 @@ func qualifiedLocation(loc PolicyLocation) string {
 }
 
 // renderColumnsTable renders the header, separator, and one row per key in
-// cls, sorted by (table, column) (ADR-0187 D12). Go randomises map
+// cls, sorted by (table, column). Go randomises map
 // iteration — including two ranges of the same map within one process — so
 // the sort is required for Render to be deterministic; see
 // TestRenderIsDeterministic.
@@ -461,7 +460,7 @@ func renderColumnsTable(schemas map[string]Schema, cls map[ColumnKey]Class) stri
 //
 // When the dialect DECLARES the column under a different name than the
 // canonical key — MySQL's wrkflw_journal.trigger_, normalized to "trigger" for
-// cross-dialect set operations (D2b) — the type cell discloses the declared
+// cross-dialect set operations — the type cell discloses the declared
 // name. The normalization exists so key sets can be compared; publishing its
 // output as if it were the dialect's own identifier hands a DBA a MySQL
 // encryption migration against a column name MySQL rejects.
@@ -497,8 +496,7 @@ func columnCell(schema Schema, key ColumnKey) (typeCell, keyedCell string) {
 // false safety statement (the code-review finding this wording answers).
 // Existential claims ("these columns ARE indexed") are sound from a lower
 // bound and are the only per-column safety claims Render emits; there is
-// deliberately no blanket "safe to encrypt" sentence (ADR-0187 round 1's
-// withdrawn claim).
+// deliberately no blanket "safe to encrypt" sentence.
 func derivedActorWarnings(schemas map[string]Schema, cls map[ColumnKey]Class) []string {
 	var keys []ColumnKey
 	for key, class := range cls {

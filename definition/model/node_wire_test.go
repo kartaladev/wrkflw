@@ -21,8 +21,8 @@ func TestNodeWire_CompletionActionRoundTrip(t *testing.T) {
 	}
 }
 
-// TestDefinitionWireScopedActions covers the marshal-only `scoped_actions` key
-// (ADR-0144): it carries the definition-scoped action NAMES so a rendered
+// TestDefinitionWireScopedActions covers the marshal-only `scoped_actions`
+// key: it carries the definition-scoped action NAMES so a rendered
 // definition is self-describing. It is derived state — the catalog itself is
 // never serialized — so unmarshalling tolerates and drops it.
 func TestDefinitionWireScopedActions(t *testing.T) {

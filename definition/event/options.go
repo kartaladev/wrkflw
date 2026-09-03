@@ -127,7 +127,7 @@ func WithStartTimer(t schedule.TriggerSpec) StartOption {
 // (name-only deterministic id; a second message for the same name is a clean
 // no-op). Without it, a keyless message-start mints a FRESH instance per message
 // (BPMN fan-in). It has no effect on a keyed message-start (WithMessageCorrelator
-// with a non-empty key), which already dedups per correlation key. See ADR-0121.
+// with a non-empty key), which already dedups per correlation key.
 func WithMessageStartSingleton() StartOption {
 	return startFuncOpt{func(n *StartEvent) { n.MessageStartSingleton = true }}
 }

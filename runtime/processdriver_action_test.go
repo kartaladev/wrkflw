@@ -92,7 +92,7 @@ func userTaskDef(id string, opts ...activity.UserTaskOption) *model.ProcessDefin
 // [humantask.ActorResolver] returns are deep-copied before they are written onto
 // the task that the step commits. Without the copy, a consumer mutating its
 // resolver registry retroactively rewrites the candidate list of an ALREADY
-// COMMITTED instance — that list is audit data (ADR-0147). The engine's own
+// COMMITTED instance — that list is audit data. The engine's own
 // ingest path (handleHumanCandidatesResolved) clones for exactly this reason, so
 // the two paths must agree.
 func TestResolveHumanCandidatesIsolatesResolverState(t *testing.T) {
@@ -239,7 +239,7 @@ func TestPerformAwaitHumanProjectsDueAt(t *testing.T) {
 	require.NotNil(t, engineDue, "engine must stamp DueAt for a deadline-bearing user task")
 	assert.True(t, engineDue.Equal(startAt.Add(30*time.Minute)), "engine DueAt = %s", engineDue)
 
-	// Resolve the task id from state — never predict an engine-minted id (ADR-0149).
+	// Resolve the task id from state — never predict an engine-minted id.
 	stored, err := tasks.Get(ctx, parked.Tasks[0].TaskID)
 	require.NoError(t, err)
 	require.NotNil(t, stored.DueAt, "the stored task must carry the deadline")

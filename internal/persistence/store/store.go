@@ -27,7 +27,7 @@ type Store struct {
 	dialect dialect.Dialect
 	notify  dialect.Notifier // optional LISTEN receive-side; nil by default
 
-	// historyCap bounds the inline snapshot History (ADR-0021). <= 0 (default)
+	// historyCap bounds the inline snapshot History. <= 0 (default)
 	// keeps full inline history; the wrkflw_journal table is always complete.
 	historyCap int
 	// emitNotify makes Create/Commit emit the dialect's NOTIFY wake statement
@@ -46,8 +46,8 @@ type Store struct {
 
 	// clk is the time source for every timestamp this Store PERSISTS
 	// (wrkflw_instances.updated_at and the journal/outbox rows derived from the
-	// same instant). ADR-0138 requires outer stateful layers to depend on
-	// clockwork.Clock directly rather than reading the wall clock. Latency
+	// same instant). Outer stateful layers must depend on clockwork.Clock
+	// directly rather than reading the wall clock. Latency
 	// stopwatches inside Load/Commit deliberately keep using time.Now(): they
 	// measure elapsed real time for a metric and must not be frozen by a fake
 	// clock injected to make persisted values deterministic.
@@ -65,7 +65,7 @@ func WithNotifier(n dialect.Notifier) Option {
 }
 
 // WithHistoryCap bounds the inline History retained in the snapshot to every
-// open visit plus at most n most-recent closed visits (ADR-0021). n <= 0 (the
+// open visit plus at most n most-recent closed visits. n <= 0 (the
 // default) keeps full inline history. The wrkflw_journal table is unaffected
 // and remains the complete audit source.
 func WithHistoryCap(n int) Option { return func(s *Store) { s.historyCap = n } }
@@ -99,7 +99,7 @@ func WithStoreMeterProvider(mp metric.MeterProvider) Option {
 }
 
 // WithStoreClock overrides the clock used for the timestamps the store
-// persists (ADR-0138). The default is [clockwork.NewRealClock]. A nil clock is
+// persists. The default is [clockwork.NewRealClock]. A nil clock is
 // ignored (the default is kept). Inject a [clockwork.FakeClock] in tests for
 // deterministic persisted timestamps.
 //

@@ -46,7 +46,7 @@ func TestMigrator_SQLiteLifecycle(t *testing.T) {
 	assert.True(t, pending, "fresh DB must have pending migrations")
 
 	// Up applies everything; SQLite head is 0001 — the single consolidated
-	// migration file (ADR-0132).
+	// migration file.
 	require.NoError(t, m.Up(ctx))
 	v, err := m.Version(ctx)
 	require.NoError(t, err)
@@ -97,7 +97,7 @@ func (m *Migrator) provDB(t *testing.T) *sql.DB {
 
 // TestMigrator_SQLiteUpByOneAndDown exercises UpByOne and Down against an
 // in-memory SQLite migrator. SQLite ships a single consolidated migration
-// (version 1, ADR-0132), so:
+// (version 1), so:
 //   - UpByOne applies that one migration and reaches head.
 //   - Down rolls it back, dropping every wrkflw_* table.
 func TestMigrator_SQLiteUpByOneAndDown(t *testing.T) {

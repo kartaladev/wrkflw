@@ -54,15 +54,15 @@ jobs:
       # The suite still uses testcontainers-go for anything not covered above
       # (e.g. mailpit) and for dbtest's custom-credentials path.
       # ubuntu-latest ships a working Docker daemon, so no extra setup is needed.
-      # -timeout is explicit (backlog 48). Go's implicit default is also 600s, but
-      # an implicit value cannot be checked: nothing enforced ADR-0184's rule that
-      # eventuallyBudget x the densest package's site count must stay under it.
+      # -timeout is explicit. Go's implicit default is also 600s, but an implicit
+      # value cannot be checked: nothing enforced the rule that eventuallyBudget
+      # x the densest package's site count must stay under it.
       # scripts/check-test-timeout.sh now does, reading this literal and the
       # identical one in scripts/coverage.sh. Change both together.
       - name: Test (race + coverage)
         run: go test -race -timeout=600s -coverprofile=cover.out ./...
 
-      - name: Coverage summary (excludes generated files — ADR-0143)
+      - name: Coverage summary (excludes generated files)
         run: scripts/coverage.sh cover.out
 
       - name: Upload coverage artifact
@@ -84,8 +84,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # ADR-0079: the database toolkit must import only stdlib + drivers, never
-      # any other wrkflw package, so it stays extractable. No Docker needed.
+      # The database toolkit must import only stdlib + drivers, never any other
+      # wrkflw package, so it stays extractable. No Docker needed.
       - name: Check toolkit extraction constraint
         run: bash scripts/check-extraction.sh
 
@@ -95,8 +95,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ADR-0184 / backlog 48: eventuallyBudget x the densest package's site count
-      # must stay under the go test binary timeout, or a mass failure is reported
+      # eventuallyBudget x the densest package's site count must stay under the
+      # go test binary timeout, or a mass failure is reported
       # as "panic: test timed out" with no assertion messages. Every number is
       # derived from source. Pure bash + grep: no Go toolchain, no Docker.
       # Deliberately its own job so a violation is reported even when the suite

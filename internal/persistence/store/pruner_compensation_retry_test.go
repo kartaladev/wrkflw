@@ -1,6 +1,6 @@
 package store_test
 
-// This file holds the ADR-0179 half of the PruneTimers coverage: the retention
+// This file holds one half of the PruneTimers coverage: the retention
 // sweep must not delete a compensation-retry backoff row.
 //
 // It is one test over one fixture and one SUT call, not a table: the cases are
@@ -53,7 +53,7 @@ func seedTimerRowOfKind(
 	require.NoError(t, err, "seed timer row %s", instanceID)
 }
 
-// TestPruneTimersSparesCompensationRetry pins ADR-0179's retention exclusion: a
+// TestPruneTimersSparesCompensationRetry pins the retention exclusion: a
 // TimerCompensationRetry row is never deleted by [store.Pruner.PruneTimers],
 // however far past its next_run is.
 //
@@ -76,7 +76,8 @@ func seedTimerRowOfKind(
 //   - control-intermediate-expired carries the ZERO value of engine.TimerKind
 //     under a second, different member of the IN-list (KindExpr). It pins that
 //     the exclusion narrows to one kind rather than sparing untagged rows, which
-//     is what every pre-ADR-0179 row and every non-compensation timer is.
+//     is what every row written before the exclusion, and every
+//     non-compensation timer, is.
 func TestPruneTimersSparesCompensationRetry(t *testing.T) {
 	t.Parallel()
 

@@ -1,6 +1,6 @@
 package engine_test
 
-// state_incidents_test.go — ADR-0163: incidents are token-attached, so cancelling
+// state_incidents_test.go — incidents are token-attached, so cancelling
 // a token must retire them; and every UpdateTask handed to a consumer-supplied
 // TaskStore must be a deep copy rather than an alias of committed engine state.
 
@@ -48,7 +48,7 @@ func TestRemoveIncidentsForTokenDropsOnlyThatToken(t *testing.T) {
 }
 
 // TestRemoveIncidentsForTokenIgnoresEmptyID asserts an empty token ID matches
-// nothing, per ADR-0152: an empty key names nothing and must never be treated
+// nothing: an empty key names nothing and must never be treated
 // as a wildcard.
 func TestRemoveIncidentsForTokenIgnoresEmptyID(t *testing.T) {
 	t.Parallel()
@@ -57,8 +57,8 @@ func TestRemoveIncidentsForTokenIgnoresEmptyID(t *testing.T) {
 	// test passes with OR without the guard, because slices.DeleteFunc would
 	// evaluate "tokA" == "" as false and delete nothing either way — a test that
 	// certifies nothing. inc2 is the record the MISSING guard would wipe.
-	// (Corrected 2026-08-03 after the Task 1 review; the original fixture here
-	// was vacuous.)
+	// (Corrected 2026-08-03 after review; the original fixture here was
+	// vacuous.)
 	s := &engine.InstanceState{
 		InstanceID: "i1",
 		Incidents: []engine.Incident{
@@ -151,7 +151,7 @@ func assertUpdateTaskIsDeepCopy(t *testing.T, res engine.StepResult) {
 // task's deadline expires (engine/step_timers.go) does not alias the record
 // committed as instance state. This is the sharpest of the shallow emitters:
 // it is one of only three places the engine writes humantask.Cancelled, so it
-// handed an aliased record to the store on exactly the teardown path ADR-0163
+// handed an aliased record to the store on exactly the teardown path this file
 // is about.
 func TestDeadlineBreachEmitsDeepCopy(t *testing.T) {
 	t.Parallel()
@@ -175,8 +175,7 @@ func TestDeadlineBreachEmitsDeepCopy(t *testing.T) {
 // TestTaskCompletionEmitsDeepCopy asserts the UpdateTask emitted when a user
 // task is completed (engine/step_triggers.go) does not alias the record
 // committed as instance state. It stands in for the four handleHuman* emitters,
-// which take the identical one-token edit; the grep in ADR-0163's verification
-// covers the remaining three.
+// which take the identical one-token edit.
 func TestTaskCompletionEmitsDeepCopy(t *testing.T) {
 	t.Parallel()
 

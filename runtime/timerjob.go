@@ -15,9 +15,9 @@ const (
 	// rehydrated on start.
 	timerJobKind scheduler.JobKind = "wrkflw.timer"
 
-	// startTimerJobKind is the scheduler.JobKind for timer-start events
-	// (ADR-0121). No JobStore is registered for it: a timer-start has no
-	// instance yet and re-derives its arms purely from registered definitions
+	// startTimerJobKind is the scheduler.JobKind for timer-start events. No
+	// JobStore is registered for it: a timer-start has no instance yet and
+	// re-derives its arms purely from registered definitions
 	// on boot ([ProcessDriver.RehydrateStartTimers]), so its jobs are
 	// in-memory-only by design.
 	startTimerJobKind scheduler.JobKind = "wrkflw.start-timer"
@@ -25,8 +25,8 @@ const (
 
 // timerJob is the runtime's concrete [scheduler.Job] for a process-instance
 // timer. It is ALWAYS [scheduler.ActivationManual]: durable persistence rides
-// the runtime's own jobStore INSIDE the state-commit transaction (direct-Save,
-// ADR-0134), so the runtime never asks the scheduler to persist — it arms
+// the runtime's own jobStore INSIDE the state-commit transaction
+// (direct-Save), so the runtime never asks the scheduler to persist — it arms
 // post-commit via [scheduler.Scheduler.Activate] only.
 type timerJob struct {
 	// spec is the typed descriptor of the durable timer row this job mirrors.
@@ -70,7 +70,7 @@ func (s *scheduledTimerJob) NextRun() time.Time { return s.nextRun }
 //
 // Next's ok is discarded here because both callers have already refused a
 // trigger that reports not-ok — timerJobsFor for a fresh arm, jobStore.Load
-// for a rehydrated row (ADR-0176). Before that, this line stamped the zero
+// for a rehydrated row. Before that, this line stamped the zero
 // time on the not-ok path and the comment here called that path impossible,
 // asserting the scheduler would re-validate the trigger at arm time anyway.
 // Both were false: the zero instant was persisted inside the commit

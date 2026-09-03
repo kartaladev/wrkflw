@@ -26,7 +26,7 @@ import (
 // and exercises them on all three dialects. The SQLite backend is particularly
 // important because pruner cutoffs must be formatted via timeArg so that the
 // lexicographic TEXT comparison in SQLite is format-compatible with the values
-// written by the store layer (ADR-0080).
+// written by the store layer.
 func TestPruner(t *testing.T) {
 	// Compile-time check: *store.Pruner satisfies the public persistence.Pruner interface.
 	var _ persistence.Pruner = (*store.Pruner)(nil)
@@ -194,8 +194,8 @@ func TestPruner(t *testing.T) {
 
 			// tmr-old / tmr-recent are one-shot (KindOneTime) — the existing
 			// expiry-based eligibility rule. tmr-recurring is expired (next_run <
-			// cutoff) but carries a RECURRING trigger_kind (KindDuration): under
-			// D16 next_run is written once and never updated, so an expired
+			// cutoff) but carries a RECURRING trigger_kind (KindDuration):
+			// next_run is written once and never updated, so an expired
 			// next_run does not mean the timer is done firing — it must survive
 			// PruneTimers.
 			prunerExec(t, ctx, b, s,
@@ -218,7 +218,7 @@ func TestPruner(t *testing.T) {
 			assert.Equal(t, 1, prunerCount(t, ctx, b, `SELECT COUNT(*) FROM wrkflw_timers WHERE timer_id = ?`, "tmr-recent"),
 				"%s: recent timer row must survive", b.name)
 			assert.Equal(t, 1, prunerCount(t, ctx, b, `SELECT COUNT(*) FROM wrkflw_timers WHERE timer_id = ?`, "tmr-recurring"),
-				"%s: expired recurring timer row must survive PruneTimers (next_run is write-once, D16)", b.name)
+				"%s: expired recurring timer row must survive PruneTimers (next_run is write-once)", b.name)
 
 			// Idempotent.
 			again, err := p.PruneTimers(ctx, cutoff)

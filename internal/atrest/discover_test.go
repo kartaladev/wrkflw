@@ -28,7 +28,7 @@ func TestDiscoverMigrationDirs_FindsAllFourAndAllAreDeclared(t *testing.T) {
 		"internal/persistence/store/migrations/mysql",
 		"internal/persistence/store/migrations/postgres",
 		"internal/persistence/store/migrations/sqlite",
-	}, dirs, "four migration directories exist (E1); a hardcoded three-directory list is what lost casbin_rule")
+	}, dirs, "four migration directories exist; a hardcoded three-directory list is what lost casbin_rule")
 
 	for _, d := range dirs {
 		assert.Contains(t, atrest.MigrationSets, d,
@@ -42,14 +42,14 @@ func TestDiscoverMigrationDirs_FindsAllFourAndAllAreDeclared(t *testing.T) {
 	}
 }
 
-// TestDiscoverMigrationDirs_FailsClosedOnDeeperNesting is the M1 regression
-// guard (final review): DiscoverMigrationDirs only matches a directory
+// TestDiscoverMigrationDirs_FailsClosedOnDeeperNesting is the regression
+// guard for deeper nesting: DiscoverMigrationDirs only matches a directory
 // named "migrations" or whose PARENT is named "migrations" — a *.sql
 // directory nested one level deeper under a "migrations" ancestor (e.g.
 // migrations/postgres/v2/*.sql) matches neither rule and, before this fix,
 // was silently discovered as nothing. Fail closed instead: error rather
 // than let those migrations become invisible to every downstream at-rest
-// classification while SECURITY.md stays green.
+// classification while the generated security document stays green.
 func TestDiscoverMigrationDirs_FailsClosedOnDeeperNesting(t *testing.T) {
 	t.Parallel()
 
@@ -137,8 +137,8 @@ func TestLoadSchemas_MigrationSetsReconciliation(t *testing.T) {
 	}
 }
 
-// TestLoadSchemas_StaleMigrationSetsReportedDeterministically is the M5
-// regression guard (final review): reconcileMigrationSets used to range
+// TestLoadSchemas_StaleMigrationSetsReportedDeterministically is the
+// determinism regression guard: reconcileMigrationSets used to range
 // MigrationSets and return on the FIRST stale entry it happened to visit —
 // nondeterministic under Go's randomised map iteration, and with two or
 // more stale entries the reported one varies run to run. A synthetic root
@@ -183,12 +183,12 @@ func TestLoadSchemas_ColumnCensus(t *testing.T) {
 	schemas, err := atrest.LoadSchemas(root)
 	require.NoError(t, err)
 
-	// E4: 79 wrkflw_* columns in every dialect; casbin_rule adds 8 to postgres only.
-	assert.Len(t, schemas["postgres"].Columns, 87, "79 wrkflw_* + 8 casbin_rule (E3, E4)")
+	// 79 wrkflw_* columns in every dialect; casbin_rule adds 8 to postgres only.
+	assert.Len(t, schemas["postgres"].Columns, 87, "79 wrkflw_* + 8 casbin_rule")
 	assert.Len(t, schemas["mysql"].Columns, 79)
 	assert.Len(t, schemas["sqlite"].Columns, 79)
 
-	// D2b: MySQL declares the journal payload column as trigger_ ("trigger" is
+	// MySQL declares the journal payload column as trigger_ ("trigger" is
 	// reserved). LoadSchemas normalizes it to the canonical name BEFORE returning,
 	// sourced from dialect.*.JournalTriggerColumn() exactly as
 	// normalizeMySQLTriggerColumn does in migration_parity_test.go. Without this
@@ -216,11 +216,12 @@ func TestLoadSchemas_ColumnCensus(t *testing.T) {
 func TestParserFailsClosedOnUnrecognisedStatements(t *testing.T) {
 	t.Parallel()
 
-	// D11: ADR-0132 says future schema changes "resume as new numbered files",
-	// i.e. ALTER TABLE. A CREATE TABLE-only reader sees zero columns there:
-	// nothing unclassified, SECURITY.md regenerating identically, every
-	// non-Docker guard green, and a new column silently absent from a SECURITY
-	// document. Verified free: the corpus has ZERO "alter table" today.
+	// Future schema changes resume as new numbered migration files, i.e.
+	// ALTER TABLE. A CREATE TABLE-only reader sees zero columns there:
+	// nothing unclassified, the generated block regenerating identically,
+	// every non-Docker guard green, and a new column silently absent from
+	// the security document. Verified free: the corpus has ZERO
+	// "alter table" today.
 	_, err := atrest.ParseSQL("postgres", "-- +goose Up\nALTER TABLE wrkflw_instances ADD COLUMN secret TEXT;\n")
 	require.Error(t, err, "an unrecognised statement must be an ERROR, never a skip")
 	assert.Contains(t, err.Error(), "ALTER TABLE")
@@ -228,14 +229,13 @@ func TestParserFailsClosedOnUnrecognisedStatements(t *testing.T) {
 
 // TestMigrationSetNotesCarryNoInternalEvidenceLabel guards against a
 // consumer-facing regression: MigrationSet.Note is published verbatim into
-// SECURITY.md's generated "Data at rest" section by Render (it sources the
-// casbin availability sentence from this field rather than retyping it —
-// ADR-0187's "one copy of the fact"). An internal evidence-record id such as
-// "(E3)", pointing at docs/specs/2026-08-22-adr-0187-measurements.md, is
-// meaningless to a reader of a public security document, unlike a citation
-// such as "D10" that names its own source (ADR-0187 decision 10). Note is
-// consumer-facing prose from the moment it is written, not an internal
-// scratch comment — this test is the regression guard for that rule.
+// the generated "Data at rest" section by Render (it sources the casbin
+// availability sentence from this field rather than retyping it, so there is
+// one copy of the fact). An internal evidence-record id such as "(E3)",
+// which points at an internal measurement record, is meaningless to a reader
+// of a public security document. Note is consumer-facing prose from the
+// moment it is written, not an internal scratch comment — this test is the
+// regression guard for that rule.
 func TestMigrationSetNotesCarryNoInternalEvidenceLabel(t *testing.T) {
 	t.Parallel()
 
@@ -244,7 +244,7 @@ func TestMigrationSetNotesCarryNoInternalEvidenceLabel(t *testing.T) {
 	for dir, set := range atrest.MigrationSets {
 		assert.False(t, evidenceLabel.MatchString(set.Note),
 			"MigrationSets[%q].Note = %q carries an internal evidence-record id "+
-				"(e.g. (E3)) that a SECURITY.md reader cannot resolve — Note is published "+
+				"(e.g. (E3)) that a security-document reader cannot resolve — Note is published "+
 				"verbatim, so state the fact plainly instead", dir, set.Note)
 	}
 }
@@ -275,12 +275,12 @@ func TestCasbinNoteIsConditionedOnTheMigrationHavingRun(t *testing.T) {
 			"and a deployment that ran it keeps the table under any policy source")
 }
 
-// TestLoadSchemas_KeepsTheMySQLDeclaredColumnName pins the two halves of D2b
-// that must NOT be conflated: the map KEY is canonicalized so cross-dialect set
-// operations work, while Column.Name keeps the name the dialect's migration
-// actually declares. Losing the declared name is how the generated table came
-// to publish "trigger" under a "mysql type" heading for a column MySQL declares
-// as "trigger_".
+// TestLoadSchemas_KeepsTheMySQLDeclaredColumnName pins the two halves of the
+// MySQL normalization that must NOT be conflated: the map KEY is canonicalized
+// so cross-dialect set operations work, while Column.Name keeps the name the
+// dialect's migration actually declares. Losing the declared name is how the
+// generated table came to publish "trigger" under a "mysql type" heading for a
+// column MySQL declares as "trigger_".
 func TestLoadSchemas_KeepsTheMySQLDeclaredColumnName(t *testing.T) {
 	t.Parallel()
 
@@ -305,7 +305,7 @@ func TestLoadSchemas_KeepsTheMySQLDeclaredColumnName(t *testing.T) {
 // inside the delivery whose subject is enumerations rotting. The count of
 // columns declaring PRIMARY KEY inline (on the column, not as a table-level
 // clause) was written down twice and was wrong both times: the comment in
-// schema.go said THREE, ADR-0187 decision 7 said FOUR, and the migrations
+// schema.go said THREE, the design said FOUR, and the migrations
 // declare FIVE. The fifth is wrkflw_human_task.task_id, inline in SQLite only —
 // Postgres and MySQL spell that one as a table-level PRIMARY KEY (task_id).
 //

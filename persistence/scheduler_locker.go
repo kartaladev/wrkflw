@@ -22,8 +22,8 @@ var ErrSchedulerLockNotObtained = errors.New("workflow-persistence: scheduler ad
 // NewSchedulerLocker bridges a single-session database advisory lock
 // ([dialect.Locker]) to the neutral [scheduler.Locker] used for multi-replica
 // timer exclusion, reusing the very same advisory-lock SQL the store uses for
-// instance ownership — no lock code is duplicated in the scheduler package
-// (ADR-0102). Pass the result to scheduler.WithLocker.
+// instance ownership — no lock code is duplicated in the scheduler package.
+// Pass the result to scheduler.WithLocker.
 //
 // Concurrency note: a [dialect.Locker] holds ONE session connection, so the
 // returned locker serializes concurrent timer fires onto that single session. Use

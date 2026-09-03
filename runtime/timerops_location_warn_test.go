@@ -1,6 +1,6 @@
 package runtime_test
 
-// timerops_location_warn_test.go — backlog 89.
+// timerops_location_warn_test.go
 //
 // schedulingLocation falls back to time.UTC when the configured scheduler does
 // not implement the opt-in Location() capability. The fallback was SILENT: a
@@ -51,8 +51,9 @@ func locationWarnLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
 	return out
 }
 
-// TestSchedulerWithoutLocationCapabilityWarnsOnce pins backlog 89: arming a timer
-// against a scheduler that omits Location() must announce the UTC assumption.
+// TestSchedulerWithoutLocationCapabilityWarnsOnce pins the fallback warning:
+// arming a timer against a scheduler that omits Location() must announce the
+// UTC assumption.
 //
 // What makes it fail before the fix: schedulingLocation's fallback contains no
 // log statement of any level, so the buffer holds zero matching records however

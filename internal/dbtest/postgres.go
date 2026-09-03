@@ -11,7 +11,7 @@
 //
 // These helpers live in their own package (not in internal/database) so that
 // the internal/database and internal/database/transaction toolkit packages stay
-// free of any wrkflw imports (the extraction constraint — see ADR-0079).
+// free of any wrkflw imports (the extraction constraint).
 //
 // # Reusing an already-running server
 //

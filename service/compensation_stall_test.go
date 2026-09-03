@@ -1,7 +1,7 @@
 // Package service_test is the black-box test suite for the service facade.
 package service_test
 
-// ADR-0175 — the operator-facing surface for a stalled compensation walk.
+// The operator-facing surface for a stalled compensation walk.
 
 import (
 	"encoding/json"
@@ -16,7 +16,8 @@ import (
 	"github.com/kartaladev/wrkflw/service"
 )
 
-// TestProcessInstanceProjectsTheCompensationCursor covers ADR-0175 decision 5.
+// TestProcessInstanceProjectsTheCompensationCursor covers the compensation-cursor
+// projection.
 //
 // Without this projection an instance that was ALREADY stalled before the
 // delivery shipped is undetectable: both arm sites are DISPATCH sites, and a
@@ -133,7 +134,7 @@ func TestProcessInstanceOmitsTheCursorWhenNotCompensating(t *testing.T) {
 // rather than swallowing it.
 //
 // An operator escape that reported success while doing nothing would be the same
-// defect ADR-0175 documents for CancelInstance, one layer up.
+// defect seen for CancelInstance, one layer up.
 func TestResolveCompensationStallReachesTheDriver(t *testing.T) {
 	t.Parallel()
 

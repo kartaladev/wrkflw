@@ -283,9 +283,9 @@ flows:
 	}
 }
 
-// TestYAMLNodeLabel covers the YAML authoring `label` key (Task 3): a node
-// with an explicit label decodes it into Label(), while a node without one
-// falls back to its name (Base.Label() fallback from Task 1).
+// TestYAMLNodeLabel covers the YAML authoring `label` key: a node with an
+// explicit label decodes it into Label(), while a node without one falls back
+// to its name (the Base.Label() fallback).
 func TestYAMLNodeLabel(t *testing.T) {
 	t.Parallel()
 
@@ -427,7 +427,7 @@ flows:
 }
 
 // TestParseYAMLUserTaskOutcomes covers the YAML authoring form of the
-// completion-outcome declaration (ADR-0146).
+// completion-outcome declaration.
 func TestParseYAMLUserTaskOutcomes(t *testing.T) {
 	t.Parallel()
 

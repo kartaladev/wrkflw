@@ -165,7 +165,7 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 	})
 
 	// Build the definition registry with all provided definitions. The driver
-	// resolves a correlated instance's definition from this registry (ADR-0121),
+	// resolves a correlated instance's definition from this registry,
 	// so it must be wired into the driver as well as the service facade.
 	reg := kernel.NewMapDefinitionRegistry(defs...)
 
@@ -472,7 +472,7 @@ func TestListInstances(t *testing.T) {
 // TestDeliverMessageNoMatchIsNoop verifies that DeliverMessage is a clean no-op
 // when the message matches neither a running waiter nor a message-start
 // definition — the caller supplies no def ref, so an unmatched message
-// simply does nothing (ADR-0121).
+// simply does nothing.
 func TestDeliverMessageNoMatchIsNoop(t *testing.T) {
 	h := newHarness(t) // no defs registered
 	svc := h.newProcessEngine(t)

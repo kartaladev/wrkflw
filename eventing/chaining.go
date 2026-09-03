@@ -24,7 +24,7 @@ func isBenignDriverShutdown(err error) bool {
 }
 
 // chainTopics are the three status-accurate terminal topics a chaining consumer
-// subscribes (ADR-0046). The map also drives topic→Outcome projection.
+// subscribes. The map also drives topic→Outcome projection.
 var chainTopics = map[string]kernel.ChainOutcome{
 	"instance.completed":  kernel.OutcomeCompleted,
 	"instance.failed":     kernel.OutcomeFailed,
@@ -39,8 +39,8 @@ var chainTopics = map[string]kernel.ChainOutcome{
 //   - topic (msg.Metadata "topic", set by eventing.NewPublisher) → Outcome
 //   - msg.Metadata "instance_id" → PredecessorID
 //   - msg.Metadata "definition_ref" → PredecessorDefinitionRef (set by the built-in
-//     publisher from the source instance's "defID:version", ADR-0047; empty for
-//     pre-ADR-0047 events)
+//     publisher from the source instance's "defID:version"; empty for events
+//     written by an older version)
 //   - the JSON body → Result
 //
 // Ack/Nack discipline (a returned error nacks for re-delivery):

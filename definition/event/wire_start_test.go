@@ -12,7 +12,7 @@ import (
 )
 
 // TestStartEventMessageSingletonWireRoundTrip verifies that a StartEvent's
-// MessageStartSingleton flag (ADR-0121 review) survives a JSON round-trip
+// MessageStartSingleton flag survives a JSON round-trip
 // through ProcessDefinition's MarshalJSON/UnmarshalJSON.
 func TestStartEventMessageSingletonWireRoundTrip(t *testing.T) {
 	t.Parallel()

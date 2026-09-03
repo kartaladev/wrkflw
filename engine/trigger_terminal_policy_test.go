@@ -9,7 +9,7 @@ import (
 	"github.com/kartaladev/wrkflw/authz"
 )
 
-// TestTriggerTerminalPolicies is the readable form of ADR-0165's classification:
+// TestTriggerTerminalPolicies is the readable form of the classification:
 // one row per concrete Trigger, naming the policy that trigger declares for an
 // already-terminal instance. It is a white-box test (package engine) because
 // terminalPolicy is unexported by design — the policy is an engine-internal
@@ -58,7 +58,7 @@ func TestTriggerTerminalPolicies(t *testing.T) {
 		{name: "HumanReassigned", trigger: NewHumanReassigned(at, "h", "a", "b", authz.Actor{}), assert: rejectsWithError},
 		{name: "HumanCompleted", trigger: NewHumanCompleted(at, "h", CompletionInput{}, authz.Actor{}), assert: rejectsWithError},
 		{name: "ResolveIncident", trigger: NewResolveIncident(at, "i", 0), assert: rejectsWithError},
-		// ADR-0175: all three escape verbs are operator actions. An operator who
+		// All three escape verbs are operator actions. An operator who
 		// abandons a walk on an already-dead instance and is told nothing would
 		// reasonably believe it worked.
 		{name: "ResolveCompensationStall", trigger: NewSkipStalledCompensation(at, "c", ""), assert: rejectsWithError},
@@ -75,7 +75,7 @@ func TestTriggerTerminalPolicies(t *testing.T) {
 		{name: "SubInstanceCompleted", trigger: NewSubInstanceCompleted(at, "c", nil), assert: rejectsSilently},
 		{name: "SubInstanceFailed", trigger: NewSubInstanceFailed(at, "c", "e"), assert: rejectsSilently},
 		// CancelRequested was reclassified from allowOnTerminal to rejectSilently by
-		// the rule-#9 audit: left tolerant it re-entered beginCompensation on a
+		// an audit: left tolerant it re-entered beginCompensation on a
 		// force-terminated instance whose RootCompensations survive, re-firing every
 		// compensation InvokeAction and publishing a second terminal event.
 		{name: "CancelRequested", trigger: NewCancelRequested(at), assert: rejectsSilently},

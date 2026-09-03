@@ -240,7 +240,7 @@ func TestTargetNode(t *testing.T) {
 	}
 }
 
-// TestMessageTargetNodeScopedEmptyName pins ADR-0152's delegation contract:
+// TestMessageTargetNodeScopedEmptyName pins the delegation contract:
 // messageTargetNodeScoped carries NO guard of its own and inherits one from the
 // message lookups in step_state.go. Before the fix it resolved tokActive — the
 // first token whose AwaitMessage AND AwaitMessageKey are both empty.

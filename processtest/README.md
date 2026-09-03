@@ -133,7 +133,7 @@ type Park struct {
 armed boundaries, event-based-gateway arms, and event-subprocess arms. An instance
 parked purely on an *arm* therefore classifies as a signal/message park and is
 driveable by `PublishSignal` / `DeliverMessage` — nothing sets a token field for an
-arm (ADR-0166).
+arm.
 
 `AwaitingMessages` carries `engine.MessageWaiter`, not a bare name, because an arm
 may expect a **correlation key** and the arm slices on `InstanceState` are
@@ -165,25 +165,25 @@ keeps working. A genuine token signal-catch still outranks a timer.
 > and an arm-derived park never yields to a coexisting timer. If your handler
 > switches on `Reason` for timer parks, drive through a `Harness`.
 
-> **Closed for timers since ADR-0177.** `HasArmedTimers` no longer reads
+> **Closed for timers.** `HasArmedTimers` no longer reads
 > `state.Timers` only: it is the filtered view of `InstanceState.TimerWaiters()`,
 > which enumerates all five sources — token timer-catch awaits, timer boundaries,
 > event-gateway timer arms, event-subprocess timer arms, and the record table. A
 > definition parked purely on a timer arm is therefore driveable. One kind is
 > deliberately excluded: a compensation-**stall** timer is a detection deadline,
-> and firing it would manufacture the very stall it exists to detect (ADR-0175). A
-> compensation-**retry** backoff is not excluded — it is forward work (ADR-0179).
+> and firing it would manufacture the very stall it exists to detect. A
+> compensation-**retry** backoff is not excluded — it is forward work.
 
 > **A walk-scoped incident is the LAST rung.** The compensation incident kinds
 > (`IncidentCompensationStall`, `IncidentCompensationFailed`) carry an empty
 > `TokenID`: they are records *about* a compensation walk, not a park, and
 > `ResolveIncident` refuses both. `Reason` names what your handler must **do** to
-> unblock the instance, so since ADR-0179 either of them raises `ReasonIncident`
+> unblock the instance, so either of them raises `ReasonIncident`
 > only when nothing actionable is parked — below signal, message, timer,
 > human-task and async-child, and immediately above `ReasonUnknown`. An instance
 > carrying one while parked on a firable timer classifies `ReasonTimer`, on a
 > signal await `ReasonSignal`, and so on; a stalled walk with nothing else parked
-> still classifies `ReasonIncident` exactly as ADR-0175 shipped it. An incident
+> still classifies `ReasonIncident` exactly as it originally shipped. An incident
 > that parks a *token* (a token in `TokenIncident`, or an incident naming one) is
 > a different rung entirely and always wins — it is the one `ResolveIncident`
 > clears. Every incident is reported in full on `Park.Incidents` regardless of
@@ -316,7 +316,7 @@ assert.Equal(t, "ops@example.com", sent[0].From)
 
 `humantask.TaskStore.Upsert` documents a MUST: a task failing `humantask.Validate`
 must be rejected with `humantask.ErrInvalidTask`, and a rejected write must persist
-nothing (ADR-0183). The interface signature did not change when that rule landed, so
+nothing. The interface signature did not change when that rule landed, so
 a store written before it keeps compiling **and keeps accepting contradictory rows** —
 a silent break. This helper is how you find out:
 
@@ -345,7 +345,7 @@ queries, an out-of-range state trips `AssignedTo` only (`ClaimableBy` returns `U
 and `Claimed`+no claim trips neither — there `Get` is the only witness.
 
 Each shape runs as a named subtest. Beside the three invalid shapes it also asserts the
-shapes a store must **accept** and read back — including ADR-0148's kiosk claim (a
+shapes a store must **accept** and read back — including the kiosk claim (a
 claimant carrying roles but no ID) and the `Completed`/`Cancelled` shapes that are
 deliberately unconstrained on the claim axis — so a store that rejects everything
 cannot pass either.
@@ -472,5 +472,4 @@ the returned `engine.InstanceState`.
 ---
 
 See the `Example_*` functions in this package for runnable end-to-end samples
-(timer flow, approval flow, email capture), and ADR-0092 / the design spec under
-`docs/` for the rationale.
+(timer flow, approval flow, email capture).

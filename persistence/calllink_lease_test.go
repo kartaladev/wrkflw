@@ -1,7 +1,7 @@
 package persistence_test
 
 // calllink_lease_test.go tests the façade-level WithCallLinkLease and
-// WithCallLinkClock options on persistence.NewCallLinkStore (ADR-0031).
+// WithCallLinkClock options on persistence.NewCallLinkStore.
 // It exercises only the public façade constructors, verifying the thin
 // delegation wires through to the underlying store options.
 
@@ -72,7 +72,7 @@ func seedFacadeTerminalLink(t *testing.T, pgStore *store.Store, pool *pgxpool.Po
 
 // TestCallLinkStoreFacadeLeaseOptions verifies the persistence façade exposes
 // the WithCallLinkLease and WithCallLinkClock options and that they wire through
-// to the Postgres lease machinery (ADR-0031).
+// to the Postgres lease machinery.
 func TestCallLinkStoreFacadeLeaseOptions(t *testing.T) {
 	t.Run("WithCallLinkLease options compile and a leased store is non-nil", func(t *testing.T) {
 		pool := dbtest.RunTestDatabase(t)

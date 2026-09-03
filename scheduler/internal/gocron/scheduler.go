@@ -1,5 +1,5 @@
-// Package gocron is the concrete gocron v2-backed Scheduler implementation
-// (ADR-0009). It is internal: consumers reach it only through the module-root
+// Package gocron is the concrete gocron v2-backed Scheduler implementation.
+// It is internal: consumers reach it only through the module-root
 // scheduler façade. gocron and clockwork are imported here only — never from
 // engine/runtime/model code.
 package gocron
@@ -31,7 +31,7 @@ const defaultTimeSkew = 5 * time.Minute
 // GocronScheduler is the production scheduling engine backed by gocron v2,
 // consumed by the parent scheduler façade through ScheduleJob/RemoveJob. It
 // shares the engine's clockwork time source so one fake-clock advance drives
-// both engine timestamps and timer firing (ADR-0003, ADR-0009).
+// both engine timestamps and timer firing.
 type GocronScheduler struct {
 	sched gocron.Scheduler
 	clk   clockwork.Clock
@@ -39,7 +39,7 @@ type GocronScheduler struct {
 	// loc is the timezone the scheduler resolves calendar at-times and cron
 	// expressions against. nil means "unset"; NewGocronScheduler resolves an
 	// unset loc to time.UTC (it never falls through to gocron's time.Local
-	// default). Set via WithLocation. See ADR-0136.
+	// default). Set via WithLocation.
 	loc *time.Location
 
 	// timeSkew is the maximum lateness that is accepted silently for a
@@ -62,8 +62,8 @@ type GocronScheduler struct {
 
 	// elector, when set, is passed to gocron as a distributed elector so that
 	// across replicas only the elected leader runs ALL timer fires (single-leader
-	// mode). It is the mutually-exclusive alternative to locker (ADR-0059): setting
-	// both is a construction error. nil = no leader election.
+	// mode). It is the mutually-exclusive alternative to locker: setting both is
+	// a construction error. nil = no leader election.
 	elector gocron.Elector
 
 	mu     sync.Mutex
@@ -99,8 +99,7 @@ var ErrLockerElectorConflict = errors.New(
 // Shutdown() call happens outside s.mu, strictly after ScheduleJob has
 // already registered the job and returned success. A past-due one-shot
 // registered in that window can still be pruned by Shutdown() before its
-// fireImmediately goroutine runs, orphaning it. See backlog 50 in
-// docs/plans/HANDOVER.md.
+// fireImmediately goroutine runs, orphaning it.
 var ErrSchedulerClosed = errors.New("workflow-scheduler: scheduler is closed")
 
 // Option configures a [GocronScheduler].
@@ -127,8 +126,7 @@ func WithTracerProvider(tp trace.TracerProvider) Option {
 // the OTel global provider. The scheduler emits the
 // wrkflw_scheduler_job_runs_total counter and
 // wrkflw_scheduler_job_duration_seconds histogram through it, driven by
-// gocron's native MonitorStatus hook (ADR-0134 production item ① — see
-// monitor.go).
+// gocron's native MonitorStatus hook (see monitor.go).
 func WithMeterProvider(mp metric.MeterProvider) Option {
 	return func(s *GocronScheduler) {
 		s.mpOpt = obs.WithMeterProvider(mp)
@@ -163,8 +161,8 @@ func WithElector(e gocron.Elector) Option {
 
 // WithClock sets the [clockwork.Clock] that drives timer scheduling (default:
 // [clockwork.NewRealClock]). Pass a fake clock in tests so that a single
-// clock.Advance drives both engine timestamps and timer firing (ADR-0003,
-// ADR-0069). A nil value is ignored (falls back to the default real clock).
+// clock.Advance drives both engine timestamps and timer firing. A nil value
+// is ignored (falls back to the default real clock).
 func WithClock(clk clockwork.Clock) Option {
 	return func(s *GocronScheduler) {
 		if clk != nil {
@@ -184,8 +182,7 @@ func WithClock(clk clockwork.Clock) Option {
 // resolution, or any named zone. Named zones with DST resolve at-times per that
 // zone's DST rules on the live scheduler; the UTC reference does not observe
 // DST, so the two diverge across DST boundaries. In a multi-replica deployment
-// (WithLocker/WithElector) every replica must use the same location. See
-// ADR-0136.
+// (WithLocker/WithElector) every replica must use the same location.
 func WithLocation(loc *time.Location) Option {
 	return func(s *GocronScheduler) {
 		if loc != nil {
@@ -248,10 +245,9 @@ func NewGocronScheduler(opts ...Option) (*GocronScheduler, error) {
 	}
 
 	// Build the Telemetry value before constructing the gocron engine: the
-	// MonitorStatus and EventListeners options wired in below (ADR-0134
-	// production item ①) both need the resolved logger/meter, so this must
-	// happen ahead of gocron.NewScheduler rather than after gs.Start() as
-	// before.
+	// MonitorStatus and EventListeners options wired in below both need the
+	// resolved logger/meter, so this must happen ahead of gocron.NewScheduler
+	// rather than after gs.Start() as before.
 	s.tel = obs.New(
 		"github.com/kartaladev/wrkflw/scheduler",
 		filterNilOpts(s.logOpt, s.tpOpt, s.mpOpt)...,
@@ -259,14 +255,14 @@ func NewGocronScheduler(opts ...Option) (*GocronScheduler, error) {
 
 	// Resolve the effective location: option-provided or UTC default. This is
 	// pinned explicitly so gocron never falls back to its own time.Local
-	// default (ADR-0136).
+	// default.
 	loc := s.loc
 	if loc == nil {
 		loc = time.UTC
 	}
 
 	gocronOpts := []gocron.SchedulerOption{
-		gocron.WithLocation(loc), // ADR-0136: pin location (default UTC)
+		gocron.WithLocation(loc), // pin location (default UTC)
 		gocron.WithClock(s.clk),
 		gocron.WithMonitorStatus(newMonitorStatus(s.tel)),
 		gocron.WithGlobalJobOptions(gocron.WithEventListeners(
@@ -355,8 +351,7 @@ func (s *GocronScheduler) NextRun(timerID string) (time.Time, bool) {
 // closed=true returns an error wrapping [ErrSchedulerClosed] rather than
 // silently accepting the registration (see ErrSchedulerClosed's doc). ⚠ A
 // ScheduleJob call already holding s.mu when Close is invoked is NOT covered
-// by that guarantee — see ErrSchedulerClosed's doc for the residual window
-// and backlog 50 in docs/plans/HANDOVER.md.
+// by that guarantee — see ErrSchedulerClosed's doc for the residual window.
 func (s *GocronScheduler) Close() error {
 	s.mu.Lock()
 	s.closed = true

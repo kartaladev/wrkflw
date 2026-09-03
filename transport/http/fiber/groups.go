@@ -150,7 +150,7 @@ func (g TaskRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOptio
 				return writeErr(cfg, c, aerr)
 			}
 			var in httpcore.ClaimInput
-			// Body is OPTIONAL: ClaimInput is empty since ADR-0189, so a
+			// Body is OPTIONAL: ClaimInput is empty, so a
 			// migrated client sends none. Oversize is still 413.
 			if err := bindOptionalBody(cfg, c, &in); err != nil {
 				return writeErr(cfg, c, err)
@@ -245,7 +245,7 @@ func (g TaskRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOptio
 //
 // SECURITY: these routes have NO built-in authentication. Mount AdminRoutes only
 // onto a router group already protected by your auth middleware (admin-by-
-// composition, ADR-0095); otherwise the admin endpoints are exposed unauthenticated.
+// composition); otherwise the admin endpoints are exposed unauthenticated.
 type AdminRoutes struct {
 	Svc         service.Service
 	DeadLetters service.DeadLetterAdmin
@@ -303,14 +303,14 @@ func (g AdminRoutes) Customize(r fiberlib.Router, opts ...httpcore.CustomizeOpti
 				return c.Status(status).JSON(body)
 			}))
 
-	// Resolve a stalled compensation walk (ADR-0175).
+	// Resolve a stalled compensation walk.
 	rt.Post(cfg.BasePath+"/admin/instances/:id/compensation/resolve-stall",
 		observed(inst, "POST", cfg.BasePath+"/admin/instances/:id/compensation/resolve-stall",
 			func(c fiberlib.Ctx) error {
 				id := c.Params("id")
 				var in httpcore.ResolveCompensationStallInput
 				// Body is REQUIRED: command_id and disposition are both mandatory
-				// and neither may default (ADR-0175).
+				// and neither may default.
 				if oversizeBody(cfg, c) {
 					return writeErr(cfg, c, httpcore.ErrRequestBodyTooLarge)
 				}

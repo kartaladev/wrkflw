@@ -1,9 +1,9 @@
 package engine
 
 // White-box by necessity: the state this file exercises cannot be produced by
-// driving the engine any more (ADR-0171 stops it arising), only DESERIALIZED
-// from a row written before ADR-0171. Building it means writing the unexported
-// compensationCursor directly.
+// driving the engine any more (the current code stops it arising), only
+// DESERIALIZED from a row written by an older version. Building it means writing
+// the unexported compensationCursor directly.
 
 import (
 	"testing"
@@ -18,11 +18,11 @@ import (
 	"github.com/kartaladev/wrkflw/definition/model"
 )
 
-// TestCompensationAdvanceFinishesWhenRecordSourceIsGone covers ADR-0171's third
-// element: a walk whose record source has vanished must route to the walk's
-// FINISH, never to an index expression.
+// TestCompensationAdvanceFinishesWhenRecordSourceIsGone covers the rule that a
+// walk whose record source has vanished must route to the walk's FINISH, never
+// to an index expression.
 //
-// The only way to reach it after ADR-0171 is a rolling upgrade. A cursor pinned
+// The only way to reach it now is a rolling upgrade. A cursor pinned
 // by startCompensationWalk always carries its Records, and exitSubprocessScope
 // now holds a scope a live walk names — but a walk that was already in flight
 // when the process restarted was persisted by the OLD code: its Records is nil,
@@ -53,7 +53,7 @@ func TestCompensationAdvanceFinishesWhenRecordSourceIsGone(t *testing.T) {
 	}
 	at := time.Date(2026, 8, 10, 9, 0, 0, 0, time.UTC)
 
-	// A scope-wide throw walk as the pre-ADR-0171 code persisted it: no pinned
+	// A scope-wide throw walk as the older code persisted it: no pinned
 	// Records, a ScopeID naming the sub-process scope it was walking, and a
 	// resume target at the root scope. The scope itself is absent — a sibling
 	// branch closed it while the walk was outstanding, which is the whole defect.
@@ -90,7 +90,7 @@ func TestCompensationAdvanceFinishesWhenRecordSourceIsGone(t *testing.T) {
 // TestRetryOnAVanishedRecordSourceFinishesWithoutPanicking is T13.
 //
 // Retry indexes records[cur.NextIndex], and it needs its OWN bounds check:
-// ADR-0171's third disjunct in stepCompensationAdvance guards NextIndex-1, which
+// the third disjunct in stepCompensationAdvance guards NextIndex-1, which
 // says nothing about NextIndex itself. On the migrated cursor below the live
 // source resolves to nil while NextIndex is 1, so a naive index PANICS inside the
 // pure engine core — in the library consumer's own process.
@@ -151,7 +151,7 @@ func TestRetryOnAVanishedRecordSourceFinishesWithoutPanicking(t *testing.T) {
 // Both deferral sites now stamp PendingFinalStatus/PendingFinalErr explicitly,
 // so a state this engine WRITES never reaches the default. A row persisted by an
 // older build does: its handleCancelRequested set PendingCancel alone. The
-// default must keep decoding that as the ADR-0039 cancel outcome
+// default must keep decoding that as the cancel outcome
 // (StatusTerminated / "cancelled") rather than terminating the instance with an
 // empty error code.
 //
@@ -216,7 +216,7 @@ func TestDeferredCancelFromLegacySnapshotTerminatesAsCancelled(t *testing.T) {
 	}
 	require.Len(t, failures, 1, "exactly one terminal command; cmds=%#v", res.Commands)
 	require.Equal(t, "cancelled", failures[0].Err,
-		"the legacy default must decode as the ADR-0039 cancel outcome")
+		"the legacy default must decode as the cancel outcome")
 }
 
 // TestCompensationResumeSurfacesAnUnresolvableScopeAsAnError draws the line

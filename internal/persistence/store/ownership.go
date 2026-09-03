@@ -184,7 +184,7 @@ func (o *AdvisoryLockOwnership) Close() error {
 // a [dialect.Locker] backed by Postgres session-level advisory locks, together
 // with a closer that returns the connection to the pool. It exposes the store's
 // advisory-lock machinery for reuse by the scheduler-lock bridge
-// (persistence.NewSchedulerLocker) so no lock SQL is duplicated (ADR-0102).
+// (persistence.NewSchedulerLocker) so no lock SQL is duplicated.
 func NewPostgresLocker(ctx context.Context, pool *pgxpool.Pool) (dialect.Locker, func() error, error) {
 	l, err := newPostgresLocker(ctx, pool)
 	if err != nil {
@@ -197,7 +197,7 @@ func NewPostgresLocker(ctx context.Context, pool *pgxpool.Pool) (dialect.Locker,
 // [dialect.Locker] backed by MySQL GET_LOCK / RELEASE_LOCK, together with a closer
 // that releases all held locks and closes the connection. It exposes the store's
 // advisory-lock machinery for reuse by the scheduler-lock bridge
-// (persistence.NewSchedulerLocker) so no lock SQL is duplicated (ADR-0102).
+// (persistence.NewSchedulerLocker) so no lock SQL is duplicated.
 func NewMySQLLocker(ctx context.Context, db *sql.DB) (dialect.Locker, func() error, error) {
 	l, err := newMySQLLocker(ctx, db)
 	if err != nil {

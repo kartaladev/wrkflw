@@ -11,18 +11,18 @@ const (
 	WarnMsgCallLinkLease     = "multi-replica deployment has call-links enabled without a call-link lease/ownership wired; child notifications may be delivered more than once"
 	WarnMsgHistoryCap        = "WithHistoryCap is not set; instance snapshot history can grow unbounded"
 	WarnMsgPruning           = "no pruning/retention job configured; outbox, call-link, chain-link, dedup, and timer tables can grow unbounded"
-	WarnMsgSQLiteBusyTimeout = "SQLite pool allows more than one connection while PRAGMA busy_timeout is 0; concurrent writes will fail immediately with SQLITE_BUSY. Set db.SetMaxOpenConns(1) or add _pragma=busy_timeout(5000) to the DSN (ADR-0082 §1, §2)"
+	WarnMsgSQLiteBusyTimeout = "SQLite pool allows more than one connection while PRAGMA busy_timeout is 0; concurrent writes will fail immediately with SQLITE_BUSY. Set db.SetMaxOpenConns(1) or add _pragma=busy_timeout(5000) to the DSN"
 )
 
 // DeploymentProfile is the consumer's own assertion of how they run wrkflw. It
 // is NOT introspected from the live system — the library cannot know deployment
-// topology, so the consumer declares it. See docs/production-checklist.md.
+// topology, so the consumer declares it.
 type DeploymentProfile struct {
 	MultiReplica       bool // more than one engine replica runs concurrently
 	CallLinksEnabled   bool // call-activity / sub-process wiring is in use
 	CallLinkLeaseWired bool // a call-link lease/ownership is configured
 	HistoryCapSet      bool // WithHistoryCap has been applied to the store
-	PruningScheduled   bool // a retention/pruning job is running (see docs/retention.md)
+	PruningScheduled   bool // a retention/pruning job is running
 }
 
 // WarnUnsafeConfig emits one slog.Warn per known-risky combination in p. It is a

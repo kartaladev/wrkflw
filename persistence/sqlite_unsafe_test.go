@@ -1,7 +1,7 @@
 package persistence_test
 
-// sqlite_unsafe_test.go — backlog 109: OpenSQLite never checked the single-writer
-// contract its own godoc documents.
+// sqlite_unsafe_test.go — OpenSQLite never checked the single-writer contract
+// its own godoc documents.
 //
 // ⚠ The causal correction from triage is what these cases encode: a pool wider
 // than one connection is NOT by itself the hazard (0 failures across 4 runs with

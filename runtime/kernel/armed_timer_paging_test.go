@@ -16,7 +16,7 @@ import (
 // string is the structural first-page sentinel, and a zero NextRun is an
 // ordinary value the engine really produces (runtime/timerops.go arms
 // regardless of TriggerSpec.Next reporting ok == false), so it must survive the
-// round trip rather than aliasing "no cursor" (ADR-0159). Whether such a row
+// round trip rather than aliasing "no cursor". Whether such a row
 // reaches the table is backend-dependent — MySQL rejects it — but the cursor
 // must not depend on which.
 func TestArmedTimerCursorRoundTrip(t *testing.T) {
@@ -119,7 +119,7 @@ func TestDecodeArmedTimerCursorRejectsGarbage(t *testing.T) {
 			//
 			// Which guard actually fires: DisallowUnknownFields, because
 			// "started_at" is unknown to armedTimerCursorPayload — NOT the kind
-			// check, which this direction never reaches (ADR-0160).
+			// check, which this direction never reaches.
 			name:   "an instance cursor is not an armed-timer cursor",
 			cursor: mustEncodeInstanceCursor(t, time.Date(2026, 7, 30, 9, 0, 0, 0, time.UTC), "inst-x"),
 			assert: func(t *testing.T, err error) {

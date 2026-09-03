@@ -1,6 +1,7 @@
 package engine_test
 
-// step_stale_commands_e2e_test.go — ADR-0161 end to end, through engine.Step.
+// step_stale_commands_e2e_test.go — the stale-command filter end to end, through
+// engine.Step.
 //
 // Every "the command was dropped" row carries a POSITIVE CONTROL, because
 // absence is satisfied two ways: the filter dropped it, or it was never emitted.
@@ -96,9 +97,10 @@ func startSubInstanceCount(cmds []engine.Command) int {
 	return n
 }
 
-// TestStaleCommandFilterE2E pins ADR-0161 through the public Step API. The
-// headline property needs no signal, no arms and no multi-arm dispatch: a bare
-// StartInstance on a parallel fork whose sibling force-terminates is enough.
+// TestStaleCommandFilterE2E pins the stale-command filter through the public
+// Step API. The headline property needs no signal, no arms and no multi-arm
+// dispatch: a bare StartInstance on a parallel fork whose sibling
+// force-terminates is enough.
 func TestStaleCommandFilterE2E(t *testing.T) {
 	t.Parallel()
 
@@ -225,7 +227,7 @@ func firstInvokeCommandID(t *testing.T, cmds []engine.Command) string {
 }
 
 // TestStaleCommandFilterKeepsCompensationInvoke pins the highest-risk detail of
-// ADR-0161: startCompensationWalk CONSUMES the throw token before emitting a
+// the filter: startCompensationWalk CONSUMES the throw token before emitting a
 // non-fire-and-forget InvokeAction correlated only by Compensating.ActiveCmdID.
 // A filter built on the surviving token set alone would drop that command and
 // hang every compensation walk.
@@ -270,7 +272,7 @@ func TestStaleCommandFilterKeepsCompensationInvoke(t *testing.T) {
 // image: a step that starts a walk and then force-terminates must not leave a
 // compensation action alive for a terminated instance.
 //
-// The assertion is unchanged by ADR-0164; its POSITIVE CONTROL had to move.
+// The assertion itself is unchanged; its POSITIVE CONTROL had to move.
 // It used to read the id back from r2.State.Compensating.ActiveCmdID, which
 // doubled as proof that a walk had started — endInstance now zeroes that cursor
 // at the terminal site, so the control reads the throw node's History visit

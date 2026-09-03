@@ -31,7 +31,7 @@ import (
 type CallDeliverFunc func(ctx context.Context, def *model.ProcessDefinition, instanceID string, trg engine.Trigger) error
 
 // CallNotifier drains terminal call links and resumes the parked parent token
-// with SubInstanceCompleted or SubInstanceFailed (ADR-0024). Delivery is
+// with SubInstanceCompleted or SubInstanceFailed. Delivery is
 // idempotent: a parent whose token was already resumed (engine.ErrTokenNotFound)
 // is treated as successfully notified and the link is marked notified.
 type CallNotifier struct {
@@ -75,7 +75,7 @@ func WithCallNotifierPollInterval(d time.Duration) CallNotifierOption {
 	}
 }
 
-// WithClock sets the time source for trigger timestamps (ADR-0138).
+// WithClock sets the time source for trigger timestamps.
 // Default: clockwork.NewRealClock(). A nil clock is ignored. Inject a fake clock in tests.
 func WithClock(clk clockwork.Clock) CallNotifierOption {
 	return func(n *CallNotifier) {
@@ -111,7 +111,7 @@ func WithCallNotifierMeterProvider(mp metric.MeterProvider) CallNotifierOption {
 //   - deliver: wraps ProcessDriver.ApplyTrigger (the parent def is pre-resolved by DrainOnce via reg).
 //   - reg: resolves parent definition references (format "defID:version").
 //   - opts: optional configuration overrides (use [WithClock] to set the
-//     time source; default is clockwork.NewRealClock() per ADR-0138).
+//     time source; default is clockwork.NewRealClock()).
 //
 // REQUIRED registration contract: every parent definition MUST be resolvable from
 // reg under the exact key "<defID>:<version>" (the format DrainOnce uses to look it
@@ -201,7 +201,7 @@ func (n *CallNotifier) DrainOnce(ctx context.Context) (int, error) {
 
 		// Apply the trigger to the parent instance.
 		//
-		// ADR-0152 cross-layer note: an empty p.Link.ParentCommandID would make
+		// Cross-layer note: an empty p.Link.ParentCommandID would make
 		// Step return engine.ErrEmptyTriggerKey instead of ErrTokenNotFound, which
 		// this check does not recognize as a duplicate — the link would stay
 		// claimable and retry forever. This is unreachable today: ParentCommandID

@@ -1,10 +1,7 @@
 package atrest_test
 
 import (
-	"flag"
 	"maps"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,7 +15,7 @@ import (
 // TestReplaceBlock pins ReplaceBlock's marker-splicing contract: it locates
 // the BEGIN/END at-rest markers in current, replaces exactly the region
 // between them with block, and never touches the surrounding prose. A
-// current document missing either marker is an error — SECURITY.md must
+// current document missing either marker is an error — the document must
 // carry both before ReplaceBlock has anything to splice into.
 func TestReplaceBlock(t *testing.T) {
 	t.Parallel()
@@ -185,7 +182,7 @@ func TestRender(t *testing.T) {
 					assert.Contains(t, result, marker)
 				}
 
-				// D8's lower-bound hazard and the goose-no-checksum caveat (A15).
+				// The lower-bound hazard and the goose-no-checksum caveat.
 				assert.Contains(t, result, "lower bound")
 				assert.Contains(t, result, "goose keys migrations by version and stores no checksum")
 
@@ -194,8 +191,8 @@ func TestRender(t *testing.T) {
 				assert.NotContains(t, result, "safe to encrypt")
 				assert.NotContains(t, result, "without breaking an index")
 
-				// The one derived warning that survives (ADR-0187 D8). AssignedTo is named by
-				// its resolvable symbol path (M6, final review): a bare "AssignedTo" is not
+				// The one derived warning that survives. AssignedTo is named by
+				// its resolvable symbol path: a bare "AssignedTo" is not
 				// resolvable to a reader of this public document.
 				assert.Contains(t, result,
 					"`wrkflw_human_task.claimed_by` IS indexed, so encrypting it non-deterministically "+
@@ -203,7 +200,7 @@ func TestRender(t *testing.T) {
 
 				// The one column whose DECLARED name differs from the canonical key: MySQL
 				// declares wrkflw_journal.trigger_ ("trigger" is a MySQL reserved word) and
-				// D2b normalizes it to "trigger" for set comparison. The normalization must
+				// it is normalized to "trigger" for set comparison. The normalization must
 				// not reach the published cell: a DBA writing a MySQL encryption migration
 				// from a row that says "trigger" under a "mysql type" heading targets a
 				// column MySQL rejects.
@@ -224,7 +221,7 @@ func TestRender(t *testing.T) {
 				//     store/definitions.go marshals whole definitions into that column.
 				//   - wrkflw_instances.snapshot — engine.InstanceState.Tasks carries every
 				//     in-flight human task and each one's Eligibility is a full
-				//     authz.AuthzSpec (backlog 141).
+				//     authz.AuthzSpec.
 				// Each name is asserted in its BACKTICKED, TABLE-QUALIFIED form, which
 				// appears only in the locations list: a bare "eligibility" would also
 				// match the Columns-table row and could never fail.
@@ -234,7 +231,7 @@ func TestRender(t *testing.T) {
 				// repo tracks: the sentence is rendered exactly once from a derived
 				// count, so any regression already fails the Contains arm above. They
 				// are kept as a sharper failure MESSAGE naming the counts this document
-				// has previously published ("two" pre-ADR-0187, "three" pre-141), not
+				// has previously published ("two", then "three"), not
 				// as a second detection.
 				assert.Contains(t, result, "durable at rest in **four** places")
 				assert.Contains(t, result, "`wrkflw_human_task.eligibility`")
@@ -243,10 +240,10 @@ func TestRender(t *testing.T) {
 				assert.NotContains(t, result, "durable at rest in **two** places")
 				assert.NotContains(t, result, "durable at rest in **three** places")
 
-				// Consumer migrations out of scope; pointer to the non-goals (D10).
+				// Consumer migrations out of scope; the non-goals are stated.
 				assert.Contains(t, result, "out of scope")
-				assert.Contains(t, result, "ADR-0187")
-				assert.Contains(t, result, "D10")
+				assert.Contains(t, result, "non-goals")
+				assert.Contains(t, result, "no hash-chained journal")
 
 				// Exactly 87 data rows plus a header and separator line = 89 lines
 				// starting with "|". ⚠ The previous form compared pipeLines against
@@ -286,7 +283,7 @@ func TestRender(t *testing.T) {
 			cls:     genericWarningCls,
 			assert: func(t *testing.T, result string, err error) {
 				require.NoError(t, err)
-				// M6 (final review): the mechanism is that encryption breaks the EQUALITY
+				// The mechanism is that encryption breaks the EQUALITY
 				// LOOKUP that goes through the index, not "the index" itself — match the
 				// claimed_by branch's wording, which already gets this right.
 				assert.Contains(t, result,
@@ -321,7 +318,7 @@ func TestRender(t *testing.T) {
 	}
 }
 
-// TestRenderIsDeterministic pins ADR-0187 D12: Render's inputs are both Go
+// TestRenderIsDeterministic pins determinism: Render's inputs are both Go
 // maps, and Go randomises map iteration on every range — including two
 // ranges of the SAME map within one process — so two calls with identical
 // input must still produce byte-identical output. Measured (round 2):
@@ -352,17 +349,18 @@ func TestRenderIsDeterministic(t *testing.T) {
 }
 
 // TestRenderCasbinPolicyColumnsAreDerivedNotRetyped is the regression guard
-// for ADR-0187's final-review C1 finding: the "⚠ keyed is a lower bound on
+// for the derive-never-retype rule: the "⚠ keyed is a lower bound on
 // the column" paragraph and the Columns-table legend's "n/a … (every
 // casbin_rule column, in mysql and sqlite)" claim must be DERIVED from cls
-// and schemas, not retyped as a static literal that TestSecurityMdInSync can
+// and schemas, not retyped as a static literal that a golden-file check can
 // only ever compare against itself.
 //
-// Proof (C1's finding): before this fix, swapping casbin_rule.ptype
+// Proof: before this fix, swapping casbin_rule.ptype
 // ClassPolicy->ClassScalar and wrkflw_outbox.id ClassScalar->ClassPolicy
 // (both keyed, so the byClass total is preserved) left the whole suite
-// green while SECURITY.md kept asserting the swapped-out column "is class
-// policy". The second subtest below pins exactly that mutation.
+// green while the published document kept asserting the swapped-out
+// column "is class policy". The second subtest below pins exactly that
+// mutation.
 func TestRenderCasbinPolicyColumnsAreDerivedNotRetyped(t *testing.T) {
 	t.Parallel()
 
@@ -404,42 +402,6 @@ func TestRenderCasbinPolicyColumnsAreDerivedNotRetyped(t *testing.T) {
 			"casbin_rule.ptype now exists in mysql, so the legend's \"every casbin_rule column, "+
 				"in mysql and sqlite\" claim is false; Render must error rather than keep publishing it")
 	})
-}
-
-// update rewrites the generated SECURITY.md block instead of asserting it.
-// Run with: go test ./internal/atrest/... -run TestSecurityMdInSync -update
-var update = flag.Bool("update", false, "rewrite the generated SECURITY.md block instead of asserting it")
-
-// TestSecurityMdInSync is the drift guard (ADR-0187 decision 9): SECURITY.md's
-// generated "Data at rest" block must match what Render produces from the
-// migrations embedded in this module right now. It is the ONLY per-entry
-// regression protection the classification's 85 non-claimed_by entries have
-// anywhere in this delivery — see the step-3b reciprocal-swap proof in the
-// Task 6 report.
-func TestSecurityMdInSync(t *testing.T) {
-	root, err := atrest.ModuleRoot()
-	require.NoError(t, err)
-	schemas, err := atrest.LoadSchemas(root)
-	require.NoError(t, err)
-
-	block, err := atrest.Render(schemas, atrest.Classification)
-	require.NoError(t, err)
-
-	path := filepath.Join(root, "SECURITY.md")
-	current, err := os.ReadFile(path)
-	require.NoError(t, err)
-
-	next, err := atrest.ReplaceBlock(string(current), block)
-	require.NoError(t, err, "SECURITY.md must carry the BEGIN/END at-rest markers")
-
-	if *update {
-		require.NoError(t, os.WriteFile(path, []byte(next), 0o644))
-		t.Log("SECURITY.md rewritten; re-run without -update")
-		return
-	}
-
-	assert.Equal(t, next, string(current),
-		"SECURITY.md's at-rest block is stale — run scripts/gen-at-rest.sh")
 }
 
 // TestRenderPolicyLocationsAreDerivedAndChecked pins the machine check behind
@@ -563,7 +525,7 @@ func numberWord(n int) string {
 	return strconv.Itoa(n)
 }
 
-// TestRenderCasbinAbsenceViolationsAreDeterministic pins the M5-class defect
+// TestRenderCasbinAbsenceViolationsAreDeterministic pins the defect
 // /code-review found in casbinColumnsAreAbsentFromDialects: it returned on the
 // FIRST violation Go's randomised map iteration happened to visit, so with two
 // or more violations the reported column varied run to run (three distinct

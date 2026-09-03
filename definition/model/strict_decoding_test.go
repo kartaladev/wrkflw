@@ -106,7 +106,7 @@ func TestParseYAMLRejectsUnknownFields(t *testing.T) {
 // TestParseYAMLEmptyDocumentIsNotAnError is a regression guard for ParseYAML's
 // io.EOF branch, not a RED-first case: yaml.Decoder reports io.EOF where
 // yaml.Unmarshal reported nil, so without that branch a strict decoder would
-// silently turn empty input into a parse error (ADR-0167 D3a).
+// silently turn empty input into a parse error.
 func TestParseYAMLEmptyDocumentIsNotAnError(t *testing.T) {
 	t.Parallel()
 
@@ -195,7 +195,7 @@ func TestProcessDefinitionUnmarshalJSONRejectsUnknownFields(t *testing.T) {
 			// json.Unmarshal validates the whole input; Decoder.Decode reads one
 			// value and stops. Without an explicit trailing-token check the
 			// strictness swap would LOOSEN this, so the guard is part of the
-			// change rather than incidental (ADR-0167).
+			// change rather than incidental.
 			name: "trailing data after the definition is rejected",
 			json: `{"id":"p","version":1,"nodes":[],"flows":[]} trailing garbage`,
 			assert: func(t *testing.T, _ model.ProcessDefinition, err error) {
@@ -276,11 +276,11 @@ func TestDefinitionStorePathIsStrict(t *testing.T) {
 			},
 		},
 		{
-			// The five tags that were camelCase before ADR-0144 renamed the wire
+			// The five tags that were camelCase before the wire was renamed
 			// to snake_case (8179c0b). A definition row written before that
 			// commit carries them and no longer loads — the real migration
 			// trigger, larger than the retired errorEndEvent kind.
-			name: "a pre-ADR-0144 camelCase blob no longer loads",
+			name: "a legacy camelCase blob no longer loads",
 			json: `{"id":"p","version":1,"flows":[],` +
 				`"nodes":[{"id":"a","kind":"serviceTask","compensateAction":"refund"}]}`,
 			assert: func(t *testing.T, err error) {
@@ -312,7 +312,7 @@ func TestStrictDecodingDoesNotRejectKindInappropriateFields(t *testing.T) {
 
 	// timer_duration belongs to timer nodes, but NodeWire/nodeYAML are flat
 	// unions over all node kinds, so it is a KNOWN field and survives strict
-	// decoding on a userTask. ADR-0167 records this limitation deliberately:
+	// decoding on a userTask. The limitation is deliberate:
 	// kind-appropriateness is model.Validate's concern, not the decoder's.
 	yamlSrc := strings.Replace(validYAML,
 		`    eligible_roles: ["manager"]`,
@@ -330,7 +330,7 @@ func TestStrictDecodingDoesNotRejectKindInappropriateFields(t *testing.T) {
 }
 
 // allFieldsYAML exercises every yaml tag declared by nodeYAML, definitionYAML
-// and the nested structs a definition can author inline. It is the ADR-0167
+// and the nested structs a definition can author inline. It is the
 // over-strictness guard: strictness makes every yaml:"…" tag load-bearing, so a
 // missing or misspelled tag turns a legitimate definition into a hard parse
 // error. TestAllDeclaredYAMLTagsParseUnderStrictDecoding proves this fixture
@@ -475,8 +475,8 @@ flows:
 // declaredYAMLTags extracts the yaml tag names declared by the named structs in
 // a Go source file. It reads the source rather than reflecting because nodeYAML
 // and definitionYAML are unexported and this is a black-box test. Deriving the
-// list mechanically is the point: a hand-copied list rots, and ADR-0167 requires
-// the over-strictness guard to enumerate every tag rather than a sample.
+// list mechanically is the point: a hand-copied list rots, and the
+// over-strictness guard must enumerate every tag rather than a sample.
 func declaredYAMLTags(t *testing.T, file string, structs ...string) []string {
 	t.Helper()
 
@@ -548,7 +548,7 @@ func TestAllDeclaredYAMLTagsParseUnderStrictDecoding(t *testing.T) {
 // TestPersistedDefinitionRoundTripsThroughStrictJSON is the container-free proxy
 // for DefinitionStore.GetDefinition/Lookup, which json.Unmarshal stored blobs
 // straight into a ProcessDefinition and therefore run through the newly-strict
-// UnmarshalJSON. ADR-0167 makes this a DATA migration, not only a source one:
+// UnmarshalJSON. This is a DATA migration, not only a source one:
 // the change is affordable because marshal and unmarshal are symmetric through
 // the same definitionWire, and this test is what holds that symmetry true.
 // Regression guard, not a RED-first case.
@@ -588,48 +588,13 @@ func TestPersistedDefinitionRoundTripsThroughStrictJSON(t *testing.T) {
 	assert.Equal(t, built.Flows, reloaded.Flows)
 }
 
-// TestREADMEYAMLBlocksParseUnderStrictDecoding keeps the published quickstart
-// honest. ADR-0167's audit found README.md was a LIVE instance of the bug this
-// ADR fixes: it prescribed camelCase keys that no struct tag declares, so the
-// documented definition silently yielded an allow-all task, a compensation
-// action that never ran and a nil retry policy — while
-// examples/readme_quickstart/main.go used the correct snake_case tags and the
-// two drifted apart unnoticed. Under strict decoding that drift is no longer
-// silent, and this test is what makes it impossible to reintroduce.
-//
-// ⚠ Constraint this imposes on README.md: every ```yaml / ```yml block must be a
-// COMPLETE, buildable definition, because each one is parsed AND built here. An
-// illustrative fragment belongs in a fence with no language tag, or in prose.
-func TestREADMEYAMLBlocksParseUnderStrictDecoding(t *testing.T) {
-	t.Parallel()
-
-	src, err := os.ReadFile("../../README.md")
-	require.NoError(t, err)
-
-	// Accept ```yml as well as ```yaml, and allow the fence to be indented — the
-	// original pattern matched only unindented ```yaml, so a future README edit
-	// using either other form would silently escape this guard.
-	blocks := regexp.MustCompile("(?s)```ya?ml[ \t]*\r?\n(.*?)```").FindAllStringSubmatch(string(src), -1)
-	require.NotEmpty(t, blocks, "no yaml blocks found in README.md — has the fence style changed?")
-
-	for i, b := range blocks {
-		t.Run(fmt.Sprintf("block_%d", i+1), func(t *testing.T) {
-			t.Parallel()
-			ld, parseErr := model.ParseYAML(strings.NewReader(b[1]))
-			require.NoError(t, parseErr, "README yaml block %d does not parse:\n%s", i+1, b[1])
-			_, buildErr := ld.Build()
-			require.NoError(t, buildErr, "README yaml block %d does not build:\n%s", i+1, b[1])
-		})
-	}
-}
-
 // TestProcessDefinitionUnmarshalJSONEmptyInputIsNotEOF pins a regression the
 // adversarial review caught: swapping json.Unmarshal for a Decoder made empty
 // input return a bare io.EOF, so errors.Is(err, io.EOF) flipped false -> true.
 // A caller treating io.EOF as "clean end of stream" would silently skip a
 // corrupt or empty definition instead of failing. Baseline returned a
-// *json.SyntaxError ("unexpected end of JSON input"); ADR-0167 D3 keeps each
-// decoder's existing error shape, so the EOF identity must not leak out.
+// *json.SyntaxError ("unexpected end of JSON input"); each decoder keeps its
+// existing error shape, so the EOF identity must not leak out.
 func TestProcessDefinitionUnmarshalJSONEmptyInputIsNotEOF(t *testing.T) {
 	t.Parallel()
 

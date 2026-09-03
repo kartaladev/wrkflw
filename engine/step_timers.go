@@ -89,7 +89,7 @@ func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *I
 		task.State = humantask.Cancelled
 		// Clone before the record escapes: task points into s.Tasks, which is
 		// committed as instance state, while the command is handed to a
-		// consumer-supplied TaskStore (ADR-0163).
+		// consumer-supplied TaskStore.
 		cmds = append(cmds, UpdateTask{Task: task.Clone()})
 	}
 
@@ -111,16 +111,16 @@ func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *I
 
 // handleCompensationStallFired processes a TimerFired for a
 // TimerCompensationStall record: the compensation action dispatched under
-// rec.CommandID has not reported back within the configured window (ADR-0175).
+// rec.CommandID has not reported back within the configured window.
 //
 // It raises ONE incident and does nothing else. Emitting no commands is a hard
 // constraint, not a stylistic choice: this runs on handleTimerFired's path 4,
 // whose !spawnsNewWork() refusal EXEMPTS the kinds that must still be delivered
-// to a dying instance ([TimerKind.firesOnDyingInstance], ADR-0178), so it still
+// to a dying instance ([TimerKind.firesOnDyingInstance]), so it still
 // fires on DYING instances — which is precisely the point, since the walks that
 // terminate are the ones an operator most needs to see wedged. A handler that
 // emitted work here would dispatch it to an instance an in-flight rollback has
-// already decided to kill (the measured ADR-0172 reminder hole).
+// already decided to kill (the measured reminder hole).
 //
 // Guards, in order:
 //   - not compensating any more: the walk finished under the timer. Drop the
@@ -140,7 +140,7 @@ func handleCompensationStallFired(s *InstanceState, rec timerRecord, at time.Tim
 		Kind: IncidentCompensationStall,
 		// TokenID is empty by construction: the walk owns this incident, not a
 		// token. removeOrphanedIncidents deliberately KEEPS an empty-TokenID
-		// record, and removeIncidentsForToken("") returns early (ADR-0152).
+		// record, and removeIncidentsForToken("") returns early.
 		NodeID:    rec.NodeID,
 		ScopeID:   rec.ScopeID,
 		CommandID: rec.CommandID,
@@ -242,18 +242,18 @@ func reinvokeServiceAction(ctx context.Context, def *model.ProcessDefinition, s 
 }
 
 // handleRetryFired processes a TimerFired event for a TimerRetry timer. It is
-// called from the TimerFired handler in Step after Task 5 parks a token on a
+// called from the TimerFired handler in Step after a token is parked on a
 // retry timer following a retryable ActionFailed.
 //
 // Contract:
 //   - If the parked token is gone (stale/duplicate retry fire), clean no-op.
 //   - Otherwise: removes the consumed timer record, re-emits InvokeAction for
 //     the node (mirroring the service-task drive path), re-parks the token on
-//     the new command ID, and re-arms any boundary events (which Task 5 cancelled
-//     on failure) so deadline and reminder timers are active for the retry attempt.
+//     the new command ID, and re-arms any boundary events (cancelled on
+//     failure) so deadline and reminder timers are active for the retry attempt.
 func handleRetryFired(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, rec timerRecord, at time.Time, pol stepPolicy) (StepResult, error) {
 	// Find the parked token. The token was parked with AwaitCommand == rec.TimerID
-	// by Task 5 (ActionFailed retry path). If absent, the timer fired after the
+	// by the ActionFailed retry path. If absent, the timer fired after the
 	// instance advanced via another path (race / duplicate): clean no-op.
 	tok := s.tokenAwaiting(rec.TimerID)
 	if tok == nil {

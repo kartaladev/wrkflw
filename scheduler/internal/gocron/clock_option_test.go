@@ -93,8 +93,8 @@ func TestGocronScheduler_WithClock_NotFiredWithoutAdvance(t *testing.T) {
 	// SAME registration must fire the moment it does; that is what proves the
 	// silence above was the fake clock holding the job back rather than a job
 	// that was never going to fire at all. Measured: with the task swapped for
-	// one that ignores the caller's callback, the Never alone still PASSED
-	// (backlog 44) — this Eventually is what turns that mutation RED.
+	// one that ignores the caller's callback, the Never alone still PASSED —
+	// this Eventually is what turns that mutation RED.
 	clk.Advance(5 * time.Second)
 	require.Eventually(t, fired.Load, eventuallyBudget, 5*time.Millisecond,
 		"the same job must fire as soon as the fake clock is advanced")

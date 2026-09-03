@@ -1,8 +1,7 @@
 package engine_test
 
-// step_compensation_walk_timer_retirement_test.go — ADR-0179 Decision 3 /
-// spec §3.3: the walk-scoped timer sweep must cover the RETRY kind, not only
-// the stall kind.
+// step_compensation_walk_timer_retirement_test.go — the walk-scoped timer sweep
+// must cover the RETRY kind, not only the stall kind.
 //
 // Until this, the sweep (then named cancelCompensationStallTimers, now
 // cancelCompensationWalkTimers) filtered strictly on TimerCompensationStall, so
@@ -17,8 +16,8 @@ package engine_test
 //	leakedTimerRecords=2
 //
 // stepCompensationFinish has already zeroed the cursor by then, so each orphan
-// later fires against compensationCursor{} — the shape ADR-0171 documents as
-// having panicked in the pure core, in a consumer's process — and its scheduler
+// later fires against compensationCursor{} — the shape that panicked in the pure
+// core, in a consumer's process — and its scheduler
 // job outlives the walk regardless.
 //
 // ⚠ THE FIXTURE MUST BE A RESUMING WALK. On a TERMINATE finish endInstance's
@@ -153,9 +152,9 @@ func retryTimerRecords(s engine.InstanceState) []engine.TimerRecordView {
 	return out
 }
 
-// TestCompensationRetryTimerIsRetiredWithTheWalk covers plan P1 step 10 and the
-// P1-D carry-over: the walk-scoped sweep must reach a RETRY record both at the
-// walk's finish and at every re-dispatch that supersedes it.
+// TestCompensationRetryTimerIsRetiredWithTheWalk pins that the walk-scoped sweep
+// must reach a RETRY record both at the walk's finish and at every re-dispatch
+// that supersedes it.
 //
 // What makes each row fail before the sweep is widened is recorded per row; both
 // numbers were measured on this branch before the change.
@@ -218,11 +217,11 @@ func TestCompensationRetryTimerIsRetiredWithTheWalk(t *testing.T) {
 				assert.Empty(t, retryTimerRecords(res.State),
 					"no retry record may outlive the walk: stepCompensationFinish has "+
 						"already zeroed the cursor, so an orphan fires against "+
-						"compensationCursor{} (ADR-0171's panic shape)")
+						"compensationCursor{}, the known panic shape")
 				assert.True(t, engine.TimersAreNil(&res.State),
 					"nil, not an empty slice, when the sweep removed the last record: "+
 						"s.Timers is marshalled into the persisted snapshot and "+
-						"null → [] is stored-shape drift (ADR-0174)")
+						"null → [] is stored-shape drift")
 
 				var cancelled []string
 				for _, c := range res.Commands {

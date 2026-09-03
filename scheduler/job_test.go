@@ -225,10 +225,10 @@ func TestNewScheduledJob(t *testing.T) {
 	}
 }
 
-// TestJobSingleton exercises the unexported singleton() flag (production item
-// ③, overrun protection) through the export_test.go test-only accessor
+// TestJobSingleton exercises the unexported singleton() flag (overrun
+// protection) through the export_test.go test-only accessor
 // scheduler.JobIsSingleton, since the method itself is unexported package API
-// consumed only by the in-package façade (Tasks 5-11).
+// consumed only by the in-package façade.
 func TestJobSingleton(t *testing.T) {
 	t.Parallel()
 

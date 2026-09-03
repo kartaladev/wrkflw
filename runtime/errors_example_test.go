@@ -75,8 +75,8 @@ func (e *sagaActionError) Error() string { return e.msg }
 // ship failure is caught by a boundary error event that routes to end-fail
 // (StatusCompleted). This keeps RootCompensations intact so that an admin can
 // trigger CompensateRequested to roll back book+pay in reverse order
-// (refund THEN cancel-booking). Without the boundary, ADR-0034 auto-runs
-// compensation on the unhandled-error terminal path before StatusFailed.
+// (refund THEN cancel-booking). Without the boundary, compensation runs
+// automatically on the unhandled-error terminal path before StatusFailed.
 func sagaDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "saga", Version: 1,
@@ -86,7 +86,7 @@ func sagaDef() *model.ProcessDefinition {
 			activity.NewServiceTask("pay", activity.WithTaskAction("pay"), activity.WithCompensateAction("refund")),
 			activity.NewServiceTask("ship", activity.WithTaskAction("ship")),
 			// Boundary catches ship failure so the unhandled-error auto-compensation
-			// path (ADR-0034) is not triggered; RootCompensations stays intact for
+			// path is not triggered; RootCompensations stays intact for
 			// the admin-triggered CompensateRequested below.
 			event.NewBoundary("ship-err", "ship", event.WithBoundaryErrorCode("")),
 			event.NewEnd("end"),
@@ -115,8 +115,8 @@ func sagaDef() *model.ProcessDefinition {
 //  5. Final status is StatusTerminated (full rollback, ToNode=="").
 //
 // Note: sagaDef uses a boundary error on ship so that ship failure is not an
-// unhandled-error terminal event. Without the boundary, ADR-0034 auto-runs the
-// compensation walk before StatusFailed, consuming records before the admin trigger.
+// unhandled-error terminal event. Without the boundary, the compensation walk
+// runs automatically before StatusFailed, consuming records before the admin trigger.
 func TestSagaCompensationRollback(t *testing.T) {
 	ctx := t.Context()
 
@@ -130,7 +130,7 @@ func TestSagaCompensationRollback(t *testing.T) {
 		"refund":         &recordingAction{name: "refund", rec: rec},
 	})
 
-	// Use a fake clock per ADR-0138 / project test policy. The saga has no
+	// Use a fake clock per project test policy. The saga has no
 	// timer-driven nodes, so behaviour is identical to a real clock. clockwork.FakeClock
 	// structurally satisfies clockwork.Clock (it implements Now() time.Time).
 	fakeClock := clockwork.NewFakeClockAt(time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC))
@@ -147,7 +147,7 @@ func TestSagaCompensationRollback(t *testing.T) {
 
 	// ship failure is caught by the boundary → routes to end-fail → StatusCompleted.
 	// (A boundary-caught error does NOT trigger the unhandled-error auto-compensation
-	// path introduced in ADR-0034, so RootCompensations remain intact for admin rollback.)
+	// path, so RootCompensations remain intact for admin rollback.)
 	assert.Equal(t, engine.StatusCompleted, st.Status, "instance must be StatusCompleted after ship fails via boundary")
 	require.NotNil(t, st.EndedAt)
 

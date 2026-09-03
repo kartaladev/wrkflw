@@ -18,7 +18,7 @@ import (
 // after "…34.15Z" and a row that is genuinely due is silently skipped. The Go
 // standard library documents this ("removes trailing zeros … may not sort
 // correctly once formatted"). Padding every value to nine digits makes the
-// comparison positional and restores the invariant (ADR-0080, ADR-0151).
+// comparison positional and restores the invariant.
 //
 // Values written with the previous trimmed encoding remain readable — see
 // [parseTimeText] — because RFC3339Nano parsing accepts any number of
@@ -31,8 +31,7 @@ const textTimeLayout = "2006-01-02T15:04:05.000000000Z07:00"
 // modernc.org/sqlite driver stringifies a bound [time.Time] via its default
 // String() form, which is not ISO8601 and cannot be scanned back. For SQLite
 // the value is therefore formatted as a [textTimeLayout] UTC string, which is
-// julianday-compatible, round-trips exactly, and sorts lexicographically
-// (ADR-0080, ADR-0151).
+// julianday-compatible, round-trips exactly, and sorts lexicographically.
 //
 // The TEXT path is activated by [dialect.Dialect.TimestampsAsText]; callers
 // must not compare [dialect.Dialect.Name] to "sqlite" directly.
@@ -44,12 +43,12 @@ func timeArg(d dialect.Dialect, t time.Time) any {
 }
 
 // parseTimeText parses a UTC RFC3339 string as written by [timeArg] on the
-// TEXT-timestamp path (ADR-0080). Returns the parsed instant UTC-normalised. An
+// TEXT-timestamp path. Returns the parsed instant UTC-normalised. An
 // error is returned if s is not a valid RFC3339Nano value.
 //
 // Parsing deliberately uses [time.RFC3339Nano], which accepts any number of
 // fractional digits. That keeps rows written by the earlier trimmed encoding
-// readable after the move to [textTimeLayout] (ADR-0151); only comparison
+// readable after the move to [textTimeLayout]; only comparison
 // ordering, not readability, was affected by the change.
 func parseTimeText(s string) (time.Time, error) {
 	t, err := time.Parse(time.RFC3339Nano, s)

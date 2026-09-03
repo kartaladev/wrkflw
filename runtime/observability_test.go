@@ -228,7 +228,7 @@ func paymentDef() *model.ProcessDefinition {
 //   - spans "wrkflw.runner.Run", "wrkflw.step", and "wrkflw.action charge",
 //   - exactly one observation in wrkflw_action_duration_seconds per outcome.
 //
-// M1: the error-outcome row additionally asserts that the span carries Error
+// The error-outcome row additionally asserts that the span carries Error
 // status on the error path.
 func TestActionSpanAndDurationMetric(t *testing.T) {
 	t.Parallel()
@@ -261,7 +261,7 @@ func TestActionSpanAndDurationMetric(t *testing.T) {
 			},
 		},
 		{
-			// M1: action returns an error; the restructured I1 span must be recorded
+			// Action returns an error; the restructured span must be recorded
 			// with Error status and the duration histogram must capture one sample
 			// with outcome=error (elapsed==0 is honest: a.Do was called but failed).
 			name: "error outcome records span with error status and metric",
@@ -311,7 +311,7 @@ func TestActionSpanAndDurationMetric(t *testing.T) {
 
 // TestIncidentsResolvedMetric drives an instance to an incident (via MaxAttempts=1)
 // then calls ResolveIncident and asserts wrkflw_incidents_resolved_total{def=...}==1.
-// M2: covers the incidentsResolved counter.
+// Covers the incidentsResolved counter.
 func TestIncidentsResolvedMetric(t *testing.T) {
 	t.Parallel()
 
@@ -497,7 +497,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 }
 
 // TestDeliverSpan verifies that ProcessDriver.ApplyTrigger produces a "wrkflw.runner.ApplyTrigger" span.
-// M3: covers the ApplyTrigger entry-point span.
+// Covers the ApplyTrigger entry-point span.
 func TestDeliverSpan(t *testing.T) {
 	t.Parallel()
 

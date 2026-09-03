@@ -1,9 +1,9 @@
 package engine_test
 
-// step_signal_fanout_test.go — ADR-0158: one broadcast signal fires EVERY
+// step_signal_fanout_test.go — one broadcast signal fires EVERY
 // matching arm per family, not the first.
 //
-// Measured on unpatched main (evidence D1): a parallel fork into two UserTasks,
+// Measured on unpatched main: a parallel fork into two UserTasks,
 // each with an interrupting signal boundary on the same name, given ONE
 // SignalReceived, went tokens 2→1, Boundaries 2→1, and emitted exactly one
 // UpdateTask — one host interrupted, the other left parked with its arm live.
@@ -34,7 +34,7 @@ import (
 
 var fanoutT0 = time.Date(2026, 8, 10, 9, 0, 0, 0, time.UTC)
 
-// twoInterruptingBoundariesDef is evidence D1's fixture, with each boundary
+// twoInterruptingBoundariesDef is the reproduction fixture, with each boundary
 // routed to a ServiceTask so a fire is observable as an InvokeAction.
 //
 //	start → fork(parallel) ⇒
@@ -73,7 +73,7 @@ func twoInterruptingBoundariesDef() *model.ProcessDefinition {
 	}
 }
 
-// TestSignalFiresEveryMatchingBoundaryArm is the headline defect (evidence D1).
+// TestSignalFiresEveryMatchingBoundaryArm covers the headline defect.
 //
 // It asserts WHERE the tokens are and WHICH actions were invoked, not just a
 // count: a count alone would pass if the delivery fired one arm twice.
@@ -251,16 +251,16 @@ func TestSignalDoesNotFireAnArmThisDeliveryCreated(t *testing.T) {
 	}
 }
 
-// ── Regression guards: the families ADR-0158 must NOT change ────────────────
+// ── Regression guards: the families that must NOT change ────────────────────
 //
-// ⚠ D5b measured that a message delivery's observable end state is byte-for-byte
+// ⚠ Measured: a message delivery's observable end state is byte-for-byte
 // identical to a signal delivery's on the same shape, so these rows key on the
 // TRIGGER TYPE, not on the end state.
 
 // TestMessageDeliveryStillFiresOnlyTheFirstArm pins point-to-point message
 // semantics: two message boundary arms on one name, ONE delivery, ONE fire.
-// handleMessageReceived dispatches through dispatchArmCascade, which ADR-0158
-// does not touch.
+// handleMessageReceived dispatches through dispatchArmCascade, which the
+// broadcast change does not touch.
 func TestMessageDeliveryStillFiresOnlyTheFirstArm(t *testing.T) {
 	t.Parallel()
 
@@ -296,7 +296,7 @@ func TestMessageDeliveryStillFiresOnlyTheFirstArm(t *testing.T) {
 }
 
 // TestSignalMatchingNothingMutatesNothing pins merge-once: a delivery that
-// matches no arm and no token must not merge its payload (evidence D7a).
+// matches no arm and no token must not merge its payload.
 func TestSignalMatchingNothingMutatesNothing(t *testing.T) {
 	t.Parallel()
 

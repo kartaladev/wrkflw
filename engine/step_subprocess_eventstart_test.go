@@ -1,9 +1,9 @@
 package engine_test
 
-// step_subprocess_eventstart_test.go — ADR-0122 event-sub-process parity tests:
+// step_subprocess_eventstart_test.go — event-sub-process parity tests:
 // the event-sub-process BEHAVIORS (root/nested, interrupting/non-interrupting,
 // signal/timer/message triggers, normal-close arm-cancel, sibling + gateway arm
-// cancel, reverse re-arm) authored using the ADR-0122 form — an
+// cancel, reverse re-arm) authored using the sub-process form — an
 // activity.SubProcess whose nested definition has an event-triggered inner start
 // (event.NewStart with WithSignalName /
 // WithMessageCorrelator / WithStartTimer; WithNonInterrupting for the
@@ -42,8 +42,8 @@ import (
 // ---------------------------------------------------------------------------
 // Scenario 1: root-level INTERRUPTING, MESSAGE-triggered event-sub cancels
 // enclosing (root) tokens and completes.
-// Mirrors: TestRootLevelEventSubprocessCompletes (Fix 2), step_subprocess_test.go,
-// but with a message trigger (worked example in task-4-brief.md) instead of signal.
+// Mirrors: TestRootLevelEventSubprocessCompletes, step_subprocess_test.go,
+// but with a message trigger instead of signal.
 // ---------------------------------------------------------------------------
 
 // rootMessageEventStartDef builds:
@@ -53,7 +53,7 @@ import (
 //	  esp-start(message "cancel", key "orderId") → esp-svc("esp-action") → esp-end
 //
 // "root-esp" is an activity.SubProcess with NO incoming sequence flow — it is
-// latent until the message fires (ADR-0122 form of a root-level event-sub).
+// latent until the message fires — the root-level event-sub form.
 func rootMessageEventStartDef() *model.ProcessDefinition {
 	espInner := &model.ProcessDefinition{
 		ID: "root-esp-msg-inner", Version: 1,
@@ -222,7 +222,7 @@ func TestEventStartSubprocess_RootNonInterrupting_Signal(t *testing.T) {
 	}
 	assert.True(t, rootSvcPresent, "root-svc must still be pending (non-interrupting)")
 
-	// The arm STAYS armed after firing — non-interrupting is repeatable (ADR-0124).
+	// The arm STAYS armed after firing — non-interrupting is repeatable.
 	require.Len(t, r2.State.EventTriggeredSubprocesses, 1, "non-interrupting event-sub stays armed (repeatable)")
 	require.Len(t, r2.State.Scopes, 1, "first fire opened one event-sub child scope")
 
@@ -397,7 +397,7 @@ func TestEventStartSubprocess_Nested_Interrupting(t *testing.T) {
 
 	// ---- Step 4: late HumanCompleted must error ----
 	//
-	// ⚠ Before ADR-0165 this returned engine.ErrTokenNotFound. The instance is
+	// ⚠ This once returned engine.ErrTokenNotFound. The instance is
 	// COMPLETED by this point, so "no token awaits that id" was a
 	// true-but-useless answer the caller could not tell apart from a typo'd task
 	// id; HumanCompleted is now classified rejectWithError and the caller is told
@@ -411,7 +411,7 @@ func TestEventStartSubprocess_Nested_Interrupting(t *testing.T) {
 		"a late trigger against a completed instance stays classifiable as an invalid transition")
 	assert.NotErrorIs(t, err, engine.ErrTokenNotFound,
 		"ErrInstanceTerminal must NOT wrap ErrTokenNotFound: a dead instance and a missing "+
-			"token are conditions ADR-0165 deliberately keeps apart")
+			"token are conditions deliberately kept apart")
 }
 
 // TestEventStartSubprocess_Nested_NonInterrupting mirrors
@@ -587,7 +587,7 @@ func TestEventStartSubprocess_Timer_ArmsOnScopeOpen(t *testing.T) {
 }
 
 // TestEventStartSubprocess_NormalCloseCancelsArm mirrors
-// TestEventSubprocessArmCancelledOnNormalScopeClose (M2): when the enclosing
+// TestEventSubprocessArmCancelledOnNormalScopeClose: when the enclosing
 // scope drains WITHOUT the event-sub's timer ever firing, the orphaned arm
 // must be cancelled (CancelTimer emitted) and removed from state.
 func TestEventStartSubprocess_NormalCloseCancelsArm(t *testing.T) {
@@ -825,7 +825,7 @@ func TestEventStartSubprocess_InterruptingCancelsSiblingArm(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 6b: Fix 1 — interrupting event-sub cancels an event-based
+// Scenario 6b: interrupting event-sub cancels an event-based
 // gateway's armed events (ArmedEvents cleanup) in the enclosing scope.
 // Mirrors: TestInterruptingEventSubprocessCancelsGatewayArms, step_subprocess_test.go.
 // ---------------------------------------------------------------------------
@@ -891,7 +891,7 @@ func espWithEventGatewayEventStartDef() *model.ProcessDefinition {
 }
 
 // TestEventStartSubprocess_InterruptingCancelsGatewayArms mirrors
-// TestInterruptingEventSubprocessCancelsGatewayArms (Fix 1).
+// TestInterruptingEventSubprocessCancelsGatewayArms.
 func TestEventStartSubprocess_InterruptingCancelsGatewayArms(t *testing.T) {
 	at := time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)
 	def := espWithEventGatewayEventStartDef()

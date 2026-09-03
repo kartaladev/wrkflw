@@ -10,7 +10,7 @@ import (
 )
 
 // TestPgWatcher_BackoffIsClockDriven proves pgWatcher.backoff's reconnect wait
-// is routed through the injected clockwork.Clock (ADR-0138): under a
+// is routed through the injected clockwork.Clock: under a
 // clockwork.FakeClock, no wall time passes, so only
 // fc.Advance(watcherReconnectDelay) — not real time — releases it. A second
 // case proves an already-cancelled context short-circuits the wait without

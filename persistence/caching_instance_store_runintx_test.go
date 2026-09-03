@@ -1,10 +1,10 @@
 package persistence_test
 
-// caching_instance_store_runintx_test.go covers CachingInstanceStore.RunInTx
-// (ADR-0134, Task 8): capability forwarding to a real SQL backing store, the
-// degraded fallback when the backing store lacks the capability, and — the
-// audited BLOCKER — that a rolled-back RunInTx evicts (never poisons) every
-// instance the wrapper wrote through during fn. This needs a real transactional
+// caching_instance_store_runintx_test.go covers CachingInstanceStore.RunInTx:
+// capability forwarding to a real SQL backing store, the degraded fallback when
+// the backing store lacks the capability, and — the audited BLOCKER — that a
+// rolled-back RunInTx evicts (never poisons) every instance the wrapper wrote
+// through during fn. This needs a real transactional
 // backing (SQLite via dbtest, no Docker daemon required), so it lives apart
 // from the countingStore/MemInstanceStore-backed table in
 // caching_instance_store_test.go.

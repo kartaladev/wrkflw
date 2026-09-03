@@ -246,9 +246,9 @@ func TestAdminRoutes_RelayStats(t *testing.T) {
 
 // TestAdminRoutes_Timers exercises GET /admin/timers end-to-end through the gin
 // router: query-string parsing into the filter, the aggregate gate behind
-// total, the handler-side limit clamp, and the 400 mapping for a bad cursor
-// (ADR-0159). A route that drops the cursor silently re-serves page one
-// forever, which no status-code-only assertion would catch.
+// total, the handler-side limit clamp, and the 400 mapping for a bad cursor.
+// A route that drops the cursor silently re-serves page one forever, which no
+// status-code-only assertion would catch.
 func TestAdminRoutes_Timers(t *testing.T) {
 	t.Parallel()
 
@@ -289,7 +289,7 @@ func TestAdminRoutes_Timers(t *testing.T) {
 				var body map[string]any
 				decodeJSON(t, resp, &body)
 				assert.EqualValues(t, 2, body["total_count"], "total_count is the table total from Stats")
-				assert.NotContains(t, body, "count", "count is the retired pre-ADR-0159 field name")
+				assert.NotContains(t, body, "count", "count is the retired legacy field name")
 				assert.Contains(t, body, "next_fire_at")
 				assert.Equal(t, "cursor-2", body["next_cursor"])
 				assert.Equal(t, true, body["has_more"])

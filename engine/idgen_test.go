@@ -69,7 +69,7 @@ func idGenDef() *model.ProcessDefinition {
 	}
 }
 
-// TestStepIDGen covers the injected id-generation seam (ADR-0149): with no
+// TestStepIDGen covers the injected id-generation seam: with no
 // generator the engine keeps its deterministic "<instance>-<prefix><n>"
 // counter byte-for-byte, an injected generator supplies every id the engine
 // stamps, and a failing generator surfaces as a step error rather than a panic

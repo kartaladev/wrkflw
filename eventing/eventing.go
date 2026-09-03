@@ -6,7 +6,7 @@
 //
 // # Process-instance chaining
 //
-// The subscriber side of process-instance chaining (ADR-0045) also lives here so
+// The subscriber side of process-instance chaining also lives here so
 // runtime stays watermill-free: NewChainHandler adapts a runtime.Chainer to a
 // watermill no-publish handler you mount on your own message.Router, and
 // NewChainerRunner / Chainer.Run is a turnkey wrapper that subscribes the three

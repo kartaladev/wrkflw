@@ -48,7 +48,7 @@ type memStoreConfig struct {
 type MemInstanceStoreOption func(*memStoreConfig) error
 
 // WithCallLinks records call-link correlation into cl atomically with
-// Create/Commit (ADR-0025).
+// Create/Commit.
 func WithCallLinks(cl *MemCallLinkStore) MemInstanceStoreOption {
 	return func(c *memStoreConfig) error {
 		if cl == nil {
@@ -142,8 +142,8 @@ func (m *MemInstanceStore) Commit(_ context.Context, expected Version, step Appl
 	return next, nil
 }
 
-// RunInTx is the TxRunner capability's sequencing-only Mem implementation
-// (ADR-0134): it is exactly fn(ctx), with no transaction and no rollback.
+// RunInTx is the TxRunner capability's sequencing-only Mem implementation:
+// it is exactly fn(ctx), with no transaction and no rollback.
 // MemInstanceStore's Create/Commit already apply atomically per call, so
 // there is nothing to join — but there is also nothing to undo. If fn
 // performs a Create or Commit and later returns a non-nil error, that write
@@ -201,8 +201,8 @@ func (m *MemInstanceStore) List(_ context.Context, filter InstanceFilter) (Insta
 	// time.Time.Compare, not cmp.Compare over UnixNano: UnixNano is undefined
 	// outside 1678–2262 and overflows NEGATIVE at year 10000, which sorted such
 	// a row as the OLDEST here while every SQL backend sorts it newest — a real
-	// divergence from the InstanceLister contract this type implements
-	// (ADR-0160). Compare is also exact, where UnixNano truncates nothing but
+	// divergence from the InstanceLister contract this type implements.
+	// Compare is also exact, where UnixNano truncates nothing but
 	// silently wraps.
 	slices.SortFunc(all, func(a, b InstanceSummary) int {
 		if c := b.StartedAt.Compare(a.StartedAt); c != 0 {

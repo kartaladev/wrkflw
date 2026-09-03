@@ -10,16 +10,16 @@ package persistence
 // whenever the internal one does, and — the concrete cost this file was written
 // to repay — an internal option that nobody remembered to forward is
 // unreachable off-module while still shipping a doc comment telling consumers
-// to use it. The four ADR-0138 clock options shipped in exactly that state:
+// to use it. The four clock options shipped in exactly that state:
 // store.WithStoreClock's own comment said "inject a clockwork.FakeClock in
 // tests", and no consumer could name it.
 //
 // This is the package-owned option shape the rest of the module already uses
-// (runtime.Option, runtime/monitor.Option, calllink.CallNotifierOption) and
-// that ADR-0004 implies: nothing under internal/ appears in an exported
-// signature. The per-family config structs mirror relayConfig in
-// persistence.go, including its no-nil-guard fold: a nil option panics on
-// apply, exactly as it did when these types were aliases.
+// (runtime.Option, runtime/monitor.Option, calllink.CallNotifierOption):
+// nothing under internal/ appears in an exported signature. The per-family
+// config structs mirror relayConfig in persistence.go, including its
+// no-nil-guard fold: a nil option panics on apply, exactly as it did when these
+// types were aliases.
 
 import (
 	"log/slog"
@@ -56,14 +56,14 @@ func buildStoreOptions(opts []Option) []store.Option {
 }
 
 // WithHistoryCap bounds the inline instance History persisted in the snapshot
-// to every open visit plus at most n most-recent closed visits (ADR-0021).
+// to every open visit plus at most n most-recent closed visits.
 // Unset / n <= 0 keeps full inline history (current behavior). The journal
 // table remains the complete audit source.
 func WithHistoryCap(n int) Option { return storeOption(store.WithHistoryCap(n)) }
 
 // WithOutboxNotify makes the Store emit a transactional NOTIFY wrkflw_outbox
 // when a step inserts outbox rows, so a relay started with WithListenNotify
-// drains with sub-poll-interval latency (ADR-0022). Opt-in; default off.
+// drains with sub-poll-interval latency. Opt-in; default off.
 // Only Postgres emits a NOTIFY; MySQL and SQLite silently skip it.
 func WithOutboxNotify() Option { return storeOption(store.WithOutboxNotify()) }
 
@@ -86,7 +86,7 @@ func WithStoreMeterProvider(mp metric.MeterProvider) Option {
 }
 
 // WithStoreClock sets the time source for the wall-clock timestamps the Store
-// persists — today wrkflw_instances.updated_at on Create and Commit (ADR-0138).
+// persists — today wrkflw_instances.updated_at on Create and Commit.
 // Default: [clockwork.NewRealClock]. A nil clock is ignored.
 //
 // ⚠ In tests use [clockwork.NewFakeClockAt] with an explicit instant, not
@@ -121,7 +121,7 @@ func buildCallLinkOptions(opts []CallLinkOption) []store.CallLinkOption {
 }
 
 // WithCallLinkLease configures opt-in lease-based multi-replica exclusivity on
-// the CallLinkStore (ADR-0031). When ttl > 0, ClaimPending stamps claimed_at /
+// the CallLinkStore. When ttl > 0, ClaimPending stamps claimed_at /
 // claimed_by on each row, hiding it from concurrent replicas until the lease
 // expires. When ttl <= 0 (the default), the original plain SELECT is used
 // unchanged (backward-compatible).
@@ -131,7 +131,7 @@ func WithCallLinkLease(owner string, ttl time.Duration) CallLinkOption {
 
 // WithCallLinkClock sets the clock the CallLinkStore uses for lease timestamps.
 // Default: [clockwork.NewRealClock]. A nil clock is ignored. Inject a fake clock
-// in tests for deterministic behaviour (ADR-0138, ADR-0031) — see the
+// in tests for deterministic behaviour — see the
 // [clockwork.NewFakeClockAt] warning on [WithStoreClock].
 func WithCallLinkClock(clk clockwork.Clock) CallLinkOption {
 	return storeCallLinkOption(store.WithCallLinkClock(clk))
@@ -155,7 +155,7 @@ func buildDefinitionOptions(opts []DefinitionOption) []store.DefinitionOption {
 }
 
 // WithDefinitionClock sets the time source for the created_at stamp
-// [DefinitionStore.PutDefinition] writes (ADR-0138). Default:
+// [DefinitionStore.PutDefinition] writes. Default:
 // [clockwork.NewRealClock]. A nil clock is ignored. See the
 // [clockwork.NewFakeClockAt] warning on [WithStoreClock].
 func WithDefinitionClock(clk clockwork.Clock) DefinitionOption {
@@ -182,7 +182,7 @@ func buildDeduperOptions(opts []DeduperOption) []store.DeduperOption {
 }
 
 // WithDeduperClock sets the time source for the processed_at stamp
-// [Deduper.Seen] writes (ADR-0138). Default: [clockwork.NewRealClock]. A nil
+// [Deduper.Seen] writes. Default: [clockwork.NewRealClock]. A nil
 // clock is ignored. [Deduper.Prune] is unaffected: its cutoff is supplied by
 // the caller. See the [clockwork.NewFakeClockAt] warning on [WithStoreClock].
 func WithDeduperClock(clk clockwork.Clock) DeduperOption {
@@ -209,7 +209,7 @@ func buildChainLinkOptions(opts []ChainLinkOption) []store.ChainLinkOption {
 }
 
 // WithChainLinkClock sets the clock [kernel.ChainLinkStore.Record] falls back
-// to when the supplied link carries a zero CreatedAt (ADR-0138). Default:
+// to when the supplied link carries a zero CreatedAt. Default:
 // [clockwork.NewRealClock]. A nil clock is ignored. See the
 // [clockwork.NewFakeClockAt] warning on [WithStoreClock].
 func WithChainLinkClock(clk clockwork.Clock) ChainLinkOption {

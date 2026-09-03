@@ -1,8 +1,8 @@
 package engine_test
 
-// ADR-0173 — a compensation walk's finish consumes exactly the records it
-// drained. These are the TARGETED-branch cases; the scope-wide teardown routes
-// live in step_compensation_scope_drain_test.go next to the fixtures they reuse.
+// A compensation walk's finish consumes exactly the records it drained. These
+// are the TARGETED-branch cases; the scope-wide teardown routes live in
+// step_compensation_scope_drain_test.go next to the fixtures they reuse.
 
 import (
 	"testing"
@@ -22,7 +22,7 @@ import (
 
 // targetedThrowInnerDef is the compensable body both fixtures below embed:
 // innerStart → svcInner(doInner/undoInner) → innerEnd. Its records archive under
-// the sub-process node's ID on normal exit (ADR-0039).
+// the sub-process node's ID on normal exit.
 func targetedThrowInnerDef(extra ...string) *model.ProcessDefinition {
 	nodes := []model.Node{
 		event.NewStart("innerStart"),
@@ -74,7 +74,7 @@ func targetedThrowOnceDef() *model.ProcessDefinition {
 //	                       sibling(UserTask) → sub  (re-entry) }
 //
 // archiveCompensations keys the archive by the sub-process node's ID, so both
-// visits accumulate under "sub" — the case ADR-0173 Decision 3 exists for.
+// visits accumulate under "sub" — the case the ownership rule exists for.
 func targetedReentryDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "targeted-reentry", Version: 1,
@@ -100,7 +100,7 @@ func targetedReentryDef() *model.ProcessDefinition {
 // TestTargetedThrowFinishLeavesNoEmptyArchiveMap is T8. It fails on main with
 // `ArchivedCompensations = map[]` — a non-nil EMPTY map.
 //
-// ⚠ The wart is PRE-EXISTING and NOT introduced by ADR-0173: on an unmodified
+// ⚠ The wart is PRE-EXISTING and NOT introduced by this change: on an unmodified
 // tree it is applyFinish's whole-key delete that produces it. On THIS branch that
 // is no longer the mechanism — the last key is already gone by the time
 // applyFinish runs, removed by startCompensationWalk → consumeDispatchedRecord →
@@ -152,8 +152,8 @@ func TestTargetedThrowFinishLeavesNoEmptyArchiveMap(t *testing.T) {
 // destroyed: measured `archive={}`, `root=0`, and the deferred throw that pops at
 // finish finds an empty slot.
 //
-// This is ADR-0120 review A1's rule — clear only the prefix you drained — present
-// on the scope-wide branch and absent on the targeted one.
+// This is the rule — clear only the prefix you drained — present on the
+// scope-wide branch and absent on the targeted one.
 func TestTargetedThrowRetainsARecordItNeverDrained(t *testing.T) {
 	t.Parallel()
 
@@ -195,7 +195,7 @@ func TestTargetedThrowRetainsARecordItNeverDrained(t *testing.T) {
 	require.Equal(t, walkCmd, res.State.Compensating.ActiveCmdID,
 		"control: the re-entry did not disturb the in-flight walk")
 	require.Len(t, res.State.DeferredCompensationThrows, 1,
-		"control: the re-entry's own throw is deferred behind the live walk (ADR-0071)")
+		"control: the re-entry's own throw is deferred behind the live walk")
 
 	// The first walk finishes. It must consume ONLY what it drained.
 	res, err = engine.Step(ctx, def, res.State,
@@ -210,8 +210,8 @@ func TestTargetedThrowRetainsARecordItNeverDrained(t *testing.T) {
 }
 
 // TestLegacyTargetedCursorStillConsumesItsWholeArchiveKey covers
-// finishPlan.archiveConsumed, whose contract the ADR commits to but which had NO
-// test: a targeted cursor persisted before ADR-0171 pinned no snapshot, so it
+// finishPlan.archiveConsumed, a documented contract that had NO test: a
+// targeted cursor persisted by an older version pinned no snapshot, so it
 // consumed nothing as it dispatched and the finish must still delete its whole
 // archive key — the single-ownership consume that has always been main's
 // behaviour.
@@ -260,7 +260,7 @@ func TestLegacyTargetedCursorStillConsumesItsWholeArchiveKey(t *testing.T) {
 	require.Equal(t, []string{"undoInner2"}, dispatched,
 		"control: the targeted walk started and dispatched the most recent record")
 
-	// The round-trip through a row written before ADR-0171: no pinned Records.
+	// The round-trip through a row written by an older version: no pinned Records.
 	st := res.State
 	st.Compensating.Records = nil
 	require.NotEmpty(t, st.Compensating.ArchiveKey, "control: the cursor still names its slot")

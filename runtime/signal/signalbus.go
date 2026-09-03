@@ -42,7 +42,7 @@ type DeliverFunc func(ctx context.Context, instanceID string, trg engine.Trigger
 // concurrent use from multiple goroutines (scheduler callbacks, HTTP handlers).
 //
 // Timestamp: Publish stamps each SignalReceived with the time from the injected
-// [clockwork.Clock] (ADR-0138). Pass the same fake clock used by the ProcessDriver in tests
+// [clockwork.Clock]. Pass the same fake clock used by the ProcessDriver in tests
 // so that downstream timers anchored to the signal timestamp are deterministic.
 type SignalBus struct {
 	clk     clockwork.Clock
@@ -67,7 +67,7 @@ func WithClock(clk clockwork.Clock) SignalBusOption {
 
 // NewSignalBus constructs a SignalBus backed by the given delivery function.
 // deliver is called once per registered waiter for each Publish. The time source
-// defaults to clockwork.NewRealClock(); override it with WithClock (ADR-0138).
+// defaults to clockwork.NewRealClock(); override it with WithClock.
 func NewSignalBus(deliver DeliverFunc, opts ...SignalBusOption) (*SignalBus, error) {
 	if deliver == nil {
 		return nil, fmt.Errorf("%w: deliver", kernel.ErrNilDependency)

@@ -22,7 +22,7 @@ type sqlDBPinger struct{ db *sql.DB }
 func (a sqlDBPinger) Ping(ctx context.Context) error { return a.db.PingContext(ctx) }
 
 // PingCheck is a readiness probe that reports the database reachable by issuing
-// a Ping with the request context (ADR-0054). It structurally satisfies the
+// a Ping with the request context. It structurally satisfies the
 // httpcore.HealthCheck contract (Name + Check), so a consumer registers it with
 // stdlib.MountHealth to wire /readyz to a database:
 //

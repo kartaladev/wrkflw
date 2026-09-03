@@ -184,15 +184,15 @@ func TestGocronScheduler_ScheduleJob(t *testing.T) {
 }
 
 // TestGocronScheduleJob_AfterClose_ReturnsSentinelNotFalseFire is a
-// regression test for a false positive the ADR-0184 race fix introduced: the
+// regression test for a false positive the race fix introduced: the
 // fireImmediately branch reported a fire time (s.clk.Now(), nil error) for a
 // past-due one-shot even after Close, because Close only shuts gocron down —
 // gocron's own NewJob succeeds silently on a shut-down scheduler, and
 // ScheduleJob had no closed-state check of its own. Not reachable through
 // the public scheduler.NativeScheduler (which guards with its own
 // scheduler.ErrSchedulerClosed before ever reaching this internal package),
-// but ADR-0184's framing is that the CONTRACT of this internal API is what
-// is being hardened, not only its one current caller.
+// but the CONTRACT of this internal API is what is being hardened, not only
+// its one current caller.
 func TestGocronScheduleJob_AfterClose_ReturnsSentinelNotFalseFire(t *testing.T) {
 	clk := clockwork.NewFakeClock()
 	s, err := sched.NewGocronScheduler(sched.WithClock(clk))
@@ -208,11 +208,11 @@ func TestGocronScheduleJob_AfterClose_ReturnsSentinelNotFalseFire(t *testing.T) 
 	assert.True(t, next.IsZero(), "a closed scheduler must not report a fire time for a job it will never run")
 }
 
-// TestGocronScheduleJob_PastDueDurationOneShot is the regression test for
-// backlog 49: a past-due one-shot expressed as a DURATION (After(-d),
-// After(0)) used to be refused outright. jobDefinition's duration branch
-// mapped it to gocron.OneTimeJobStartDateTime(now.Add(d)) with no past-due
-// guard — unlike the absolute-time (At) branch ADR-0184 Decision 6 hardened —
+// TestGocronScheduleJob_PastDueDurationOneShot is the regression test for a
+// past-due one-shot expressed as a DURATION (After(-d), After(0)) that used
+// to be refused outright. jobDefinition's duration branch mapped it to
+// gocron.OneTimeJobStartDateTime(now.Add(d)) with no past-due guard — unlike
+// the hardened absolute-time (At) branch —
 // so gocron rejected it and the raw string
 // "gocron: OneTimeJob: start must not be in the past" escaped ScheduleJob
 // with no workflow-scheduler: sentinel wrap, alongside a zero next-run.
@@ -245,8 +245,8 @@ func TestGocronScheduleJob_PastDueDurationOneShot(t *testing.T) {
 				require.Eventually(t, func() bool { return fired() >= 1 }, eventuallyBudget, 5*time.Millisecond,
 					"a past-due one-shot must fire without any clock advance")
 				// Refutes the re-arm livelock this guard could plausibly have
-				// introduced (the ADR-0176 class: an arm whose next-run is
-				// still past-due, re-firing forever). WithLimitedRuns(1) must
+				// introduced (an arm whose next-run is still past-due,
+				// re-firing forever). WithLimitedRuns(1) must
 				// retire it after one fire. The Eventually above is this
 				// Never's liveness precondition — the job demonstrably fired.
 				require.Never(t, func() bool { return fired() > 1 }, 150*time.Millisecond, 10*time.Millisecond,

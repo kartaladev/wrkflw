@@ -874,7 +874,7 @@ func TestNonInterruptingBoundarySpawnsParallelToken(t *testing.T) {
 	assert.True(t, nodeIDs["work"], "host token must still be at work")
 	assert.True(t, nodeIDs["notify-svc"], "new token must be at notify-svc")
 
-	// The boundary arm STAYS armed after firing — non-interrupting is repeatable (ADR-0124).
+	// The boundary arm STAYS armed after firing — non-interrupting is repeatable.
 	require.Len(t, r2.State.Boundaries, 1, "non-interrupting boundary stays armed (repeatable)")
 
 	// Step 2b: a SECOND "notify" signal fires the still-armed boundary AGAIN.
@@ -1032,7 +1032,7 @@ func TestBoundaryBadDurationErrors(t *testing.T) {
 //	Start → ServiceTask("work") → End
 //	               ↑ interrupting timer boundary "2h" → alert → End2
 //
-// Used to verify that ActionFailed cancels armed boundary timer IDs (Fix 1).
+// Used to verify that ActionFailed cancels armed boundary timer IDs.
 func actionFailedCancelsArmsAndBoundariesDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID: "p-af-cancel", Version: 1,
@@ -1053,7 +1053,7 @@ func actionFailedCancelsArmsAndBoundariesDef() *model.ProcessDefinition {
 	}
 }
 
-// TestActionFailedCancelsArmsAndBoundaries verifies Fix 1:
+// TestActionFailedCancelsArmsAndBoundaries pins the arm/boundary drain:
 // When ActionFailed is received for the host token, the engine must emit
 // CancelTimer commands for ALL pending boundary timer arms (s.Boundaries) and
 // event-gateway timer arms (s.ArmedEvents), and clear both slices. Previously
@@ -1148,7 +1148,7 @@ func nonInterruptingBoundarySignalSelfCascadeDef() *model.ProcessDefinition {
 	}
 }
 
-// TestNonInterruptingBoundarySignalNoSelfCascade verifies Fix 2:
+// TestNonInterruptingBoundarySignalNoSelfCascade pins the no-self-cascade rule:
 // A non-interrupting signal boundary fires when SignalReceived{"pulse"} is delivered.
 // The boundary's outgoing path leads to a signal-catch also awaiting "pulse".
 // The newly-spawned token (parked at inner-catch) must NOT be re-consumed by

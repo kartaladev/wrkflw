@@ -281,7 +281,7 @@ func TestResolveIncidentIsTrigger(t *testing.T) {
 // record is humantask.Completion; naming the submitted payload Completion too put
 // two exported types with overlapping fields (Outcome, Note) in the API, so a file
 // importing both had to disambiguate and a reader could not tell request from
-// record. The input side carries the Input suffix (ADR-0146 amendment).
+// record. The input side carries the Input suffix.
 func TestCompletionInputNaming(t *testing.T) {
 	t.Parallel()
 

@@ -25,11 +25,11 @@ import (
 // therefore pass even with the production code still calling time.Now(),
 // because the two instants are indistinguishable at any realistic assertion
 // tolerance. Pinning the fake clock to 1999 makes "did the store use the
-// injected clock?" answerable by exact equality (backlog item 126).
+// injected clock?" answerable by exact equality.
 var clockPinnedInstant = time.Date(1999, 3, 4, 5, 6, 7, 890123456, time.UTC)
 
-// TestPersistedTimestampsUseInjectedClock is the ADR-0138 conformance test for
-// the store layer: every persisted wall-clock stamp must come from the injected
+// TestPersistedTimestampsUseInjectedClock is the clock-injection conformance
+// test for the store layer: every persisted wall-clock stamp must come from the injected
 // clockwork.Clock, not from time.Now().
 //
 // It covers the five persisted wall-clock sites in this package (the two

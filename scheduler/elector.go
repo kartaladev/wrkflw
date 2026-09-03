@@ -14,7 +14,7 @@ import "context"
 // pass it via [WithElector].
 //
 // It is the single-leader ALTERNATIVE to [Locker]'s load-balanced mode; the two
-// are mutually exclusive (ADR-0059).
+// are mutually exclusive.
 type Elector interface {
 	// IsLeader returns nil if this replica should run jobs (it is the leader) and
 	// a non-nil error otherwise (so the scheduler skips jobs on this replica).
@@ -35,7 +35,7 @@ type Elector interface {
 //
 // [WithElector] and [WithLocker] are mutually exclusive (single-leader firing vs.
 // load-balanced per-timer exclusion); requesting both returns
-// [ErrTimerLockElectorConflict]. A nil value is ignored. See ADR-0059, ADR-0102.
+// [ErrTimerLockElectorConflict]. A nil value is ignored.
 func WithElector(e Elector) Option {
 	return func(c *config) {
 		if e != nil {

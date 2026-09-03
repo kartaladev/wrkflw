@@ -1,6 +1,6 @@
 package engine_test
 
-// step_terminal_policy_test.go — ADR-0165: the structural terminal-trigger
+// step_terminal_policy_test.go — the structural terminal-trigger
 // guard. Every test here pins a route by which a trigger delivered against an
 // ALREADY-TERMINAL instance is accepted today, and states the behaviour the
 // per-trigger terminalPolicy must produce instead.
@@ -12,8 +12,8 @@ package engine_test
 //     SAME SUT call; these are different SUT ENTRY POINTS that happen to share
 //     engine.Step as their front door. Each trigger type dispatches to its own
 //     handler — handleHumanClaimed, handleHumanReassigned, handleHumanCompleted,
-//     handleSignalReceived, handleMessageReceived — and ADR-0165 gives each
-//     trigger type its own INDEPENDENTLY DECLARED terminalPolicy(), so there is
+//     handleSignalReceived, handleMessageReceived — and each trigger type has
+//     its own INDEPENDENTLY DECLARED terminalPolicy(), so there is
 //     no shared call whose inputs vary. (This is emphatically NOT the rejected
 //     "clearer failure narrative" or "subtly different assertions" excuse:
 //     claim/reassign/completed do share a three-line setup, and their shared
@@ -152,7 +152,7 @@ func terminalWithSurvivingToken(t *testing.T, def *model.ProcessDefinition) engi
 // receives none commits r.State. Writing "the trigger changed nothing" against
 // this value is what lets ONE assertion mean the same thing on both sides of
 // the change: today the trigger is wrongly APPLIED and r.State carries the
-// damage (so the assertion fires), and after ADR-0165 it is REJECTED and the
+// damage (so the assertion fires), and once guarded it is REJECTED and the
 // caller keeps `before` (so the assertion holds). Asserting on r.State directly
 // would instead compare against a zero InstanceState the moment the guard
 // lands, which is not the property under test.
@@ -286,7 +286,7 @@ func TestHumanClaimedRejectedOnTerminalInstance(t *testing.T) {
 }
 
 // TestHumanReassignedRejectedOnTerminalInstance pins the reassign route, which
-// ADR-0165 classifies as its own trigger. It is the same unguarded write as the
+// is classified as its own trigger. It is the same unguarded write as the
 // claim route with one extra hazard: the trigger identifies the new assignee by
 // ID only, so a successful reassign against a dead instance FORGES a claim for
 // an actor nobody authorised.
@@ -358,7 +358,7 @@ func TestHumanCompletedRejectedOnTerminalInstance(t *testing.T) {
 // on the plain fixture no token awaits a signal, so the test would pass before
 // any implementation exists.
 //
-// SignalReceived stays SILENT rather than erroring (ADR-0165 Decision 3):
+// SignalReceived stays SILENT rather than erroring:
 // signalbus.Publish errors.Joins its fan-out, so one terminal target would fail
 // an entire broadcast. The failure today is therefore in the STATE, not the
 // error. Observed against this base — err=nil, 0 commands, but tokens 2→1,
@@ -392,8 +392,8 @@ func TestSignalReceivedIsNoOpOnTerminalInstance(t *testing.T) {
 		"a dropped signal must leave the terminal status alone")
 }
 
-// TestMessageReceivedIsNoOpOnTerminalInstance is the point-to-point twin. The
-// ADR argues this route by analogy with the signal one rather than from a
+// TestMessageReceivedIsNoOpOnTerminalInstance is the point-to-point twin. This
+// route was argued by analogy with the signal one rather than from a
 // reproduction; it reproduces identically on this fixture.
 //
 // Observed against this base — err=nil, 0 commands, tokens 2→1, history 4→5,
@@ -429,8 +429,8 @@ func TestMessageReceivedIsNoOpOnTerminalInstance(t *testing.T) {
 // this delivery that is an owner decision rather than a reproduced defect.
 // handleResolveIncident ALREADY refuses a terminal instance — but silently, so
 // an admin who resolves an incident on a dead instance is told it worked and
-// nothing happens. ADR-0165 classifies ResolveIncident as rejectWithError
-// because its caller is a synchronous admin API, and ErrInstanceTerminal wraps
+// nothing happens. ResolveIncident is classified as rejectWithError because its
+// caller is a synchronous admin API, and ErrInstanceTerminal wraps
 // ErrInvalidTransition, which service/ already re-classifies as ErrConflict and
 // transport/http/httpcore already maps to 422.
 //
@@ -442,7 +442,7 @@ func TestResolveIncidentRejectedOnTerminalInstance(t *testing.T) {
 	t.Parallel()
 
 	// terminalIncidentFork + raiseIncidentOnFlaky (step_terminal_test.go) build
-	// the only state in which this route is reachable at all: ADR-0164's
+	// the only state in which this route is reachable at all: the
 	// removeOrphanedIncidents sweep deliberately KEEPS an incident whose token
 	// survived the terminal transition, which is exactly what an admin can still
 	// try to resolve. The sibling branch is a plain ServiceTask with no retry

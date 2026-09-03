@@ -14,7 +14,7 @@ import (
 // deliverLoop (failures are logged, never fail the cancel). When CallLinks and
 // a DefinitionRegistry are both configured, running async child instances are
 // cancelled recursively (best-effort: errors are logged, never returned). Returns
-// the terminated parent InstanceState. See ADR-0028, ADR-0032.
+// the terminated parent InstanceState.
 //
 // Every cancel delivery in the cascade — the parent's and each descendant's —
 // goes through applyTriggerRetryingCAS. A cancel has no other delivery path, so
@@ -24,7 +24,7 @@ import (
 //
 // Returns [engine.ErrCancelNotApplicable] when the engine DROPPED this
 // instance's cancel — an admin partial rollback owns it, so the cancel did
-// nothing and never will (ADR-0180). That answer is a report, not an abort: the
+// nothing and never will. That answer is a report, not an abort: the
 // returned state is the untouched one, and the child subtree has still been
 // cancelled by the time it is returned.
 func (driver *ProcessDriver) CancelInstance(ctx context.Context, def *model.ProcessDefinition, instanceID string) (engine.InstanceState, error) {
@@ -38,7 +38,7 @@ func (driver *ProcessDriver) CancelInstance(ctx context.Context, def *model.Proc
 	// no CallNotifier can resume a child-completed parent during propagation.
 	st, err := driver.applyTriggerRetryingCAS(ctx, def, instanceID, engine.NewCancelRequested(driver.clk.Now()))
 	// engine.ErrCancelNotApplicable REPORTS that this instance's own cancel was
-	// dropped; it is not a reason to abandon its children (ADR-0180). Returning
+	// dropped; it is not a reason to abandon its children. Returning
 	// here on it was measured leaving a subtree permanently running — strictly
 	// worse than the silent nil the sentinel replaces — so the sentinel is
 	// re-reported AFTER propagation, and only after it.
@@ -53,8 +53,8 @@ func (driver *ProcessDriver) CancelInstance(ctx context.Context, def *model.Proc
 }
 
 // propagateCancel recursively cancels all running async child instances of
-// parentID. Every error is logged and swallowed — this is best-effort only
-// (ADR-0032). visited is shared across the entire cancel tree so that a node
+// parentID. Every error is logged and swallowed — this is best-effort only.
+// visited is shared across the entire cancel tree so that a node
 // reachable via multiple paths (diamond topology) is delivered CancelRequested
 // exactly once and never double-cancelled.
 func (driver *ProcessDriver) propagateCancel(ctx context.Context, parentID string, visited map[string]bool) {
@@ -101,8 +101,8 @@ func (driver *ProcessDriver) propagateCancel(ctx context.Context, parentID strin
 		// The delivery retries a lost CAS race rather than surfacing it: nothing
 		// else revisits a child once ListRunningChildren has returned it.
 		if _, cancelErr := driver.applyTriggerRetryingCAS(ctx, childDef, child.ChildInstanceID, engine.NewCancelRequested(driver.clk.Now())); cancelErr != nil {
-			// A child whose own cancel is DROPPED (engine.ErrCancelNotApplicable,
-			// ADR-0180) keeps running by design — but its own children have no walk
+			// A child whose own cancel is DROPPED (engine.ErrCancelNotApplicable)
+			// keeps running by design — but its own children have no walk
 			// in flight and must still be cancelled. Skipping the recursion here was
 			// measured orphaning the whole grandchild subtree; every OTHER error is
 			// a failure to reach the child at all, where recursing would be guessing.

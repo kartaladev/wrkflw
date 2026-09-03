@@ -29,7 +29,7 @@ type engineConfig struct {
 	idgen         idgen.Generator
 	durable       bool
 	// omitDefinition suppresses the `definition` embed in the marshalled
-	// ProcessInstance document. Zero value false keeps the ADR-0144 embed, so the
+	// ProcessInstance document. Zero value false keeps the embed, so the
 	// default is unchanged.
 	omitDefinition bool
 }
@@ -130,7 +130,7 @@ func WithIDGenerator(gen idgen.Generator) Option {
 // `def_version` — is read off the instance state and is NOT suppressed, so a
 // slimmed document still names the template it runs.
 //
-// The embed is the default (ADR-0144): it makes the document self-contained, so
+// The embed is the default: it makes the document self-contained, so
 // a consumer that has never seen the template can render the instance from one
 // payload. The cost is duplication — the template is byte-identical for every
 // instance of a definition and, on a typical graph, is the LARGER half of the

@@ -1,7 +1,5 @@
 package monitor_test
 
-// internal_leak_test.go — backlog 116, and the ADR-0004 class behind it.
-//
 // An exported signature that names a type from .../internal/... is not callable
 // by a consumer: `use of internal package … not allowed`. In-module code can
 // import internal/ freely, so an in-module test of such a call COMPILES — which
@@ -112,10 +110,10 @@ var knownOpenInternalLeaks = map[string]string{
 // `opts ...observability.Option`, where observability is
 // github.com/kartaladev/wrkflw/internal/observability. Real RED, no mutation.
 //
-// ⚠ The triage entry for backlog 116 states these are the only two such symbols
-// in the module. That is FALSE, and this guard is what refuted it: the claim was
-// generalised from a grep whose pattern only matched `observability.`.
-// persistence.NewSchedulerLocker is a third, of the same class.
+// ⚠ These are NOT the only two such symbols in the module, and this guard is
+// what refuted the claim that they were: it was generalised from a grep whose
+// pattern only matched `observability.`. persistence.NewSchedulerLocker is a
+// third, of the same class.
 func TestNoExportedSignatureNamesAnInternalType(t *testing.T) {
 	t.Parallel()
 
@@ -186,7 +184,7 @@ func TestNoExportedSignatureNamesAnInternalType(t *testing.T) {
 	}))
 
 	assert.Empty(t, offenders,
-		"an exported signature naming an internal/ type is uncallable by a consumer (ADR-0004); "+
+		"an exported signature naming an internal/ type is uncallable by a consumer; "+
 			"give the package its own Option type and keep the internal one in an unexported field")
 
 	for key := range knownOpenInternalLeaks {

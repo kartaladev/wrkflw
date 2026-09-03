@@ -183,7 +183,7 @@ type unhandledErrorPolicy bool
 
 const (
 	// failFast is the default no-handler outcome: StatusFailed via
-	// FailInstance (after an ADR-0034 compensation walk if records exist).
+	// FailInstance (after a compensation walk if records exist).
 	failFast unhandledErrorPolicy = false
 	// raiseIncident parks the failing token as a [TokenIncident] and keeps
 	// the instance running (admin-resumable) instead of failing it. Used by
@@ -202,11 +202,11 @@ const (
 //     catch flow nor a boundary handled the terminal failure.
 //  2. A compensation walk is ALREADY in flight: it is neither restarted nor
 //     terminated around — the error is recorded as its pending terminal outcome
-//     (see deferFailureToInFlightCompensationWalk, ADR-0170). Checked BEFORE the
+//     (see deferFailureToInFlightCompensationWalk). Checked BEFORE the
 //     record test below, because a walk over a sub-process scope's records leaves
 //     both record lists empty.
-//  3. Compensation records exist (RootCompensations or ArchivedCompensations,
-//     ADR-0039): run the compensation walk before terminating (ADR-0034).
+//  3. Compensation records exist (RootCompensations or ArchivedCompensations):
+//     run the compensation walk before terminating.
 //  4. Otherwise: immediate s.Status = StatusFailed, cancel open tasks/timers/arms,
 //     and emit FailInstance{Err: errorCode}.
 func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *InstanceState, scopeID, originatingNodeID, failingTokenID, errorCode string, at time.Time, pol stepPolicy, policy unhandledErrorPolicy) ([]Command, error) {
@@ -236,7 +236,7 @@ func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *
 	}
 
 	// A compensation walk already in flight IS the rollback: never start a second
-	// one, and never terminate around it (ADR-0170). Checked BEFORE the
+	// one, and never terminate around it. Checked BEFORE the
 	// compensation-records test below, mirroring handleCancelRequested's own
 	// in-flight guard, which is likewise unconditional: a walk over a sub-process
 	// scope's records leaves both RootCompensations and ArchivedCompensations
@@ -251,16 +251,16 @@ func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *
 	// whether there is anything to compensate. Without this the predicate below cannot
 	// see a record for an activity that completed inside a still-open sub-process — it
 	// lives in Scope.Compensations, which reaches the archive only on a NORMAL scope
-	// exit — so the walk was skipped and the record was then unreachable forever
-	// (ADR-0174). Measured on `main`: a sub-process holding `undo-inner` failed with
+	// exit — so the walk was skipped and the record was then unreachable forever.
+	// Measured on `main`: a sub-process holding `undo-inner` failed with
 	// FailInstance and no InvokeAction at all.
 	//
 	// Placed AFTER the in-flight-walk guard above, which must keep winning: a walk
-	// already in flight IS the rollback (ADR-0170).
+	// already in flight IS the rollback.
 	s.harvestOpenScopeCompensations()
 
-	// Terminal unhandled error: run compensation walk before terminating (ADR-0034).
-	// Check both RootCompensations and ArchivedCompensations (ADR-0039) — consolidation
+	// Terminal unhandled error: run compensation walk before terminating.
+	// Check both RootCompensations and ArchivedCompensations — consolidation
 	// happens inside beginCompensation. The harvest above is what makes this predicate
 	// correct for an open scope's records without changing its text.
 	if len(s.RootCompensations) > 0 || len(s.ArchivedCompensations) > 0 {
@@ -274,15 +274,15 @@ func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *
 
 	// No compensation records: immediate failure. endInstance reconciles the
 	// human-task projection (a parallel branch parked at a UserTask must not be
-	// left open in the TaskStore when the instance fails — ADR-0089) and cancels
-	// the scheduled work, in the same order as before (ADR-0164). This branch does
+	// left open in the TaskStore when the instance fails) and cancels
+	// the scheduled work, in the same order as before. This branch does
 	// NOT drop tokens, so the incidents whose token survives are deliberately kept.
 	return s.endInstance(StatusFailed, at, FailInstance{Err: errorCode}), nil
 }
 
 // deferFailureToInFlightCompensationWalk records an unhandled error as the
 // pending terminal outcome of a compensation walk that is already in flight,
-// instead of starting a second walk (ADR-0170). The caller has established both
+// instead of starting a second walk. The caller has established both
 // preconditions: s.Status == StatusCompensating and
 // s.Compensating.ActiveCmdID != "".
 //
@@ -295,8 +295,8 @@ func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *
 // from under it.
 //
 // The outcome is deferred rather than stamped on the cursor, reusing the
-// PendingCancel protocol handleCancelRequested has used for the same collision
-// since ADR-0039. Stamping the cursor was the shape ADR-0170 originally shipped,
+// PendingCancel protocol handleCancelRequested has long used for the same
+// collision. Stamping the cursor was the shape this path originally shipped,
 // and it converted the live walk into this error's rollback — inheriting that
 // walk's own record source (its ArchiveKey, or a sub-process ScopeID). Every
 // record OUTSIDE that source was then never compensated: measured, a targeted
@@ -309,8 +309,7 @@ func handleUnhandledError(ctx context.Context, top *model.ProcessDefinition, s *
 //
 // PendingFinalStatus/PendingFinalErr are last-writer-wins: a second unhandled
 // error arriving before the walk ends overwrites the first code. Deliberate,
-// matching beginCompensation's own behaviour; recorded in ADR-0170 Decision 3 as
-// a known imprecision.
+// matching beginCompensation's own behaviour; a known imprecision.
 //
 // ⚠ The deferral is consumed only by applyFinish's consumePendingCancel plans —
 // the walkThrowTargeted, walkThrowScopeWide and walkReverse finishes. The other
@@ -342,7 +341,7 @@ func deferFailureToInFlightCompensationWalk(s *InstanceState, at time.Time, erro
 	// (source-verified: endInstance's last statement). Sweeping them here would
 	// duplicate that and put CancelTimers on both sides of the terminal command,
 	// breaking the [task cancels…, terminal, scheduled-work cancels…] ordering every
-	// terminal path emits (ADR-0164) — the same constraint documented at
+	// terminal path emits — the same constraint documented at
 	// exitRootEventSubprocessScope.
 	cmds = append(cmds, s.cancelAllArmsAndBoundaries()...)
 
@@ -474,8 +473,8 @@ func propagateError(ctx context.Context, top *model.ProcessDefinition, s *Instan
 		consume := func(cmds []Command) []Command {
 			// Cancel every token in the erroring scope AND in all its descendant
 			// scopes, retire their arms, archive their compensation records, then
-			// close the whole subtree. closeScope already prunes descendants
-			// (ADR-0130); before ADR-0162 it did so while leaving their tokens
+			// close the whole subtree. closeScope already prunes descendants;
+			// an earlier version did so while leaving their tokens
 			// alive, so those tokens ended up naming a scope that no longer
 			// existed and every subsequent Step failed in defForScope.
 			cmds = append(cmds, cancelScopeSubtree(s, errScopeID, at, CloseKindBoundaryInterrupted)...)

@@ -19,8 +19,8 @@ import (
 // authoritative for re-arm at rehydration and for deciding whether a fired timer
 // is recurring (and therefore survives its fire). NextRun is the next scheduled
 // run time as computed by the scheduler at arm time. Durable persistence of the
-// Trigger descriptor lands in Plan 3; today the fields exist and travel through
-// the in-memory store.
+// Trigger descriptor is not implemented yet; today the fields exist and travel
+// through the in-memory store.
 type ArmedTimer struct {
 	InstanceID string
 	DefID      string
@@ -32,7 +32,7 @@ type ArmedTimer struct {
 }
 
 // TimerStore is the read-side port for enumerating armed timers at startup. The
-// write side is the standalone [TimerWriter] capability (ADR-0134), persisted
+// write side is the standalone [TimerWriter] capability, persisted
 // atomically with the state commit via the runtime's own JobStore.
 type TimerStore interface {
 	// ListArmed returns all timers currently armed, ordered by
@@ -40,13 +40,13 @@ type TimerStore interface {
 	//
 	// Implementations MUST serve this as a single read so callers see one
 	// consistent snapshot: startup rehydration re-arms from the whole set while
-	// live traffic may be arming and cancelling timers concurrently (ADR-0159).
+	// live traffic may be arming and cancelling timers concurrently.
 	ListArmed(ctx context.Context) ([]ArmedTimer, error)
 
 	// ArmedTimer returns the timer armed for the exact (instanceID, timerID)
 	// pair. It exists so a caller needing one timer does not read the whole
 	// armed set — the timer-fire hot path asks only whether the timer that just
-	// fired is recurring (ADR-0159).
+	// fired is recurring.
 	//
 	// found is false when no such timer is armed; that is not an error. err is
 	// reserved for genuine infrastructure failures, and callers MUST distinguish
@@ -63,12 +63,12 @@ type TimerStore interface {
 // TimerWriter is the write-side capability a TimerStore MAY implement. It is
 // type-asserted off the store supplied via WithTimerStore. Writes join an
 // ambient ctx-transaction (JoinOrBegin) so the runtime JobStore can persist
-// atomically with the state commit (ADR-0134).
+// atomically with the state commit.
 //
 // DeleteJobByTimerID removes a job by TimerID alone, without an InstanceID —
 // engine timer ids are globally unique (`<instanceID>-tm<seq>`), so a bare
 // TimerID lookup is unambiguous. It exists for the runtime JobStore's
-// Delete(id) (Task 10), which only carries the timer id.
+// Delete(id), which only carries the timer id.
 type TimerWriter interface {
 	// UpsertJob persists (or updates) the durable descriptor for spec's timer.
 	UpsertJob(ctx context.Context, spec JobSpec) error

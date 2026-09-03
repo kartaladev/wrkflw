@@ -14,7 +14,7 @@ import (
 )
 
 // TestMySQLElectorHeartbeatKeepsLeadershipAlive proves the positive path of
-// ADR-0061's heartbeat (mirrors TestPostgresElectorHeartbeatStepsDownOnConnLoss's
+// the heartbeat (mirrors TestPostgresElectorHeartbeatStepsDownOnConnLoss's
 // setup, without severing the connection): while the elector's dedicated
 // connection stays healthy, each heartbeat tick's mysqlRevalidate ping
 // succeeds and leadership survives — the heartbeat must never spuriously
@@ -50,8 +50,8 @@ func TestMySQLElectorHeartbeatKeepsLeadershipAlive(t *testing.T) {
 	// several ticks. The dedicated connection is healthy, so every
 	// mysqlRevalidate ping succeeds.
 	//
-	// ⚠ THIS SITE HAS NO POSITIVE LIVENESS PRECONDITION (backlog 44, and the
-	// only one of the package family left without one). A heartbeat goroutine
+	// ⚠ THIS SITE HAS NO POSITIVE LIVENESS PRECONDITION (the only one of the
+	// package family left without one). A heartbeat goroutine
 	// that died on tick 1 also never spuriously steps down, so the
 	// require.Never below passes on a corpse. The obvious barrier does NOT
 	// close that hole and was MEASURED not to: with `return` injected after

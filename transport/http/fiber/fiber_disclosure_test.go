@@ -1,4 +1,4 @@
-// Package fiber_test — ADR-0190 disclosure parity with the stdlib adapter.
+// Package fiber_test — disclosure parity with the stdlib adapter.
 package fiber_test
 
 import (

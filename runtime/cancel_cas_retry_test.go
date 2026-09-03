@@ -1,6 +1,6 @@
 package runtime_test
 
-// cancel_cas_retry_test.go — backlog 87.
+// cancel_cas_retry_test.go
 //
 // CancelInstance's parent cancel and propagateCancel's child cancel both drove
 // the single-shot applyTrigger, which has no CAS retry at all. One
@@ -50,7 +50,7 @@ func (s *instanceCASConflictStore) Commit(ctx context.Context, expected kernel.V
 	return s.inner.Commit(ctx, expected, step)
 }
 
-// TestCancelPropagationRetriesChildCASConflict pins backlog 87: a single CAS
+// TestCancelPropagationRetriesChildCASConflict pins the retry: a single CAS
 // conflict on a child's cancel commit must be retried, not swallowed, and must
 // not cost the GRANDCHILD its cancellation.
 //

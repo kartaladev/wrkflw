@@ -1,4 +1,4 @@
-// Package main is the reference production-wiring example (ADR-0054): it shows a
+// Package main is the reference production-wiring example: it shows a
 // consumer embedding the engine and mounting its transports in their OWN HTTP
 // server, with full graceful shutdown — signal handling, a bounded HTTP drain,
 // and a single aggregated release of every background worker and resource holder.
@@ -64,7 +64,7 @@ import (
 )
 
 // requireAdminToken is the example's stand-in for real admin authentication. The
-// bundled AdminRoutes have none of their own by design (ADR-0095), so SOMETHING
+// bundled AdminRoutes have none of their own by design, so SOMETHING
 // must sit in front of them.
 //
 // It is deliberately minimal, and deliberately fails CLOSED: with ADMIN_TOKEN
@@ -107,12 +107,12 @@ func run(logger *slog.Logger) error {
 	workerCtx, stopWorkers := context.WithCancel(context.Background())
 	defer stopWorkers()
 
-	// One clock drives the engine (ADR-0138); a single fake-clock advance moves it
+	// One clock drives the engine; a single fake-clock advance moves it
 	// under test. Production uses the real clock.
 	clk := clockwork.NewRealClock()
 
 	// shutdown aggregates every resource holder. Shutdown runs them in REVERSE
-	// registration order (ADR-0054), so register lowest-level resources FIRST:
+	// registration order, so register lowest-level resources FIRST:
 	// they are then released LAST, after their users have drained.
 	var shutdown runtime.ShutdownGroup
 
@@ -265,17 +265,17 @@ func run(logger *slog.Logger) error {
 		httpcore.WithMeterProvider[*http.ServeMux](meterProvider),
 		// DEMO ONLY, and deliberately OFF BY DEFAULT.
 		//
-		// ADR-0189 made the human-task verbs refuse an unauthenticated caller. This
+		// The human-task verbs refuse an unauthenticated caller. This
 		// example is about durable wiring, not authentication, so it offers a constant
 		// actor — but only when WRKFLW_DEMO_INSECURE_ACTOR=1 is set explicitly.
 		//
 		// ⚠ The env gate is the point. Unset, this resolver refuses and the task routes
 		// answer 401, so copy-pasting this file into a real deployment FAILS CLOSED
 		// instead of silently authenticating every caller as a manager — which is
-		// precisely the self-asserted-actor hole ADR-0189 exists to close.
+		// precisely the self-asserted-actor hole this seam exists to close.
 		//
 		// A real deployment resolves the actor from a VERIFIED credential in its own
-		// middleware and calls authz.ContextWithActor; see SECURITY.md and
+		// middleware and calls authz.ContextWithActor; see
 		// examples/authenticated_tasks, which verifies a bearer token.
 		stdlib.WithRequestActor(func(context.Context) (authz.Actor, error) {
 			if os.Getenv("WRKFLW_DEMO_INSECURE_ACTOR") != "1" {
@@ -286,7 +286,7 @@ func run(logger *slog.Logger) error {
 	)
 	stdlib.MountHealth(mux, readyChecks...)
 
-	// AdminRoutes has NO built-in authentication (ADR-0095: admin-by-composition).
+	// AdminRoutes has NO built-in authentication (admin-by-composition).
 	// It is mounted on its own mux so the whole /admin/ subtree can be wrapped in
 	// one guard; every route it registers is under /admin/, so a single prefix
 	// handler covers them all. The optional dep fields (DeadLetters, Policies,

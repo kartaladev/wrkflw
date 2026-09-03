@@ -1,6 +1,6 @@
 -- +goose Up
 
--- Consolidated PostgreSQL schema (ADR-0132). This single migration folds the
+-- Consolidated PostgreSQL schema. This single migration folds the
 -- former incremental set (0001 init … 0011 timers_trigger) into final-state
 -- CREATE statements: columns added by later ALTERs are declared inline, indexes
 -- reflect their final definition, and the wrkflw_timers.fire_at → next_run
@@ -33,8 +33,8 @@ CREATE TABLE wrkflw_journal (
     PRIMARY KEY (instance_id, seq)
 );
 
--- Outbox: status/retry_count/next_attempt_at/last_error (resilience, ADR-0017)
--- and definition_ref (chaining metadata, ADR-0047) are folded in as final
+-- Outbox: status/retry_count/next_attempt_at/last_error (resilience)
+-- and definition_ref (chaining metadata) are folded in as final
 -- columns. The original wrkflw_outbox_unpublished_idx was superseded by the
 -- claim/dead indexes below and is intentionally absent.
 CREATE TABLE wrkflw_outbox (
@@ -63,7 +63,7 @@ CREATE TABLE wrkflw_definitions (
     PRIMARY KEY (def_id, version)
 );
 
--- Consumer dedup table (idempotency, ADR-0018).
+-- Consumer dedup table (idempotency).
 CREATE TABLE wrkflw_processed_message (
     subscriber   TEXT        NOT NULL,
     message_id   TEXT        NOT NULL,
@@ -71,7 +71,7 @@ CREATE TABLE wrkflw_processed_message (
     PRIMARY KEY (subscriber, message_id)
 );
 
--- Call-link correlation table for async call activity (ADR-0024/0025). The
+-- Call-link correlation table for async call activity. The
 -- claimed_at/claimed_by lease columns are folded in as final columns.
 CREATE TABLE wrkflw_call_links (
     child_instance_id   TEXT PRIMARY KEY,
@@ -94,7 +94,7 @@ CREATE INDEX wrkflw_call_links_pending_idx ON wrkflw_call_links (child_instance_
 -- Parent-scoped lookup of still-running children.
 CREATE INDEX wrkflw_call_links_parent_running_idx ON wrkflw_call_links (parent_instance_id) WHERE status = 'running';
 
--- Armed-timer table for timer rehydration on restart (ADR-0027). next_run holds
+-- Armed-timer table for timer rehydration on restart. next_run holds
 -- the authoritative next-run instant (formerly fire_at); trigger_kind/
 -- trigger_payload carry the durable TriggerSpec descriptor.
 CREATE TABLE wrkflw_timers (
@@ -109,12 +109,12 @@ CREATE TABLE wrkflw_timers (
     PRIMARY KEY (instance_id, timer_id)
 );
 -- Composite keyset index over the full armed-timer sort key, so paged admin
--- listing seeks rather than scans (ADR-0159). It subsumes the single-column
+-- listing seeks rather than scans. It subsumes the single-column
 -- next_run index it replaces: next_run is its leading column, so ORDER BY
 -- next_run and MIN(next_run) still use it.
 CREATE INDEX wrkflw_timers_keyset_idx ON wrkflw_timers (next_run, instance_id, timer_id);
 
--- Process-instance chaining lineage (ADR-0045). One row per predecessor->
+-- Process-instance chaining lineage. One row per predecessor->
 -- successor hop; the (predecessor_instance_id, outcome) PK is the exactly-once
 -- backstop.
 CREATE TABLE wrkflw_chain_links (
@@ -129,9 +129,9 @@ CREATE TABLE wrkflw_chain_links (
 );
 CREATE INDEX wrkflw_chain_links_successor_idx ON wrkflw_chain_links (successor_instance_id);
 
--- Human task state table (ADR-0098). task_id is the primary key;
+-- Human task state table. task_id is the primary key;
 -- eligibility/candidates/vars stored as JSONB for predicate evaluation.
--- claim/completion carry the ADR-0148 audit as nullable JSONB
+-- claim/completion carry the audit trail as nullable JSONB
 -- ({actor, timestamp} / {actor, timestamp, outcome?, note?}); NULL means the
 -- lifecycle event has not happened. claimed_by is the application-maintained
 -- scalar projection of claim.actor.id that keeps AssignedTo's lookup indexed.

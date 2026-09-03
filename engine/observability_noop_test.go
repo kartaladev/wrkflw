@@ -1,6 +1,6 @@
 package engine
 
-// observability_noop_test.go — Task C7: asserts that the engine's deliberate
+// observability_noop_test.go — asserts that the engine's deliberate
 // silent no-op / swallowed-error paths emit an slog record (Warn for
 // genuinely-anomalous no-ops, Debug for expected-but-worth-tracing swallows)
 // without changing the (state, commands) output of the path. White-box
@@ -98,7 +98,7 @@ func installCaptureHandler(t *testing.T) *captureHandler {
 // slog record carrying the instance id and timer id, so an operator can spot a
 // late-arriving timer against a dead instance instead of it vanishing silently.
 //
-// ⚠ ADR-0165 moved the emitting site, not the guarantee. The record now comes
+// ⚠ The emitting site moved, not the guarantee. The record now comes
 // from dispatch's single terminal guard rather than handleTimerFired's own, so
 // the MESSAGE is the guard's uniform "trigger rejected on terminal instance"
 // instead of the old timer-specific "timer fired on terminal instance" — one
@@ -139,7 +139,7 @@ func TestHandleTimerFired_TerminalInstanceNoOp_LogsWarn(t *testing.T) {
 }
 
 // TestTerminalGuardLogsTriggerIdentity pins the enrichment that keeps site 1
-// diagnosable after ADR-0165 collapsed eight per-handler guards into one.
+// diagnosable after eight per-handler guards were collapsed into one.
 //
 // A single generic log line would have cost the operator the ONE field they
 // actually need — "why did my timer do nothing" is not answered by
@@ -297,7 +297,7 @@ func TestTerminalGuardLogsTriggerIdentity(t *testing.T) {
 
 // TestTerminalRollbackWithNothingToCompensateIsLogged covers the THIRD refusal of
 // a trigger on a terminal instance — the one dispatch cannot make, because its
-// predicate reads state rather than the trigger (ADR-0165 Decision 5): a plain
+// predicate reads state rather than the trigger: a plain
 // full rollback is waved through as allowOnTerminal, then refused inside
 // stepCompensateRequested when no record survives to walk.
 //

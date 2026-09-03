@@ -161,7 +161,7 @@ func TestCancelPropagationGrandchild(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusRunning, st.Status, "parent must be running (parked)")
 
-	// Child ids are opaque (minted by the driver's IDGenerator, ADR-0149) —
+	// Child ids are opaque (minted by the driver's IDGenerator) —
 	// resolve them through the recorded call links.
 	childID := soleChildOf(ctx, t, cl, parentID)
 	grandchildID := soleChildOf(ctx, t, cl, childID)
@@ -399,7 +399,7 @@ func TestCancelPropagationContextPropagated(t *testing.T) {
 }
 
 // TestCancelPropagationNoDefsReg verifies that CancelInstance returns no error and
-// does NOT propagate when WithCallLinkStore is set but WithDefinitions is not (M1).
+// does NOT propagate when WithCallLinkStore is set but WithDefinitions is not.
 // Symmetric to TestCancelPropagationNoCallLinks.
 func TestCancelPropagationNoDefsReg(t *testing.T) {
 	ctx := t.Context()
@@ -445,7 +445,7 @@ func TestCancelPropagationNoDefsReg(t *testing.T) {
 }
 
 // TestCancelPropagationDiamond verifies that a diamond call graph (parent→B, parent→C,
-// B→D, C→D, where D is the SAME running instance) cancels D exactly once (I1).
+// B→D, C→D, where D is the SAME running instance) cancels D exactly once.
 //
 // Without the shared-visited-map fix, propagateCancel re-enters CancelInstance for
 // each child, allocating a fresh visited map each time. In this diamond topology:

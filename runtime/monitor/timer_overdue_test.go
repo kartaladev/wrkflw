@@ -1,7 +1,5 @@
 package monitor_test
 
-// timer_overdue_test.go — backlog 107.
-//
 // TimerStatsCollector reads kernel.TimerStats every collection cycle, and the
 // store genuinely computes NextFireAt in SQL on every one of those calls — then
 // the callback observed only Armed and threw NextFireAt away. A scheduler 45
@@ -42,8 +40,8 @@ var collectorNow = time.Date(2031, 3, 4, 12, 0, 0, 0, time.UTC)
 
 func timePtr(t time.Time) *time.Time { return &t }
 
-// TestTimerStatsCollectorReportsOverdueAge pins backlog 107: the age of the
-// earliest armed timer's next_run must be observable.
+// TestTimerStatsCollectorReportsOverdueAge pins that the age of the earliest
+// armed timer's next_run must be observable.
 //
 // What makes it fail today: NewTimerStatsCollector registers exactly one
 // instrument (wrkflw_timers_armed) and its callback observes only stats.Armed,
@@ -51,7 +49,7 @@ func timePtr(t time.Time) *time.Time { return &t }
 //
 // The nil / zero-time / future rows are not padding. NextFireAt is a *time.Time
 // that is nil for an empty table and can legitimately be 0001-01-01 in a stored
-// row (ADR-0181), and a healthy timer is by definition in the FUTURE — a naive
+// row, and a healthy timer is by definition in the FUTURE — a naive
 // now.Sub(*NextFireAt) reports a ~2000-year age for the second and a negative
 // age for the third, i.e. the gauge would be wrong in the normal case.
 func TestTimerStatsCollectorReportsOverdueAge(t *testing.T) {
@@ -95,7 +93,7 @@ func TestTimerStatsCollectorReportsOverdueAge(t *testing.T) {
 			},
 		},
 		{
-			name: "a zero next fire (ADR-0181 stored row) reports zero, not ~2000 years",
+			name: "a zero next fire (stored row) reports zero, not ~2000 years",
 			stats: kernel.TimerStats{
 				Armed:      3,
 				NextFireAt: timePtr(time.Time{}),

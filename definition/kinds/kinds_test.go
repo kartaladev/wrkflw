@@ -13,7 +13,7 @@ import (
 // TestAllKindsRegistered asserts every node kind resolves once the kinds bundle
 // is imported — guarding against a leaf package forgetting to register a kind.
 func TestAllKindsRegistered(t *testing.T) {
-	// Bound to the LAST kind constant (KindCompensationThrowEvent, ADR-0120) so a
+	// Bound to the LAST kind constant (KindCompensationThrowEvent) so a
 	// newly-appended kind is always checked — the previous KindEventBasedGateway
 	// bound silently skipped every kind appended after it.
 	for k := model.KindStartEvent; k <= model.KindCompensationThrowEvent; k++ {

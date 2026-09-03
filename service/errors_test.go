@@ -110,7 +110,7 @@ func TestErrConflict_CancelledTask(t *testing.T) {
 // TaskID does not exist in the engine's live token set. The pre-flight checks
 // pass (task.IsOpen() == true, instance.Status == Running), but the engine's
 // step handler cannot find the token and returns ErrTokenNotFound, which wraps
-// engine.ErrInvalidTransition via the Task 1 sentinel chain.
+// engine.ErrInvalidTransition via the sentinel chain.
 func TestErrConflict_EngineWrongStateClassified(t *testing.T) {
 	def := approvalDef()
 	h := newHarness(t, def)

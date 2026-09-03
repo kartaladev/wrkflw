@@ -29,10 +29,10 @@ type TimerAdmin interface {
 	// (NextRun, InstanceID, TimerID) order.
 	//
 	// It is deliberately paged rather than whole-table: an admin listing must
-	// not be an unbounded read whose cost grows with the timer population
-	// (ADR-0159). Implementations clamp filter.Limit via
-	// [kernel.NormalizeLimit] rather than rejecting it, and issue the total
-	// count only when filter.IncludeTotal.
+	// not be an unbounded read whose cost grows with the timer population.
+	// Implementations clamp filter.Limit via [kernel.NormalizeLimit] rather
+	// than rejecting it, and issue the total count only when
+	// filter.IncludeTotal.
 	ListArmedPage(ctx context.Context, filter kernel.ArmedTimerFilter) (kernel.ArmedTimerPage, error)
 }
 

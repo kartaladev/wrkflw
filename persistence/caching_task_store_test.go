@@ -87,9 +87,9 @@ func TestCachingTaskStore(t *testing.T) {
 			},
 		},
 		{
-			// The decorator must reject a contradictory task ITSELF (ADR-0183 decision
-			// point 2), so wrapping a consumer's permissive store still upholds the
-			// contract. Asserting only that ErrInvalidTask comes back proves nothing —
+			// The decorator must reject a contradictory task ITSELF, so wrapping a
+			// consumer's permissive store still upholds the contract. Asserting only
+			// that ErrInvalidTask comes back proves nothing —
 			// the embedded MemTaskStore is strict and would return it anyway. The
 			// discriminator is that the backing Upsert was never called at all.
 			name: "Upsert rejects an invalid task without reaching the backing store",

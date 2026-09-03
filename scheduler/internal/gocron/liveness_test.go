@@ -11,7 +11,7 @@ import (
 	sched "github.com/kartaladev/wrkflw/scheduler/internal/gocron"
 )
 
-// Liveness canaries for require.Never / assert.Never sites (backlog 44).
+// Liveness canaries for require.Never / assert.Never sites.
 //
 // A Never window asserts an absence, and an absence is only evidence about the
 // SUBJECT once something else has demonstrably happened. Measured, not
@@ -27,7 +27,7 @@ import (
 //	TestNativeSchedulerDeactivateCancel/Cancel_deletes…          PASS (0.15s)
 //
 // The fix is a POSITIVE precondition, never a bigger budget: a Never window is
-// paid in full on every GREEN run, so raising it is pure cost (ADR-0184 §4).
+// paid in full on every GREEN run, so raising it is pure cost.
 //
 // ⚠ clockwork's BlockUntilContext(ctx, n) returns as soon as len(waiters) >= n
 // (clockwork@v0.5.0 clockwork.go:255-258, "Fast path: we already have >= n

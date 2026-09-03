@@ -305,7 +305,7 @@ func TestMemStoreListProjectsFields(t *testing.T) {
 }
 
 // TestMemStoreListOrdersFarFutureTimestampsNewestFirst is a regression test for
-// an ordering divergence found by ADR-0160's audit.
+// an ordering divergence found by an audit.
 //
 // The DESC sort compared StartedAt via cmp.Compare over UnixNano, which is
 // undefined outside 1678–2262 and overflows NEGATIVE at year 10000. A far-future
@@ -346,7 +346,7 @@ func TestMemStoreListOrdersFarFutureTimestampsNewestFirst(t *testing.T) {
 // unreachable there on two of three dialects — MySQL DATETIME(6) maxes at
 // 9999-12-31 and SQLite's text codec requires a 4-digit year — and because the
 // SQL cursor is minted from the LAST row under DESC, i.e. the minimum
-// timestamp, so it needs a single-row page to reach at all (ADR-0160).
+// timestamp, so it needs a single-row page to reach at all.
 func TestMemStoreListReportsUnencodableCursor(t *testing.T) {
 	t.Parallel()
 

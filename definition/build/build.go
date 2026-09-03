@@ -74,7 +74,7 @@ func (b *Builder) AddStartEvent(id string, opts ...event.StartOption) *Builder {
 }
 
 // AddEndEvent adds an EndEvent. Use event.WithName, event.WithForceTermination,
-// or event.WithErrorCode (error end event, ADR-0127).
+// or event.WithErrorCode (error end event).
 func (b *Builder) AddEndEvent(id string, opts ...event.EndOption) *Builder {
 	return b.Add(event.NewEnd(id, opts...))
 }

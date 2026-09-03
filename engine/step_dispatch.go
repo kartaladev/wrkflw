@@ -15,7 +15,7 @@ type nodeStrategy interface {
 	//
 	// halt signals that drive() must exit immediately (return cmds, nil) rather
 	// than continuing to the next active token. Only endEventStrategy's error
-	// branch (an EndEvent with Behavior==EndError, ADR-0127) returns halt=true;
+	// branch (an EndEvent with Behavior==EndError) returns halt=true;
 	// all other strategies and end behaviors return halt=false.
 	//
 	// Stopped semantics: drive() derives stopped = tok.State != TokenActive

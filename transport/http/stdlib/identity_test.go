@@ -1,6 +1,6 @@
-// Package stdlib_test — request-actor identity seam (ADR-0189).
+// Package stdlib_test — the request-actor identity seam.
 //
-// These tests pin the property the ADR exists for: the human-task routes act on
+// These tests pin the property that seam exists for: the human-task routes act on
 // the actor an AUTHENTICATION middleware established, never on one the request
 // body asserts about itself.
 package stdlib_test
@@ -45,8 +45,8 @@ func withActorMiddleware(a authz.Actor, next http.Handler) http.Handler {
 	})
 }
 
-// TestTaskRoutes_ActorComesFromMiddlewareNotTheBody is the whole point of
-// ADR-0189: a middleware authenticates a VIEWER while the body still asserts a
+// TestTaskRoutes_ActorComesFromMiddlewareNotTheBody is the whole point of the
+// seam: a middleware authenticates a VIEWER while the body still asserts a
 // MANAGER. The manager in the body must be ignored, so the service refuses the
 // viewer's claim with 403.
 //
@@ -170,13 +170,13 @@ func TestWithRequestActorTimeout_SetsTheBound(t *testing.T) {
 
 // TestUnauthenticatedBadJSONIs401NotThe400 is a CONTRACT, not a coverage test.
 //
-// It pins the ordering the ADR-0189 /code-review fix (F6) established on the
-// three human-task routes: 401 (identity) → 413 (body cap) → 400 (decode) →
-// 404 (lookup). Before that fix identity was resolved INSIDE the endpoint,
-// AFTER the adapter had already read the body, which handed an unauthenticated
-// caller a resource-consumption primitive — a full MaxBodyBytes read (1 MiB by
-// default) held for up to BodyReadTimeout (30s by default) before its 401 — on
-// the only routes that authenticate at all.
+// It pins the ordering on the three human-task routes: 401 (identity) → 413
+// (body cap) → 400 (decode) → 404 (lookup). Before that ordering was fixed,
+// identity was resolved INSIDE the endpoint, AFTER the adapter had already
+// read the body, which handed an unauthenticated caller a resource-consumption
+// primitive — a full MaxBodyBytes read (1 MiB by default) held for up to
+// BodyReadTimeout (30s by default) before its 401 — on the only routes that
+// authenticate at all.
 //
 // Two properties are pinned here at once:
 //
@@ -188,7 +188,7 @@ func TestWithRequestActorTimeout_SetsTheBound(t *testing.T) {
 //     you?".
 //
 // ⚠ If this test ever reports 400 again, resolution has moved back BEHIND the
-// decode and F6 has regressed. Do not "fix" it by relaxing the assertion —
+// decode. Do not "fix" it by relaxing the assertion —
 // restore the ordering in stdlib/groups.go instead.
 //
 // FALSIFIER: MEASURED — moving the httpcore.RequestActor call in the

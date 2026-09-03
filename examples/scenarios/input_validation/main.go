@@ -1,10 +1,7 @@
 // Package main demonstrates the shipped input-validation design: validation
 // is declared on definition nodes, and the runtime validates external input
 // BEFORE Step, not inside the engine core and not inside the human-task
-// service. See docs/specs/2026-07-09-input-validation-redesign.md and
-// ADR-0110 (declarative architecture) / ADR-0115 (engine-decides /
-// runtime-executes redesign superseding the earlier boundary-injection
-// design).
+// service.
 //
 // Flow:
 //

@@ -1,4 +1,4 @@
-// gin_bodycap_test.go — inbound request-body cap (ADR-0186 phase 2) for the gin
+// gin_bodycap_test.go — the inbound request-body cap for the gin
 // adapter: the 413 arm, the under-cap control that pins the binder's behaviour
 // byte-for-byte, and the disabled-cap escape.
 //
@@ -234,7 +234,7 @@ func (s *recordingAdminSvc) ResolveIncident(_ context.Context, req service.Resol
 // ignored. It must still refuse an oversize body, so an implementation that only
 // edits the twelve propagating sites fails the first row.
 //
-// ⚠ Admin routes are kept out of Mount by ADR-0095 (admin-by-composition), so
+// ⚠ Admin routes are kept out of Mount (admin-by-composition), so
 // this route is named explicitly here rather than reached through newSrv.
 //
 // The second row is the control: the absent body that the discarding site exists

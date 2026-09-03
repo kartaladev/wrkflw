@@ -28,7 +28,7 @@ import (
 )
 
 // timerStartOnlyDef returns a minimal process whose start event carries a timer
-// trigger (ADR-0121 timer-start): start(timer) → end. Used to exercise
+// trigger (timer-start): start(timer) → end. Used to exercise
 // RehydrateStartTimers, whose fire callback creates one instance per fire.
 func timerStartOnlyDef(defID string, trig schedule.TriggerSpec) *model.ProcessDefinition {
 	return &model.ProcessDefinition{
@@ -192,7 +192,7 @@ func TestRehydrateStartTimersLatestVersionOnly(t *testing.T) {
 	// Two VERSIONS of the same def id, both with a timer-start on the SAME node id
 	// ("start"). A MemDefinitionRegistry retains both versions so in-flight
 	// instances can resume, but only the LATEST (v2) holds an active start
-	// subscription (ADR-0121 Camunda semantics): a version bump replaces, it does
+	// subscription (Camunda semantics): a version bump replaces, it does
 	// not duplicate. Exactly ONE instance must be created per occurrence, from v2.
 	reg := kernel.NewMemDefinitionRegistry()
 	require.NoError(t, reg.Register(timerStartOnlyDefVersion("cron", 1, schedule.AfterDuration(time.Hour))))

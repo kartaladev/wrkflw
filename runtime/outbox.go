@@ -10,7 +10,7 @@ import (
 
 // instanceDefRef builds the id:version Qualifier of an instance, carried on
 // terminal outbox events so a consumer (chaining's PredecessorDefinitionRef) can
-// route on the source definition (ADR-0047).
+// route on the source definition.
 func instanceDefRef(st engine.InstanceState) model.Qualifier {
 	return model.Version(st.DefID, st.DefVersion)
 }
@@ -19,7 +19,7 @@ func instanceDefRef(st engine.InstanceState) model.Qualifier {
 // transitions an instance into a terminal status. The TOPIC is computed
 // status-driven at the deliverLoop terminal edge (the same place CallOutcome is
 // derived), not from the terminal command, so every terminal outcome maps to an
-// accurate topic (ADR-0046):
+// accurate topic:
 //
 //	StatusCompleted  -> "instance.completed"  payload = st.Variables (copied)
 //	StatusFailed     -> "instance.failed"     payload = {"error": terminalEventErr}
@@ -49,7 +49,7 @@ func terminalOutboxEvent(prevStatus engine.Status, st engine.InstanceState, cmds
 
 // outboundMessageEvents turns each engine.SendMessage command into a message.<Name>
 // outbox event so a SendTask message is written atomically in the state-commit tx and
-// relayed at-least-once, exactly like a domain event (ADR-0067). The payload carries the
+// relayed at-least-once, exactly like a domain event. The payload carries the
 // message name, the resolved correlation key, and a copy of the sender's variables.
 func outboundMessageEvents(st engine.InstanceState, cmds []engine.Command) []kernel.OutboxEvent {
 	var out []kernel.OutboxEvent
@@ -69,7 +69,7 @@ func outboundMessageEvents(st engine.InstanceState, cmds []engine.Command) []ker
 }
 
 // terminalEventErr resolves the error string for a terminal outbox event. Only
-// the topic is status-driven (ADR-0046); the error string stays best-effort so
+// the topic is status-driven; the error string stays best-effort so
 // existing diagnostics survive. It prefers the most concrete description
 // available, in order:
 //

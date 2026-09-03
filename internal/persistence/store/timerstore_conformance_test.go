@@ -19,7 +19,7 @@ import (
 
 // seedTimerInstance creates a bare instance via [seedTimerWriterInstance],
 // then arms each of timers through ts's TimerWriter capability (UpsertJob) —
-// the durable-jobs write path (ADR-0134). It satisfies the FK constraint that
+// the durable-jobs write path. It satisfies the FK constraint that
 // wrkflw_timers.instance_id must reference an existing wrkflw_instances row.
 func seedTimerInstance(
 	t *testing.T,
@@ -91,7 +91,7 @@ func TestTimerStoreListArmed(t *testing.T) {
 		assert.Equal(t, engine.TimerIntermediate, armed[0].Kind, "%s: Kind", b.name)
 		assert.Equal(t, "ts-ord-1", armed[0].InstanceID, "%s: InstanceID", b.name)
 
-		// FireAt UTC location (ADR-0080): must survive round-trip at the same instant
+		// FireAt UTC location: must survive round-trip at the same instant
 		// and be UTC-located regardless of the host TZ (TZ=Asia/Jakarta guard).
 		wantSooner := base.Add(time.Hour)
 		assert.True(t, armed[0].NextRun.Equal(wantSooner),
@@ -294,7 +294,7 @@ func TestTimerStoreDescriptorRoundTrip(t *testing.T) {
 }
 
 // TestTimerStoreFireAtSubSecond verifies that sub-second (microsecond) fire_at
-// timestamps survive the round-trip on all dialects (ADR-0080 precision guard).
+// timestamps survive the round-trip on all dialects (precision guard).
 // Postgres TIMESTAMPTZ and MySQL DATETIME(6) both have microsecond precision;
 // SQLite TEXT(RFC3339Nano) preserves nanoseconds. The test uses microsecond
 // precision so the assertion holds on all three backends.
@@ -327,7 +327,7 @@ func TestTimerStoreFireAtSubSecond(t *testing.T) {
 	})
 }
 
-// TestTimerStoreArmedTimer verifies the PK-exact point lookup (ADR-0159) on
+// TestTimerStoreArmedTimer verifies the PK-exact point lookup on
 // every backend: it returns the row for the exact (instance_id, timer_id) pair,
 // reports not-found without an error, and does not treat a bare timer id as a
 // key. It also pins the ListArmed/ArmedTimer invariant for a well-formed row.
@@ -341,7 +341,7 @@ func TestTimerStoreArmedTimer(t *testing.T) {
 
 		// Millisecond-truncated: Postgres TIMESTAMPTZ and MySQL DATETIME(6)
 		// round to microseconds, so a nanosecond fixture would not compare equal
-		// to the value read back (ADR-0159 testing note 4).
+		// to the value read back.
 		base := time.Date(2026, 6, 22, 14, 0, 0, 0, time.UTC).Truncate(time.Millisecond)
 
 		seedTimerInstance(t, s, ts, "ts-pt-1", base, []kernel.ArmedTimer{
@@ -440,7 +440,7 @@ func TestTimerStoreArmedTimer(t *testing.T) {
 				// satisfy every other row in this table, and the fire path would
 				// then read a transient connection blip as "not recurring" and
 				// permanently cancel a recurring in-wait reminder loop — the exact
-				// failure ADR-0159's point lookup exists to prevent.
+				// failure the point lookup exists to prevent.
 				name:       "a failed read is an error, never a silent not-found",
 				instanceID: "ts-pt-1",
 				timerID:    "recurring-timer",
@@ -526,8 +526,8 @@ func corruptTriggerPayload(t *testing.T, b backend, s *store.Store, instanceID, 
 	return payload
 }
 
-// TestTimerStoreCorruptTriggerPayload pins the behaviour delta ADR-0159 claims
-// for the point lookup, against a real database on every backend:
+// TestTimerStoreCorruptTriggerPayload pins the behaviour delta claimed for
+// the point lookup, against a real database on every backend:
 //
 //	(a) ListArmed aborts WHOLESALE when any row in the table is corrupt, and
 //	(b) ArmedTimer is UNAFFECTED by a corrupt SIBLING row.
@@ -630,7 +630,7 @@ func TestTimerStoreCorruptTriggerPayload(t *testing.T) {
 // TestTimerStoreListArmedPage verifies the paged read: keyset ordering by the
 // full (next_run, instance_id, timer_id) triple, HasMore derived by fetching
 // one extra row, cursor continuation that neither skips nor repeats, and
-// IncludeTotal gating the count query (ADR-0159).
+// IncludeTotal gating the count query.
 //
 // The broad matrix — ties, zero next_run, clamping, sub-second precision —
 // lands separately; this is the minimum that pins the symbol's contract on all
@@ -769,8 +769,8 @@ func seedTimersGrouped(t *testing.T, s *store.Store, ts *store.TimerStore, base 
 // nothing the smaller fixtures do not already measure.
 //
 // next_run MUST go through [store.TimeArgForDialectValue], the same encoder the
-// production write path uses. On SQLite the column is fixed-width RFC3339 TEXT
-// (ADR-0151); binding a raw time.Time there makes the driver stringify it
+// production write path uses. On SQLite the column is fixed-width RFC3339 TEXT;
+// binding a raw time.Time there makes the driver stringify it
 // non-ISO8601, the keyset predicate then matches nothing, and the test would
 // silently measure an empty table. trigger_kind and trigger_payload are left to
 // their column defaults (0 / NULL): the paging matrix sorts on
@@ -856,7 +856,7 @@ func drainPages(t *testing.T, b backend, ts *store.TimerStore, limit, maxPages i
 }
 
 // TestTimerStoreListArmedPageMatrix is the broad paging matrix for
-// [store.TimerStore.ListArmedPage] (ADR-0159), run against every backend.
+// [store.TimerStore.ListArmedPage], run against every backend.
 //
 // Each case owns the whole wrkflw_timers table: the fixture is wiped first,
 // because HasMore, NextCursor and TotalCount are properties of the table, not
@@ -983,12 +983,11 @@ func TestTimerStoreListArmedPageMatrix(t *testing.T) {
 					// go-sql-driver serialises a zero time.Time as the literal
 					// '0000-00-00', which DATETIME(6) rejects under MySQL 8's
 					// default strict mode. So a zero next_run is NOT persistable
-					// on MySQL. This measurement is what corrected ADR-0159's
-					// original "genuinely persisted" wording, which claimed it
-					// for all three backends. The cursor sentinel argument is
-					// unaffected — a sentinel safe on only some backends is no
-					// sentinel — and this row pins the divergence so it cannot
-					// regress unnoticed.
+					// on MySQL. A zero next_run is therefore NOT genuinely
+					// persisted on all three backends. The cursor sentinel
+					// argument is unaffected — a sentinel safe on only some
+					// backends is no sentinel — and this row pins the divergence
+					// so it cannot regress unnoticed.
 					require.Error(t, err, "%s: a zero next_run must not silently become some other instant", b.name)
 					assert.Contains(t, err.Error(), "next_run", "%s: the rejection names the column", b.name)
 

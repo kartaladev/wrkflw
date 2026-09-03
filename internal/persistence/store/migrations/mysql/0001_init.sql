@@ -1,6 +1,6 @@
 -- +goose Up
 
--- Consolidated MySQL 8.0+ schema (ADR-0132). Folds the former incremental set
+-- Consolidated MySQL 8.0+ schema. Folds the former incremental set
 -- (0001 init … 0004 timers_trigger) into final-state CREATE statements: columns
 -- added by later ALTERs are declared inline and the wrkflw_timers.fire_at →
 -- next_run rename is applied directly. The logical schema converges with
@@ -101,7 +101,7 @@ CREATE TABLE wrkflw_timers (
     PRIMARY KEY (instance_id, timer_id)
 );
 -- Composite keyset index over the full armed-timer sort key, so paged admin
--- listing seeks rather than scans (ADR-0159). It subsumes the single-column
+-- listing seeks rather than scans. It subsumes the single-column
 -- next_run index it replaces: next_run is its leading column, so ORDER BY
 -- next_run and MIN(next_run) still use it.
 CREATE INDEX wrkflw_timers_keyset_idx ON wrkflw_timers (next_run, instance_id, timer_id);
@@ -118,8 +118,8 @@ CREATE TABLE wrkflw_chain_links (
 );
 CREATE INDEX wrkflw_chain_links_successor_idx ON wrkflw_chain_links (successor_instance_id);
 
--- Human task state table (ADR-0098). Indexes declared inline (MySQL style).
--- claim/completion carry the ADR-0148 audit as nullable JSON
+-- Human task state table. Indexes declared inline (MySQL style).
+-- claim/completion carry the audit trail as nullable JSON
 -- ({actor, timestamp} / {actor, timestamp, outcome?, note?}); NULL means the
 -- lifecycle event has not happened. claimed_by is the application-maintained
 -- scalar projection of claim.actor.id that keeps AssignedTo's lookup indexed.

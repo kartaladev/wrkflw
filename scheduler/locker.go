@@ -5,7 +5,7 @@ import "context"
 // Lock is a held distributed lock. It is released by [Lock.Unlock]. A Lock value
 // is returned by [Locker.Lock] and is neutral of any database driver: every
 // method is context-in, error-out, so the public scheduler API never exposes a
-// vendor type (ADR-0102).
+// vendor type.
 type Lock interface {
 	// Unlock releases the held lock. It is called by the scheduler once the timer
 	// fire it guarded has completed.
@@ -24,7 +24,7 @@ type Lock interface {
 // lock) and pass it via [WithLocker].
 //
 // It is the load-balanced ALTERNATIVE to [Elector]'s single-leader mode; the two
-// are mutually exclusive (ADR-0059).
+// are mutually exclusive.
 type Locker interface {
 	// Lock attempts to acquire the advisory lock identified by key. It returns a
 	// held [Lock] on success, or an error (so the scheduler skips the guarded fire)
@@ -40,7 +40,7 @@ type Locker interface {
 //
 // [WithLocker] and [WithElector] are mutually exclusive (load-balanced per-timer
 // exclusion vs. single-leader firing); requesting both returns
-// [ErrTimerLockElectorConflict]. A nil value is ignored. See ADR-0050, ADR-0102.
+// [ErrTimerLockElectorConflict]. A nil value is ignored.
 func WithLocker(l Locker) Option {
 	return func(c *config) {
 		if l != nil {

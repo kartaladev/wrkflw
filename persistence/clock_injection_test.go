@@ -33,8 +33,8 @@ import (
 // answerable by exact equality.
 var facadeClockInstant = time.Date(1998, 7, 12, 13, 14, 15, 160170180, time.UTC)
 
-// TestFacadeClockOptionsReachPersistedTimestamps asserts that each ADR-0138
-// clock option exposed by the public persistence facade actually reaches the
+// TestFacadeClockOptionsReachPersistedTimestamps asserts that each clock
+// option exposed by the public persistence facade actually reaches the
 // timestamp the corresponding store persists.
 //
 // What makes these cases fail today: the facade forwards none of the four

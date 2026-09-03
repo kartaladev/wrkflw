@@ -15,7 +15,7 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/view"
 )
 
-// ExampleChainer shows process-instance chaining (ADR-0045): when one instance
+// ExampleChainer shows process-instance chaining: when one instance
 // reaches a terminal state, a SuccessorPolicy starts a new, independent root
 // instance seeded with the predecessor's result. Here a completing "approval"
 // chains into a "fulfillment" instance.

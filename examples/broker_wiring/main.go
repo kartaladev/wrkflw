@@ -12,9 +12,6 @@
 // it runs with no broker and no extra dependency. It prints the EXACT message a
 // real broker would receive, including the instance_id metadata a Kafka
 // partitioner keys on and the UUID (= outbox dedup key) a consumer dedupes on.
-//
-// See docs/eventing-brokers.md for copy-paste Kafka / NATS / Redis / SQL wiring
-// and the ordering/dedup guidance.
 package main
 
 import (
@@ -24,7 +21,7 @@ import (
 	"log"
 
 	"github.com/ThreeDotsLabs/watermill/message"
-	_ "modernc.org/sqlite" // pure-Go SQLite driver (ADR-0082)
+	_ "modernc.org/sqlite" // pure-Go SQLite driver
 
 	"github.com/kartaladev/wrkflw/definition"
 	"github.com/kartaladev/wrkflw/definition/event"
@@ -89,7 +86,7 @@ func run() error {
 		return err
 	}
 	defer func() { _ = db.Close() }()
-	db.SetMaxOpenConns(1) // SQLite is single-writer (ADR-0082)
+	db.SetMaxOpenConns(1) // SQLite is single-writer
 
 	if err := persistence.MigrateSQLite(ctx, db); err != nil {
 		return err

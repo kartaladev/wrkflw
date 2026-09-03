@@ -1,5 +1,5 @@
 // Package scheduler is the consumer-facing façade over the internal gocron
-// scheduler (ADR-0008, ADR-0009, ADR-0102, ADR-0134). Consumers import only
+// scheduler. Consumers import only
 // this root package; the concrete gocron implementation stays in
 // scheduler/internal/gocron so the vendor dependency is not visible to the
 // library API surface.
@@ -32,8 +32,8 @@ import (
 
 // ErrTimerLockElectorConflict is returned by [NewScheduler] when both a [Locker]
 // and an [Elector] are configured. Load-balanced per-timer exclusion
-// ([WithLocker]) and single-leader firing ([WithElector]) are mutually exclusive
-// (ADR-0059, ADR-0102); pick exactly one.
+// ([WithLocker]) and single-leader firing ([WithElector]) are mutually exclusive;
+// pick exactly one.
 var ErrTimerLockElectorConflict = errors.New(
 	"workflow-scheduler: a Locker and an Elector are mutually exclusive — set only one")
 
@@ -47,7 +47,7 @@ var ErrTimerLockElectorConflict = errors.New(
 // errors.New with matching text: activateJob's call into impl.ScheduleJob
 // (scheduler/internal/gocron) can observe the internal scheduler's own
 // closed flag flip true after this façade's own s.closed check already
-// passed (see ensureStarted/Activate's graceful-shutdown race, ADR-0133),
+// passed (see ensureStarted/Activate's graceful-shutdown race),
 // and that error is returned to the caller wrapped but otherwise verbatim.
 // Aliasing — rather than translating at the activateJob boundary — makes
 // errors.Is(err, ErrSchedulerClosed) hold for that error without any
@@ -60,10 +60,10 @@ var ErrSchedulerClosed = gocronsched.ErrSchedulerClosed
 // NativeScheduler is the production, gocron-backed [Scheduler]. Construct it
 // with [NewScheduler]; supply the same [clockwork.Clock] instance used to build
 // the runtime via [WithClock] so one fake-clock advance drives both
-// engine timestamps and timer firing under test (ADR-0003). When the clock
+// engine timestamps and timer firing under test. When the clock
 // option is omitted, a real clock is used.
 //
-// Lifecycle (ADR-0102): [NewScheduler] is goroutine-free — the underlying gocron
+// Lifecycle: [NewScheduler] is goroutine-free — the underlying gocron
 // scheduler (and its background goroutine) is not created until the scheduler is
 // started. Call [NativeScheduler.Start] with a long-lived context to start it
 // explicitly; cancelling that context stops the scheduler. As a convenience the
@@ -149,8 +149,8 @@ type Option func(*config)
 
 // WithClock sets the [clockwork.Clock] that drives timer scheduling
 // (default: [clockwork.NewRealClock]). Pass a fake clock in tests so that a
-// single clock.Advance drives both engine timestamps and timer firing (ADR-0003,
-// ADR-0069). A nil value is ignored (falls back to the default real clock).
+// single clock.Advance drives both engine timestamps and timer firing. A nil
+// value is ignored (falls back to the default real clock).
 func WithClock(clk clockwork.Clock) Option {
 	return func(c *config) {
 		if clk != nil {
@@ -185,7 +185,7 @@ func WithTracerProvider(tp trace.TracerProvider) Option {
 // the OTel global provider. The scheduler emits the
 // wrkflw_scheduler_job_runs_total counter and
 // wrkflw_scheduler_job_duration_seconds histogram through it, driven by
-// gocron's native MonitorStatus hook (ADR-0134 production item ① — see
+// gocron's native MonitorStatus hook (see
 // scheduler/internal/gocron/monitor.go). A nil value is ignored.
 func WithMeterProvider(mp metric.MeterProvider) Option {
 	return func(c *config) {
@@ -228,7 +228,7 @@ func WithTimeSkew(d time.Duration) Option {
 // Named zones with DST resolve at-times per that zone's DST rules on the live
 // scheduler; the UTC reference does not observe DST, so the two diverge across
 // DST boundaries. In a multi-replica deployment (see [WithLocker] /
-// [WithElector]) every replica MUST use the same location. See ADR-0136.
+// [WithElector]) every replica MUST use the same location.
 //
 // Cron caveat: a [Cron] trigger resolves its location by NAME (the underlying
 // scheduler re-parses time.Location.String() via time.LoadLocation), so a
@@ -250,7 +250,7 @@ func WithLocation(loc *time.Location) Option {
 // [clockwork.NewRealClock]).
 //
 // Construction is goroutine-free: the underlying gocron scheduler is not created
-// until the scheduler is started (ADR-0102). Start it explicitly with
+// until the scheduler is started. Start it explicitly with
 // [NativeScheduler.Start] to bind its lifetime to a context, or simply schedule
 // jobs — the first arm auto-starts it with a background context. Either way,
 // call [NativeScheduler.Close] on shutdown to release the gocron goroutine.
@@ -339,7 +339,7 @@ func (s *NativeScheduler) location() *time.Location {
 // Location reports the timezone this scheduler resolves calendar at-times and
 // cron expressions in (see [WithLocation]); time.UTC by default. The runtime
 // reads this (via an opt-in capability interface) so the NextRun it computes
-// and persists matches the live fire instant. See ADR-0137.
+// and persists matches the live fire instant.
 func (s *NativeScheduler) Location() *time.Location { return s.location() }
 
 // Start starts the underlying gocron scheduler if it is not already running,

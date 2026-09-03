@@ -6,7 +6,7 @@ import "github.com/kartaladev/wrkflw/engine"
 // (LeftAt == nil) plus at most the most recent n CLOSED visits, preserving the
 // original relative order. n <= 0 means "no cap" and returns st unchanged.
 //
-// Safety (ADR-0021): engine.Step reads History only via setVisitActor and
+// Safety: engine.Step reads History only via setVisitActor and
 // closeVisit, both of which match ONLY open visits. Open visits are never
 // dropped, so a capped snapshot drives identical execution on reload; closed
 // visits are pure audit (the wrkflw_journal table remains the full record).

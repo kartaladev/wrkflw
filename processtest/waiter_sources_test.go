@@ -1,6 +1,6 @@
 package processtest_test
 
-// waiter_sources_test.go — ADR-0166. Classify must derive AwaitingSignals and
+// waiter_sources_test.go — Classify must derive AwaitingSignals and
 // AwaitingMessages from the engine's own authorities (InstanceState.SignalWaiters
 // / MessageWaiters), which enumerate FOUR sources: token awaits, boundary arms,
 // event-based-gateway arms and event-subprocess arms. Deriving them from
@@ -156,7 +156,7 @@ func startParked(t *testing.T, def *model.ProcessDefinition, opts ...processtest
 	return st
 }
 
-// TestClassifyEnumeratesEveryWaiterSource covers spec rows 1-4: each non-token
+// TestClassifyEnumeratesEveryWaiterSource covers all four sources: each non-token
 // arm source must reach Park's discrete await fields. Each row asserts against
 // the engine's own authority as well, so a row cannot silently pass by both
 // sides being empty.
@@ -216,7 +216,7 @@ func TestClassifyEnumeratesEveryWaiterSource(t *testing.T) {
 	}
 }
 
-// TestPublishSignalResolvesBoundaryOnlyPark covers spec row 5: an arm-only park
+// TestPublishSignalResolvesBoundaryOnlyPark covers the signal side: an arm-only park
 // must be driveable end to end through the shipped handler. Before the fix
 // PublishSignal iterates an empty AwaitingSignals, returns Pass forever, and the
 // drive fails with ErrUnhandledPark.
@@ -235,8 +235,8 @@ func TestPublishSignalResolvesBoundaryOnlyPark(t *testing.T) {
 	assert.Equal(t, 1, h.Catalog().Count("notify"), "the boundary's downstream path must have run")
 }
 
-// TestDeliverMessageResolvesMessageBoundaryOnlyPark covers spec row 6, the
-// message twin of row 5.
+// TestDeliverMessageResolvesMessageBoundaryOnlyPark is the message twin of
+// TestPublishSignalResolvesBoundaryOnlyPark.
 func TestDeliverMessageResolvesMessageBoundaryOnlyPark(t *testing.T) {
 	t.Parallel()
 
@@ -281,7 +281,7 @@ func timerCatchBesideArmDef(t *testing.T) *model.ProcessDefinition {
 	return def
 }
 
-// TestAutoTimersStillDrivesTimerBesideLiveArm covers spec row 7 — a guard on D3.
+// TestAutoTimersStillDrivesTimerBesideLiveArm guards the timer promotion.
 // harnessEnv.classify promotes a command-wait token whose command is a pending
 // scheduler timer to ReasonTimer, but only FROM ReasonAsyncChild/ReasonUnknown.
 // Once arms reach AwaitingSignals, an arm-derived ReasonSignal displaces that
@@ -302,9 +302,9 @@ func TestAutoTimersStillDrivesTimerBesideLiveArm(t *testing.T) {
 	assert.Equal(t, engine.StatusCompleted, final.Status)
 }
 
-// TestTwoSequentialCatchesOfOneSignalBothFire covers spec row 8 — a guard on D4.
+// TestTwoSequentialCatchesOfOneSignalBothFire guards arm-derived delivery.
 // Bounding delivery to "each name at most once" is the obvious way to stop the
-// non-interrupting loop (row 10) and it is wrong: two sequential catches of one
+// non-interrupting loop and it is wrong: two sequential catches of one
 // name is ordinary BPMN that passes today. Both catches here are TOKEN catches,
 // and a token catch is never bounded: it is consumed when it fires, so it cannot
 // re-match and every match is a real one.
@@ -332,8 +332,9 @@ func TestTwoSequentialCatchesOfOneSignalBothFire(t *testing.T) {
 	assert.Equal(t, engine.StatusCompleted, final.Status, "both catches must fire")
 }
 
-// TestNonInterruptingBoundaryTerminatesInsteadOfSpinning covers spec row 10 — the
-// other guard on D4, and the regression this whole fix would otherwise introduce.
+// TestNonInterruptingBoundaryTerminatesInsteadOfSpinning is the other guard on
+// arm-derived delivery, and the regression this whole fix would otherwise
+// introduce.
 // A token signal-catch is CONSUMED when it fires and cannot re-match; a
 // non-interrupting arm stays armed indefinitely. So once arms reach
 // AwaitingSignals, PublishSignal re-matches the identical park forever and the
@@ -371,9 +372,10 @@ func TestNonInterruptingBoundaryTerminatesInsteadOfSpinning(t *testing.T) {
 	assert.Equal(t, 1, h.Catalog().Count("notify"), "the arm fires once per waiter set, not once per drive step")
 }
 
-// TestAutoTimersStillDrivesTimerBesideLiveMessageArm is row 7's message twin. D3
-// widens the promotion for arm-derived ReasonSignal AND ReasonMessage; without
-// this the message half of that widening would ship unexercised.
+// TestAutoTimersStillDrivesTimerBesideLiveMessageArm is the message twin of
+// TestAutoTimersStillDrivesTimerBesideLiveArm. The promotion is widened for
+// arm-derived ReasonSignal AND ReasonMessage; without this the message half of
+// that widening would ship unexercised.
 func TestAutoTimersStillDrivesTimerBesideLiveMessageArm(t *testing.T) {
 	t.Parallel()
 
@@ -406,9 +408,10 @@ func TestAutoTimersStillDrivesTimerBesideLiveMessageArm(t *testing.T) {
 	assert.Equal(t, engine.StatusCompleted, final.Status)
 }
 
-// TestNonInterruptingMessageBoundaryTerminatesInsteadOfSpinning is row 10's
-// message twin: DeliverMessage carries its own arm bound, so the spin it prevents
-// must be pinned on the message side too.
+// TestNonInterruptingMessageBoundaryTerminatesInsteadOfSpinning is the message
+// twin of TestNonInterruptingBoundaryTerminatesInsteadOfSpinning: DeliverMessage
+// carries its own arm bound, so the spin it prevents must be pinned on the
+// message side too.
 func TestNonInterruptingMessageBoundaryTerminatesInsteadOfSpinning(t *testing.T) {
 	t.Parallel()
 
@@ -474,8 +477,8 @@ func TestHandlersPassOnUnawaitedName(t *testing.T) {
 	assert.NotEqual(t, processtest.Pass(), live, "the awaited name must deliver")
 }
 
-// TestTokenCatchLoopRedeliversAtTheSameNode is finding 2 of the pre-delivery
-// review. A token that loops back to the SAME catch node keeps both its id and its
+// TestTokenCatchLoopRedeliversAtTheSameNode pins redelivery at a looped catch
+// node. A token that loops back to the SAME catch node keeps both its id and its
 // node, so the fingerprint this bundle first shipped — {tokenID@nodeID, arm
 // counts} — was byte-identical at both parks and dropped the second delivery:
 // ordinary BPMN that completes on main failing with ErrUnhandledPark.
@@ -517,7 +520,7 @@ func TestTokenCatchLoopRedeliversAtTheSameNode(t *testing.T) {
 	assert.Equal(t, 2, ticks, "the catch must fire on every loop iteration")
 }
 
-// TestNonInterruptingArmDoesNotSpinWhenItsBranchArms is finding 1. Keying the
+// TestNonInterruptingArmDoesNotSpinWhenItsBranchArms pins the delivery bound. Keying the
 // delivery bound on INSTANCE-WIDE arm counts defeats it: the arm's own downstream
 // branch here arms a deadline boundary, so len(state.Boundaries) grows on every
 // firing, the key changes, and delivery is re-authorised forever.
@@ -647,7 +650,7 @@ func TestNonInterruptingArmDoesNotSpinWhenItsBranchArmsTheSameName(t *testing.T)
 	assert.Equal(t, engine.StatusCompleted, final.Status)
 }
 
-// TestSharedHandlerIsDeterministicAcrossConcurrentDrives is finding 3. A single
+// TestSharedHandlerIsDeterministicAcrossConcurrentDrives pins cross-instance keying. A single
 // last-key slot does not collide across instances once the key carries the
 // instance id — it DISPLACES: instance B's key evicts A's, so A's next identical
 // park is delivered to again. The mutex makes that race-free, not correct.
@@ -705,7 +708,7 @@ func TestSharedHandlerIsDeterministicAcrossConcurrentDrives(t *testing.T) {
 		"the arm must fire exactly once per instance, not a run-varying number of times")
 }
 
-// TestArmDerivedSignalDoesNotDemoteATokenMessageAwait is finding 5. The
+// TestArmDerivedSignalDoesNotDemoteATokenMessageAwait pins await classification. The
 // arm-derived test asked only "does any token carry AwaitSignal", so a signal ARM
 // coexisting with a genuine TOKEN message await was judged arm-derived and
 // promoted to ReasonTimer — advancing the shared clock and taking a timer branch
@@ -747,7 +750,7 @@ func TestArmDerivedSignalDoesNotDemoteATokenMessageAwait(t *testing.T) {
 }
 
 // TestSecondaryArmedTimerDoesNotPromoteHigherPriorityPark pins the other side of
-// D3's widening: only an ARM-derived signal/message reason yields to the timer
+// that widening: only an ARM-derived signal/message reason yields to the timer
 // promotion. A human-task park that merely coexists with a pending timer on a
 // parallel branch keeps ReasonHumanTask, so AutoTimers leaves it for the task
 // handler instead of firing it to timeout — the composition AutoTimers documents.
@@ -786,7 +789,7 @@ func TestSecondaryArmedTimerDoesNotPromoteHigherPriorityPark(t *testing.T) {
 	assert.Equal(t, before, h.Clock().Now(), "AutoTimers must not have fired the secondary timer")
 }
 
-// TestDuplicateSignalNamesCollapse covers spec row 11. SignalWaiters explicitly
+// TestDuplicateSignalNamesCollapse covers signal dedup. SignalWaiters explicitly
 // does NOT dedup (a set-based SignalBus.Sync collapses names downstream), while
 // Park documents its await fields as distinct — so Classify must dedup. Here a
 // boundary arm and an event-subprocess arm await ONE name.
@@ -822,7 +825,7 @@ func TestDuplicateSignalNamesCollapse(t *testing.T) {
 	assert.Equal(t, []string{"escalate"}, processtest.Classify(st).AwaitingSignals)
 }
 
-// TestSameMessageNameDifferentKeysStayDistinct covers spec row 12, the other half
+// TestSameMessageNameDifferentKeysStayDistinct covers the other half
 // of dedup: two arms awaiting one name under DIFFERENT correlation keys are
 // genuinely different waiters, so collapsing on name alone would lose one. This is
 // what makes the dedup key the {Name, CorrelationKey} pair.
@@ -852,7 +855,7 @@ func TestSameMessageNameDifferentKeysStayDistinct(t *testing.T) {
 	}, processtest.Classify(st).AwaitingMessages)
 }
 
-// TestOneHandlerValueDrivesTwoInstancesConcurrently covers spec row 13. The park
+// TestOneHandlerValueDrivesTwoInstancesConcurrently covers concurrency. The park
 // arm bound is per handler VALUE, and the harness documents race-freedom, so a
 // handler shared across concurrent drives must be safe under -race. It must also
 // stay CORRECT: the bound is recorded per instance, so one instance's delivery
@@ -890,11 +893,11 @@ func TestOneHandlerValueDrivesTwoInstancesConcurrently(t *testing.T) {
 	}
 }
 
-// TestArmDerivedParkNamesItsNode covers spec row 9 (D5). Classify resolves Node
-// from Token.AwaitSignal, which no arm sets, so an arm-derived park would report
-// Node == "" — degrading both errors a consumer actually sees. It falls back to
-// the waiting token's node instead. The arm's OWN node stays unreachable: the arm
-// slices have unexported element types.
+// TestArmDerivedParkNamesItsNode covers the arm-derived node fallback. Classify
+// resolves Node from Token.AwaitSignal, which no arm sets, so an arm-derived
+// park would report Node == "" — degrading both errors a consumer actually
+// sees. It falls back to the waiting token's node instead. The arm's OWN node
+// stays unreachable: the arm slices have unexported element types.
 func TestArmDerivedParkNamesItsNode(t *testing.T) {
 	t.Parallel()
 

@@ -22,9 +22,9 @@
 //	                           → escalate[Service] → end-escalated
 //
 // A *clockwork.FakeClock drives both the engine and the gocron-backed scheduler
-// (ADR-0003) so the example is deterministic and runs instantly. Because the
-// gocron scheduler fires on its own executor goroutine, a done channel
-// signalled from the escalation-path action makes the observation deterministic:
+// so the example is deterministic and runs instantly. Because the gocron
+// scheduler fires on its own executor goroutine, a done channel signalled from
+// the escalation-path action makes the observation deterministic:
 // schedule → Advance → <-done → assert.
 //
 // This is a reference wiring example — not a shipped binary.
@@ -103,7 +103,7 @@ func main() {
 		}),
 	})
 
-	// Fake clock shared by the engine and the gocron-backed scheduler (ADR-0003).
+	// Fake clock shared by the engine and the gocron-backed scheduler.
 	startAt := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
 	clk := clockwork.NewFakeClockAt(startAt)
 

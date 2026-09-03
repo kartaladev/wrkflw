@@ -291,7 +291,7 @@ func (e harnessEnv) advanceTimers(ctx context.Context) (engine.InstanceState, er
 // a genuine async call-activity park that merely coexists with an unrelated
 // deadline timer).
 //
-// The promotion also accepts an ARM-derived signal/message reason (ADR-0166 D3).
+// The promotion also accepts an ARM-derived signal/message reason.
 // Once [Classify] enumerates boundary, event-gateway and event-subprocess arms,
 // such an arm outranks async-child/unknown in the ladder, so without this the
 // promotion would never fire on a definition carrying a live arm and the shipped

@@ -66,7 +66,7 @@ func WithBodyReadTimeout(d time.Duration) httpcore.CustomizeOption[ginlib.IRoute
 // nothing authenticated the caller.
 //
 // ⚠ The actor is read from here and from nowhere else. A request body carrying
-// an "actor" or "by" field is ignored (ADR-0189).
+// an "actor" or "by" field is ignored.
 //
 // ⚠ gin middleware must publish the actor on the REQUEST's context, not with
 // gc.Set: gin.Context.Set stores on the gin.Context, which gc.Request.Context()

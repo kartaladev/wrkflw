@@ -59,7 +59,7 @@ type SQLiteCallLinkOption = CallLinkOption
 // busy_timeout at 0 fails the great majority of concurrent operations with
 // SQLITE_BUSY within milliseconds. OpenSQLite probes for exactly that
 // combination via [WarnUnsafeSQLite] and logs a warning to [slog.Default] when
-// it finds it. It warns only: a handle is never rejected (ADR-0082 §1, §2).
+// it finds it. It warns only: a handle is never rejected.
 //
 // Example:
 //
@@ -80,7 +80,7 @@ func OpenSQLite(ctx context.Context, db *sql.DB, opts ...Option) (InstanceStore,
 		return nil, err
 	}
 	// Advisory only — a mis-configured pool is reported, never rejected, so an
-	// already-deployed consumer keeps opening successfully (backlog 109).
+	// already-deployed consumer keeps opening successfully.
 	WarnUnsafeSQLite(ctx, nil, db)
 
 	s, err := store.New(db, dialect.NewSQLite(), buildStoreOptions(opts)...)
@@ -139,7 +139,7 @@ func NewSQLiteAdvisoryLockOwnership() (kernel.InstanceOwnership, io.Closer, erro
 
 // NewSQLiteTimerStore returns a kernel.TimerStore backed by SQLite. It backs
 // ProcessDriver.RehydrateTimers (explicit re-arm) and, via runtime.NewJobStore's
-// Load, the scheduler's own automatic self-rehydration on Start (ADR-0134). The
+// Load, the scheduler's own automatic self-rehydration on Start. The
 // db must already have migrations applied. Mirrors [NewMySQLTimerStore] for
 // MySQL and [NewTimerStore] for Postgres.
 //
@@ -148,8 +148,8 @@ func NewSQLiteAdvisoryLockOwnership() (kernel.InstanceOwnership, io.Closer, erro
 //
 // Alongside ListArmed, the returned store serves kernel.TimerStore's ArmedTimer
 // point lookup — a primary-key-exact read of one (instanceID, timerID) pair, used
-// by the timer-fire path to test recurrence without reading the whole armed table
-// (ADR-0159); a missing row is (zero, false, nil), not an error. The concrete
+// by the timer-fire path to test recurrence without reading the whole armed
+// table; a missing row is (zero, false, nil), not an error. The concrete
 // store additionally satisfies service.TimerAdmin (Stats plus the keyset-paged
 // ListArmedPage) for admin listing; neither method is on the returned
 // kernel.TimerStore interface, so reach them via `admin, ok := ts.(service.TimerAdmin)`.
@@ -205,7 +205,7 @@ func NewSQLiteRelay(db *sql.DB, pub kernel.OutboxPublisher, opts ...SQLiteRelayO
 // NewSQLiteCallLinkStore constructs the SQLite-backed kernel.CallLinkStore (read/claim
 // side). It provides ClaimPending, MarkNotified, LookupChild, and ListRunningChildren
 // over the wrkflw_call_links table. The write side is fused into Store.Create /
-// Store.Commit (ADR-0025); use [OpenSQLite] for that.
+// Store.Commit; use [OpenSQLite] for that.
 //
 // Pass [WithCallLinkLease] and [WithCallLinkClock] to opt in to lease-based
 // exclusivity. Existing zero-option call sites compile unchanged.
@@ -228,7 +228,7 @@ func NewSQLiteCallLinkStore(db *sql.DB, opts ...SQLiteCallLinkOption) (kernel.Ca
 }
 
 // NewSQLiteChainLinkStore constructs the SQLite-backed kernel.ChainLinkStore for
-// process-instance chaining lineage (ADR-0045): Record persists one
+// process-instance chaining lineage: Record persists one
 // predecessor->successor hop; LookupBySuccessor and ListByPredecessor serve
 // ancestry/audit queries. MigrateSQLite must have been applied before the first call.
 //
@@ -242,7 +242,7 @@ func NewSQLiteCallLinkStore(db *sql.DB, opts ...SQLiteCallLinkOption) (kernel.Ca
 //	chainer, err := chain.NewChainer(runner, policy, chain.WithChainLinks(links))
 //
 // Pass [WithChainLinkClock] to control the created_at fallback Record uses when
-// a link carries a zero CreatedAt (ADR-0138). Zero-option call sites compile
+// a link carries a zero CreatedAt. Zero-option call sites compile
 // unchanged.
 func NewSQLiteChainLinkStore(db *sql.DB, opts ...ChainLinkOption) (kernel.ChainLinkStore, error) {
 	return store.NewChainLinkStore(db, dialect.NewSQLite(), buildChainLinkOptions(opts)...)
@@ -315,7 +315,7 @@ func NewSQLiteCallNotifier(db *sql.DB, deliver calllink.CallDeliverFunc, reg ker
 //	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute)
 //
 // Pass [WithDefinitionClock] to control the created_at stamp PutDefinition
-// writes (ADR-0138). Zero-option call sites compile unchanged.
+// writes. Zero-option call sites compile unchanged.
 func NewSQLiteDefinitionStore(db *sql.DB, opts ...DefinitionOption) (DefinitionStore, error) {
 	return store.NewDefinitionStore(db, dialect.NewSQLite(), buildDefinitionOptions(opts)...)
 }

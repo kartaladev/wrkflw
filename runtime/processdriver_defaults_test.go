@@ -287,7 +287,7 @@ var _ = context.Background
 // seeds an empty StartNodeID (engine.NewStartInstance), i.e. asks for the
 // definition's manual/"none" start event — surfaces a friendly, wrapped
 // engine.ErrNoManualStart when def has ONLY event-triggered start events
-// (ADR-0121: message/signal/timer start, no manual start). The caller must
+// (message/signal/timer start, no manual start). The caller must
 // instead reach the process through an event entry point.
 func TestDriveErrorsWhenOnlyEventStarts(t *testing.T) {
 	def := &model.ProcessDefinition{

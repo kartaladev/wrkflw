@@ -90,7 +90,7 @@ func TestSchedulerWithMySQLTimerElector(t *testing.T) {
 }
 
 // TestSchedulerMySQLElectorOnLeadershipAcquired proves the MySQL backend elector's
-// on-leadership-acquired hook (Option A, ADR-0072) fires through the façade: when
+// on-leadership-acquired hook fires through the façade: when
 // this instance wins leadership the registered callback fires.
 func TestSchedulerMySQLElectorOnLeadershipAcquired(t *testing.T) {
 	db := dbtest.RunTestMySQL(t)

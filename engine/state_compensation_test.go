@@ -158,7 +158,7 @@ func TestHasChildScopeWithTokens(t *testing.T) {
 			// true. The sibling-style case below cannot do that job — with
 			// parent "" and except s1, s4 still holds a token, so the row returns
 			// true whether or not the filter works. (Added 2026-08-03 after the
-			// Task 2 implementer flagged the original case as mutation-weak.)
+			// original case was flagged as mutation-weak.)
 			name:   "the excepted child is not counted when it is the only candidate",
 			parent: s1, except: s2,
 			assert: func(t *testing.T, got bool) {

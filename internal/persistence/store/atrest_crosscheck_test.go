@@ -22,7 +22,7 @@ import (
 // of the SQLite schema equals what a real SQLite database actually creates.
 // The everyday at-rest guard (internal/atrest) parses SQL text so it needs no
 // Docker; this is (part of) the test that proves the parse is not quietly
-// lying (ADR-0187 D7). Kept in its own test function, separate from the
+// lying. Kept in its own test function, separate from the
 // Postgres/MySQL leg below: dbtest.RunTestDatabase / RunTestMySQL FAIL rather
 // than skip when Docker is unavailable, which would otherwise drag this
 // Docker-free SQLite check down with them.
@@ -76,7 +76,7 @@ func TestAtRestParseMatchesLiveIntrospection_PostgresAndMySQL(t *testing.T) {
 
 // TestAtRestParseMatchesLiveIntrospection_CasbinRule cross-checks the one
 // table the wrkflw_* prefix filter can never see. casbin_rule is Postgres-only
-// and applied by its own migrator (E3), so it is cross-checked separately from
+// and applied by its own migrator, so it is cross-checked separately from
 // the wrkflw_* set — the parity helpers filter it out (LIKE 'wrkflw_%').
 func TestAtRestParseMatchesLiveIntrospection_CasbinRule(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
@@ -92,8 +92,8 @@ func TestAtRestParseMatchesLiveIntrospection_CasbinRule(t *testing.T) {
 	assert.ElementsMatch(t, live, parsedColumnNames(parsed["postgres"], "casbin_rule"))
 }
 
-// TestCrossCheckColumns_CatchesTableIdentityAndPKDrift is the I2 regression
-// guard (final review), Docker-free: it drives parsedColumns/liveColumns
+// TestCrossCheckColumns_CatchesTableIdentityAndPKDrift is the regression
+// guard, Docker-free: it drives parsedColumns/liveColumns
 // directly over synthetic fixtures reproducing the two ways the OLD
 // bare-name comparison (parsedColumnNames/liveColumnNames, flattening
 // across ALL tables) went blind. Proven live, against real containers,
@@ -176,7 +176,7 @@ func TestEveryParsedTableIsCrossChecked(t *testing.T) {
 // parser discovers and classifies that no test in this file compares
 // against a live database.
 //
-// M2 (final review): TestEveryParsedTableIsCrossChecked used to range only
+// TestEveryParsedTableIsCrossChecked used to range only
 // parsed["postgres"].Tables() — a table that exists ONLY in mysql or
 // sqlite would never even be visited by the loop. Extracted as its own
 // function so a synthetic fixture can drive it directly
@@ -206,11 +206,10 @@ func uncrossCheckedTables(schemas map[string]atrest.Schema) []string {
 	return names
 }
 
-// TestUncrossCheckedTables_SeesEveryDialect is the M2 regression guard
-// (final review): a table that exists ONLY in mysql (not postgres, not
-// sqlite) and is not wrkflw_-prefixed must still be reported by
-// uncrossCheckedTables — proving the check considers all three dialects,
-// not just postgres.
+// TestUncrossCheckedTables_SeesEveryDialect is the regression guard: a table
+// that exists ONLY in mysql (not postgres, not sqlite) and is not
+// wrkflw_-prefixed must still be reported by uncrossCheckedTables — proving
+// the check considers all three dialects, not just postgres.
 func TestUncrossCheckedTables_SeesEveryDialect(t *testing.T) {
 	t.Parallel()
 
@@ -234,7 +233,7 @@ func TestUncrossCheckedTables_SeesEveryDialect(t *testing.T) {
 // the casbin_rule cross-check (TestAtRestParseMatchesLiveIntrospection_
 // CasbinRule), which already pins an exact table name and so is not
 // exposed to the table-identity blindness parsedColumns/liveColumns fix
-// below (I2, final review).
+// below.
 func parsedColumnNames(s atrest.Schema, prefix string) []string {
 	keys := atrest.ColumnKeysWithPrefix(s, prefix)
 	names := make([]string, 0, len(keys))
@@ -246,7 +245,7 @@ func parsedColumnNames(s atrest.Schema, prefix string) []string {
 
 // crossCheckColumn identifies one column for the parsed-vs-live
 // wrkflw_*-table cross-check by (table, column, isPK) rather than by bare
-// column name alone (I2, final review). Comparing bare names only was
+// column name alone. Comparing bare names only was
 // blind to which TABLE a column belonged to — a column refiled under a
 // wrong/fabricated table name still matched by name — and blind to every
 // key property, including PRIMARY KEY membership.
@@ -275,8 +274,8 @@ func parsedColumns(s atrest.Schema, prefix string) []crossCheckColumn {
 // liveColumns flattens a logicalSchema (as returned by introspectPostgres
 // / introspectMySQL / introspectSQLite in migration_parity_test.go) into
 // its (table, column, isPK) triples — consuming colFacts.PrimaryKey rather
-// than adding a new field to it (I2, final review: colFacts and the
-// introspect* helpers are consumed here, not modified).
+// than adding a new field to it (colFacts and the introspect* helpers are
+// consumed here, not modified).
 func liveColumns(s logicalSchema) []crossCheckColumn {
 	var cols []crossCheckColumn
 	for table, facts := range s {
@@ -289,7 +288,7 @@ func liveColumns(s logicalSchema) []crossCheckColumn {
 
 // columnsOfTable returns the bare column names of one Postgres table,
 // unfiltered by the "wrkflw_%" prefix the parity helpers apply — needed here
-// because casbin_rule falls outside that prefix (E2).
+// because casbin_rule falls outside that prefix.
 func columnsOfTable(t *testing.T, pool *pgxpool.Pool, table string) []string {
 	t.Helper()
 	rows, err := pool.Query(t.Context(), `
@@ -343,8 +342,8 @@ const pgPartialIndexQuery = `
 // mysqlIndexColumnsQuery lists every indexed (table, column) with the index
 // name and uniqueness. Foreign-key backing indexes are excluded exactly as
 // mysqlExplicitIndexQuery excludes them: MySQL auto-creates an index for
-// fk_journal_instance, and ADR-0187 D8 deliberately keeps FOREIGN KEY columns
-// out of `keyed`, so including it would report a divergence that is a decision.
+// fk_journal_instance, and FOREIGN KEY columns are deliberately kept out of
+// `keyed`, so including it would report a divergence that is a decision.
 const mysqlIndexColumnsQuery = `
 	SELECT s.table_name, s.column_name, s.index_name, s.non_unique
 	FROM   information_schema.statistics s
