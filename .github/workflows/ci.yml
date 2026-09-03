@@ -120,9 +120,23 @@ jobs:
           go mod tidy
           git diff --exit-code -- go.mod go.sum
 
-      - uses: golangci/golangci-lint-action@v6
+      # Pinned deliberately, on both axes.
+      #
+      # The action major selects the golangci-lint SERIES: v6 installs the v1
+      # line, v9 installs v2. .golangci.yml here has been `version: "2"` all
+      # along, so v6 was pairing a v2 config with a v1 binary. That mismatch was
+      # masked by a louder failure — v1.64.8 is built with go1.24 and refuses a
+      # go.mod targeting a newer Go with "the Go language version (go1.24) used
+      # to build golangci-lint is lower than the targeted Go version". The job
+      # exited 3 during config load, so it had NEVER linted a single file and
+      # reported zero findings while doing so.
+      #
+      # `version: latest` is what let that drift in silently: the resolved
+      # binary changed under us with no diff. An exact version means a lint
+      # result only changes when this line does.
+      - uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.13.2
 
   govulncheck:
     name: govulncheck
@@ -133,9 +147,18 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # Pinned for the same reason as golangci-lint above: `@latest` lets the
+      # scanner change without a diff. Note this pins the TOOL, not the answer —
+      # govulncheck queries the vulnerability database at run time, so newly
+      # published advisories still surface on the next run, which is the point.
+      #
+      # What actually keeps this job honest is the Go version. Every stdlib
+      # finding is reported against the toolchain that built the code, so the
+      # `go` directive in go.mod is the real input here; setup-go above reads it
+      # via go-version-file.
       - name: Run govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           govulncheck ./...
 
   dependency-review:
