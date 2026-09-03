@@ -215,8 +215,9 @@ func TestValidate_RejectsNeverDueTrigger(t *testing.T) {
 			// The catch probe for the same guard cannot assert NoError: a catch
 			// event with an absent timer names no trigger family at all, which
 			// ErrCatchEventMissingTrigger rejects for an unrelated reason. What
-			// ADR-0182 needs from this row is narrower and still exact — the
-			// never-due predicate must not read an ABSENT trigger as never due.
+			// the never-due guard needs from this row is narrower and still
+			// exact: ErrTriggerNeverDue must not read an ABSENT trigger as
+			// never due.
 			name: "catch with no timer is not rejected as never due",
 			def:  neverDueTimerDef(schedule.TriggerSpec{}),
 			assert: func(t *testing.T, err error) {

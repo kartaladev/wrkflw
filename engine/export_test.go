@@ -116,8 +116,8 @@ func BeginCompensation(ctx context.Context, def *model.ProcessDefinition, s *Ins
 // per-node-kind strategies) so tests can exercise the arm-cleanup machinery
 // (e.g. removeBoundaryArmsForHost) for a host kind that never arms — currently
 // KindCallActivity: callActivityStrategy.enter (engine/step_nodes.go) checks
-// only the direct-attachment ERROR-boundary case via findDirectBoundary
-// (ADR-0128) and never arms a timer/signal/message sibling.
+// only the direct-attachment ERROR-boundary case via findDirectBoundary, and
+// never arms a timer/signal/message sibling.
 //
 // That asymmetry is now settled rather than pending. model.Validate rejects a
 // timer/signal/message boundary on a CallActivity outright

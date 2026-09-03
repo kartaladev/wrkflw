@@ -24,8 +24,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/event"
+	"github.com/kartaladev/wrkflw/definition/flow"
 	"github.com/kartaladev/wrkflw/definition/model"
+	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
 // captureHandler is a minimal slog.Handler that records emitted records for
@@ -479,4 +482,162 @@ func TestHandleCancelRequested_DefForScopeError_LogsDebug(t *testing.T) {
 	errAttr, ok := attrString(rec, "error")
 	assert.True(t, ok, "expected error attribute")
 	assert.NotEmpty(t, errAttr)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Site: a boundary event on a host no strategy arms (warnUnarmedBoundaries).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// unarmedBoundaryDef wraps host between a start and an end event, attaches a
+// timer boundary, and gives the boundary its own escape route.
+//
+// model.Validate rejects every definition this builds (ErrBoundaryTriggerHost),
+// which is the point: the struct literal is how such a definition reaches the
+// engine, through runtime.RegisterDefinition rather than through the builder.
+func unarmedBoundaryDef(host model.Node) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p-unarmed-boundary", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			host,
+			event.NewBoundary("bnd", "host",
+				event.WithBoundaryTimer(schedule.AfterDuration(time.Hour))),
+			activity.NewServiceTask("escalate", activity.WithTaskAction("escalate")),
+			event.NewEnd("end"),
+			event.NewEnd("end-escalated"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "host"},
+			{ID: "f2", Source: "host", Target: "end"},
+			{ID: "f3", Source: "bnd", Target: "escalate"},
+			{ID: "f4", Source: "escalate", Target: "end-escalated"},
+		},
+	}
+}
+
+// TestUnarmedBoundary_LogsWarn pins the runtime half of the boundary fix. A
+// timer/signal/message boundary on a SendTask, SubProcess or CallActivity is
+// rejected by model.ErrBoundaryTriggerHost, but an unvalidated definition still
+// reaches the engine through runtime.RegisterDefinition — and on that path the
+// boundary was dead in complete silence, which is the original complaint.
+//
+// It asserts BOTH halves of the site's contract, and the second is the one that
+// matters: the log must not change what the strategy does. A dead boundary
+// costs the host only its escape hatch, so unlike a trigger-less catch event
+// (which strands its token forever and earns an IncidentDefinitionDefect) this
+// site deliberately only warns — the activity itself must still run. Each case
+// therefore checks the host's normal effect survived: the send task advanced,
+// the sub-process opened its scope, the call activity emitted StartSubInstance.
+//
+// The error flavour is excluded, and the last case guards that: an error
+// boundary on a call activity is legitimate, reaches its host through
+// findDirectBoundary, and must NOT warn.
+//
+// Not parallel: installCaptureHandler swaps the process-global slog.Default().
+func TestUnarmedBoundary_LogsWarn(t *testing.T) {
+	at := time.Unix(1, 0)
+
+	type testCase struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, h *captureHandler, res StepResult)
+	}
+
+	// warned is the shared assertion for the three hosts that cannot arm: the
+	// record exists, is Warn, and names both the host and the boundary — an
+	// operator needs to know WHICH boundary is dead, not merely that one is.
+	warned := func(t *testing.T, h *captureHandler) {
+		t.Helper()
+		rec, ok := h.find("boundary event cannot be armed on this host")
+		require.True(t, ok, "expected a Warn log for a boundary that can never fire")
+		assert.Equal(t, slog.LevelWarn, rec.Level)
+
+		hostNode, ok := attrString(rec, "host_node_id")
+		assert.True(t, ok, "expected host_node_id attribute")
+		assert.Equal(t, "host", hostNode)
+
+		boundaryNode, ok := attrString(rec, "boundary_node_id")
+		assert.True(t, ok, "expected boundary_node_id attribute")
+		assert.Equal(t, "bnd", boundaryNode)
+	}
+
+	cases := []testCase{
+		{
+			name: "send task warns and still advances",
+			def:  unarmedBoundaryDef(activity.NewSendTask("host", "notify")),
+			assert: func(t *testing.T, h *captureHandler, res StepResult) {
+				warned(t, h)
+				assert.Empty(t, res.State.Boundaries, "nothing may be armed here")
+				var sent bool
+				for _, c := range res.Commands {
+					if _, ok := c.(SendMessage); ok {
+						sent = true
+					}
+				}
+				assert.True(t, sent, "the send task itself must still run")
+			},
+		},
+		{
+			name: "sub-process warns and still opens its scope",
+			def: unarmedBoundaryDef(activity.NewSubProcess("host", &model.ProcessDefinition{
+				ID: "inner", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("ns-start"),
+					activity.NewServiceTask("ns-task", activity.WithTaskAction("inner")),
+					event.NewEnd("ns-end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "nf1", Source: "ns-start", Target: "ns-task"},
+					{ID: "nf2", Source: "ns-task", Target: "ns-end"},
+				},
+			})),
+			assert: func(t *testing.T, h *captureHandler, res StepResult) {
+				warned(t, h)
+				assert.Empty(t, res.State.Boundaries, "nothing may be armed here")
+				assert.NotEmpty(t, res.State.Scopes, "the sub-process itself must still be entered")
+			},
+		},
+		{
+			name: "call activity warns and still starts its child",
+			def:  unarmedBoundaryDef(activity.NewCallActivity("host", model.Latest("child"))),
+			assert: func(t *testing.T, h *captureHandler, res StepResult) {
+				warned(t, h)
+				assert.Empty(t, res.State.Boundaries, "nothing may be armed here")
+				var started bool
+				for _, c := range res.Commands {
+					if _, ok := c.(StartSubInstance); ok {
+						started = true
+					}
+				}
+				assert.True(t, started, "the call activity itself must still run")
+			},
+		},
+		{
+			name: "an error boundary on the same host does not warn",
+			def: func() *model.ProcessDefinition {
+				d := unarmedBoundaryDef(activity.NewCallActivity("host", model.Latest("child")))
+				// Replace the timer boundary with an error boundary, which is a
+				// legitimate attachment on a call activity.
+				d.Nodes[2] = event.NewBoundary("bnd", "host", event.WithBoundaryErrorCode("E1"))
+				return d
+			}(),
+			assert: func(t *testing.T, h *captureHandler, res StepResult) {
+				_, ok := h.find("boundary event cannot be armed on this host")
+				assert.False(t, ok,
+					"an error boundary reaches this host through findDirectBoundary, not an arm")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := installCaptureHandler(t)
+
+			res, err := Step(t.Context(), tc.def,
+				InstanceState{InstanceID: "i1"},
+				NewStartInstance(at, nil), StepOptions{})
+			require.NoError(t, err)
+			tc.assert(t, h, res)
+		})
+	}
 }

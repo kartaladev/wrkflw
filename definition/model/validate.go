@@ -110,8 +110,8 @@ var (
 	// KindReceiveTask and KindUserTask call armBoundaries at their park point;
 	// on any other host the boundary is accepted by the model and then dropped
 	// on the floor by the engine, so it is rejected at authoring time rather
-	// than left as a silent no-op (the same reasoning as
-	// ErrScopeLocalWithCompensateRef, ADR-0120).
+	// than left as a silent no-op — the same reasoning that makes
+	// ErrScopeLocalWithCompensateRef reject its combination.
 	//
 	// The three rejected hosts each fail for their own reason, and none is a
 	// missing line of wiring:
@@ -193,7 +193,7 @@ var (
 	// A non-empty CorrelationKey does not rescue it. The key only narrows which
 	// delivery of a NAMED message correlates; with no MessageName there is no
 	// message to correlate, exactly as ErrEventStartMissingTrigger treats the
-	// same shape on a start event (ADR-0121).
+	// same shape on a start event.
 	//
 	// This is the authoring-time half of the fix. The engine raises an
 	// IncidentDefinitionDefect for the same shape at runtime, because a

@@ -2638,7 +2638,7 @@ func TestValidate_RejectsTriggerBoundaryOnUnarmedHost(t *testing.T) {
 // engine parks the token and no trigger can ever match it, so the branch is
 // dead for the life of the instance.
 //
-// It mirrors ErrEventStartMissingTrigger (ADR-0121), which already refuses an
+// It mirrors ErrEventStartMissingTrigger, which already refuses an
 // incompletely-specified start for the same reason.
 func TestValidate_RejectsCatchEventWithoutTrigger(t *testing.T) {
 	t.Parallel()
