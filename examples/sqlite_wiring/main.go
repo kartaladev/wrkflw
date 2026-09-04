@@ -133,7 +133,7 @@ func run(logger *slog.Logger) error {
 	// SQLite has no LISTEN/NOTIFY; NewSQLiteRelay is poll-only — do NOT pass
 	// any ListenNotify option. The poll interval defaults to 500 ms which is
 	// suitable for local/embedded deployments.
-	relay, err := persistence.NewSQLiteRelay(db, publisher, persistence.MySQLWithRelayLogger(logger))
+	relay, err := persistence.NewSQLiteRelay(db, publisher, persistence.WithRelayLogger(logger))
 	if err != nil {
 		return err
 	}

@@ -126,8 +126,8 @@ func TestNewSQLiteRelay_DrainsViaFacade(t *testing.T) {
 
 	pub := &facadePub{}
 	relay, err := persistence.NewSQLiteRelay(db, pub,
-		persistence.MySQLWithPollInterval(10*time.Millisecond),
-		persistence.MySQLWithBatchSize(10),
+		persistence.WithPollInterval(10*time.Millisecond),
+		persistence.WithBatchSize(10),
 	)
 	require.NoError(t, err)
 
