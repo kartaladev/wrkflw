@@ -114,7 +114,7 @@ func run(logger *slog.Logger) error {
 	shutdown.AddCloser(evClose)
 
 	// --- Outbox relay: drains wrkflw_outbox and publishes events ---
-	relay, err := persistence.NewMySQLRelay(db, publisher, persistence.MySQLWithRelayLogger(logger))
+	relay, err := persistence.NewMySQLRelay(db, publisher, persistence.WithRelayLogger(logger))
 	if err != nil {
 		return fmt.Errorf("new mysql relay: %w", err)
 	}

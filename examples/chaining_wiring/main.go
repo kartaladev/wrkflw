@@ -246,7 +246,7 @@ func openMySQL(ctx context.Context, dsn string, pub kernel.OutboxPublisher, logg
 		return backend{}, fmt.Errorf("open mysql store: %w", err)
 	}
 
-	relay, err := persistence.NewMySQLRelay(db, pub, persistence.MySQLWithRelayLogger(logger))
+	relay, err := persistence.NewMySQLRelay(db, pub, persistence.WithRelayLogger(logger))
 	if err != nil {
 		_ = db.Close()
 		return backend{}, fmt.Errorf("new mysql relay: %w", err)

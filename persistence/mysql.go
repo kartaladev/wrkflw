@@ -6,12 +6,9 @@ package persistence
 // OpenMySQL's ProbeUTC guard and the MigrateMySQL entry point are the only
 // MySQL-specific pieces.
 //
-// MySQLOption, MySQLRelayOption, and MySQLCallLinkOption are aliases of the
-// facade's own Option / RelayOption / CallLinkOption types (none of which is an
-// alias of an internal store type); the MySQLWith* constructors each return the
-// corresponding unified option value. Every With… constructor in options.go is
-// equally usable here — the MySQLWith* set is a naming mirror, not a separate
-// surface.
+// The MySQL constructors take the facade's own Option / RelayOption /
+// CallLinkOption types directly: all three backends share one option surface,
+// so every With… constructor in options.go applies here unchanged.
 //
 // NewMySQLDeduper (in dedup.go) returns the unified persistence.Deduper, whose
 // Seen joins the ambient transaction in ctx.
@@ -21,13 +18,9 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
-	"log/slog"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/jonboulle/clockwork"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/kartaladev/wrkflw/internal/database"
 	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
@@ -35,37 +28,6 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/calllink"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
-
-// MySQLOption configures the MySQL Store returned by OpenMySQL. It is an alias
-// of the facade [Option]; all three backends share one option surface, so every
-// With… constructor in options.go applies here too.
-type MySQLOption = Option
-
-// MySQLWithHistoryCap bounds the inline instance History persisted in the
-// snapshot to every open visit plus at most n most-recent closed visits. n <= 0
-// keeps full inline history. Mirrors WithHistoryCap for Postgres.
-func MySQLWithHistoryCap(n int) MySQLOption { return WithHistoryCap(n) }
-
-// MySQLWithStoreLogger sets the structured logger used by the MySQL Store.
-// Default: slog.Default(). Mirrors WithStoreLogger for Postgres.
-func MySQLWithStoreLogger(l *slog.Logger) MySQLOption { return WithStoreLogger(l) }
-
-// MySQLWithStoreTracerProvider sets the OTel TracerProvider for MySQL Store
-// operation spans. Default: the OTel global provider. Mirrors WithStoreTracerProvider.
-func MySQLWithStoreTracerProvider(tp trace.TracerProvider) MySQLOption {
-	return WithStoreTracerProvider(tp)
-}
-
-// MySQLWithStoreMeterProvider sets the OTel MeterProvider for MySQL Store
-// metrics. Default: the OTel global provider. Mirrors WithStoreMeterProvider.
-func MySQLWithStoreMeterProvider(mp metric.MeterProvider) MySQLOption {
-	return WithStoreMeterProvider(mp)
-}
-
-// There is deliberately no MySQLWithStoreClock: the MySQLWith* set is a naming
-// mirror over the shared [Option] type, not a separate surface, and it has
-// never been exhaustive ([WithOutboxNotify] has no mirror either). Configure a
-// MySQL store's clock with [WithStoreClock] directly.
 
 // OpenMySQL constructs a MySQL-backed kernel.InstanceStore + JournalReader over db.
 //
@@ -78,10 +40,10 @@ func MySQLWithStoreMeterProvider(mp metric.MeterProvider) MySQLOption {
 //
 //	db, _ := sql.Open("mysql", dsn)
 //	persistence.MigrateMySQL(ctx, db)
-//	store, _ := persistence.OpenMySQL(ctx, db, persistence.MySQLWithHistoryCap(50))
+//	store, _ := persistence.OpenMySQL(ctx, db, persistence.WithHistoryCap(50))
 //	r, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store))
 //	if err != nil { log.Fatal(err) }
-func OpenMySQL(ctx context.Context, db *sql.DB, opts ...MySQLOption) (InstanceStore, error) {
+func OpenMySQL(ctx context.Context, db *sql.DB, opts ...Option) (InstanceStore, error) {
 	q, err := database.From(db)
 	if err != nil {
 		return nil, err
@@ -130,63 +92,6 @@ func NewMySQLTimerStore(db *sql.DB) (kernel.TimerStore, error) {
 	return store.NewTimerStore(db, dialect.NewMySQL())
 }
 
-// MySQLRelayOption configures a MySQL Relay returned by NewMySQLRelay. It is an
-// alias of the facade RelayOption. MySQL has no LISTEN/NOTIFY; its relay is
-// poll-only (there is no MySQLWithListenNotify).
-type MySQLRelayOption = RelayOption
-
-// MySQLWithPollInterval sets the interval between DrainOnce calls in the MySQL
-// Relay's Run loop. Default: 1s. Mirrors WithPollInterval for the Postgres relay.
-func MySQLWithPollInterval(d time.Duration) MySQLRelayOption {
-	return storeRelayOption(store.WithRelayPollInterval(d))
-}
-
-// MySQLWithBatchSize sets the maximum number of outbox rows claimed per
-// DrainOnce call. Default: 100. Mirrors WithBatchSize for the Postgres relay.
-func MySQLWithBatchSize(n int) MySQLRelayOption {
-	return storeRelayOption(store.WithRelayBatchSize(n))
-}
-
-// MySQLWithMaxDeliveryAttempts sets how many failed publish attempts a row
-// tolerates before it is quarantined to status 'dead'. Default: 10.
-// Mirrors WithMaxDeliveryAttempts for the Postgres relay.
-func MySQLWithMaxDeliveryAttempts(n int) MySQLRelayOption {
-	return storeRelayOption(store.WithRelayMaxDeliveryAttempts(n))
-}
-
-// MySQLWithRelayBackoff sets the base and maximum interval of the capped
-// exponential backoff applied to a row's next_attempt_at after a failed publish.
-// Defaults: base 1s, max 1m. Mirrors WithRelayBackoff for the Postgres relay.
-func MySQLWithRelayBackoff(base, maxInterval time.Duration) MySQLRelayOption {
-	return storeRelayOption(store.WithRelayBackoff(base, maxInterval))
-}
-
-// MySQLWithRelayClock sets the clock the MySQL relay uses to stamp published_at
-// / next_attempt_at and to evaluate which rows are due. Default: clockwork.NewRealClock().
-// Inject a fake clock in tests for deterministic behaviour.
-// Mirrors WithRelayClock for the Postgres relay.
-func MySQLWithRelayClock(clk clockwork.Clock) MySQLRelayOption {
-	return storeRelayOption(store.WithRelayClock(clk))
-}
-
-// MySQLWithRelayLogger sets the structured logger used by the MySQL relay for
-// drain logs. Default: slog.Default(). Mirrors WithRelayLogger for the Postgres relay.
-func MySQLWithRelayLogger(l *slog.Logger) MySQLRelayOption {
-	return storeRelayOption(store.WithRelayLogger(l))
-}
-
-// MySQLWithRelayTracerProvider sets the OTel TracerProvider for MySQL relay batch
-// spans. Default: the OTel global provider. Mirrors WithRelayTracerProvider.
-func MySQLWithRelayTracerProvider(tp trace.TracerProvider) MySQLRelayOption {
-	return storeRelayOption(store.WithRelayTracerProvider(tp))
-}
-
-// MySQLWithRelayMeterProvider sets the OTel MeterProvider for MySQL relay metrics.
-// Default: the OTel global provider. Mirrors WithRelayMeterProvider.
-func MySQLWithRelayMeterProvider(mp metric.MeterProvider) MySQLRelayOption {
-	return storeRelayOption(store.WithRelayMeterProvider(mp))
-}
-
 // NewMySQLRelay constructs an outbox relay over db that publishes each event via pub.
 // MySQL has no LISTEN/NOTIFY; the relay is poll-only: Run loops on the poll interval
 // calling DrainOnce until the context is cancelled.
@@ -197,21 +102,21 @@ func MySQLWithRelayMeterProvider(mp metric.MeterProvider) MySQLRelayOption {
 // Returns the same Relay interface as NewRelay (the Postgres analog) so the two
 // backends are interchangeable at the consumer site.
 //
-// Available options: MySQLWithPollInterval, MySQLWithBatchSize, MySQLWithRelayClock,
-// MySQLWithMaxDeliveryAttempts, MySQLWithRelayBackoff, MySQLWithRelayLogger,
-// MySQLWithRelayTracerProvider, MySQLWithRelayMeterProvider.
-// Note: there is no MySQLWithListenNotify — MySQL is poll-only. Passing the
-// Postgres-only WithListenNotify has no effect (MySQL provides no notifier).
+// Available options: [WithPollInterval], [WithBatchSize], [WithRelayClock],
+// [WithMaxDeliveryAttempts], [WithRelayBackoff], [WithRelayLogger],
+// [WithRelayTracerProvider], [WithRelayMeterProvider].
+// Note: MySQL is poll-only. Passing the Postgres-only [WithListenNotify] has no
+// effect (MySQL provides no notifier).
 //
 // Example:
 //
 //	db, _ := sql.Open("mysql", dsn)
 //	persistence.MigrateMySQL(ctx, db)
 //	relay := persistence.NewMySQLRelay(db, myPublisher,
-//	    persistence.MySQLWithPollInterval(500*time.Millisecond),
+//	    persistence.WithPollInterval(500*time.Millisecond),
 //	)
 //	go relay.Run(ctx)
-func NewMySQLRelay(db *sql.DB, pub kernel.OutboxPublisher, opts ...MySQLRelayOption) (Relay, error) {
+func NewMySQLRelay(db *sql.DB, pub kernel.OutboxPublisher, opts ...RelayOption) (Relay, error) {
 	var cfg relayConfig
 	for _, o := range opts {
 		o(&cfg)
@@ -220,39 +125,18 @@ func NewMySQLRelay(db *sql.DB, pub kernel.OutboxPublisher, opts ...MySQLRelayOpt
 	return store.NewRelay(db, dialect.NewMySQL(), pub, cfg.opts...)
 }
 
-// MySQLCallLinkOption configures a CallLinkStore returned by NewMySQLCallLinkStore.
-// It is an alias of the facade [CallLinkOption] (same type as SQLiteCallLinkOption).
-type MySQLCallLinkOption = CallLinkOption
-
-// MySQLWithCallLinkLease configures opt-in lease-based multi-replica exclusivity
-// on the MySQL CallLinkStore. When ttl > 0, ClaimPending stamps claimed_at/claimed_by,
-// hiding each row from concurrent replicas until the lease expires. When ttl <= 0
-// (the default), a plain SELECT is used (backward-compatible).
-// Mirrors WithCallLinkLease for the Postgres facade.
-func MySQLWithCallLinkLease(owner string, ttl time.Duration) MySQLCallLinkOption {
-	return WithCallLinkLease(owner, ttl)
-}
-
-// MySQLWithCallLinkClock sets the clock the MySQL CallLinkStore uses for lease
-// timestamps. Default: clockwork.NewRealClock(). Inject a fake clock in tests for
-// deterministic behaviour.
-// Mirrors WithCallLinkClock for the Postgres facade.
-func MySQLWithCallLinkClock(clk clockwork.Clock) MySQLCallLinkOption {
-	return WithCallLinkClock(clk)
-}
-
 // NewMySQLCallLinkStore constructs the MySQL-backed kernel.CallLinkStore (read/claim
 // side). It provides ClaimPending, MarkNotified, LookupChild, and ListRunningChildren
 // over the wrkflw_call_links table. The write side is fused into Store.Create /
 // Store.Commit; use OpenMySQL for that.
 //
-// Pass [MySQLWithCallLinkLease] and [MySQLWithCallLinkClock] to opt in to lease-based
+// Pass [WithCallLinkLease] and [WithCallLinkClock] to opt in to lease-based
 // multi-replica exclusivity. Existing zero-option call sites compile unchanged.
 //
 // MigrateMySQL must have been applied before the first call to any method.
 //
 // Mirrors NewCallLinkStore for the Postgres facade.
-func NewMySQLCallLinkStore(db *sql.DB, opts ...MySQLCallLinkOption) (kernel.CallLinkStore, error) {
+func NewMySQLCallLinkStore(db *sql.DB, opts ...CallLinkOption) (kernel.CallLinkStore, error) {
 	return store.NewCallLinkStore(db, dialect.NewMySQL(), buildCallLinkOptions(opts)...)
 }
 

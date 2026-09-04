@@ -34,8 +34,7 @@ import (
 )
 
 // Option configures the InstanceStore returned by [OpenPostgres], [OpenMySQL]
-// and [OpenSQLite]. The three backends share one option surface;
-// [MySQLOption] is an alias of this type.
+// and [OpenSQLite]. The three backends share one option surface.
 type Option func(*storeConfig)
 
 // storeConfig stages the neutral store options an InstanceStore was built with.
@@ -99,8 +98,7 @@ func WithStoreClock(clk clockwork.Clock) Option {
 
 // CallLinkOption configures a CallLinkStore returned by [NewCallLinkStore],
 // [NewMySQLCallLinkStore] and [NewSQLiteCallLinkStore]. The three backends
-// share one option surface; [MySQLCallLinkOption] and [SQLiteCallLinkOption]
-// are aliases of this type.
+// share one option surface.
 type CallLinkOption func(*callLinkConfig)
 
 // callLinkConfig stages the neutral store options a CallLinkStore was built with.

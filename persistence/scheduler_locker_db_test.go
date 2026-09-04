@@ -10,8 +10,8 @@ package persistence_test
 // the advisory lock is really session-scoped and really per-key.
 //
 // The point is the hot path, not the percentage: these tests drive real
-// contention between two sessions rather than padding the number with the eight
-// MySQLWith… option setters that are also at 0.0 %.
+// contention between two sessions rather than padding the number with
+// one-line option setters that are also at 0.0 %.
 //
 // ⚠ Needs Docker: advisory locks are a Postgres/MySQL capability. SQLite omits
 // the Locker capability interface entirely, so there is no SQLite leg.

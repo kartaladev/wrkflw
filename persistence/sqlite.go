@@ -24,17 +24,6 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
-// SQLiteRelayOption configures a SQLite Relay returned by NewSQLiteRelay. It is
-// an alias of the facade RelayOption. SQLite has no LISTEN/NOTIFY; its relay is
-// poll-only (there is no SQLiteWithListenNotify). The same option values used
-// with MySQL (e.g. MySQLWithPollInterval, MySQLWithBatchSize) are directly
-// compatible because RelayOption is a shared type.
-type SQLiteRelayOption = RelayOption
-
-// SQLiteCallLinkOption configures a CallLinkStore returned by NewSQLiteCallLinkStore.
-// It is an alias of the facade [CallLinkOption] (same type as MySQLCallLinkOption).
-type SQLiteCallLinkOption = CallLinkOption
-
 // OpenSQLite constructs a SQLite-backed kernel.InstanceStore + JournalReader over db.
 //
 // The returned InstanceStore satisfies both kernel.InstanceStore and kernel.JournalReader,
@@ -175,11 +164,11 @@ func NewSQLiteTimerStore(db *sql.DB) (kernel.TimerStore, error) {
 // Returns the same Relay interface as [NewMySQLRelay] and [NewRelay] (the Postgres
 // analog) so the three backends are interchangeable at the consumer site.
 //
-// Available options: [MySQLWithPollInterval], [MySQLWithBatchSize],
-// [MySQLWithRelayClock], [MySQLWithMaxDeliveryAttempts], [MySQLWithRelayBackoff],
-// [MySQLWithRelayLogger], [MySQLWithRelayTracerProvider], [MySQLWithRelayMeterProvider].
-// Note: there is no SQLiteWithListenNotify — SQLite is poll-only. Passing the
-// Postgres-only [WithListenNotify] has no effect (SQLite provides no notifier).
+// Available options: [WithPollInterval], [WithBatchSize], [WithRelayClock],
+// [WithMaxDeliveryAttempts], [WithRelayBackoff], [WithRelayLogger],
+// [WithRelayTracerProvider], [WithRelayMeterProvider].
+// Note: SQLite is poll-only. Passing the Postgres-only [WithListenNotify] has no
+// effect (SQLite provides no notifier).
 //
 // SQLite enforces a single writer (db.SetMaxOpenConns(1)); the relay's claim+publish
 // cycle is compatible with this constraint.
@@ -190,10 +179,10 @@ func NewSQLiteTimerStore(db *sql.DB) (kernel.TimerStore, error) {
 //	db.SetMaxOpenConns(1)
 //	persistence.MigrateSQLite(ctx, db)
 //	relay := persistence.NewSQLiteRelay(db, myPublisher,
-//	    persistence.MySQLWithPollInterval(500*time.Millisecond),
+//	    persistence.WithPollInterval(500*time.Millisecond),
 //	)
 //	go relay.Run(ctx)
-func NewSQLiteRelay(db *sql.DB, pub kernel.OutboxPublisher, opts ...SQLiteRelayOption) (Relay, error) {
+func NewSQLiteRelay(db *sql.DB, pub kernel.OutboxPublisher, opts ...RelayOption) (Relay, error) {
 	var cfg relayConfig
 	for _, o := range opts {
 		o(&cfg)
@@ -223,7 +212,7 @@ func NewSQLiteRelay(db *sql.DB, pub kernel.OutboxPublisher, opts ...SQLiteRelayO
 //	persistence.MigrateSQLite(ctx, db)
 //	cls := persistence.NewSQLiteCallLinkStore(db)
 //	pending, err := cls.ClaimPending(ctx, 100)
-func NewSQLiteCallLinkStore(db *sql.DB, opts ...SQLiteCallLinkOption) (kernel.CallLinkStore, error) {
+func NewSQLiteCallLinkStore(db *sql.DB, opts ...CallLinkOption) (kernel.CallLinkStore, error) {
 	return store.NewCallLinkStore(db, dialect.NewSQLite(), buildCallLinkOptions(opts)...)
 }
 

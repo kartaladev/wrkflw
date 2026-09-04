@@ -152,13 +152,13 @@ func TestNewMySQLTimerStore_ListArmed(t *testing.T) {
 	assert.Equal(t, engine.TimerDeadline, armed[0].Kind)
 }
 
-// TestOpenMySQL_WithHistoryCap verifies that the MySQLWithHistoryCap option
+// TestOpenMySQL_WithHistoryCap verifies that the WithHistoryCap option
 // is accepted by OpenMySQL and threads through to the underlying store.
 func TestOpenMySQL_WithHistoryCap(t *testing.T) {
 	t.Parallel()
 	db := dbtest.RunTestMySQL(t)
 
-	store, err := persistence.OpenMySQL(t.Context(), db, persistence.MySQLWithHistoryCap(5))
+	store, err := persistence.OpenMySQL(t.Context(), db, persistence.WithHistoryCap(5))
 	require.NoError(t, err)
 	require.NotNil(t, store)
 
@@ -182,9 +182,9 @@ func TestOpenMySQL_WithStoreObservabilityOptions(t *testing.T) {
 	db := dbtest.RunTestMySQL(t)
 
 	store, err := persistence.OpenMySQL(t.Context(), db,
-		persistence.MySQLWithStoreLogger(slog.Default()),
-		persistence.MySQLWithStoreTracerProvider(tracenoop.NewTracerProvider()),
-		persistence.MySQLWithStoreMeterProvider(metricnoop.NewMeterProvider()),
+		persistence.WithStoreLogger(slog.Default()),
+		persistence.WithStoreTracerProvider(tracenoop.NewTracerProvider()),
+		persistence.WithStoreMeterProvider(metricnoop.NewMeterProvider()),
 	)
 	require.NoError(t, err)
 	require.NotNil(t, store)
@@ -223,8 +223,8 @@ func TestNewMySQLRelay_DrainsViaFacade(t *testing.T) {
 
 	pub := &facadePub{}
 	relay, err := persistence.NewMySQLRelay(db, pub,
-		persistence.MySQLWithPollInterval(10*time.Millisecond),
-		persistence.MySQLWithBatchSize(10),
+		persistence.WithPollInterval(10*time.Millisecond),
+		persistence.WithBatchSize(10),
 	)
 	require.NoError(t, err)
 
