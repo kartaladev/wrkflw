@@ -123,11 +123,31 @@ func TestAuthorizer_Authorize(t *testing.T) {
 			vars:   map[string]any{"region": "EU"},
 			assert: func(t *testing.T, err error) { assert.NoError(t, err) },
 		},
-		"malformed attribute predicate maps to ErrNotAuthorized": {
+		// ⚠ This row asserted the OPPOSITE until #69: that a malformed predicate
+		// maps to ErrNotAuthorized. It was changed deliberately, not to make a
+		// new test pass.
+		//
+		// ErrNotAuthorized classifies 403, and that arm renders the whole
+		// wrapped chain into the client's body — while every evaluator error
+		// embeds the expression source verbatim, caret diagram included. So the
+		// old contract handed a denied caller the deployment's authorization
+		// rule. It was also wrong on its own terms: a predicate that will not
+		// compile has decided nothing, so calling it a denial claims a fact the
+		// code does not have.
+		//
+		// It still fails CLOSED — the error is non-nil and every caller treats
+		// any error from Authorize as a refusal — it simply classifies 500 now,
+		// so the detail reaches operators through logs instead of the response.
+		"malformed attribute predicate fails closed without claiming a denial": {
 			spec:  authz.AuthzSpec{Attribute: `this is not (valid expr`},
 			actor: alice,
 			assert: func(t *testing.T, err error) {
-				assert.ErrorIs(t, err, authz.ErrNotAuthorized)
+				require.Error(t, err, "an unevaluable predicate must still refuse")
+				assert.NotErrorIs(t, err, authz.ErrNotAuthorized,
+					"a broken policy is not an authorization decision, and 403 renders "+
+						"the chain — which carries the expression source")
+				assert.NotContains(t, err.Error(), "not authorized",
+					"must not read as a denial to a consumer matching on text either")
 			},
 		},
 		"empty privilege token is skipped, no match denies": {

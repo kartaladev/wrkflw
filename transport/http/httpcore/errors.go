@@ -49,6 +49,43 @@ type ErrorBody struct {
 
 // ClassifyError maps err to an HTTP status and a CLIENT-SAFE body. For 5xx the
 // Message is empty; callers log the raw error instead of exposing it.
+//
+// # STANDING INVARIANT — what may wrap a rendering sentinel
+//
+// Five arms render err.Error() — the WHOLE wrapped chain — into Message: 404,
+// 403, 409, 400 and 422. That is deliberate. Those sentinels are this library's
+// own, their text is actionable for the caller, and the specificity is what
+// makes a 4xx body worth sending. The 401 and 413 arms are static and the 5xx
+// arms are empty.
+//
+// The consequence is a rule that binds every fmt.Errorf in this module, not
+// just this file:
+//
+//	NOTHING CARRYING INTERNAL DETAIL MAY WRAP A SENTINEL BELONGING TO A
+//	RENDERING ARM.
+//
+// Internal detail means anything the caller did not supply and has no business
+// seeing: a driver or storage message, a DSN, a host, a filesystem path, a
+// policy expression. Wrapping a caller's OWN payload error is fine and is what
+// the decode, cursor and schema-validation sites do — that error describes the
+// request the caller sent.
+//
+// When a downstream error must be reported but is not client-safe, do NOT reach
+// for a rendering sentinel. Wrap it plainly so it falls to the 500 default: the
+// Message is dropped and the adapters' writeErr logs the raw error, so operators
+// keep the diagnostic and the caller gets none of it.
+//
+// ⚠ This is not hypothetical. Two sites violated it until #69:
+// authz.RoleAuthorizer.Authorize and the casbin authorizer each wrapped an
+// expression-evaluation failure in authz.ErrNotAuthorized (403). Every error the
+// evaluator returns embeds the predicate SOURCE verbatim, so a denied caller
+// received the deployment's own authorization rule. Both now wrap plainly and
+// classify 500. The failure mode is quiet — it looks exactly like the safe
+// wrapping sites in review — which is why the rule is written here rather than
+// left to each author to rediscover.
+//
+// TestClassifyError_ChainRenderingPerArm pins which arms render; it cannot pin
+// the call sites, so this note is the other half.
 func ClassifyError(err error) (int, ErrorBody) {
 	switch {
 	// ⚠ POSITION IS BEHAVIOUR — these two arms are FIRST, above every other arm.
