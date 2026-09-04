@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/jonboulle/clockwork"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -109,6 +108,35 @@ func recordsWithLevelAndKey(h *captureHandler, lvl slog.Level, key string) bool 
 	return false
 }
 
+// requireBothInstruments waits until BOTH instruments RecordJobTimingWithStatus
+// writes have landed for the given status: the job_runs_total counter and the
+// job_duration_seconds histogram.
+//
+// Waiting on both in one condition is the point, not a convenience. The two are
+// written on consecutive but non-atomic lines of RecordJobTimingWithStatus, and
+// sumFor/histogramCountFor each run their own reader.Collect() — so a poll that
+// lands between the two writes sees the counter and not yet the histogram.
+// Gating on the counter alone and then asserting the histogram immediately is
+// what made this test flaky: it synchronised on one signal and asserted on
+// another.
+//
+// Gating on the histogram alone would also work today, since it happens to be
+// written second, but that would silently encode the write order as a test
+// dependency — reorder the two lines in monitor.go and the flake returns. The
+// conjunction does not care about the order.
+//
+// It is shared by both metric rows rather than inlined in each because the two
+// were near-identical, and the duplication is how the second row came to carry
+// the same defect as the first.
+func requireBothInstruments(t *testing.T, reader *sdkmetric.ManualReader, status string) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		return sumFor(t, reader, jobRunsTotalMetric, "status", status) >= 1 &&
+			histogramCountFor(t, reader, jobDurationSecondsMetric, "status", status) >= uint64(1)
+	}, eventuallyBudget, 5*time.Millisecond,
+		"both job_runs_total{status=%s} and job_duration_seconds{status=%s} must record the run", status, status)
+}
+
 // TestGocronScheduler_MonitorStatus verifies the gocron-native Monitor +
 // EventListener wiring: job outcomes flow into
 // the wrkflw_scheduler_job_runs_total counter and
@@ -133,12 +161,7 @@ func TestGocronScheduler_MonitorStatus(t *testing.T) {
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 				clk.Advance(2 * time.Second)
 
-				require.Eventually(t, func() bool {
-					return sumFor(t, reader, jobRunsTotalMetric, "status", "fail") >= 1
-				}, eventuallyBudget, 5*time.Millisecond, "job_runs_total{status=fail} must reach 1")
-
-				assert.GreaterOrEqual(t, histogramCountFor(t, reader, jobDurationSecondsMetric, "status", "fail"), uint64(1),
-					"a duration point must be recorded for the failed run")
+				requireBothInstruments(t, reader, "fail")
 			},
 		},
 		{
@@ -151,12 +174,7 @@ func TestGocronScheduler_MonitorStatus(t *testing.T) {
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 				clk.Advance(2 * time.Second)
 
-				require.Eventually(t, func() bool {
-					return sumFor(t, reader, jobRunsTotalMetric, "status", "success") >= 1
-				}, eventuallyBudget, 5*time.Millisecond, "job_runs_total{status=success} must reach 1")
-
-				assert.GreaterOrEqual(t, histogramCountFor(t, reader, jobDurationSecondsMetric, "status", "success"), uint64(1),
-					"a duration point must be recorded for the successful run")
+				requireBothInstruments(t, reader, "success")
 			},
 		},
 		{
