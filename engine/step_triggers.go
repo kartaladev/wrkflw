@@ -959,7 +959,7 @@ func handleHumanCompleted(ctx context.Context, def *model.ProcessDefinition, s *
 		return res, nil
 	}
 	// No completion action: advance + drive as before.
-	s.moveAlongSingleFlow(humanTdef, tok, t.OccurredAt())
+	s.moveAlongSingleFlow(ctx, humanTdef, tok, t.OccurredAt())
 	driveCmds, err := drive(ctx, def, s, t.OccurredAt(), resolvePolicy(opt))
 	if err != nil {
 		return StepResult{}, err

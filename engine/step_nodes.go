@@ -129,7 +129,7 @@ func (sendTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 		Payload:        copyVars(c.s.Variables),
 	}}
 	warnUnarmedBoundaries(c, node.ID())
-	c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
+	c.s.moveAlongSingleFlow(c.ctx, c.tdef, tok, c.at)
 	// tok.State stays TokenActive (auto-advance): drive() derives stopped=false.
 	return cmds, false, nil
 }
@@ -138,7 +138,7 @@ func (sendTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 type startEventStrategy struct{}
 
 func (startEventStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
+	c.s.moveAlongSingleFlow(c.ctx, c.tdef, tok, c.at)
 	// tok.State stays TokenActive (auto-advance): drive() derives stopped=false.
 	return nil, false, nil
 }
@@ -766,7 +766,7 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 		// why the deferred completion rule must carve this path out.
 		ht.State = humantask.Completed
 		c.s.Tasks = append(c.s.Tasks, ht)
-		c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
+		c.s.moveAlongSingleFlow(c.ctx, c.tdef, tok, c.at)
 		// tok.State is left TokenActive (unchanged by moveAlongSingleFlow), so
 		// drive()'s stopped = tok.State != TokenActive is false and the loop
 		// continues to the next node for this token — same contract as
@@ -873,23 +873,37 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 // Attempts is 1: the token reached the node once, and unlike a retry-exhausted
 // action there is no attempt budget to report.
 func raiseDefinitionDefect(c *stepCtx, tok *Token, nodeID, reason string) {
-	slog.WarnContext(c.ctx, "definition defect: token parked on a node no trigger can resume",
-		"instance_id", c.s.InstanceID,
+	recordDefinitionDefect(c.ctx, c.s, tok, nodeID, reason, c.at)
+}
+
+// recordDefinitionDefect is raiseDefinitionDefect's body, taking the three
+// things it actually needs (ctx, state, timestamp) instead of the [stepCtx] that
+// carries them. See raiseDefinitionDefect for the policy and the reasoning; this
+// is a parameter list, not a second rule.
+//
+// It exists because the node-entry strategies are not the only code that can
+// strand a token. moveAlongSingleFlow parks one whenever the node it is leaving
+// has no outgoing flow, and three of its ten call sites — resolveGatewayWin,
+// resumeAndDrive and handleHumanCompleted — hold no stepCtx at all. Every one of
+// them does hold ctx, s and at, so this signature reaches all of them.
+func recordDefinitionDefect(ctx context.Context, s *InstanceState, tok *Token, nodeID, reason string, at time.Time) {
+	slog.WarnContext(ctx, "definition defect: token parked on a node no trigger can resume",
+		"instance_id", s.InstanceID,
 		"token_id", tok.ID,
 		"node_id", nodeID,
 		"scope_id", tok.ScopeID,
 		"reason", reason,
 	)
 	tok.State = TokenIncident
-	c.s.Incidents = append(c.s.Incidents, Incident{
-		ID:        c.s.nextIncidentID(),
+	s.Incidents = append(s.Incidents, Incident{
+		ID:        s.nextIncidentID(),
 		Kind:      IncidentDefinitionDefect,
 		TokenID:   tok.ID,
 		NodeID:    nodeID,
 		ScopeID:   tok.ScopeID,
 		Error:     reason,
 		Attempts:  1,
-		CreatedAt: c.at,
+		CreatedAt: at,
 	})
 }
 
@@ -1142,7 +1156,7 @@ func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 			Name:    ite.SignalName,
 			Payload: nil, // no per-instance payload from throw nodes in this plan
 		})
-		c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
+		c.s.moveAlongSingleFlow(c.ctx, c.tdef, tok, c.at)
 		// Auto-advance: signal throw is fire-and-forget; tok.State == TokenActive → stopped=false.
 	} else {
 		// A throw with no signal has nothing to emit: SignalName is this kind's
@@ -1264,8 +1278,12 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 		records := c.s.ArchivedCompensations[ref]
 		if len(records) == 0 || resumeNode == "" {
 			// No archived records (never ran or already compensated), OR no
-			// outgoing flow — auto-advance, no InvokeAction emitted.
-			c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
+			// outgoing flow — no InvokeAction emitted either way. The two are not
+			// the same shape, and moveAlongSingleFlow tells them apart: with
+			// records-but-no-successor forbidden by ErrDeadEnd, the second case
+			// parks the token as an IncidentDefinitionDefect while the first
+			// auto-advances normally.
+			c.s.moveAlongSingleFlow(c.ctx, c.tdef, tok, c.at)
 		} else if c.s.Compensating.ActiveCmdID != "" {
 			// SERIALIZE: a walk is already in flight — defer this throw.
 			deferCompensationThrow(c.s, tok)
@@ -1285,10 +1303,13 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 		// keeps it off the dead-end and defer paths for exactly that reason.
 		switch {
 		case resumeNode == "":
-			// Dead-end throw (no successor): auto-advance/park without starting a
-			// walk. Do NOT consolidate — a throw that never compensates must leave
+			// Dead-end throw (no successor): do not start a walk. ErrDeadEnd
+			// forbids the shape, so this is defensive code for a definition that
+			// skipped model.Validate, and moveAlongSingleFlow now parks the token
+			// as an IncidentDefinitionDefect rather than in silence. Do NOT
+			// consolidate — a throw that never compensates must leave
 			// ArchivedCompensations intact for a later targeted throw or cancel.
-			c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
+			c.s.moveAlongSingleFlow(c.ctx, c.tdef, tok, c.at)
 		case c.s.Compensating.ActiveCmdID != "":
 			// SERIALIZE: defer this throw behind the in-flight walk. Do
 			// NOT consolidate here — merging into RootCompensations under a live
@@ -1318,7 +1339,7 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 			if len(records) == 0 {
 				// Nothing to compensate even after consolidation — auto-advance
 				// (harmless: nothing was there to merge).
-				c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
+				c.s.moveAlongSingleFlow(c.ctx, c.tdef, tok, c.at)
 			} else {
 				// Start the scope-wide walk over the records just read from the
 				// throwing scope. startCompensationWalk PINS them onto the cursor,

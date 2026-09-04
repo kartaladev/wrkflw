@@ -194,7 +194,12 @@ const (
 	//   - an intermediate throw event declaring no signal to throw
 	//     (model.ErrThrowEventMissingTrigger);
 	//   - a sub-process node carrying no nested definition
-	//     (model.ErrMissingSubprocess).
+	//     (model.ErrMissingSubprocess);
+	//   - a node with no outgoing flow, which the token is routed onto and can
+	//     then never leave (model.ErrDeadEnd). Unlike the three above this one is
+	//     raised from moveAlongSingleFlow rather than from a node-entry strategy,
+	//     because the token is stranded on its way OUT of a node rather than on
+	//     arrival.
 	//
 	// Every one is rejected at authoring time by the rule named beside it, so
 	// this kind is reachable only by a definition that skipped model.Validate —
