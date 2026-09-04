@@ -12,6 +12,7 @@ import (
 
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/kartaladev/wrkflw/service"
+	"github.com/kartaladev/wrkflw/service/servicetest"
 	ginadapter "github.com/kartaladev/wrkflw/transport/http/gin"
 )
 
@@ -19,7 +20,7 @@ import (
 
 func newErrDeadLetterAdminGin(t *testing.T) service.DeadLetterAdmin {
 	t.Helper()
-	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	m := servicetest.NewMockDeadLetterAdmin(gomock.NewController(t))
 	m.EXPECT().ListDeadLettered(gomock.Any(), gomock.Any()).
 		Return(nil, fmt.Errorf("dead-letter backend error")).AnyTimes()
 	// Redrive is variadic. Set expectations for 0 ids (empty redrive) and 1 id (our test sends 1).
@@ -31,7 +32,7 @@ func newErrDeadLetterAdminGin(t *testing.T) service.DeadLetterAdmin {
 
 func newErrPolicyAdminGin(t *testing.T) service.PolicyAdmin {
 	t.Helper()
-	m := service.NewMockPolicyAdmin(gomock.NewController(t))
+	m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 	m.EXPECT().ListPolicies(gomock.Any()).Return(nil, fmt.Errorf("policy backend error")).AnyTimes()
 	m.EXPECT().AddPolicy(gomock.Any(), gomock.Any()).Return(false, fmt.Errorf("policy backend error")).AnyTimes()
 	m.EXPECT().RemovePolicy(gomock.Any(), gomock.Any()).Return(false, fmt.Errorf("policy backend error")).AnyTimes()
@@ -43,14 +44,14 @@ func newErrPolicyAdminGin(t *testing.T) service.PolicyAdmin {
 
 func newErrRelayStatsAdminGin(t *testing.T) service.RelayStatsAdmin {
 	t.Helper()
-	m := service.NewMockRelayStatsAdmin(gomock.NewController(t))
+	m := servicetest.NewMockRelayStatsAdmin(gomock.NewController(t))
 	m.EXPECT().OutboxStats(gomock.Any()).Return(kernel.OutboxStats{}, fmt.Errorf("relay stats error")).AnyTimes()
 	return m
 }
 
 func newErrTimerAdminGin(t *testing.T) service.TimerAdmin {
 	t.Helper()
-	m := service.NewMockTimerAdmin(gomock.NewController(t))
+	m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 	m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{}, fmt.Errorf("timer stats error")).AnyTimes()
 	m.EXPECT().ListArmedPage(gomock.Any(), gomock.Any()).Return(kernel.ArmedTimerPage{}, fmt.Errorf("timer list error")).AnyTimes()
 	return m
@@ -58,7 +59,7 @@ func newErrTimerAdminGin(t *testing.T) service.TimerAdmin {
 
 func newErrLineageAdminGin(t *testing.T) service.LineageAdmin {
 	t.Helper()
-	m := service.NewMockLineageAdmin(gomock.NewController(t))
+	m := servicetest.NewMockLineageAdmin(gomock.NewController(t))
 	m.EXPECT().Lineage(gomock.Any(), gomock.Any()).Return(kernel.InstanceLineage{}, fmt.Errorf("lineage error")).AnyTimes()
 	return m
 }
@@ -95,7 +96,7 @@ func TestAdminRoutes_DeadLetters_RedriveBadJSON(t *testing.T) {
 	t.Parallel()
 	r := ginlib.New()
 	// Bad-JSON test: handler returns 400 before calling Redrive; only set list expectation.
-	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	m := servicetest.NewMockDeadLetterAdmin(gomock.NewController(t))
 	ginadapter.AdminRoutes{Svc: fakeAdminSvc{}, DeadLetters: m}.Customize(r)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)

@@ -18,6 +18,7 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/kartaladev/wrkflw/runtime/monitor"
 	"github.com/kartaladev/wrkflw/service"
+	"github.com/kartaladev/wrkflw/service/servicetest"
 	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
 
@@ -272,7 +273,7 @@ func TestListDeadLetters(t *testing.T) {
 		"empty list → 200 empty items": {
 			buildDLA: func(t *testing.T) service.DeadLetterAdmin {
 				t.Helper()
-				m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+				m := servicetest.NewMockDeadLetterAdmin(gomock.NewController(t))
 				m.EXPECT().ListDeadLettered(gomock.Any(), gomock.Any()).Return(nil, nil)
 				return m
 			},
@@ -292,7 +293,7 @@ func TestListDeadLetters(t *testing.T) {
 		"one dead letter → 200 with item": {
 			buildDLA: func(t *testing.T) service.DeadLetterAdmin {
 				t.Helper()
-				m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+				m := servicetest.NewMockDeadLetterAdmin(gomock.NewController(t))
 				m.EXPECT().ListDeadLettered(gomock.Any(), gomock.Any()).Return(
 					[]monitor.DeadLetter{
 						{ID: 1, InstanceID: "inst-1", Topic: "instance.failed", RetryCount: 3, LastError: "timeout", CreatedAt: now},
@@ -315,7 +316,7 @@ func TestListDeadLetters(t *testing.T) {
 		"service error → propagated": {
 			buildDLA: func(t *testing.T) service.DeadLetterAdmin {
 				t.Helper()
-				m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+				m := servicetest.NewMockDeadLetterAdmin(gomock.NewController(t))
 				m.EXPECT().ListDeadLettered(gomock.Any(), gomock.Any()).Return(nil, errors.New("db error"))
 				return m
 			},
@@ -352,7 +353,7 @@ func TestRedriveDeadLetters(t *testing.T) {
 		"redrive two → 200 redriven:2": {
 			buildDLA: func(t *testing.T) service.DeadLetterAdmin {
 				t.Helper()
-				m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+				m := servicetest.NewMockDeadLetterAdmin(gomock.NewController(t))
 				m.EXPECT().Redrive(gomock.Any(), int64(1), int64(2)).Return(2, nil)
 				return m
 			},
@@ -372,7 +373,7 @@ func TestRedriveDeadLetters(t *testing.T) {
 		"empty ids → 200 redriven:0": {
 			buildDLA: func(t *testing.T) service.DeadLetterAdmin {
 				t.Helper()
-				m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+				m := servicetest.NewMockDeadLetterAdmin(gomock.NewController(t))
 				m.EXPECT().Redrive(gomock.Any()).Return(0, nil)
 				return m
 			},
@@ -389,7 +390,7 @@ func TestRedriveDeadLetters(t *testing.T) {
 		"service error → propagated": {
 			buildDLA: func(t *testing.T) service.DeadLetterAdmin {
 				t.Helper()
-				m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+				m := servicetest.NewMockDeadLetterAdmin(gomock.NewController(t))
 				m.EXPECT().Redrive(gomock.Any(), int64(99)).Return(0, errors.New("db error"))
 				return m
 			},
@@ -425,7 +426,7 @@ func TestListPolicies(t *testing.T) {
 		"success → 200 with policies": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().ListPolicies(gomock.Any()).Return(
 					[]service.PolicyRule{{Subject: "alice", Object: "/orders", Action: "read"}}, nil)
 				return m
@@ -445,7 +446,7 @@ func TestListPolicies(t *testing.T) {
 		"empty → 200 with empty policies": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().ListPolicies(gomock.Any()).Return(nil, nil)
 				return m
 			},
@@ -461,7 +462,7 @@ func TestListPolicies(t *testing.T) {
 		"service error → propagated": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().ListPolicies(gomock.Any()).Return(nil, errors.New("casbin error"))
 				return m
 			},
@@ -497,7 +498,7 @@ func TestAddPolicy(t *testing.T) {
 		"new policy → 200 added:true": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().AddPolicy(gomock.Any(), gomock.Any()).Return(true, nil)
 				return m
 			},
@@ -517,7 +518,7 @@ func TestAddPolicy(t *testing.T) {
 		"already exists → 200 added:false": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().AddPolicy(gomock.Any(), gomock.Any()).Return(false, nil)
 				return m
 			},
@@ -534,7 +535,7 @@ func TestAddPolicy(t *testing.T) {
 		"service error → propagated": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().AddPolicy(gomock.Any(), gomock.Any()).Return(false, errors.New("casbin error"))
 				return m
 			},
@@ -571,7 +572,7 @@ func TestRemovePolicy(t *testing.T) {
 		"exists → 200 removed:true": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().RemovePolicy(gomock.Any(), gomock.Any()).Return(true, nil)
 				return m
 			},
@@ -591,7 +592,7 @@ func TestRemovePolicy(t *testing.T) {
 		"not found → 200 removed:false": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().RemovePolicy(gomock.Any(), gomock.Any()).Return(false, nil)
 				return m
 			},
@@ -608,7 +609,7 @@ func TestRemovePolicy(t *testing.T) {
 		"service error → propagated": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().RemovePolicy(gomock.Any(), gomock.Any()).Return(false, errors.New("casbin error"))
 				return m
 			},
@@ -644,7 +645,7 @@ func TestListRoleBindings(t *testing.T) {
 		"success → 200 with bindings": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().ListRoles(gomock.Any()).Return(
 					[]service.RoleBinding{{User: "alice", Role: "admin"}}, nil)
 				return m
@@ -664,7 +665,7 @@ func TestListRoleBindings(t *testing.T) {
 		"service error → propagated": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().ListRoles(gomock.Any()).Return(nil, errors.New("casbin error"))
 				return m
 			},
@@ -700,7 +701,7 @@ func TestAddRoleBinding(t *testing.T) {
 		"success → 200 added:true": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().AddRole(gomock.Any(), gomock.Any()).Return(true, nil)
 				return m
 			},
@@ -720,7 +721,7 @@ func TestAddRoleBinding(t *testing.T) {
 		"already exists → 200 added:false": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().AddRole(gomock.Any(), gomock.Any()).Return(false, nil)
 				return m
 			},
@@ -737,7 +738,7 @@ func TestAddRoleBinding(t *testing.T) {
 		"service error → propagated": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().AddRole(gomock.Any(), gomock.Any()).Return(false, errors.New("casbin error"))
 				return m
 			},
@@ -774,7 +775,7 @@ func TestRemoveRoleBinding(t *testing.T) {
 		"exists → 200 removed:true": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().RemoveRole(gomock.Any(), gomock.Any()).Return(true, nil)
 				return m
 			},
@@ -794,7 +795,7 @@ func TestRemoveRoleBinding(t *testing.T) {
 		"not found → 200 removed:false": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().RemoveRole(gomock.Any(), gomock.Any()).Return(false, nil)
 				return m
 			},
@@ -811,7 +812,7 @@ func TestRemoveRoleBinding(t *testing.T) {
 		"service error → propagated": {
 			buildPA: func(t *testing.T) service.PolicyAdmin {
 				t.Helper()
-				m := service.NewMockPolicyAdmin(gomock.NewController(t))
+				m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 				m.EXPECT().RemoveRole(gomock.Any(), gomock.Any()).Return(false, errors.New("casbin error"))
 				return m
 			},
@@ -847,7 +848,7 @@ func TestAdminRelayStats(t *testing.T) {
 		"success → 200 with stats": {
 			buildRSA: func(t *testing.T) service.RelayStatsAdmin {
 				t.Helper()
-				m := service.NewMockRelayStatsAdmin(gomock.NewController(t))
+				m := servicetest.NewMockRelayStatsAdmin(gomock.NewController(t))
 				m.EXPECT().OutboxStats(gomock.Any()).Return(
 					kernel.OutboxStats{Pending: 5, Dead: 1, OldestPendingAge: 10 * time.Second}, nil)
 				return m
@@ -867,7 +868,7 @@ func TestAdminRelayStats(t *testing.T) {
 		"service error → propagated": {
 			buildRSA: func(t *testing.T) service.RelayStatsAdmin {
 				t.Helper()
-				m := service.NewMockRelayStatsAdmin(gomock.NewController(t))
+				m := servicetest.NewMockRelayStatsAdmin(gomock.NewController(t))
 				m.EXPECT().OutboxStats(gomock.Any()).Return(kernel.OutboxStats{}, errors.New("db error"))
 				return m
 			},
@@ -908,7 +909,7 @@ func TestAdminTimers(t *testing.T) {
 			query: httpcore.ListArmedTimersQuery{Limit: 1},
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{Limit: 1}).Return(
 					kernel.ArmedTimerPage{
 						Items:      []kernel.ArmedTimer{{InstanceID: "inst-1", DefID: "d", DefVersion: 1, TimerID: "t1", NextRun: fireAt}},
@@ -936,7 +937,7 @@ func TestAdminTimers(t *testing.T) {
 			query: httpcore.ListArmedTimersQuery{Limit: 1, Cursor: "opaque-cursor", IncludeTotal: true},
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 7, NextFireAt: &fireAt}, nil)
 				// IncludeTotal MUST stay false here even though the request asked
 				// for the total. Stats above already returns the count and
@@ -975,7 +976,7 @@ func TestAdminTimers(t *testing.T) {
 			query: httpcore.ListArmedTimersQuery{Limit: math.MaxInt},
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				// The handler clamps via kernel.NormalizeLimit before the port is
 				// reached, matching AdminListInstances. The SQL store clamps again
 				// (idempotent, free), but service.TimerAdmin is a public port a
@@ -994,7 +995,7 @@ func TestAdminTimers(t *testing.T) {
 			query: httpcore.ListArmedTimersQuery{},
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{Limit: 50}).
 					Return(kernel.ArmedTimerPage{}, nil)
 				return m
@@ -1008,7 +1009,7 @@ func TestAdminTimers(t *testing.T) {
 			query: httpcore.ListArmedTimersQuery{Cursor: "!!!"},
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				m.EXPECT().ListArmedPage(gomock.Any(), gomock.Any()).
 					Return(kernel.ArmedTimerPage{}, fmt.Errorf("wrap: %w", kernel.ErrBadArmedTimerCursor))
 				return m
@@ -1026,7 +1027,7 @@ func TestAdminTimers(t *testing.T) {
 			query: httpcore.ListArmedTimersQuery{IncludeTotal: true},
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{}, errors.New("db error"))
 				m.EXPECT().ListArmedPage(gomock.Any(), gomock.Any()).Return(kernel.ArmedTimerPage{}, nil).AnyTimes()
 				return m
@@ -1040,7 +1041,7 @@ func TestAdminTimers(t *testing.T) {
 		"listArmedPage error → propagated": {
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				m.EXPECT().ListArmedPage(gomock.Any(), gomock.Any()).
 					Return(kernel.ArmedTimerPage{}, errors.New("list error"))
 				return m
@@ -1074,7 +1075,7 @@ func TestAdminInstanceLineage(t *testing.T) {
 		"root instance → 200 with lineage": {
 			buildLA: func(t *testing.T) service.LineageAdmin {
 				t.Helper()
-				m := service.NewMockLineageAdmin(gomock.NewController(t))
+				m := servicetest.NewMockLineageAdmin(gomock.NewController(t))
 				m.EXPECT().Lineage(gomock.Any(), "inst-root").Return(
 					kernel.InstanceLineage{
 						InstanceID:      "inst-root",
@@ -1099,7 +1100,7 @@ func TestAdminInstanceLineage(t *testing.T) {
 		"instance with call parent → 200 parent populated": {
 			buildLA: func(t *testing.T) service.LineageAdmin {
 				t.Helper()
-				m := service.NewMockLineageAdmin(gomock.NewController(t))
+				m := servicetest.NewMockLineageAdmin(gomock.NewController(t))
 				m.EXPECT().Lineage(gomock.Any(), "inst-with-parent").Return(
 					kernel.InstanceLineage{
 						InstanceID: "inst-with-parent",
@@ -1128,7 +1129,7 @@ func TestAdminInstanceLineage(t *testing.T) {
 		"service error → propagated": {
 			buildLA: func(t *testing.T) service.LineageAdmin {
 				t.Helper()
-				m := service.NewMockLineageAdmin(gomock.NewController(t))
+				m := servicetest.NewMockLineageAdmin(gomock.NewController(t))
 				m.EXPECT().Lineage(gomock.Any(), "no-such-inst").Return(kernel.InstanceLineage{}, errors.New("not found"))
 				return m
 			},

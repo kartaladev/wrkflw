@@ -14,6 +14,7 @@ import (
 	"github.com/kartaladev/wrkflw/internal/transporttest"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/kartaladev/wrkflw/service"
+	"github.com/kartaladev/wrkflw/service/servicetest"
 	"github.com/kartaladev/wrkflw/transport/http/stdlib"
 )
 
@@ -25,7 +26,7 @@ var errInternalAdmin = errors.New("admin store error")
 // newErrDeadLetterAdmin returns a MockDeadLetterAdmin that returns errInternalAdmin on every call.
 func newErrDeadLetterAdmin(t *testing.T) service.DeadLetterAdmin {
 	t.Helper()
-	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	m := servicetest.NewMockDeadLetterAdmin(gomock.NewController(t))
 	m.EXPECT().ListDeadLettered(gomock.Any(), gomock.Any()).Return(nil, errInternalAdmin).AnyTimes()
 	// Redrive is variadic — use DoAndReturn to accept any number of id args.
 	m.EXPECT().Redrive(gomock.Any()).DoAndReturn(
@@ -36,7 +37,7 @@ func newErrDeadLetterAdmin(t *testing.T) service.DeadLetterAdmin {
 // newErrPoliciesAdmin returns a MockPolicyAdmin that returns errInternalAdmin on every call.
 func newErrPoliciesAdmin(t *testing.T) service.PolicyAdmin {
 	t.Helper()
-	m := service.NewMockPolicyAdmin(gomock.NewController(t))
+	m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 	m.EXPECT().AddPolicy(gomock.Any(), gomock.Any()).Return(false, errInternalAdmin).AnyTimes()
 	m.EXPECT().RemovePolicy(gomock.Any(), gomock.Any()).Return(false, errInternalAdmin).AnyTimes()
 	m.EXPECT().ListPolicies(gomock.Any()).Return(nil, errInternalAdmin).AnyTimes()
@@ -49,7 +50,7 @@ func newErrPoliciesAdmin(t *testing.T) service.PolicyAdmin {
 // newErrRelayStatsAdmin returns a MockRelayStatsAdmin that returns errInternalAdmin on every call.
 func newErrRelayStatsAdmin(t *testing.T) service.RelayStatsAdmin {
 	t.Helper()
-	m := service.NewMockRelayStatsAdmin(gomock.NewController(t))
+	m := servicetest.NewMockRelayStatsAdmin(gomock.NewController(t))
 	m.EXPECT().OutboxStats(gomock.Any()).Return(kernel.OutboxStats{}, errInternalAdmin).AnyTimes()
 	return m
 }
@@ -57,7 +58,7 @@ func newErrRelayStatsAdmin(t *testing.T) service.RelayStatsAdmin {
 // newErrTimerAdmin returns a MockTimerAdmin that returns errInternalAdmin on every call.
 func newErrTimerAdmin(t *testing.T) service.TimerAdmin {
 	t.Helper()
-	m := service.NewMockTimerAdmin(gomock.NewController(t))
+	m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 	m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{}, errInternalAdmin).AnyTimes()
 	m.EXPECT().ListArmedPage(gomock.Any(), gomock.Any()).Return(kernel.ArmedTimerPage{}, errInternalAdmin).AnyTimes()
 	return m
@@ -66,7 +67,7 @@ func newErrTimerAdmin(t *testing.T) service.TimerAdmin {
 // newErrLineageAdmin returns a MockLineageAdmin that returns errInternalAdmin on every call.
 func newErrLineageAdmin(t *testing.T) service.LineageAdmin {
 	t.Helper()
-	m := service.NewMockLineageAdmin(gomock.NewController(t))
+	m := servicetest.NewMockLineageAdmin(gomock.NewController(t))
 	m.EXPECT().Lineage(gomock.Any(), gomock.Any()).Return(kernel.InstanceLineage{}, errInternalAdmin).AnyTimes()
 	return m
 }

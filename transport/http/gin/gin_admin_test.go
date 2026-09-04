@@ -18,6 +18,7 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/kartaladev/wrkflw/runtime/monitor"
 	"github.com/kartaladev/wrkflw/service"
+	"github.com/kartaladev/wrkflw/service/servicetest"
 	ginadapter "github.com/kartaladev/wrkflw/transport/http/gin"
 )
 
@@ -72,7 +73,7 @@ func TestAdminRoutes_ResolveIncident(t *testing.T) {
 func TestAdminRoutes_DeadLetters_WhenPresent(t *testing.T) {
 	t.Parallel()
 
-	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	m := servicetest.NewMockDeadLetterAdmin(gomock.NewController(t))
 	m.EXPECT().ListDeadLettered(gomock.Any(), gomock.Any()).Return(
 		[]monitor.DeadLetter{
 			{
@@ -104,7 +105,7 @@ func TestAdminRoutes_DeadLetters_WhenPresent(t *testing.T) {
 func TestAdminRoutes_DeadLetters_Redrive(t *testing.T) {
 	t.Parallel()
 
-	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	m := servicetest.NewMockDeadLetterAdmin(gomock.NewController(t))
 	m.EXPECT().Redrive(gomock.Any(), int64(1), int64(2)).Return(2, nil)
 
 	srv := newAdminSrv(t, ginadapter.AdminRoutes{
@@ -121,7 +122,7 @@ func TestAdminRoutes_DeadLetters_Redrive(t *testing.T) {
 func TestAdminRoutes_Policies_List(t *testing.T) {
 	t.Parallel()
 
-	m := service.NewMockPolicyAdmin(gomock.NewController(t))
+	m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 	m.EXPECT().ListPolicies(gomock.Any()).Return(
 		[]service.PolicyRule{
 			{Subject: "alice", Object: "process-*", Action: "start"},
@@ -146,7 +147,7 @@ func TestAdminRoutes_Policies_List(t *testing.T) {
 func TestAdminRoutes_Policies_AddRemove(t *testing.T) {
 	t.Parallel()
 
-	m := service.NewMockPolicyAdmin(gomock.NewController(t))
+	m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 	m.EXPECT().AddPolicy(gomock.Any(), gomock.Any()).Return(true, nil)
 	m.EXPECT().RemovePolicy(gomock.Any(), gomock.Any()).Return(true, nil)
 
@@ -183,7 +184,7 @@ func TestAdminRoutes_Policies_AddRemove(t *testing.T) {
 func TestAdminRoutes_RoleBindings(t *testing.T) {
 	t.Parallel()
 
-	m := service.NewMockPolicyAdmin(gomock.NewController(t))
+	m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 	m.EXPECT().ListRoles(gomock.Any()).Return(
 		[]service.RoleBinding{{User: "bob", Role: "viewer"}}, nil)
 	m.EXPECT().AddRole(gomock.Any(), gomock.Any()).Return(true, nil)
@@ -224,7 +225,7 @@ func TestAdminRoutes_RoleBindings(t *testing.T) {
 func TestAdminRoutes_RelayStats(t *testing.T) {
 	t.Parallel()
 
-	m := service.NewMockRelayStatsAdmin(gomock.NewController(t))
+	m := servicetest.NewMockRelayStatsAdmin(gomock.NewController(t))
 	m.EXPECT().OutboxStats(gomock.Any()).Return(
 		kernel.OutboxStats{Pending: 5, Dead: 1, OldestPendingAge: 30 * time.Second}, nil)
 
@@ -263,7 +264,7 @@ func TestAdminRoutes_Timers(t *testing.T) {
 			path: "/admin/timers?limit=1&cursor=opaque-cursor&total=true",
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 2, NextFireAt: &fireAt}, nil)
 				// IncludeTotal is deliberately false even though the request asked
 				// for the total: Stats already returns the count and MIN(next_run)
@@ -299,7 +300,7 @@ func TestAdminRoutes_Timers(t *testing.T) {
 			path: "/admin/timers?limit=1&total=1",
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 2}, nil)
 				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{
 					Limit:        1,
@@ -318,7 +319,7 @@ func TestAdminRoutes_Timers(t *testing.T) {
 			path: "/admin/timers",
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				// Deliberately no Stats expectation: calling it would fail the test.
 				// The unset limit is clamped to the kernel default before the port
 				// is reached, so the port never sees a zero limit.
@@ -339,7 +340,7 @@ func TestAdminRoutes_Timers(t *testing.T) {
 			path: "/admin/timers?limit=" + strconv.Itoa(math.MaxInt),
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{Limit: 200}).
 					Return(kernel.ArmedTimerPage{}, nil)
 				return m
@@ -352,7 +353,7 @@ func TestAdminRoutes_Timers(t *testing.T) {
 			path: "/admin/timers?cursor=garbage",
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				m.EXPECT().ListArmedPage(gomock.Any(), gomock.Any()).
 					Return(kernel.ArmedTimerPage{}, fmt.Errorf("decode cursor: %w", kernel.ErrBadArmedTimerCursor))
 				return m
@@ -379,7 +380,7 @@ func TestAdminRoutes_Timers(t *testing.T) {
 func TestAdminRoutes_Lineage(t *testing.T) {
 	t.Parallel()
 
-	m := service.NewMockLineageAdmin(gomock.NewController(t))
+	m := servicetest.NewMockLineageAdmin(gomock.NewController(t))
 	m.EXPECT().Lineage(gomock.Any(), "inst-lineage-1").Return(
 		kernel.InstanceLineage{
 			InstanceID:      "inst-lineage-1",
