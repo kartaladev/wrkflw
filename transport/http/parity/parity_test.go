@@ -78,6 +78,9 @@ type adapterResult struct {
 	rawBody string
 	// decoded is non-nil when rawBody is valid JSON.
 	decoded any
+	// header is the response header set, always populated —
+	// parseAdapterResult takes it as a required argument.
+	header http.Header
 }
 
 // normJSON round-trips decoded through JSON so that map key ordering is
@@ -94,9 +97,16 @@ func normJSON(t *testing.T, v any) string {
 	return string(b)
 }
 
-// parseAdapterResult creates an adapterResult from a raw HTTP status and body bytes.
-func parseAdapterResult(status int, body []byte) adapterResult {
-	ar := adapterResult{status: status, rawBody: string(body)}
+// parseAdapterResult creates an adapterResult from a raw HTTP status, response
+// header and body bytes.
+//
+// ⚠ header is a required argument rather than a field callers fill in
+// afterwards, deliberately: five call sites build an adapterResult, and a
+// header-asserting test passes vacuously against any that forgot to set it —
+// an absent header and an unrecorded one are indistinguishable at the
+// assertion.
+func parseAdapterResult(status int, header http.Header, body []byte) adapterResult {
+	ar := adapterResult{status: status, rawBody: string(body), header: header}
 	if len(body) > 0 {
 		var v any
 		if json.Unmarshal(body, &v) == nil {
@@ -150,7 +160,7 @@ func hitStdlib(t *testing.T, svc service.Service, mkReq reqFactory, withHealth b
 	req := mkReq(t)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
-	return parseAdapterResult(rr.Code, rr.Body.Bytes())
+	return parseAdapterResult(rr.Code, rr.Header(), rr.Body.Bytes())
 }
 
 // hitGin mounts svc on a fresh gin engine backed by an httptest.Server, drives
@@ -186,7 +196,7 @@ func hitGin(t *testing.T, svc service.Service, mkReq reqFactory, withHealth bool
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	b, _ := io.ReadAll(resp.Body)
-	return parseAdapterResult(resp.StatusCode, b)
+	return parseAdapterResult(resp.StatusCode, resp.Header, b)
 }
 
 // hitFiber mounts svc on a fresh fiber App, drives req through app.Test, and
@@ -206,7 +216,7 @@ func hitFiber(t *testing.T, svc service.Service, mkReq reqFactory, withHealth bo
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	b, _ := io.ReadAll(resp.Body)
-	return parseAdapterResult(resp.StatusCode, b)
+	return parseAdapterResult(resp.StatusCode, resp.Header, b)
 }
 
 // parityActor turns the variadic actor argument into a resolver.
@@ -239,7 +249,7 @@ func hitServer(t *testing.T, srv *httptest.Server, mkReq reqFactory) adapterResu
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	b, _ := io.ReadAll(resp.Body)
-	return parseAdapterResult(resp.StatusCode, b)
+	return parseAdapterResult(resp.StatusCode, resp.Header, b)
 }
 
 // hitFiberApp drives mkReq against an already-configured fiber app.
@@ -251,7 +261,7 @@ func hitFiberApp(t *testing.T, app *fiberlib.App, mkReq reqFactory) adapterResul
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	b, _ := io.ReadAll(resp.Body)
-	return parseAdapterResult(resp.StatusCode, b)
+	return parseAdapterResult(resp.StatusCode, resp.Header, b)
 }
 
 // assertParity compares three adapter results. It always checks HTTP status
@@ -703,7 +713,7 @@ func TestParity_PostResolveCompensationStall_400(t *testing.T) {
 	stdlib.AdminRoutes{Svc: svcS}.Customize(mux)
 	rrS := httptest.NewRecorder()
 	mux.ServeHTTP(rrS, mkS(t))
-	s := parseAdapterResult(rrS.Code, rrS.Body.Bytes())
+	s := parseAdapterResult(rrS.Code, rrS.Header(), rrS.Body.Bytes())
 
 	svcG, mkG := mk()
 	ginRouter := ginlib.New()
@@ -864,7 +874,7 @@ func runCapped(t *testing.T, grp routeGroup, svc service.Service, capBytes *int6
 	grp.stdlib(mux, svc, stdlibOpts...)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, mk(t))
-	out.stdlib = parseAdapterResult(rr.Code, rr.Body.Bytes())
+	out.stdlib = parseAdapterResult(rr.Code, rr.Header(), rr.Body.Bytes())
 
 	ginRouter := ginlib.New()
 	grp.gin(ginRouter, svc, ginOpts...)
@@ -881,7 +891,7 @@ func runCapped(t *testing.T, grp routeGroup, svc service.Service, capBytes *int6
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	b, _ := io.ReadAll(resp.Body)
-	out.fiber = parseAdapterResult(resp.StatusCode, b)
+	out.fiber = parseAdapterResult(resp.StatusCode, resp.Header, b)
 
 	return out
 }

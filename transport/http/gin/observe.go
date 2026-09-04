@@ -16,6 +16,8 @@ import (
 // The returned gin.HandlerFunc is safe to register directly on a router.
 func observe(inst *httpcore.Instrumentation, method, routeTemplate string, handler ginlib.HandlerFunc) ginlib.HandlerFunc {
 	return func(gc *ginlib.Context) {
+		// Set before the handler runs: gc.JSON commits the header map.
+		gc.Header(httpcore.ContentTypeOptionsHeader, httpcore.NoSniff)
 		inst.Observe(gc.Request.Context(), method, routeTemplate, gc.Request.Header, func(ctx context.Context) int {
 			// Replace request context with the instrumented (span-enriched) one.
 			gc.Request = gc.Request.WithContext(ctx)

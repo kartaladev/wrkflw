@@ -32,6 +32,8 @@ func observed(
 	inner fiberlib.Handler,
 ) fiberlib.Handler {
 	return func(c fiberlib.Ctx) error {
+		// Set before the handler runs: c.JSON commits the response headers.
+		c.Set(httpcore.ContentTypeOptionsHeader, httpcore.NoSniff)
 		hdr := fiberHeaders(c)
 		ctx := c.Context()
 
