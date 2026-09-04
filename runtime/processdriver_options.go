@@ -130,6 +130,14 @@ func WithSignalBus(bus *signal.SignalBus) Option {
 // an immutable in-memory registry from a plain map, or
 // [kernel.NewMemDefinitionRegistry] for a mutable, incrementally-populated one.
 //
+// The two differ in more than mutability. [kernel.MemDefinitionRegistry.Register]
+// runs [model.Validate] and rejects a definition that fails it with
+// [kernel.ErrInvalidDefinition], which is what upholds [engine.Step]'s assumption
+// that the definitions reaching it are structurally valid.
+// [kernel.NewMapDefinitionRegistry] returns no error and so cannot reject: a
+// definition assembled into one is never validated, and its caller owns doing so.
+// Prefer the mutable registry unless immutability is worth owning that check.
+//
 // A zero-config [NewProcessDriver] already uses [DefaultDefinitionRegistry];
 // call activities only error when the requested DefRef is not found in that
 // registry. Use [RegisterDefinition] to populate the global default at init time,
