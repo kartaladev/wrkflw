@@ -26,7 +26,7 @@ import (
 )
 
 // counterValueEmit is like counterValue (defined in observability_test.go) but
-// matches attribute values using attribute.Value.Emit(), which handles all
+// matches attribute values using attribute.Value.String(), which handles all
 // attribute types (BOOL, INT64, STRING, …) — not just STRING. This is needed
 // when the counter carries a BOOL attribute (e.g. "retryable").
 func counterValueEmit(rm metricdata.ResourceMetrics, name string, filter map[string]string) int64 {
@@ -52,12 +52,12 @@ func counterValueEmit(rm metricdata.ResourceMetrics, name string, filter map[str
 }
 
 // dpEmitMatch reports whether all key/value pairs in filter are present in
-// attrs, comparing each value via attribute.Value.Emit() so that BOOL and
+// attrs, comparing each value via attribute.Value.String() so that BOOL and
 // INT64 attributes are matched by their string representation.
 func dpEmitMatch(attrs attribute.Set, filter map[string]string) bool {
 	for k, want := range filter {
 		v, ok := attrs.Value(attribute.Key(k))
-		if !ok || v.Emit() != want {
+		if !ok || v.String() != want {
 			return false
 		}
 	}

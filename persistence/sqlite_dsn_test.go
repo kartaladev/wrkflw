@@ -1,11 +1,12 @@
 package persistence_test
 
 // sqlite_dsn_test.go — the mattn/go-sqlite3 DSN form (`_busy_timeout=5000`)
-// this package once documented is silently ignored by the pinned pure-Go driver
-// `modernc.org/sqlite`, and every consumer-facing godoc example omitted the busy
-// timeout altogether. Measured: a SQLite pool with no busy timeout fails 174–195
-// of 200 concurrent operations, so an inert timeout in the canonical example is
-// the dangerous half of that combination.
+// this package once documented was silently ignored by the pinned pure-Go driver
+// `modernc.org/sqlite` (through v1.53.0; v1.57.0 honours it), and every
+// consumer-facing godoc example omitted the busy timeout altogether. Measured: a
+// SQLite pool with no busy timeout fails 174–195 of 200 concurrent operations,
+// so an inert timeout in the canonical example is the dangerous half of that
+// combination.
 //
 // These tests derive the DSNs from the documents themselves, so the guard cannot
 // drift away from the text it protects. Container-free: modernc.org/sqlite is
@@ -48,12 +49,20 @@ func readBusyTimeout(t *testing.T, dsnQuery string) int {
 	return ms
 }
 
-// TestSQLiteDSNSyntaxOnPinnedDriver executes the premise: on
-// modernc.org/sqlite only the `_pragma=name(value)` form has any effect, and the
-// mattn/go-sqlite3 `_busy_timeout=` form is accepted and silently ignored.
+// TestSQLiteDSNSyntaxOnPinnedDriver documents which DSN parameter forms the
+// pinned driver actually honours.
 //
-// It is evidence, not the gate — it passes today and documents driver behaviour.
-// The gate is TestDocumentedSQLiteDSNsSetBusyTimeout below.
+// It is evidence, not the gate — it records driver behaviour rather than
+// asserting a requirement of this package. The gate is
+// TestDocumentedSQLiteDSNsSetBusyTimeout below.
+//
+// ⚠ The premise it originally recorded is now FALSE, and the change was caught
+// here: through modernc.org/sqlite v1.53.0 the mattn/go-sqlite3
+// `_busy_timeout=` form was accepted and silently ignored, leaving the pragma
+// unset. v1.57.0 honours it. That is the safer direction — a DSN copied from
+// mattn documentation is no longer quietly inert — but it is a behaviour change
+// in a dependency, so the case below pins the NEW behaviour and will fail again
+// if a future version reverts it.
 func TestSQLiteDSNSyntaxOnPinnedDriver(t *testing.T) {
 	t.Parallel()
 
@@ -65,11 +74,12 @@ func TestSQLiteDSNSyntaxOnPinnedDriver(t *testing.T) {
 
 	cases := []testCase{
 		{
-			name:  "mattn syntax is silently ignored",
+			name:  "mattn syntax now takes effect too",
 			query: "_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on",
 			assert: func(t *testing.T, ms int) {
-				assert.Equal(t, 0, ms,
-					"the pinned driver must ignore the mattn `_busy_timeout=` form")
+				assert.Equal(t, 5000, ms,
+					"as of modernc.org/sqlite v1.57.0 the mattn `_busy_timeout=` form sets the pragma; "+
+						"it was silently ignored through v1.53.0")
 			},
 		},
 		{
