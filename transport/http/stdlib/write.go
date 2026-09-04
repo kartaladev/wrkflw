@@ -2,6 +2,17 @@
 // transport. Each route group implements [httpcore.RouteCustomizer][*http.ServeMux]
 // and registers handlers onto a *http.ServeMux using native pattern syntax
 // (method + space + path).
+//
+// ⚠ Unlike the gin and fiber adapters this one has no WithMiddleware option,
+// because *http.ServeMux has no middleware seam: a consumer composes handlers
+// around the mux themselves, entirely outside this package. One consequence is
+// worth stating rather than discovering. This adapter sets
+// X-Content-Type-Options: nosniff on every response IT writes, but a middleware
+// you wrap the mux in that SHORT-CIRCUITS — auth answering 401, a rate limiter
+// 429, panic recovery 500 — writes its response without reaching this package
+// at all, so that response carries no nosniff. Wrap the chain in
+// [NosniffMiddleware], outermost, when those responses can embed a
+// caller-influenced value.
 package stdlib
 
 import (

@@ -110,6 +110,20 @@ func WithRequestActorTimeout(d time.Duration) httpcore.CustomizeOption[ginlib.IR
 //
 // Internally it calls r.Group("", mw...) so the middleware runs before the
 // matched route handler.
+//
+// ⚠ mw composes OUTSIDE this adapter's per-route wrapper, which is where
+// X-Content-Type-Options: nosniff is set. A middleware that SHORT-CIRCUITS —
+// auth aborting 401, a rate limiter 429, a CORS preflight reject, panic
+// recovery 500 — answers the request without ever reaching that wrapper, so
+// its response carries no nosniff even though every response this library
+// writes does. MEASURED: a WithMiddleware calling AbortWithStatusJSON yields
+// `X-Content-Type-Options: ""`.
+//
+// That is the boundary, not a bug: your middleware writes your response, and
+// this library does not insert its own handler into the chain you built. When
+// such a response can embed a caller-influenced value — and an error message
+// usually can — list [NosniffMiddleware] FIRST and the header is set before
+// anything after it can answer.
 func WithMiddleware(mw ...ginlib.HandlerFunc) httpcore.CustomizeOption[ginlib.IRouter] {
 	return httpcore.WithRouterFunc(func(r ginlib.IRouter) ginlib.IRouter {
 		return r.Group("", mw...)
