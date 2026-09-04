@@ -15,6 +15,24 @@ import (
 // bare &http.Client{} is Go's default of up to 10 hops to any host.
 var ErrCrossHostRedirect = errors.New("workflow-httpcall: redirect crosses to a different host")
 
+// ErrDowngradeRedirect is returned (non-retryable) when the DEFAULT client is
+// asked to follow a redirect that leaves https for a plaintext scheme.
+//
+// The hop is refused rather than followed-with-headers-stripped. MEASURED on
+// go1.26.8 against a real TLS origin redirecting to a plaintext target on the
+// same hostname: the plaintext target received Authorization, Cookie AND
+// X-Api-Key — every header the call carried. Go's stripping is keyed on the
+// HOSTNAME, so a scheme change alone strips nothing, and the exposure is not
+// limited to the names on Go's list.
+//
+// Stripping instead would turn the failure into a confusing 401 from the
+// downgraded endpoint; refusing says what happened. That is the same reasoning
+// [ErrCrossHostRedirect] rests on.
+//
+// Like ErrCrossHostRedirect, a client supplied through [WithHTTPClient] never
+// produces it.
+var ErrDowngradeRedirect = errors.New("workflow-httpcall: redirect downgrades https to a plaintext scheme")
+
 // maxRedirects mirrors the cap Go's own default policy applies. Setting
 // CheckRedirect replaces that default wholesale — including its hop limit — so
 // the limit has to be restated here or same-host redirects would loop until the
@@ -70,9 +88,17 @@ const maxRedirects = 10
 // Do classifies it non-retryable explicitly: every other client.Do failure in
 // this package is treated as transport trouble and retried, and a refused
 // redirect fails identically every time.
-func refuseCrossHostRedirect(req *http.Request, via []*http.Request) error {
+func refuseUnsafeRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= maxRedirects {
 		return fmt.Errorf("workflow-httpcall: stopped after %d redirects", maxRedirects)
+	}
+	// ⚠ The scheme check is checked BEFORE the host check, so that a downgrade
+	// that also changes host is reported as a downgrade. Both refuse the hop, so
+	// the order cannot change what happens — only which sentinel the caller
+	// sees, and the cleartext exposure is the more urgent fact to surface.
+	if via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
+		return fmt.Errorf("%w: %s -> %s", ErrDowngradeRedirect,
+			via[0].URL.Scheme, req.URL.Scheme)
 	}
 	// via[0] is the ORIGINAL request, not the previous hop.
 	//

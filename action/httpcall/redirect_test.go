@@ -328,3 +328,60 @@ func TestHTTPCall_HeadersSurvivingACrossHostRedirect(t *testing.T) {
 		})
 	}
 }
+
+// TestHTTPCall_EverythingSurvivesASchemeDowngrade is the measurement behind
+// #84: what Go does when a redirect leaves https for http on ONE hostname.
+//
+// # Why it is not obvious
+//
+// Go's header stripping is keyed on the HOSTNAME
+// (shouldCopyHeaderOnRedirect → isDomainOrSubdomain). A scheme change alone
+// therefore triggers nothing at all — not merely "the fixed list is stripped and
+// the rest travels", which is the cross-host story, but NOTHING is stripped.
+// Authorization included.
+//
+// It would be easy to infer the opposite from the fact that Go strips
+// Authorization on a cross-host hop, or to assume TLS downgrade is special-cased
+// the way the Referer header is (client.go does suppress Referer on
+// https→http, which makes it look like downgrades are handled). They are not,
+// for request headers. Hence a test rather than a reasoned note.
+//
+// ⚠ Uses the TLS server's OWN client through [WithHTTPClient], for two reasons:
+// it is the only client that trusts httptest's generated certificate, and it
+// carries Go's default CheckRedirect, so this measures GO rather than this
+// package's policy. The package's own refusal of this hop is pinned in
+// redirect_internal_test.go, which needs no TLS to state it.
+//
+// This test therefore also documents what the [WithHTTPClient] escape hatch
+// exposes a consumer to, and must keep passing for that documentation to hold.
+func TestHTTPCall_EverythingSurvivesASchemeDowngrade(t *testing.T) {
+	t.Parallel()
+
+	var received http.Header
+	plain := recordingTarget(t, &received)
+
+	tlsOrigin := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, plain.URL+"/next", http.StatusFound)
+	}))
+	t.Cleanup(tlsOrigin.Close)
+
+	require.Contains(t, tlsOrigin.URL, "127.0.0.1")
+	require.Contains(t, plain.URL, "127.0.0.1",
+		"both servers must share a hostname, or this measures a cross-host hop instead")
+
+	act := httpcall.NewHTTPCall(
+		httpcall.WithBaseURL(tlsOrigin.URL),
+		httpcall.WithHeader("Authorization", "Bearer SECRET-TOKEN"),
+		httpcall.WithHeader("Cookie", "session=SECRET-COOKIE"),
+		httpcall.WithHeader("X-Api-Key", "SECRET-APIKEY"),
+		httpcall.WithHTTPClient(tlsOrigin.Client()),
+	)
+	_, err := act.Do(t.Context(), map[string]any{})
+	require.NoError(t, err)
+
+	assert.Equal(t, "Bearer SECRET-TOKEN", received.Get("Authorization"),
+		"THE EXPOSURE: Authorization reached a PLAINTEXT endpoint. Go strips by "+
+			"hostname, and the hostname did not change, so the downgrade stripped nothing")
+	assert.Equal(t, "session=SECRET-COOKIE", received.Get("Cookie"))
+	assert.Equal(t, "SECRET-APIKEY", received.Get("X-Api-Key"))
+}

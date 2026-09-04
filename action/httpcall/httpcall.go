@@ -69,9 +69,21 @@
 // The boundary is the hostname, not the origin — a port change or an http→https
 // upgrade on one hostname is still followed.
 //
-// A client supplied through [WithHTTPClient] is unaffected and keeps Go's
-// behaviour unless it sets its own CheckRedirect. That is the way back to the
-// old default.
+// It also refuses a hop that leaves https for a plaintext scheme, with a
+// non-retryable [ErrDowngradeRedirect] (#84). Hostname equality is symmetric and
+// one direction is not benign: https://api.internal → http://api.internal is the
+// same hostname, so the host rule permits it, and Go's header rule is
+// hostname-keyed too — so a downgrade strips NOTHING and the request goes out
+// unencrypted carrying every header the call had. Upgrades stay permitted, and a
+// chain that began on http may return to http: the comparison is against the
+// ORIGINAL request's scheme, so a call that was never confidential is not
+// retroactively held to a guarantee it never had.
+//
+// A client supplied through [WithHTTPClient] is unaffected by BOTH rules and
+// keeps Go's behaviour unless it sets its own CheckRedirect. That is deliberate
+// and is the same contract that option has always carried — the client is used
+// exactly as given — not an oversight in either policy. It is also the way back
+// to the old default.
 //
 // # What a redirect carries
 //
@@ -97,6 +109,15 @@
 // one host is not "cross-host" to Go or to this package: Authorization follows
 // it. On a container host where loopback spans many services, that hop is within
 // the default policy.
+//
+// ⚠ Nor is a SCHEME change a boundary to Go's stripping, which is why the
+// default refuses downgrades outright. MEASURED on go1.26.8 against a real TLS
+// origin redirecting to a plaintext target on one hostname: the plaintext
+// endpoint received Authorization, Cookie AND X-Api-Key. Not "the fixed list is
+// stripped and the rest travels" — nothing at all is stripped, because the
+// hostname never changed. (Go does suppress the Referer header on https→http,
+// which can give the impression downgrades are handled generally. They are not,
+// for request headers.)
 package httpcall
 
 import (
@@ -371,7 +392,7 @@ func NewHTTPCall(opts ...Option) action.Action {
 		h.client = &http.Client{
 			Timeout:       30 * time.Second,
 			Transport:     newPooledTransport(h.maxIdleConnsPerHost, h.maxConnsPerHost),
-			CheckRedirect: refuseCrossHostRedirect,
+			CheckRedirect: refuseUnsafeRedirect,
 		}
 	}
 	return h
@@ -551,14 +572,18 @@ func (h *httpCall) Do(ctx context.Context, in map[string]any) (map[string]any, e
 	// 8. Send, map response (unchanged).
 	resp, err := h.client.Do(req)
 	if err != nil {
-		// ⚠ A refused cross-host redirect is NOT transport trouble: it fails
-		// identically on every attempt, so retrying it only multiplies the
-		// requests made to the redirecting host. Classified before the general
-		// case below, which treats any client.Do failure as retryable.
+		// ⚠ A REFUSED REDIRECT is NOT transport trouble: it fails identically on
+		// every attempt, so retrying it only multiplies the requests made to the
+		// redirecting host. Classified before the general case below, which
+		// treats any client.Do failure as retryable.
+		//
+		// Both refusals belong here. A new one added to the redirect policy
+		// without a line here would silently become retryable, which is the
+		// wrong default for a deterministic refusal.
 		//
 		// http.Client wraps a CheckRedirect error in *url.Error, which unwraps,
 		// so errors.Is reaches the sentinel.
-		if errors.Is(err, ErrCrossHostRedirect) {
+		if errors.Is(err, ErrCrossHostRedirect) || errors.Is(err, ErrDowngradeRedirect) {
 			return nil, action.NonRetryable(fmt.Errorf("workflow-httpcall: request failed: %w", err))
 		}
 		// Transport/timeout error — retryable (plain error).
