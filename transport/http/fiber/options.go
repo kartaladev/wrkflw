@@ -13,6 +13,7 @@
 package fiber
 
 import (
+	"reflect"
 	"sync"
 	"time"
 
@@ -146,15 +147,36 @@ func WithMiddleware(mw ...fiberlib.Handler) httpcore.CustomizeOption[fiberlib.Ro
 	// the part that made it survive: nothing in a response body shows it.
 	//
 	// Keyed by router rather than a plain sync.Once so that reusing one option
-	// value across two apps still registers on both. fiber's Router
-	// implementations are pointers, hence usable as map keys. The mutex guards
-	// the pathological case of concurrent mounts; mounting is normally
-	// single-threaded.
+	// value across two apps still registers on both — a bare Once would hand
+	// the second app the FIRST app's group, silently registering its routes on
+	// the wrong application.
+	//
+	// ⚠ The key is an INTERFACE, and Go panics ("hash of unhashable type") when
+	// the dynamic type behind an interface map key is not comparable. fiber's
+	// own *App and *Group are pointers, but fiber.Router is exported and every
+	// entry point here takes it, so a consumer may pass their own
+	// implementation — and a test double written as a struct VALUE embedding
+	// fiber.Router is not comparable. MEASURED: that panicked on the first Wrap
+	// call, at mount time, with no compile-time warning. A library must not
+	// panic because someone implemented its own exported interface.
+	//
+	// So the memo is guarded rather than assumed. A non-comparable router falls
+	// back to registering per call, which is exactly the behaviour that
+	// predates this memo: noisier (one copy of mw per Customize) but correct in
+	// the sense that every route still gets the middleware. Degrading to the
+	// older behaviour for an exotic router beats crashing on it, and the
+	// fallback is asserted in TestWithMiddleware_MemoAcrossRouterTypes so it
+	// stays a stated trade rather than an assumption.
+	//
+	// The mutex guards concurrent mounts; mounting is normally single-threaded.
 	var (
 		mu     sync.Mutex
 		groups = make(map[fiberlib.Router]fiberlib.Router)
 	)
 	return httpcore.WithRouterFunc(func(r fiberlib.Router) fiberlib.Router {
+		if !reflect.ValueOf(r).Comparable() {
+			return r.Group("", args...)
+		}
 		mu.Lock()
 		defer mu.Unlock()
 		if g, ok := groups[r]; ok {
