@@ -212,16 +212,22 @@ func TestHTTPCall_DefaultRedirectPolicy(t *testing.T) {
 // the stripping is by header NAME, so who set it is irrelevant.
 //
 // What does travel is every OTHER header, and that is the real exposure. Go's
-// strip list is exactly Authorization, Www-Authenticate, Cookie and Cookie2, so a
-// credential under any other name — X-Api-Key, X-Auth-Token, a vendor bearer
-// header — crosses untouched. The package doc's own example for [WithHeaderFunc]
-// is fetching a short-lived auth token, and nothing obliges that token to be
-// spelled "Authorization".
+// strip list is six names — Authorization, Www-Authenticate, Cookie, Cookie2,
+// Proxy-Authorization, Proxy-Authenticate (net/http/client.go, go1.26.8) — and
+// what matters is that it is FIXED, not how long it is: a credential named
+// anything outside it, X-Api-Key or a vendor bearer header, crosses untouched.
+// The package doc's own example for [WithHeaderFunc] is fetching a short-lived
+// auth token, and nothing obliges that token to be spelled "Authorization".
 //
-// ⚠ A second finding, and the sharper one: Go compares url.Hostname(), so a
-// redirect from :8080 to :9090 on ONE hostname is not "cross-host" and
-// Authorization is NOT stripped. On a container host where 127.0.0.1 spans many
-// services, an Authorization header will follow a redirect between them.
+// ⚠ A second finding, and the sharper one: a PORT is not a boundary to Go's
+// rule, so a redirect from :8080 to :9090 on ONE hostname is not "cross-host"
+// and Authorization is NOT stripped. On a container host where 127.0.0.1 spans
+// many services, an Authorization header will follow a redirect between them.
+//
+// ⚠ Go's rule is also subdomain-PERMISSIVE — it ends in isDomainOrSubdomain, so
+// foo.com → sub.foo.com keeps Authorization. This package's default refuses that
+// hop, being hostname equality, so the two do not agree and the package default
+// is the stricter.
 func TestHTTPCall_HeadersSurvivingACrossHostRedirect(t *testing.T) {
 	t.Parallel()
 
@@ -242,9 +248,16 @@ func TestHTTPCall_HeadersSurvivingACrossHostRedirect(t *testing.T) {
 			assert: func(t *testing.T, received http.Header) {
 				assert.Empty(t, received.Get("Authorization"), "Go strips Authorization cross-host")
 				assert.Empty(t, received.Get("Cookie"), "Go strips Cookie cross-host")
+				// ⚠ Proxy-Authorization is on the strip list too. Asserted
+				// rather than only cited: an earlier draft of this file stated
+				// the list as four names, which was the older Go formulation
+				// and wrong on go1.26.8. A doc claim nothing exercises is how
+				// that survived.
+				assert.Empty(t, received.Get("Proxy-Authorization"),
+					"Proxy-Authorization is on Go's strip list as well")
 				assert.Equal(t, "APIKEY", received.Get("X-Api-Key"),
-					"THE EXPOSURE: Go's strip list is four fixed names, so a credential "+
-						"under any other name crosses untouched")
+					"THE EXPOSURE: Go's strip list is a FIXED set of header names, so a "+
+						"credential under any name outside it crosses untouched")
 			},
 		},
 		{
@@ -289,6 +302,7 @@ func TestHTTPCall_HeadersSurvivingACrossHostRedirect(t *testing.T) {
 				httpcall.WithBaseURL(origin.URL),
 				httpcall.WithHeader("X-Api-Key", "APIKEY"),
 				httpcall.WithHeader("Cookie", "session=COOKIE"),
+				httpcall.WithHeader("Proxy-Authorization", "Basic PROXYCRED"),
 				// ⚠ Go's default policy, deliberately: this test measures what
 				// Go does on a cross-host hop, which the package default now
 				// prevents. Using the default client would exercise the refusal

@@ -48,13 +48,19 @@ const maxRedirects = 10
 // ⚠ Two consequences of that choice, both MEASURED, both deliberate:
 //
 //   - A redirect between two services on one host (127.0.0.1:8080 → :9090) is
-//     allowed, and Go does not strip Authorization across it, because Go
-//     compares url.Hostname() too. On a container host where loopback spans many
-//     services, a credential will follow such a hop.
+//     allowed, and Go does not strip Authorization across it either, because a
+//     port is not a boundary to either rule. On a container host where loopback
+//     spans many services, a credential will follow such a hop.
 //   - Where a cross-host redirect IS followed — only via [WithHTTPClient] — Go
-//     strips exactly Authorization, Www-Authenticate, Cookie and Cookie2. Any
-//     other credential header (X-Api-Key, a vendor bearer header, anything a
-//     [WithHeaderFunc] invented) crosses untouched.
+//     strips six header names: Authorization, Www-Authenticate, Cookie, Cookie2,
+//     Proxy-Authorization and Proxy-Authenticate (net/http/client.go, go1.26.8).
+//     Any credential outside that fixed list (X-Api-Key, a vendor bearer header,
+//     anything a [WithHeaderFunc] invented) crosses untouched.
+//
+// ⚠ Note this policy is STRICTER than Go's own header rule, not aligned with it.
+// Go's shouldCopyHeaderOnRedirect ends in isDomainOrSubdomain, so it keeps
+// Authorization across foo.com → sub.foo.com; the hostname equality below
+// refuses that hop entirely.
 //
 // TestHTTPCall_DefaultRedirectPolicy and
 // TestHTTPCall_HeadersSurvivingACrossHostRedirect pin both.
@@ -77,7 +83,9 @@ func refuseCrossHostRedirect(req *http.Request, via []*http.Request) error {
 	//
 	// The origin is still the right reference to write, because it states the
 	// invariant directly ("no hop leaves the host the caller asked for") instead
-	// of relying on that induction holding after some later edit.
+	// of relying on that induction holding after some later edit — and because
+	// it is what net/http itself compares: client.go's own redirect handling
+	// tests reqs[0].URL, not the previous request.
 	origin := via[0].URL.Hostname()
 	if req.URL.Hostname() != origin {
 		return fmt.Errorf("%w: %s -> %s", ErrCrossHostRedirect, origin, req.URL.Hostname())

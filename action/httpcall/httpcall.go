@@ -76,18 +76,27 @@
 // # What a redirect carries
 //
 // ⚠ Relevant when a cross-host redirect is re-enabled through [WithHTTPClient],
-// and MEASURED rather than assumed. Go strips exactly four headers when a
-// redirect changes host: Authorization, Www-Authenticate, Cookie and Cookie2. It
+// and MEASURED rather than assumed. Go strips exactly six headers when a
+// redirect changes host — Authorization, Www-Authenticate, Cookie, Cookie2,
+// Proxy-Authorization and Proxy-Authenticate (net/http/client.go, go1.26.8). It
 // strips them by NAME, so it makes no difference whether the value came from
 // [WithHeader] or [WithHeaderFunc]. Every OTHER header crosses untouched — an
 // X-Api-Key, a vendor bearer header, anything a header func invented. The
 // example above for [WithHeaderFunc] is fetching a short-lived auth token, and
 // nothing obliges such a token to be spelled "Authorization".
 //
-// ⚠ Go compares url.Hostname() for that stripping, exactly as this package's
-// policy does, so a redirect between two PORTS on one host is not "cross-host"
-// to either: Authorization does follow it. On a container host where loopback
-// spans many services, that hop is within the default policy.
+// The exact length of that list is not what matters — it is FIXED, so a
+// credential named anything outside it crosses regardless.
+//
+// ⚠ Go's stripping rule is subdomain-PERMISSIVE: it ends in isDomainOrSubdomain,
+// so foo.com → sub.foo.com keeps Authorization. This package's policy compares
+// hostnames for equality and refuses that hop outright, so the default here is
+// STRICTER than Go's header rule rather than aligned with it.
+//
+// ⚠ Neither rule treats a PORT as a boundary, so a redirect between two ports on
+// one host is not "cross-host" to Go or to this package: Authorization follows
+// it. On a container host where loopback spans many services, that hop is within
+// the default policy.
 package httpcall
 
 import (
