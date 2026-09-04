@@ -19,7 +19,7 @@ require (
 	github.com/linkedin/goavro/v2 v2.15.0
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/pressly/goose/v3 v3.27.1
-	github.com/redis/go-redis/v9 v9.21.0
+	github.com/redis/go-redis/v9 v9.22.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/xid v1.6.0
 	github.com/samber/hot v0.13.0
