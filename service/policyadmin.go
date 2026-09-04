@@ -1,6 +1,6 @@
 package service
 
-//go:generate mockgen -source=policyadmin.go -package=service -destination=policyadmin_mock.go -typed
+//go:generate mockgen -source=policyadmin.go -package=servicetest -destination=servicetest/policyadmin_mock.go -typed
 
 import "context"
 

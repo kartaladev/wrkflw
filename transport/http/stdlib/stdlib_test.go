@@ -19,6 +19,7 @@ import (
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/internal/transporttest"
 	"github.com/kartaladev/wrkflw/service"
+	"github.com/kartaladev/wrkflw/service/servicetest"
 	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 	"github.com/kartaladev/wrkflw/transport/http/stdlib"
 )
@@ -115,7 +116,7 @@ func (s *alwaysErrorService) StartInstance(_ context.Context, _ service.StartIns
 // without caring about specific policy data.
 func newAlwaysPoliciesAdmin(t *testing.T) service.PolicyAdmin {
 	t.Helper()
-	m := service.NewMockPolicyAdmin(gomock.NewController(t))
+	m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 	m.EXPECT().AddPolicy(gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
 	m.EXPECT().RemovePolicy(gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
 	m.EXPECT().ListPolicies(gomock.Any()).Return(

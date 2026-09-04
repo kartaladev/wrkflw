@@ -27,6 +27,7 @@ import (
 	"github.com/kartaladev/wrkflw/internal/transporttest"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"github.com/kartaladev/wrkflw/service"
+	"github.com/kartaladev/wrkflw/service/servicetest"
 	"github.com/kartaladev/wrkflw/transport/http/fiber"
 	"github.com/kartaladev/wrkflw/transport/http/httpcore"
 )
@@ -154,7 +155,7 @@ func (s *alwaysErrorService) StartInstance(_ context.Context, _ service.StartIns
 // newAlwaysPoliciesAdmin returns a MockPolicyAdmin configured to always succeed.
 func newAlwaysPoliciesAdmin(t *testing.T) service.PolicyAdmin {
 	t.Helper()
-	m := service.NewMockPolicyAdmin(gomock.NewController(t))
+	m := servicetest.NewMockPolicyAdmin(gomock.NewController(t))
 	m.EXPECT().AddPolicy(gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
 	m.EXPECT().RemovePolicy(gomock.Any(), gomock.Any()).Return(true, nil).AnyTimes()
 	m.EXPECT().ListPolicies(gomock.Any()).Return(
@@ -170,7 +171,7 @@ func newAlwaysPoliciesAdmin(t *testing.T) service.PolicyAdmin {
 // It does NOT register a Redrive expectation — tests that invoke Redrive must set it up inline.
 func newAlwaysDeadLetterAdmin(t *testing.T) service.DeadLetterAdmin {
 	t.Helper()
-	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	m := servicetest.NewMockDeadLetterAdmin(gomock.NewController(t))
 	m.EXPECT().ListDeadLettered(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	return m
 }
@@ -178,7 +179,7 @@ func newAlwaysDeadLetterAdmin(t *testing.T) service.DeadLetterAdmin {
 // newAlwaysRelayStatsAdmin returns a MockRelayStatsAdmin that always succeeds with zero stats.
 func newAlwaysRelayStatsAdmin(t *testing.T) service.RelayStatsAdmin {
 	t.Helper()
-	m := service.NewMockRelayStatsAdmin(gomock.NewController(t))
+	m := servicetest.NewMockRelayStatsAdmin(gomock.NewController(t))
 	m.EXPECT().OutboxStats(gomock.Any()).Return(kernel.OutboxStats{}, nil).AnyTimes()
 	return m
 }
@@ -186,7 +187,7 @@ func newAlwaysRelayStatsAdmin(t *testing.T) service.RelayStatsAdmin {
 // newAlwaysLineageAdmin returns a MockLineageAdmin that always succeeds with a root lineage.
 func newAlwaysLineageAdmin(t *testing.T) service.LineageAdmin {
 	t.Helper()
-	m := service.NewMockLineageAdmin(gomock.NewController(t))
+	m := servicetest.NewMockLineageAdmin(gomock.NewController(t))
 	m.EXPECT().Lineage(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(_ context.Context, instanceID string) (kernel.InstanceLineage, error) {
 			return kernel.InstanceLineage{
@@ -1029,7 +1030,7 @@ func TestAdminDeadLetters_Redrive(t *testing.T) {
 	_, svc := transporttest.NewHarness(t)
 
 	// Use inline mock to set specific expectations for the exact ids in this test.
-	m := service.NewMockDeadLetterAdmin(gomock.NewController(t))
+	m := servicetest.NewMockDeadLetterAdmin(gomock.NewController(t))
 	m.EXPECT().Redrive(gomock.Any(), int64(1), int64(2), int64(3)).Return(3, nil)
 
 	app := newApp()
@@ -1075,7 +1076,7 @@ func TestAdminTimers(t *testing.T) {
 			path: "/admin/timers?limit=2&cursor=opaque-cursor&total=true",
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 3}, nil)
 				// IncludeTotal is deliberately false even though the request asked
 				// for the total: Stats already returns the count and MIN(next_run)
@@ -1103,7 +1104,7 @@ func TestAdminTimers(t *testing.T) {
 			path: "/admin/timers?limit=2&total=1",
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				m.EXPECT().Stats(gomock.Any()).Return(kernel.TimerStats{Armed: 3}, nil)
 				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{
 					Limit:        2,
@@ -1122,7 +1123,7 @@ func TestAdminTimers(t *testing.T) {
 			path: "/admin/timers",
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				// Deliberately no Stats expectation: calling it would fail the test.
 				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{Limit: 50}).
 					Return(kernel.ArmedTimerPage{}, nil)
@@ -1140,7 +1141,7 @@ func TestAdminTimers(t *testing.T) {
 			path: "/admin/timers?limit=" + strconv.Itoa(math.MaxInt),
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				m.EXPECT().ListArmedPage(gomock.Any(), kernel.ArmedTimerFilter{Limit: 200}).
 					Return(kernel.ArmedTimerPage{}, nil)
 				return m
@@ -1153,7 +1154,7 @@ func TestAdminTimers(t *testing.T) {
 			path: "/admin/timers?cursor=garbage",
 			buildTA: func(t *testing.T) service.TimerAdmin {
 				t.Helper()
-				m := service.NewMockTimerAdmin(gomock.NewController(t))
+				m := servicetest.NewMockTimerAdmin(gomock.NewController(t))
 				m.EXPECT().ListArmedPage(gomock.Any(), gomock.Any()).
 					Return(kernel.ArmedTimerPage{}, fmt.Errorf("decode cursor: %w", kernel.ErrBadArmedTimerCursor))
 				return m

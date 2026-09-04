@@ -1,6 +1,6 @@
 package service
 
-//go:generate mockgen -source=lineage.go -package=service -destination=lineage_mock.go -typed
+//go:generate mockgen -source=lineage.go -package=servicetest -destination=servicetest/lineage_mock.go -typed
 
 import (
 	"context"
