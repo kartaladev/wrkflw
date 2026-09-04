@@ -41,10 +41,21 @@ import (
 // db (import _ "modernc.org/sqlite") and for setting db.SetMaxOpenConns(1) to
 // enforce single-writer serialisation.
 //
-// The DSN must use the pinned driver's parameter form, _pragma=name(value).
-// modernc.org/sqlite ignores mattn/go-sqlite3 keys such as _busy_timeout=5000
-// silently, so a DSN in that form opens successfully with the pragma unset.
-// Always set _pragma=busy_timeout(...): a pool wider than one connection with
+// Prefer the pinned driver's parameter form, _pragma=name(value).
+//
+// ⚠ This changed under us. modernc.org/sqlite used to ignore mattn/go-sqlite3
+// keys such as _busy_timeout=5000 silently, so a DSN in that form opened
+// successfully with the pragma UNSET — an inert timeout, which is the dangerous
+// half of the combination described below. As of v1.57.0 the driver honours
+// that form too, and _busy_timeout=5000 really does set the pragma. Measured on
+// the pinned version; v1.53.0 did not.
+//
+// The practical consequence is that a DSN copied from mattn/go-sqlite3
+// documentation is no longer quietly inert here. Keep using the _pragma form in
+// this package's own examples so one syntax is canonical, but do not rely on the
+// other being ignored.
+//
+// Always set a busy timeout by one form or the other: a pool wider than one connection with
 // busy_timeout at 0 fails the great majority of concurrent operations with
 // SQLITE_BUSY within milliseconds. OpenSQLite probes for exactly that
 // combination via [WarnUnsafeSQLite] and logs a warning to [slog.Default] when
