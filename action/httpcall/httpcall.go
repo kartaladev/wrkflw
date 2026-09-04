@@ -58,11 +58,36 @@
 //
 // # Redirects
 //
-// The default client follows up to 10 redirects, which is Go's own behaviour and
-// is unchanged here. A redirect is followed to whatever host it names, so a
-// deployment whose request URLs derive from process variables (see [WithURLExpr])
-// should decide deliberately whether that is acceptable and, if not, supply a
-// client with a CheckRedirect policy through [WithHTTPClient].
+// The default client follows up to 10 redirects that stay on the SAME HOST, and
+// refuses one that changes host with a non-retryable [ErrCrossHostRedirect].
+// This departs from Go's default of following to any host, deliberately (#67):
+// this action's request URL can come from process data ([WithURLExpr]) and its
+// response body is mapped into output variables, so following a redirect
+// anywhere gives whoever can influence a process variable a read primitive
+// against whatever the engine can reach.
+//
+// The boundary is the hostname, not the origin — a port change or an http→https
+// upgrade on one hostname is still followed.
+//
+// A client supplied through [WithHTTPClient] is unaffected and keeps Go's
+// behaviour unless it sets its own CheckRedirect. That is the way back to the
+// old default.
+//
+// # What a redirect carries
+//
+// ⚠ Relevant when a cross-host redirect is re-enabled through [WithHTTPClient],
+// and MEASURED rather than assumed. Go strips exactly four headers when a
+// redirect changes host: Authorization, Www-Authenticate, Cookie and Cookie2. It
+// strips them by NAME, so it makes no difference whether the value came from
+// [WithHeader] or [WithHeaderFunc]. Every OTHER header crosses untouched — an
+// X-Api-Key, a vendor bearer header, anything a header func invented. The
+// example above for [WithHeaderFunc] is fetching a short-lived auth token, and
+// nothing obliges such a token to be spelled "Authorization".
+//
+// ⚠ Go compares url.Hostname() for that stripping, exactly as this package's
+// policy does, so a redirect between two PORTS on one host is not "cross-host"
+// to either: Authorization does follow it. On a container host where loopback
+// spans many services, that hop is within the default policy.
 package httpcall
 
 import (
@@ -335,8 +360,9 @@ func NewHTTPCall(opts ...Option) action.Action {
 	// Transport untouched.
 	if h.client == nil {
 		h.client = &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: newPooledTransport(h.maxIdleConnsPerHost, h.maxConnsPerHost),
+			Timeout:       30 * time.Second,
+			Transport:     newPooledTransport(h.maxIdleConnsPerHost, h.maxConnsPerHost),
+			CheckRedirect: refuseCrossHostRedirect,
 		}
 	}
 	return h
@@ -516,6 +542,16 @@ func (h *httpCall) Do(ctx context.Context, in map[string]any) (map[string]any, e
 	// 8. Send, map response (unchanged).
 	resp, err := h.client.Do(req)
 	if err != nil {
+		// ⚠ A refused cross-host redirect is NOT transport trouble: it fails
+		// identically on every attempt, so retrying it only multiplies the
+		// requests made to the redirecting host. Classified before the general
+		// case below, which treats any client.Do failure as retryable.
+		//
+		// http.Client wraps a CheckRedirect error in *url.Error, which unwraps,
+		// so errors.Is reaches the sentinel.
+		if errors.Is(err, ErrCrossHostRedirect) {
+			return nil, action.NonRetryable(fmt.Errorf("workflow-httpcall: request failed: %w", err))
+		}
 		// Transport/timeout error — retryable (plain error).
 		return nil, fmt.Errorf("workflow-httpcall: request failed: %w", err)
 	}
