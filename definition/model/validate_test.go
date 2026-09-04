@@ -2719,3 +2719,81 @@ func TestValidate_RejectsCatchEventWithoutTrigger(t *testing.T) {
 		})
 	}
 }
+
+// throwDef wraps throw between a start and an end event. The throw node must be
+// given the id "throw".
+func throwDef(throw model.Node) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			throw,
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "throw"},
+			{ID: "f2", Source: "throw", Target: "end"},
+		},
+	}
+}
+
+// TestValidate_RejectsThrowEventWithoutTrigger pins the authoring-time half of
+// the trigger-less throw fix, and mirrors
+// TestValidate_RejectsCatchEventWithoutTrigger one-for-one.
+//
+// A signal is the only thing an IntermediateThrowEvent can throw — SignalName is
+// its only trigger field — so a throw that names none does nothing at all. The
+// engine's strategy parked the token there for want of anything to emit, and the
+// branch was dead for the life of the instance. Unlike the catch, this shape had
+// no rule at all until now: validate.go carried no KindIntermediateThrowEvent
+// check, so even the builder and the YAML loader accepted it.
+//
+// The compensation throw is a different node kind (KindCompensationThrowEvent,
+// handled by compensationThrowEventStrategy) and is deliberately untouched — it
+// carries no SignalName and is not supposed to.
+func TestValidate_RejectsThrowEventWithoutTrigger(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "throw with no signal name is rejected",
+			def:  throwDef(event.NewIntermediateThrow("throw")),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrThrowEventMissingTrigger)
+			},
+		},
+		{
+			name: "a label does not rescue a throw that emits nothing",
+			def:  throwDef(event.NewIntermediateThrow("throw", event.WithThrowLabel("notify"))),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrThrowEventMissingTrigger,
+					"a display label is not a trigger family")
+			},
+		},
+		{
+			name: "signal throw stays valid",
+			def:  throwDef(event.NewIntermediateThrow("throw", event.WithThrowSignalName("go"))),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "compensation throw is a different kind and stays valid",
+			def:  throwDef(event.NewCompensateThrow("throw")),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err,
+					"a compensation throw carries no signal by design and must not be caught by this rule")
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}

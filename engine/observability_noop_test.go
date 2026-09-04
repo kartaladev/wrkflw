@@ -641,3 +641,113 @@ func TestUnarmedBoundary_LogsWarn(t *testing.T) {
 		})
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Site: drive's non-registry-kind park (engine/step.go) — Warn.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestDrive_NonRegistryKindPark_LogsWarn covers the one park site in the engine
+// that had no diagnostic at all — not even the WARN the missing-node park
+// beside it already emitted.
+//
+// It is deliberately NOT an IncidentDefinitionDefect, and #54 keeps it off its
+// candidate list for the reason the policy on raiseDefinitionDefect states as
+// its one exclusion: both kinds that land here are structural rather than
+// authored. KindUnspecified is the NodeKind zero value, and KindBoundaryEvent is
+// an attached node the router never places a token on — fireBoundaryArm places
+// tokens on the boundary's flow TARGET, not on the boundary itself. A token
+// arriving here is therefore an engine routing bug, and labelling it a
+// definition defect would send an operator to fix BPMN that is not wrong.
+//
+// What it owes is the log line, naming the kind so the reader can tell which of
+// the two happened.
+//
+// Not parallel: installCaptureHandler swaps the process-global slog.Default().
+func TestDrive_NonRegistryKindPark_LogsWarn(t *testing.T) {
+	at := time.Unix(1, 0)
+
+	type testCase struct {
+		name     string
+		def      *model.ProcessDefinition
+		nodeID   string
+		wantKind string
+	}
+
+	cases := []testCase{
+		{
+			name: "boundary event the router never targets",
+			def: &model.ProcessDefinition{
+				ID: "p-boundary-park", Version: 1,
+				Nodes: []model.Node{
+					activity.NewServiceTask("host", activity.WithTaskAction("a")),
+					event.NewBoundary("bnd", "host",
+						event.WithBoundaryTimer(schedule.AfterDuration(time.Hour))),
+				},
+			},
+			nodeID:   "bnd",
+			wantKind: "boundaryEvent",
+		},
+		{
+			name: "zero-value node kind",
+			def: &model.ProcessDefinition{
+				ID: "p-unspecified-park", Version: 1,
+				Nodes: []model.Node{unspecifiedKindNode{}},
+			},
+			nodeID:   "mystery",
+			wantKind: "unspecified",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := installCaptureHandler(t)
+
+			s := InstanceState{
+				InstanceID: "i1",
+				Status:     StatusRunning,
+				Tokens:     []Token{{ID: "t1", NodeID: tc.nodeID, State: TokenActive}},
+			}
+
+			cmds, err := drive(t.Context(), tc.def, &s, at, resolvePolicy(StepOptions{}))
+			require.NoError(t, err)
+			assert.Empty(t, cmds)
+
+			require.Len(t, s.Tokens, 1)
+			assert.Equal(t, TokenWaiting, s.Tokens[0].State,
+				"the park itself must not change: the loop has to terminate rather than spin")
+			assert.Empty(t, s.Incidents,
+				"a routing bug is the engine's fault, not a defect in the operator's definition")
+
+			rec, ok := h.find("token parked on a node kind the engine does not route")
+			require.True(t, ok, "expected a Warn log for a token parked on a non-registry kind")
+			assert.Equal(t, slog.LevelWarn, rec.Level)
+
+			instanceID, ok := attrString(rec, "instance_id")
+			assert.True(t, ok, "expected instance_id attribute")
+			assert.Equal(t, "i1", instanceID)
+
+			tokenID, ok := attrString(rec, "token_id")
+			assert.True(t, ok, "expected token_id attribute")
+			assert.Equal(t, "t1", tokenID)
+
+			nodeID, ok := attrString(rec, "node_id")
+			assert.True(t, ok, "expected node_id attribute")
+			assert.Equal(t, tc.nodeID, nodeID)
+
+			kind, ok := attrString(rec, "node_kind")
+			assert.True(t, ok, "expected node_kind attribute")
+			assert.Equal(t, tc.wantKind, kind,
+				"the line must say which of the two non-registry kinds arrived")
+		})
+	}
+}
+
+// unspecifiedKindNode is a model.Node reporting the zero-value NodeKind. No
+// constructor produces one — that is the point: it stands in for a node kind the
+// strategy registry does not cover.
+type unspecifiedKindNode struct{}
+
+func (unspecifiedKindNode) ID() string           { return "mystery" }
+func (unspecifiedKindNode) Name() string         { return "" }
+func (unspecifiedKindNode) Label() string        { return "" }
+func (unspecifiedKindNode) Kind() model.NodeKind { return model.KindUnspecified }

@@ -367,6 +367,21 @@ func drive(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, 
 			// Unhandled node kinds: park the token so the loop terminates rather
 			// than spinning. These are intentionally not in the registry:
 			// KindBoundaryEvent, KindUnspecified.
+			//
+			// This park owes a log and nothing more. Both kinds are structural
+			// rather than authored — KindUnspecified is the NodeKind zero value,
+			// and fireBoundaryArm places tokens on a boundary's flow target, never
+			// on the boundary node itself — so a token arriving here is an engine
+			// routing bug. Under the policy on raiseDefinitionDefect that is the
+			// exclusion: an IncidentDefinitionDefect would send an operator to
+			// correct a definition that is not wrong. The kind is logged because it
+			// says which of the two happened.
+			slog.WarnContext(ctx, "token parked on a node kind the engine does not route",
+				"instance_id", s.InstanceID,
+				"token_id", tok.ID,
+				"node_id", tok.NodeID,
+				"node_kind", node.Kind().String(),
+			)
 			tok.State = TokenWaiting
 			stopped = true // token parked: Micro stops here
 		} // end else (non-registry kinds)

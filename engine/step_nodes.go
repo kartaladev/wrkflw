@@ -641,9 +641,16 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 	// Embedded sub-process entry: open a scope, place a token on the nested
 	// start node, and consume the sub-process activity token (it is "inside" now).
 	if sp.Subprocess == nil {
-		// Defensive: a KindSubProcess without a Subprocess definition cannot
-		// execute; park to avoid infinite drive loop. model.Validate prevents this.
-		tok.State = TokenWaiting
+		// A KindSubProcess without a nested definition cannot execute. Parking
+		// is still right — the alternative is an infinite drive loop — but it
+		// used to park in silence, and "model.Validate prevents this" was the
+		// same thing said of the trigger-less catch: validation is the authoring
+		// gate, not the only door.
+		//
+		// Stuck, by the policy on raiseDefinitionDefect: no scope opens, nothing
+		// is scheduled, and no trigger can resume the token.
+		raiseDefinitionDefect(c, tok, node.ID(),
+			"sub-process node carries no nested definition")
 		return cmds, false, nil
 	}
 	innerStarts := sp.Subprocess.StartNodes()
@@ -821,6 +828,38 @@ func (userTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comman
 	return cmds, false, nil
 }
 
+// # Policy: what a park site owes the operator
+//
+// The engine parks a token at many sites. This is the rule for what each one
+// must say when it does, settled once here rather than re-argued per site.
+//
+// **Silence is never correct at a park site.** A token that stops and reports
+// nothing is indistinguishable from one legitimately waiting, which is the whole
+// complaint: the instance sits Running forever and no view can tell an operator
+// why. Every park owes at least a log line.
+//
+// What it owes beyond that is set by what the token loses:
+//
+//   - **Stuck** — no trigger can ever resume the token, and re-driving lands it
+//     on the same node. The instance can never complete. This owes an
+//     [IncidentDefinitionDefect] via raiseDefinitionDefect: the damage is already
+//     done, so surfacing it costs nothing and hiding it costs the operator the
+//     ability to see a dead instance in their incident view.
+//   - **Degraded** — the instance still runs to completion; what died is
+//     optional. This owes a [slog.WarnContext] and nothing more. Raising an
+//     incident here would halt an instance that was going to finish, doing more
+//     damage than the defect it reports. warnUnarmedBoundaries is the worked
+//     example: a dead boundary event costs its host only an escape hatch, so the
+//     activity must still run.
+//
+// One exclusion, and it is about blame rather than severity: a defect the
+// operator cannot fix in their own definition is not a definition defect. An
+// engine routing bug that strands a token is stuck by the test above, but
+// [IncidentDefinitionDefect] would send the operator to correct BPMN that is not
+// wrong. Those sites warn, naming the engine, until a kind exists that says whose
+// fault it is — see drive's non-registry-kind branch, which parks tokens the
+// strategy registry deliberately excludes.
+//
 // raiseDefinitionDefect parks tok as an [IncidentDefinitionDefect] on node and
 // records the incident, for a node whose definition is specified so
 // incompletely that no trigger can ever resume the token. reason states the
@@ -1106,10 +1145,18 @@ func (intermediateThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 		c.s.moveAlongSingleFlow(c.tdef, tok, c.at)
 		// Auto-advance: signal throw is fire-and-forget; tok.State == TokenActive → stopped=false.
 	} else {
-		// Non-signal intermediate throw: park for future plans (e.g. message
-		// throw, error throw). Parking avoids an infinite drive loop.
-		tok.State = TokenWaiting
-		// token parked: tok.State == TokenWaiting → stopped=true.
+		// A throw with no signal has nothing to emit: SignalName is this kind's
+		// only trigger field. The token used to park here in silence — the
+		// comment called it parking "for future plans", but an unimplemented
+		// plan is not something an operator can wait for, and the instance sat
+		// Running forever looking like one legitimately waiting.
+		//
+		// Stuck, by the policy on raiseDefinitionDefect: nothing is scheduled
+		// and no trigger can resume the token.
+		// model.ErrThrowEventMissingTrigger rejects the shape at authoring time;
+		// see [IncidentDefinitionDefect] for how a definition still reaches here.
+		raiseDefinitionDefect(c, tok, node.ID(),
+			"intermediate throw event declares no signal to throw")
 	}
 	return cmds, false, nil
 }

@@ -191,18 +191,16 @@ func fireBoundaryArm(ctx context.Context, def *model.ProcessDefinition, s *Insta
 //
 // It is the runtime counterpart to model.ErrBoundaryTriggerHost, and exists for
 // the same reason the trigger-less catch event raises an incident: every
-// authoring route runs model.Validate, but runtime.RegisterDefinition accepts a
-// hand-built *model.ProcessDefinition that never passed through it. On that
-// path the boundary is still silently dead, which is the complaint in the first
-// place.
+// authoring route runs model.Validate, but a definition can still reach the
+// engine without passing through it. On that path the boundary is still
+// silently dead, which is the complaint in the first place.
 //
-// It WARNS rather than raising an [IncidentDefinitionDefect], and the asymmetry
-// with the catch event is deliberate. A trigger-less catch strands its token
-// forever, so an incident reports something already broken. A dead boundary
-// costs the host only its escape hatch — the activity itself runs, completes
-// and moves on — so halting the instance over one would do more damage than the
-// defect it reports. The definition still has to be fixed; the log is what says
-// so without taking a running instance down.
+// It WARNS rather than raising an [IncidentDefinitionDefect], and this is the
+// worked example of the "degraded" half of the policy on raiseDefinitionDefect:
+// a dead boundary costs the host only its escape hatch — the activity itself
+// runs, completes and moves on — so halting the instance over one would do more
+// damage than the defect it reports. The definition still has to be fixed; the
+// log is what says so without taking a running instance down.
 //
 // Error boundaries are skipped: they reach these same hosts perfectly well
 // through findDirectBoundary and the enclosing-scope walk.

@@ -185,16 +185,23 @@ const (
 	// but the next free value re-labels every stored incident row.
 	IncidentCompensationFailed
 	// IncidentDefinitionDefect is a token that reached a node the definition
-	// specified incompletely, so no trigger can ever resume it. Today its only
-	// source is an intermediate catch event declaring neither timer, signal nor
-	// message: the token used to park there in total silence and wait forever,
-	// indistinguishable from one legitimately awaiting a signal.
+	// specified incompletely, so no trigger can ever resume it. Each source is a
+	// token that used to park in total silence and wait forever,
+	// indistinguishable from one legitimately awaiting a trigger:
 	//
-	// model.ErrCatchEventMissingTrigger rejects that shape at authoring time,
-	// and every authoring route runs model.Validate, so this kind is reachable
-	// only when a hand-built *model.ProcessDefinition is handed straight to
-	// runtime.RegisterDefinition — the one path that skips the gate
-	// engine.Step's doc comment assumes has run.
+	//   - an intermediate catch event declaring neither timer, signal nor
+	//     message (model.ErrCatchEventMissingTrigger);
+	//   - an intermediate throw event declaring no signal to throw
+	//     (model.ErrThrowEventMissingTrigger);
+	//   - a sub-process node carrying no nested definition
+	//     (model.ErrMissingSubprocess).
+	//
+	// Every one is rejected at authoring time by the rule named beside it, so
+	// this kind is reachable only by a definition that skipped model.Validate —
+	// one assembled through kernel.NewMapDefinitionRegistry, or handed straight
+	// to engine.Step. Which sites qualify for this kind rather than a bare WARN
+	// is settled once, by the policy on raiseDefinitionDefect
+	// (engine/step_nodes.go).
 	//
 	// It names a token, unlike the two walk-scoped kinds above, but it is NOT
 	// resolvable: re-driving the token would park it on the same dead node

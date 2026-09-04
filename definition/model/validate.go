@@ -200,6 +200,23 @@ var (
 	// definition can still reach it as a hand-built struct literal through
 	// runtime.RegisterDefinition without passing through this gate.
 	ErrCatchEventMissingTrigger = errors.New("workflow-definition: intermediate catch event declares no timer, signal or message trigger")
+	// ErrThrowEventMissingTrigger is returned when a KindIntermediateThrowEvent
+	// declares no signal name. A signal is the only thing an intermediate throw
+	// can emit — SignalName is its sole trigger field — so a throw that names
+	// none emits nothing, and the engine parks its token for want of anything to
+	// do. The branch is then dead for the life of the instance, exactly as a
+	// trigger-less catch's is.
+	//
+	// It is the mirror of ErrCatchEventMissingTrigger, and arrived later for a
+	// reason worth recording: the catch had a rule from the start, while the
+	// throw had none at all, so this shape was accepted even by the builder and
+	// the YAML loader. The engine raises an IncidentDefinitionDefect for the same
+	// shape at runtime, for the definitions that reach it without passing
+	// through this gate.
+	//
+	// KindCompensationThrowEvent is a different node kind and is not covered: a
+	// compensation throw carries no signal by design.
+	ErrThrowEventMissingTrigger = errors.New("workflow-definition: intermediate throw event declares no signal to throw")
 	// ErrEmptyMessageName is returned when a ReceiveTask's MessageName is empty
 	// or whitespace-only. The two sub-cases have different rationale:
 	//
@@ -737,6 +754,20 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		// A catch that names no trigger family is resumed by nothing.
 		if !hasTriggerFamily(w) {
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrCatchEventMissingTrigger, n.ID()))
+		}
+	}
+
+	// IntermediateThrowEvent: the mirror of the catch rule above. A signal is
+	// the only thing this kind can emit, so a throw naming none emits nothing
+	// and the engine parks its token with nothing to do — see
+	// ErrThrowEventMissingTrigger. KindCompensationThrowEvent is a separate kind
+	// and carries no signal by design, so it is not reached here.
+	for _, n := range d.Nodes {
+		if n.Kind() != KindIntermediateThrowEvent {
+			continue
+		}
+		if toWire(n).SignalName == "" {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrThrowEventMissingTrigger, n.ID()))
 		}
 	}
 
