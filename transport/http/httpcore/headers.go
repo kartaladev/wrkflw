@@ -12,13 +12,26 @@ package httpcore
 // inspects. Declaring the type and then letting it be second-guessed is the
 // whole gap this closes.
 //
-// ⚠ It is set in each adapter's per-route wrapper (stdlib and gin `observe`,
-// fiber `observed`), NOT via [CustomizeConfig.Wrap]. Wrap is the consumer's
-// composition point — WithRouterFunc and the adapters' WithMiddleware build on
-// it — so a header set there could be reordered or displaced by consumer
-// options. A security header must not be defeatable by option ordering, and the
-// route wrapper is unconditional: every route in all three adapters is
-// registered through it, health probes included.
+// It is set in each adapter's per-route wrapper (stdlib and gin `observe`,
+// fiber `observed`), which every route is registered through — all 27 stdlib
+// routes, 26 gin, 26 fiber, health probes included — so a route added later
+// cannot be registered without it.
+//
+// ⚠ SCOPE, stated precisely because it is narrower than it looks: this covers
+// every response THIS PACKAGE'S HANDLERS WRITE, and nothing else. A consumer
+// middleware registered through the adapters' WithMiddleware (or any
+// [CustomizeConfig.Wrap] composition) runs OUTSIDE the route wrapper, so a
+// middleware that short-circuits — auth returning 401, a rate limiter
+// returning 429, panic recovery returning 500 — answers without ever reaching
+// this code, and its response carries no nosniff. Measured on gin: a
+// WithMiddleware calling AbortWithStatusJSON yields `X-Content-Type-Options: ""`.
+//
+// Setting it in Wrap instead would cover more, not less; the two are not
+// alternatives and Set is idempotent. Doing so means this library injecting
+// middleware into a consumer's router, which is a posture decision rather than
+// a header fix, and cannot be done uniformly anyway — *http.ServeMux has no
+// middleware seam, so a stdlib consumer wraps the mux beyond this package's
+// reach. Left open deliberately rather than half-solved.
 const (
 	ContentTypeOptionsHeader = "X-Content-Type-Options"
 	NoSniff                  = "nosniff"

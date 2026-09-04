@@ -7,11 +7,10 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/kartaladev/wrkflw/internal/transporttest"
-	"github.com/kartaladev/wrkflw/service"
 )
 
-// TestParity_NosniffHeader asserts that every response from every adapter
-// carries X-Content-Type-Options: nosniff.
+// TestParity_NosniffHeader asserts that every response this library writes,
+// from every adapter, carries X-Content-Type-Options: nosniff.
 //
 // Why this belongs in the parity package rather than in each adapter's own
 // tests: the three adapters write responses through three different framework
@@ -19,16 +18,23 @@ import (
 // "all three set it" is precisely a cross-adapter claim, and a per-adapter test
 // would let one drift without failing anything.
 //
-// ⚠ The rows are chosen to cover the three response paths that reach the wire
-// by DIFFERENT code, not merely three different status codes:
+// ⚠ The rows cover three response paths that reach the wire by DIFFERENT code,
+// not merely three different status codes:
 //
-//   - a 2xx JSON body, written by the endpoint handler directly;
-//   - a 4xx error envelope, written by each adapter's writeErr;
+//   - a 2xx body written by the endpoint handler itself;
+//   - a 4xx envelope written by each adapter's writeErr;
 //   - a health probe, registered through a separate Customize and easy to miss
 //     when a header is added only to the main route groups.
 //
-// A row that only varied the status code would pass while a whole write path
-// stayed bare.
+// A row that only varied the status code would leave a whole write path
+// unasserted while still passing — an earlier draft of this test did exactly
+// that, with two rows that both happened to run through writeErr.
+//
+// ⚠ SCOPE: this covers responses THIS LIBRARY writes. A consumer middleware
+// registered through WithMiddleware composes OUTSIDE the route wrapper, so a
+// middleware that short-circuits (auth, rate limiting, CORS) answers without
+// the header. That gap is tracked separately; it is not asserted here because
+// it is not currently closed.
 func TestParity_NosniffHeader(t *testing.T) {
 	t.Parallel()
 
@@ -37,38 +43,33 @@ func TestParity_NosniffHeader(t *testing.T) {
 		// withHealth mounts the health routes, which the probe row needs.
 		withHealth bool
 		mkReq      reqFactory
-		assert     func(t *testing.T, s, g, f adapterResult)
+		// wantStatus is asserted on ALL THREE adapters, not just one: a row
+		// whose status silently changed on one adapter would stop exercising
+		// that adapter's intended write path while still passing.
+		wantStatus int
 	}
 
 	cases := []testCase{
 		{
-			name:       "2xx JSON body",
+			name:       "2xx handler-written body",
 			withHealth: false,
-			mkReq:      getReqFactory("/instances/parity-nosniff-missing"),
-			assert: func(t *testing.T, s, g, f adapterResult) {
-				// This id does not exist, so the row doubles as the 404 path;
-				// the point is the header, not the status.
-				assertNosniff(t, "GET /instances/:id", s, g, f)
-			},
+			mkReq: jsonReqFactory(http.MethodPost, "/instances", map[string]any{
+				"def_ref": "greeting",
+				"vars":    map[string]any{"name": "ada"},
+			}),
+			wantStatus: http.StatusCreated,
 		},
 		{
 			name:       "4xx error envelope",
 			withHealth: false,
-			mkReq:      jsonReqFactory(http.MethodPost, "/instances", map[string]any{"bad": "input"}),
-			assert: func(t *testing.T, s, g, f adapterResult) {
-				assert.GreaterOrEqual(t, s.status, http.StatusBadRequest,
-					"row should exercise the error path")
-				assertNosniff(t, "POST /instances 4xx", s, g, f)
-			},
+			mkReq:      getReqFactory("/instances/parity-nosniff-missing"),
+			wantStatus: http.StatusNotFound,
 		},
 		{
 			name:       "health probe",
 			withHealth: true,
 			mkReq:      getReqFactory("/readyz"),
-			assert: func(t *testing.T, s, g, f adapterResult) {
-				assert.Equal(t, http.StatusOK, s.status)
-				assertNosniff(t, "GET /readyz", s, g, f)
-			},
+			wantStatus: http.StatusOK,
 		},
 	}
 
@@ -76,32 +77,24 @@ func TestParity_NosniffHeader(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			var svc service.Service
-			_, svc = transporttest.NewHarness(t)
+			// LinearProcess is registered for every row so the 201 row has a
+			// definition to start; the other rows are unaffected by it.
+			_, svc := transporttest.NewHarness(t, transporttest.LinearProcess())
 
-			s := hitStdlib(t, svc, tc.mkReq, tc.withHealth)
-			g := hitGin(t, svc, tc.mkReq, tc.withHealth)
-			f := hitFiber(t, svc, tc.mkReq, tc.withHealth)
-
-			tc.assert(t, s, g, f)
+			for _, a := range []struct {
+				adapter string
+				got     adapterResult
+			}{
+				{"stdlib", hitStdlib(t, svc, tc.mkReq, tc.withHealth)},
+				{"gin", hitGin(t, svc, tc.mkReq, tc.withHealth)},
+				{"fiber", hitFiber(t, svc, tc.mkReq, tc.withHealth)},
+			} {
+				assert.Equal(t, tc.wantStatus, a.got.status,
+					"%s: row must exercise the intended write path (body=%s)",
+					a.adapter, a.got.rawBody)
+				assert.Equal(t, "nosniff", a.got.header.Get("X-Content-Type-Options"),
+					"%s: must send X-Content-Type-Options: nosniff", a.adapter)
+			}
 		})
-	}
-}
-
-// assertNosniff checks the header on all three adapter results, reporting each
-// adapter separately so one bare adapter does not mask the others.
-func assertNosniff(t *testing.T, caseName string, s, g, f adapterResult) {
-	t.Helper()
-
-	for _, a := range []struct {
-		adapter string
-		got     adapterResult
-	}{
-		{"stdlib", s},
-		{"gin", g},
-		{"fiber", f},
-	} {
-		assert.Equal(t, "nosniff", a.got.header.Get("X-Content-Type-Options"),
-			"%s: %s must send X-Content-Type-Options: nosniff", a.adapter, caseName)
 	}
 }
