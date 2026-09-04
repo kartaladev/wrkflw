@@ -26,12 +26,25 @@ package httpcore
 // this code, and its response carries no nosniff. Measured on gin: a
 // WithMiddleware calling AbortWithStatusJSON yields `X-Content-Type-Options: ""`.
 //
-// Setting it in Wrap instead would cover more, not less; the two are not
-// alternatives and Set is idempotent. Doing so means this library injecting
-// middleware into a consumer's router, which is a posture decision rather than
-// a header fix, and cannot be done uniformly anyway — *http.ServeMux has no
-// middleware seam, so a stdlib consumer wraps the mux beyond this package's
-// reach. Left open deliberately rather than half-solved.
+// That boundary is SETTLED, not open (#71): a consumer's middleware writes a
+// consumer's response, and this library does not insert its own handler into a
+// router it was handed. [CustomizeConfig.Wrap] is the consumer's composition
+// point; silently mutating it would be its own surprise. The remedy is opt-in
+// — stdlib.NosniffMiddleware, gin.NosniffMiddleware, fiber.NosniffMiddleware,
+// each of which a consumer places ahead of their own middleware.
+//
+// ⚠ The rejected alternative was setting it in Wrap as well. It would cover
+// more, not less — the two are not alternatives, and Set is idempotent — but it
+// could not be done cleanly on two of the three adapters. *http.ServeMux has no
+// middleware seam at all, so a stdlib consumer wraps the mux beyond this
+// package's reach; and on fiber, Group("", mw) is path-scoped to "/" rather
+// than object-scoped, so MEASURED on fiber v3.4.0 it also runs for routes the
+// CONSUMER registered on the same app. The opt-in middleware is the form that
+// works identically on all three.
+//
+// Both halves are pinned by
+// TestParity_NosniffMiddleware_ShortCircuitingConsumerMiddleware: the absence
+// of the header without the middleware, and its presence with it.
 const (
 	ContentTypeOptionsHeader = "X-Content-Type-Options"
 	NoSniff                  = "nosniff"

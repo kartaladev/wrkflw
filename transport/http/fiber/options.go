@@ -86,9 +86,29 @@ func WithRequestActorTimeout(d time.Duration) httpcore.CustomizeOption[fiberlib.
 }
 
 // WithMiddleware wraps the router returned by cfg.Wrap in a fiber Group with
-// mw as middleware handlers. This is the fiber-native way to apply middleware
-// to a subset of routes — it mirrors the gin adapter's Use approach but uses
-// fiber's Group("", mw...) signature.
+// mw as middleware handlers, using fiber's Group("", mw...) signature.
+//
+// ⚠ It does NOT confine mw to the routes this library mounts, despite mirroring
+// the gin adapter's shape. fiber's routing is path-based rather than
+// object-based, so a group at the empty prefix matches "/" and everything under
+// it. MEASURED on fiber v3.4.0: a handler passed here also runs for routes the
+// CONSUMER registered on the same app. The gin adapter's Group IS object-scoped
+// and does confine it — the two adapters diverge here, and this is the one that
+// is wider than it looks. Mount the library on a prefixed group of your own if
+// you need the narrower scope.
+//
+// ⚠ mw composes OUTSIDE this adapter's per-route wrapper, which is where
+// X-Content-Type-Options: nosniff is set. A middleware that SHORT-CIRCUITS —
+// auth answering 401, a rate limiter 429, a CORS preflight reject, panic
+// recovery 500 — answers the request without ever reaching that wrapper, so its
+// response carries no nosniff even though every response this library writes
+// does.
+//
+// That is the boundary, not a bug: your middleware writes your response, and
+// this library does not insert its own handler into the chain you built. When
+// such a response can embed a caller-influenced value — and an error message
+// usually can — list [NosniffMiddleware] FIRST and the header is set before
+// anything after it can answer.
 func WithMiddleware(mw ...fiberlib.Handler) httpcore.CustomizeOption[fiberlib.Router] {
 	return httpcore.WithRouterFunc(func(r fiberlib.Router) fiberlib.Router {
 		// Convert []fiberlib.Handler to []any for fiber's variadic Group call.
