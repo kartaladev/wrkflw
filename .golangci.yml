@@ -22,16 +22,6 @@ linters:
       - path: _test\.go
         linters:
           - gosec
-      # MySQL persistence: G201/G202 SQL string formatting/concatenation. The
-      # only interpolated values are LIMIT integers (an `int` type — page limits
-      # via NormalizeLimit, relay batch size, call-link claim count) and
-      # generated `?` placeholder lists — a placeholder cannot be used for LIMIT
-      # alongside a FOR UPDATE/locking clause (MySQL 8). Every value is an int or
-      # a bound query arg; no string-built user input reaches SQL.
-      - path: internal/persistence/mysql/
-        linters:
-          - gosec
-        text: "G20[12]"
       # Persistence stores/listers convert bounded enums to the smallint columns
       # they back: instance Status (< 10 values) and timer Kind (a handful). The
       # int -> int16 narrowing cannot overflow for these enums.
