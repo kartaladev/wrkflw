@@ -82,19 +82,48 @@ func TestServiceShipsNoTestDoubles(t *testing.T) {
 						continue
 					}
 					found++
-					assert.Contains(t, c.Text, "-destination=servicetest/",
-						"%s: a mockgen directive writing into this directory "+
-							"recreates the leak on the next go generate", name)
-					assert.Contains(t, c.Text, "-package=servicetest",
-						"%s: the destination package must match its directory", name)
+
+					// The destination is compared as a cleaned path, not as a
+					// substring: "./servicetest/x.go" is a valid directive a
+					// substring check would reject, and "servicetest/../x.go"
+					// writes straight back into this directory while containing
+					// the substring "servicetest/".
+					dest, ok := mockgenFlag(c.Text, "-destination=")
+					if assert.True(t, ok, "%s: mockgen directive has no -destination", name) {
+						assert.Equal(t, "servicetest", filepath.Dir(filepath.Clean(dest)),
+							"%s: a mockgen directive writing anywhere but servicetest/ "+
+								"recreates the leak on the next go generate", name)
+					}
+
+					pkgName, ok := mockgenFlag(c.Text, "-package=")
+					if assert.True(t, ok, "%s: mockgen directive has no -package", name) {
+						assert.Equal(t, "servicetest", pkgName,
+							"%s: the destination package must match its directory", name)
+					}
 				}
 			}
 		}
-		assert.Equal(t, 4, found,
-			"expected one mockgen directive per interface file (policyadmin, "+
-				"opsadmin, deadletter, lineage); a missing one means a mock is "+
-				"no longer regenerated and will silently rot")
+		// Lower bound, not equality: a new admin port correctly targeting
+		// servicetest/ must not fail this, and only a REMOVED directive is the
+		// rot this guards against.
+		assert.GreaterOrEqual(t, found, 4,
+			"expected at least one mockgen directive per interface file "+
+				"(policyadmin, opsadmin, deadletter, lineage); a missing one "+
+				"means a mock is no longer regenerated and will silently rot")
 	})
+}
+
+// mockgenFlag returns the value of a `-name=value` flag in a //go:generate
+// directive line, and whether it was present. Flags are whitespace-separated,
+// and mockgen's own flags never contain a space, so splitting on fields is
+// enough — no shell quoting to honour.
+func mockgenFlag(directive, prefix string) (string, bool) {
+	for _, field := range strings.Fields(directive) {
+		if after, ok := strings.CutPrefix(field, prefix); ok {
+			return after, true
+		}
+	}
+	return "", false
 }
 
 // declaredNames returns the names a top-level declaration introduces into the
