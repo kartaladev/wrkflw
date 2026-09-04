@@ -24,6 +24,13 @@ var ErrEmptyDefinitionID = errors.New("workflow-runtime: empty definition ID")
 // (first-registration-wins on the versioned key).
 var ErrDefinitionExists = errors.New("workflow-runtime: definition already registered")
 
+// ErrInvalidDefinition is returned by MemDefinitionRegistry.Register when the
+// supplied definition fails [model.Validate]. The returned error wraps both this
+// sentinel and every rule the definition broke, so callers may match either
+// ErrInvalidDefinition or a specific rule (e.g. [model.ErrNoStartEvent]) with
+// errors.Is.
+var ErrInvalidDefinition = errors.New("workflow-runtime: invalid definition")
+
 // ── MemDefinitionRegistry ─────────────────────────────────────────────────
 
 // MemDefinitionRegistry is a concurrency-safe, register-after-construction
@@ -56,9 +63,24 @@ func NewMemDefinitionRegistry() *MemDefinitionRegistry {
 // It returns:
 //   - [ErrNilDefinition] if def is nil.
 //   - [ErrEmptyDefinitionID] if def.ID is empty.
+//   - [ErrInvalidDefinition] (wrapped together with every rule def broke) if def
+//     fails [model.Validate].
 //   - [ErrDefinitionExists] (wrapped with the pinned key) if the exact
 //     Qualifier was already registered (first-registration-wins on the
 //     versioned key).
+//
+// # The authoring gate
+//
+// [github.com/kartaladev/wrkflw/engine.Step] assumes the definition it is given
+// has passed [model.Validate]. The builder and the YAML loader both end in that
+// call, but a hand-constructed *model.ProcessDefinition literal has not — so
+// Register runs it here, and this registry is the gate for every definition that
+// enters through it. Validation runs before the lock and before any indexing: a
+// rejected definition claims neither key.
+//
+// [MapDefinitionRegistry] is the one registry that cannot enforce this — its
+// variadic constructor returns no error — so a caller assembling one owns
+// validation itself.
 //
 // On success the latest key is overwritten to point at def, so subsequent
 // Lookup calls with a Latest Qualifier resolve the most-recently-registered version.
@@ -68,6 +90,12 @@ func (r *MemDefinitionRegistry) Register(def *model.ProcessDefinition) error {
 	}
 	if def.ID == "" {
 		return ErrEmptyDefinitionID
+	}
+	// The authoring gate: engine.Step's contract assumes model.Validate has run,
+	// and a struct literal is the one route that would otherwise skip it.
+	// Checked outside the lock — Validate reads def only.
+	if err := model.Validate(def); err != nil {
+		return fmt.Errorf("%w: %q: %w", ErrInvalidDefinition, def.Qualifier(), err)
 	}
 
 	pinned := def.Qualifier()

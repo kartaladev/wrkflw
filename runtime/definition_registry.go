@@ -62,9 +62,17 @@ func DefaultDefinitionRegistry() *kernel.MemDefinitionRegistry {
 // [engine.StartSubInstance] DefRef in either form resolves correctly. The bare
 // "<ID>" key always points to the most-recently-registered version.
 //
+// Registration is the authoring gate: def is passed through [model.Validate]
+// before it is indexed, so a hand-constructed *model.ProcessDefinition literal
+// gets the same structural check the builder and the YAML loader apply. This is
+// what makes [engine.Step]'s "assumes the definition has passed model.Validate"
+// contract true rather than aspirational.
+//
 // Returns:
 //   - [kernel.ErrNilDefinition] if def is nil.
 //   - [kernel.ErrEmptyDefinitionID] if def.ID is empty.
+//   - [kernel.ErrInvalidDefinition] (wrapped together with every rule def broke)
+//     if def fails [model.Validate].
 //   - [kernel.ErrDefinitionExists] (wrapped with the versioned key) if
 //     "<ID>:<Version>" was already registered (first-registration-wins).
 //   - [ErrDuplicateMessageStart] (wrapped with the colliding name) if any of
@@ -101,7 +109,8 @@ func RegisterDefinition(def *model.ProcessDefinition) error {
 
 // MustRegisterDefinition registers def into the process-global
 // [DefaultDefinitionRegistry] and panics if registration fails — including on
-// [ErrDuplicateMessageStart]. Intended for init-time wiring where a
+// [ErrDuplicateMessageStart] and on a definition that fails [model.Validate].
+// Intended for init-time wiring where a
 // registration failure is a programming error (e.g. in package-level var
 // blocks or TestMain).
 //

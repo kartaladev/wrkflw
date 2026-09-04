@@ -78,23 +78,126 @@ func TestRegisterDefinitionDelegatesToDefault(t *testing.T) {
 	assert.Equal(t, def.ID, got.ID)
 }
 
-// TestMustRegisterDefinitionPanicsOnDuplicate verifies that MustRegisterDefinition
-// panics when the versioned key is already registered.
-func TestMustRegisterDefinitionPanicsOnDuplicate(t *testing.T) {
+// TestMustRegisterDefinitionPanics verifies that MustRegisterDefinition panics
+// on every registration failure — a duplicate versioned key, and a definition
+// that fails model.Validate.
+func TestMustRegisterDefinitionPanics(t *testing.T) {
 	t.Parallel()
 
-	def := &model.ProcessDefinition{
-		ID:      fmt.Sprintf("test-mustreg-dup-%d", uniqueDefSeq.Add(1)),
+	type testCase struct {
+		name string
+		// arrange returns the definition to register on the call under test,
+		// after performing whatever prior registration the case needs. id is
+		// unique per case so the process-global registry cannot leak between them.
+		arrange func(t *testing.T, id string) *model.ProcessDefinition
+	}
+
+	cases := []testCase{
+		{
+			name: "duplicate versioned key",
+			arrange: func(t *testing.T, id string) *model.ProcessDefinition {
+				def := validDef(id)
+				// First registration must succeed; the second one panics.
+				require.NotPanics(t, func() { runtime.MustRegisterDefinition(def) })
+				return def
+			},
+		},
+		{
+			name: "definition fails model.Validate",
+			arrange: func(_ *testing.T, id string) *model.ProcessDefinition {
+				return &model.ProcessDefinition{ID: id, Version: 1}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			def := tc.arrange(t, fmt.Sprintf("test-mustreg-%d", uniqueDefSeq.Add(1)))
+
+			assert.Panics(t, func() { runtime.MustRegisterDefinition(def) })
+		})
+	}
+}
+
+// validDef returns the smallest definition that passes model.Validate, under the
+// caller-supplied (unique) ID.
+func validDef(id string) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      id,
 		Version: 1,
 		Nodes:   []model.Node{event.NewStart("s"), event.NewEnd("e")},
 		Flows:   []flow.SequenceFlow{{ID: "f1", Source: "s", Target: "e"}},
 	}
+}
 
-	// First registration must succeed.
-	require.NotPanics(t, func() { runtime.MustRegisterDefinition(def) })
+// TestRegisterDefinitionValidates asserts the ergonomic registration entry point
+// enforces the authoring gate engine.Step's contract assumes has run: a
+// hand-constructed literal that fails model.Validate is rejected, and stays out
+// of the process-global registry. Without this, every rule in model.Validate is
+// advisory for anything not built by the builder or the YAML loader.
+func TestRegisterDefinitionValidates(t *testing.T) {
+	t.Parallel()
 
-	// Second registration of the same ID:Version must panic.
-	assert.Panics(t, func() { runtime.MustRegisterDefinition(def) })
+	type testCase struct {
+		name   string
+		def    func(id string) *model.ProcessDefinition
+		assert func(t *testing.T, id string, err error)
+	}
+
+	rejected := func(rule error) func(*testing.T, string, error) {
+		return func(t *testing.T, id string, err error) {
+			require.Error(t, err)
+			assert.ErrorIs(t, err, kernel.ErrInvalidDefinition, "must be identifiable as a validation rejection")
+			assert.ErrorIs(t, err, rule, "must carry the model.Validate rule it broke")
+
+			_, lookupErr := runtime.DefaultDefinitionRegistry().Lookup(t.Context(), model.Latest(id))
+			assert.ErrorIs(t, lookupErr, kernel.ErrDefinitionNotFound, "a rejected definition must not reach the registry")
+		}
+	}
+
+	cases := []testCase{
+		{
+			name: "valid definition is registered",
+			def:  validDef,
+			assert: func(t *testing.T, id string, err error) {
+				require.NoError(t, err)
+
+				_, lookupErr := runtime.DefaultDefinitionRegistry().Lookup(t.Context(), model.Latest(id))
+				assert.NoError(t, lookupErr)
+			},
+		},
+		{
+			name: "no start event",
+			def: func(id string) *model.ProcessDefinition {
+				return &model.ProcessDefinition{ID: id, Version: 1}
+			},
+			assert: rejected(model.ErrNoStartEvent),
+		},
+		{
+			name: "end event has an outgoing flow",
+			def: func(id string) *model.ProcessDefinition {
+				def := validDef(id)
+				def.Flows = append(def.Flows, flow.SequenceFlow{ID: "f2", Source: "e", Target: "s"})
+				return def
+			},
+			assert: rejected(model.ErrEndHasOutgoing),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// The default registry is process-global and cannot be reset, so
+			// every case registers under an ID of its own.
+			id := fmt.Sprintf("test-reg-validates-%d", uniqueDefSeq.Add(1))
+
+			err := runtime.RegisterDefinition(tc.def(id))
+			tc.assert(t, id, err)
+		})
+	}
 }
 
 // ── (b) Driver default: zero-config uses default registry ────────────────

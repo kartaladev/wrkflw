@@ -15,8 +15,8 @@ func TestMemDefinitionRegistryListsDistinct(t *testing.T) {
 	t.Parallel()
 
 	reg := kernel.NewMemDefinitionRegistry()
-	require.NoError(t, reg.Register(&model.ProcessDefinition{ID: "A", Version: 1}))
-	require.NoError(t, reg.Register(&model.ProcessDefinition{ID: "B", Version: 1}))
+	require.NoError(t, reg.Register(minimalValidDef("A", 1)))
+	require.NoError(t, reg.Register(minimalValidDef("B", 1)))
 
 	var lister kernel.DefinitionLister = reg
 	got := lister.ListDefinitions(t.Context())

@@ -33,6 +33,12 @@ type MapDefinitionRegistry struct {
 // NewMapDefinitionRegistry indexes each non-nil definition under both its pinned
 // Qualifier (def.Qualifier()) and its latest Qualifier (Latest(def.ID)); the
 // latest key resolves to the highest version seen.
+//
+// Unlike [MemDefinitionRegistry.Register], this constructor does not run
+// [model.Validate] — it returns no error, so it has no way to reject. It is
+// therefore the one documented escape hatch from the authoring gate the engine's
+// contract assumes: a caller passing hand-constructed *model.ProcessDefinition
+// literals here owns validating them.
 func NewMapDefinitionRegistry(defs ...*model.ProcessDefinition) *MapDefinitionRegistry {
 	m := make(map[model.Qualifier]*model.ProcessDefinition, len(defs)*2)
 	for _, d := range defs {

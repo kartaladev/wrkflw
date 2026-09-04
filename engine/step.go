@@ -148,6 +148,17 @@ type StepResult struct {
 // an exclusive gateway is assumed to have at most one unconditional non-default
 // outgoing flow — the engine takes the first matching flow in definition order
 // and does not detect ambiguous multi-unconditional configurations.
+//
+// Every route a definition can take to reach here enforces that assumption: the
+// builder and the YAML loader both end in [model.Validate], and
+// [github.com/kartaladev/wrkflw/runtime/kernel.MemDefinitionRegistry.Register] —
+// the door every hand-constructed *model.ProcessDefinition literal goes through,
+// directly or via [github.com/kartaladev/wrkflw/runtime.RegisterDefinition] —
+// runs it too. The one exception is
+// [github.com/kartaladev/wrkflw/runtime/kernel.NewMapDefinitionRegistry], whose
+// variadic constructor returns no error and therefore cannot reject: a caller
+// assembling one owns validation itself, as does anyone calling Step with a
+// literal of their own.
 func Step(ctx context.Context, def *model.ProcessDefinition, st InstanceState, trg Trigger, opt StepOptions) (StepResult, error) {
 	// Reject a malformed trigger before any work: an empty identity key names no
 	// record, so there is nothing to dispatch it to. Running before

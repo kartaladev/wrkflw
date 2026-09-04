@@ -13,8 +13,8 @@ import (
 
 func TestMemRegistryLookupByQualifier(t *testing.T) {
 	reg := kernel.NewMemDefinitionRegistry()
-	v1 := &model.ProcessDefinition{ID: "order", Version: 1}
-	v2 := &model.ProcessDefinition{ID: "order", Version: 2}
+	v1 := minimalValidDef("order", 1)
+	v2 := minimalValidDef("order", 2)
 	if err := reg.Register(v1); err != nil {
 		t.Fatal(err)
 	}
