@@ -1278,7 +1278,11 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 		records := c.s.ArchivedCompensations[ref]
 		if len(records) == 0 || resumeNode == "" {
 			// No archived records (never ran or already compensated), OR no
-			// outgoing flow — auto-advance, no InvokeAction emitted.
+			// outgoing flow — no InvokeAction emitted either way. The two are not
+			// the same shape, and moveAlongSingleFlow tells them apart: with
+			// records-but-no-successor forbidden by ErrDeadEnd, the second case
+			// parks the token as an IncidentDefinitionDefect while the first
+			// auto-advances normally.
 			c.s.moveAlongSingleFlow(c.ctx, c.tdef, tok, c.at)
 		} else if c.s.Compensating.ActiveCmdID != "" {
 			// SERIALIZE: a walk is already in flight — defer this throw.
@@ -1299,8 +1303,11 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 		// keeps it off the dead-end and defer paths for exactly that reason.
 		switch {
 		case resumeNode == "":
-			// Dead-end throw (no successor): auto-advance/park without starting a
-			// walk. Do NOT consolidate — a throw that never compensates must leave
+			// Dead-end throw (no successor): do not start a walk. ErrDeadEnd
+			// forbids the shape, so this is defensive code for a definition that
+			// skipped model.Validate, and moveAlongSingleFlow now parks the token
+			// as an IncidentDefinitionDefect rather than in silence. Do NOT
+			// consolidate — a throw that never compensates must leave
 			// ArchivedCompensations intact for a later targeted throw or cancel.
 			c.s.moveAlongSingleFlow(c.ctx, c.tdef, tok, c.at)
 		case c.s.Compensating.ActiveCmdID != "":
