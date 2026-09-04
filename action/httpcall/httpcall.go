@@ -35,6 +35,34 @@
 // exhaustion from a large or malicious upstream. Override the cap with
 // [WithMaxResponseSize]; a non-positive value disables it. A body exceeding the
 // cap fails with a non-retryable [ErrBodyTooLarge].
+//
+// # Connection pooling
+//
+// The default client carries its own [http.Transport] rather than falling back
+// to [http.DefaultTransport], whose per-host idle cap of 2 would make concurrent
+// service tasks against one host pay a fresh connection for all but two of them.
+// Size the pool with [WithMaxIdleConnsPerHost] and [WithMaxConnsPerHost].
+//
+// ⚠ Each action built by [NewHTTPCall] owns its pool, so N actions calling the
+// same host hold up to N separate sets of idle connections. That is the right
+// trade for the usual case — a handful of actions constructed once at startup —
+// but a consumer registering many actions against one upstream should build a
+// single [http.Client] and pass it to each through [WithHTTPClient], which makes
+// them share one pool.
+//
+// The guidance above describes HTTP/1.1 upstreams, where one request occupies
+// one connection and the pool size is therefore the concurrency limit. Against
+// an HTTP/2 upstream a single connection multiplexes many concurrent streams, so
+// the per-host cap is largely inert and the total cap does not serialise
+// requests the way it does on HTTP/1.1.
+//
+// # Redirects
+//
+// The default client follows up to 10 redirects, which is Go's own behaviour and
+// is unchanged here. A redirect is followed to whatever host it names, so a
+// deployment whose request URLs derive from process variables (see [WithURLExpr])
+// should decide deliberately whether that is acceptable and, if not, supply a
+// client with a CheckRedirect policy through [WithHTTPClient].
 package httpcall
 
 import (
@@ -44,6 +72,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -89,6 +118,45 @@ type Option func(*httpCall)
 // value disables the bound.
 const defaultMaxResponseSize int64 = 10 << 20 // 10 MiB
 
+// defaultMaxIdleConnsPerHost is how many idle connections the default client
+// keeps warm per host. It matters because a client with a nil Transport uses
+// [http.DefaultTransport], whose per-host idle cap is
+// [http.DefaultMaxIdleConnsPerHost] — 2. A workflow whose service tasks call one
+// host concurrently keeps two connections warm and pays a fresh TCP (and, over
+// TLS, handshake) cost for every other request, on the engine's main outbound
+// path.
+//
+// The value matches [defaultMaxIdleConns], the process-wide cap net/http also
+// defaults to 100, so neither cap is more restrictive than the other and "the
+// pool holds 100 idle connections" means what a reader expects. It is not a
+// claim about any particular workload; a consumer who knows their own
+// concurrency should set [WithMaxIdleConnsPerHost], and the process-wide cap
+// rises with it rather than clamping it.
+//
+// ⚠ This is deliberately NOT sized to "the driver's concurrency". The driver
+// has no concurrency setting to size against: ProcessDriver.inflight is a
+// sync.WaitGroup that counts admitted work rather than bounding it, and no
+// option caps parallelism. Outbound concurrency is whatever a consumer drives
+// in, so the library cannot know it and does not pretend to.
+const defaultMaxIdleConnsPerHost = 100
+
+// defaultMaxConnsPerHost is the default TOTAL per-host connection cap, and 0
+// (unlimited) is deliberate — it leaves Go's own default in place.
+//
+// Unlike the idle cap, this one BLOCKS: once it is reached, a request waits for
+// a connection to be returned instead of opening another. That converts a
+// throughput limit into added latency, and choosing it wrongly is worse than
+// not choosing it. Sizing it needs the consumer's concurrency and the upstream's
+// tolerance, neither of which the library knows, so it is exposed through
+// [WithMaxConnsPerHost] and left off by default.
+const defaultMaxConnsPerHost = 0
+
+// defaultMaxIdleConns is the process-wide idle-connection cap, matching
+// net/http's own default. It is a floor rather than a fixed value:
+// [newPooledTransport] raises it to match a larger per-host setting, because
+// this cap would otherwise silently clamp the per-host one.
+const defaultMaxIdleConns = 100
+
 // ErrBodyTooLarge is returned (non-retryable) when a response or buffered
 // request body exceeds the configured maximum size.
 var ErrBodyTooLarge = errors.New("workflow-httpcall: body exceeds max size")
@@ -111,6 +179,12 @@ type httpCall struct {
 	// maxResponseSize bounds the response body (and buffered request body) read
 	// into memory. A non-positive value disables the bound. See [WithMaxResponseSize].
 	maxResponseSize int64
+
+	// maxIdleConnsPerHost and maxConnsPerHost size the connection pool of the
+	// DEFAULT client only. A client supplied through [WithHTTPClient] carries
+	// its own Transport and is never modified — see that option's doc.
+	maxIdleConnsPerHost int
+	maxConnsPerHost     int
 }
 
 // WithBaseURL sets the request URL. Required unless WithURLExpr is set (an empty URL
@@ -149,8 +223,47 @@ func WithHeaderFunc(fn HeaderFunc) Option {
 }
 
 // WithHTTPClient injects the http.Client (e.g. an otel-instrumented one).
-// Default: a client with a 30s timeout.
+// Default: a client with a 30s timeout and a connection pool sized by
+// [WithMaxIdleConnsPerHost] and [WithMaxConnsPerHost].
+//
+// ⚠ An injected client is used EXACTLY as given. Its Transport is not modified
+// and the two pool-sizing options above do not apply to it — a client is a
+// consumer-owned object, and reaching into its Transport would retune whatever
+// else shares it. A caller who wants both an injected client and a tuned pool
+// sets the pool on that client's own Transport.
 func WithHTTPClient(c *http.Client) Option { return func(h *httpCall) { h.client = c } }
+
+// WithMaxIdleConnsPerHost sets how many idle connections the default client
+// keeps warm per host. Default: [defaultMaxIdleConnsPerHost].
+//
+// Raising it above the number of requests a workflow runs concurrently against
+// one host buys nothing; setting it below that number makes the excess requests
+// pay a fresh connection each time, which is the ceiling Go's own default of 2
+// imposes. A non-positive value restores Go's default.
+//
+// The transport's process-wide MaxIdleConns rises to match a larger value, so
+// setting 200 here really does keep 200 idle connections per host rather than
+// being clamped at the 100 net/http defaults to.
+//
+// It has no effect when a client is supplied through [WithHTTPClient].
+func WithMaxIdleConnsPerHost(n int) Option {
+	return func(h *httpCall) { h.maxIdleConnsPerHost = n }
+}
+
+// WithMaxConnsPerHost caps the TOTAL connections the default client opens per
+// host, idle or in use. Default: unlimited, which is Go's own default.
+//
+// ⚠ This one blocks rather than degrading: once the cap is reached, a request
+// WAITS for a connection to be returned instead of opening another, so it turns
+// excess concurrency into latency and, against a slow upstream, into timeouts.
+// Use it to protect an upstream that cannot take the load, not to tune
+// throughput — [WithMaxIdleConnsPerHost] is the throughput knob. A non-positive
+// value means unlimited.
+//
+// It has no effect when a client is supplied through [WithHTTPClient].
+func WithMaxConnsPerHost(n int) Option {
+	return func(h *httpCall) { h.maxConnsPerHost = n }
+}
 
 // WithBodyKey names the input variable holding the request body (JSON-encoded).
 // When [WithBodyFunc] is also set, WithBodyFunc takes precedence and this key is
@@ -206,17 +319,82 @@ func readAllCapped(r io.Reader, max int64) ([]byte, error) {
 // package doc for the retry classification and response size limit.
 func NewHTTPCall(opts ...Option) action.Action {
 	h := &httpCall{
-		client:          &http.Client{Timeout: 30 * time.Second},
-		headers:         http.Header{},
-		statusKey:       "httpStatus",
-		bodyOutKey:      "httpBody",
-		hdrOutKey:       "httpHeaders",
-		maxResponseSize: defaultMaxResponseSize,
+		headers:             http.Header{},
+		statusKey:           "httpStatus",
+		bodyOutKey:          "httpBody",
+		hdrOutKey:           "httpHeaders",
+		maxResponseSize:     defaultMaxResponseSize,
+		maxIdleConnsPerHost: defaultMaxIdleConnsPerHost,
+		maxConnsPerHost:     defaultMaxConnsPerHost,
 	}
 	for _, o := range opts {
 		o(h)
 	}
+	// Built AFTER the options so the pool sizes they set are honoured, and only
+	// when no client was supplied: a consumer's own client keeps its own
+	// Transport untouched.
+	if h.client == nil {
+		h.client = &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: newPooledTransport(h.maxIdleConnsPerHost, h.maxConnsPerHost),
+		}
+	}
 	return h
+}
+
+// newPooledTransport builds the default client's transport.
+//
+// It constructs a transport explicitly rather than cloning
+// [http.DefaultTransport], for two reasons. First, DefaultTransport is a mutable
+// package variable and wrapping it is a mainstream pattern
+// (`http.DefaultTransport = otelhttp.NewTransport(http.DefaultTransport)`, and
+// every APM agent and replay harness that does the same). A type assertion back
+// to *http.Transport panics in any such process, and it would panic during
+// wiring at startup, where a consumer has no error to handle. Second, inheriting
+// whatever a global has been mutated into makes this package's behaviour depend
+// on unrelated code having run first.
+//
+// The field values below mirror net/http's own DefaultTransport, so a caller
+// gets the same proxy, dial and timeout behaviour they would have got before —
+// this is a pool change, not a replacement of transport semantics.
+func newPooledTransport(maxIdleConnsPerHost, maxConnsPerHost int) *http.Transport {
+	// Both values are normalised to 0 rather than passed through, so the
+	// documented "a non-positive value means the default" holds by construction.
+	// http.Transport does not treat the two the same way on its own:
+	// maxIdleConnsPerHost() falls back to the default only on exactly 0 and
+	// would carry a negative through, whereas MaxConnsPerHost already reads any
+	// value <= 0 as unlimited. Normalising here makes the contract this
+	// package's, not a detail of the standard library's internals.
+	if maxIdleConnsPerHost < 0 {
+		maxIdleConnsPerHost = 0
+	}
+	if maxConnsPerHost < 0 {
+		maxConnsPerHost = 0
+	}
+
+	// MaxIdleConns is the PROCESS-wide idle cap and would otherwise clamp the
+	// per-host one: a caller asking for 200 idle connections per host against
+	// net/http's default of 100 would silently keep 100. Raising it in step
+	// means the per-host option delivers what it says.
+	maxIdleConns := defaultMaxIdleConns
+	if maxIdleConnsPerHost > maxIdleConns {
+		maxIdleConns = maxIdleConnsPerHost
+	}
+
+	return &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          maxIdleConns,
+		MaxIdleConnsPerHost:   maxIdleConnsPerHost,
+		MaxConnsPerHost:       maxConnsPerHost,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
 }
 
 // Do resolves the request URL, builds and (optionally) validates the request
