@@ -16,6 +16,9 @@ func observe(
 	h http.HandlerFunc,
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Set before the handler runs: once it calls WriteHeader the header map
+		// is frozen, and writeJSON writes as soon as it has a status.
+		w.Header().Set(httpcore.ContentTypeOptionsHeader, httpcore.NoSniff)
 		rw := &statusRecorder{ResponseWriter: w, code: http.StatusOK}
 		inst.Observe(r.Context(), method, routeTemplate, r.Header, func(ctx context.Context) int {
 			h(rw, r.WithContext(ctx))
