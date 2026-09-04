@@ -269,7 +269,7 @@ func resolveGatewayWin(ctx context.Context, def *model.ProcessDefinition, s *Ins
 		// branch is unreachable in a validated definition. It is retained as a
 		// defensive fallback so the engine degrades gracefully rather than
 		// panicking if an unvalidated definition is passed.
-		s.moveAlongSingleFlow(tdef, tok, at)
+		s.moveAlongSingleFlow(ctx, tdef, tok, at)
 	}
 
 	// Remove ALL armedEvent entries for this gateway (winning + sibling arms).

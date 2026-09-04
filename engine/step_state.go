@@ -193,11 +193,28 @@ func (s *InstanceState) openVisitFor(tokenID, nodeID string) *NodeVisit {
 	return nil
 }
 
-func (s *InstanceState) moveAlongSingleFlow(def *model.ProcessDefinition, tok *Token, at time.Time) {
+// moveAlongSingleFlow advances tok along the first outgoing flow of the node it
+// currently sits on, closing that node's visit and opening the next one.
+//
+// When the node has NO outgoing flow the token cannot advance and cannot be
+// resumed — nothing is scheduled and re-driving lands it on the same node — so
+// it is parked as an [IncidentDefinitionDefect] rather than left waiting.
+// model.ErrDeadEnd forbids the shape at authoring time (exempting only end
+// events and event-sub-process roots, neither of which reaches this function),
+// so a definition gets here only by skipping model.Validate.
+//
+// ctx is taken solely to raise that defect, which is also why the raise lives
+// here rather than being reported to the caller: this function has ten call
+// sites, and a returned flag is a thing each of them — and every future one —
+// can forget to check. That silence is the defect being fixed. Parking as an
+// incident is not a behaviour change for any valid definition, since no valid
+// definition can reach the branch.
+func (s *InstanceState) moveAlongSingleFlow(ctx context.Context, def *model.ProcessDefinition, tok *Token, at time.Time) {
 	out := def.Outgoing(tok.NodeID)
 	s.closeVisit(tok.ID, tok.NodeID, at)
 	if len(out) == 0 {
-		tok.State = TokenWaiting // defensive; Validate forbids this
+		recordDefinitionDefect(ctx, s, tok, tok.NodeID,
+			"node has no outgoing flow, so the token can never advance", at)
 		return
 	}
 	tok.NodeID = out[0].Target
@@ -216,7 +233,7 @@ func (s *InstanceState) moveAlongSingleFlow(def *model.ProcessDefinition, tok *T
 // command order) and any drive error.
 func resumeAndDrive(ctx context.Context, def *model.ProcessDefinition, tdef *model.ProcessDefinition, s *InstanceState, tok *Token, at time.Time, opt StepOptions, preCmds []Command) ([]Command, error) {
 	tok.State = TokenActive
-	s.moveAlongSingleFlow(tdef, tok, at)
+	s.moveAlongSingleFlow(ctx, tdef, tok, at)
 	driveCmds, err := drive(ctx, def, s, at, resolvePolicy(opt))
 	if err != nil {
 		return nil, err
