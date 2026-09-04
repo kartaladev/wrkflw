@@ -7,8 +7,12 @@ package persistence
 // MySQL-specific pieces.
 //
 // The MySQL constructors take the facade's own Option / RelayOption /
-// CallLinkOption types directly: all three backends share one option surface,
-// so every With… constructor in options.go applies here unchanged.
+// CallLinkOption types directly, so each takes the same With… constructors its
+// Postgres and SQLite counterparts do — the store options in options.go for
+// OpenMySQL, the relay options in persistence.go for NewMySQLRelay. Those
+// option types are distinct from one another: options.go also declares
+// DefinitionOption, DeduperOption and ChainLinkOption, which belong to other
+// constructors and do not apply here.
 //
 // NewMySQLDeduper (in dedup.go) returns the unified persistence.Deduper, whose
 // Seen joins the ambient transaction in ctx.
