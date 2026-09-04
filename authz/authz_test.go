@@ -128,7 +128,20 @@ func TestRoleAuthorizer_AttributePredicate(t *testing.T) {
 			},
 		},
 		{
-			name: "malformed predicate wraps ErrNotAuthorized with eval error",
+			// ⚠ This row asserted the OPPOSITE until #69 — that a malformed
+			// predicate wraps ErrNotAuthorized "so callers can always use
+			// errors.Is". Changed deliberately, not to make a new test pass.
+			//
+			// ErrNotAuthorized classifies 403, an arm that renders the whole
+			// wrapped chain into the client's body, and every evaluator error
+			// embeds the predicate source verbatim. The old contract therefore
+			// handed a denied caller the deployment's authorization rule. It
+			// was also wrong on its own terms: a predicate that will not compile
+			// has decided nothing.
+			//
+			// TestRoleAuthorizer_PredicateFailureIsNotADenial carries the full
+			// statement of the invariant.
+			name: "malformed predicate fails closed without claiming a denial",
 			spec: authz.AuthzSpec{
 				Roles:     []string{"approver"},
 				Attribute: `actor.ID ===`, // invalid syntax
@@ -137,9 +150,10 @@ func TestRoleAuthorizer_AttributePredicate(t *testing.T) {
 			vars:  map[string]any{},
 			assert: func(t *testing.T, err error) {
 				t.Helper()
-				require.Error(t, err)
-				require.True(t, errors.Is(err, authz.ErrNotAuthorized), "expected ErrNotAuthorized to be wrapped")
-				require.NotEmpty(t, err.Error(), "error message should describe the predicate failure")
+				require.Error(t, err, "an unevaluable predicate must still refuse")
+				require.False(t, errors.Is(err, authz.ErrNotAuthorized),
+					"a broken policy is not an authorization decision, and 403 renders the chain")
+				require.NotEmpty(t, err.Error(), "the diagnostic must survive for operator logs")
 			},
 		},
 	}

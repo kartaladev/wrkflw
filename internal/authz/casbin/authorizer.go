@@ -67,7 +67,16 @@ func (a *Authorizer) Authorize(_ context.Context, spec authz.AuthzSpec, actor au
 	if spec.Attribute != "" {
 		ok, err := a.attrEval.EvalBool(spec.Attribute, map[string]any{"actor": actor, "vars": vars})
 		if err != nil {
-			return fmt.Errorf("%w: attribute predicate: %w", authz.ErrNotAuthorized, err)
+			// ⚠ NOT wrapped in authz.ErrNotAuthorized — same reasoning as the
+			// sibling site in authz.RoleAuthorizer.Authorize, which carries the
+			// full note. In short: a predicate that cannot evaluate has decided
+			// nothing, and ErrNotAuthorized classifies 403, whose arm renders
+			// the whole wrapped chain to the client — including the expression
+			// source the evaluator embeds in every error it returns.
+			//
+			// Still fails CLOSED; the raw error reaches operators through the
+			// adapters' 5xx logging instead of the response body.
+			return fmt.Errorf("workflow-casbinauthz: attribute predicate: %w", err)
 		}
 		if !ok {
 			return authz.ErrNotAuthorized

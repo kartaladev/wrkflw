@@ -113,8 +113,16 @@ func (AllowAll) Authorize(_ context.Context, _ AuthzSpec, _ Actor, _ map[string]
 //  2. If spec.Attribute is non-empty, the predicate is evaluated via expreval
 //     against {"actor": actor, "vars": vars} and must return true.
 //
-// On failure [ErrNotAuthorized] is returned. An expression evaluation error is
-// wrapped with [ErrNotAuthorized] so callers can always use errors.Is.
+// A failed check returns [ErrNotAuthorized].
+//
+// ⚠ An expression that FAILS TO EVALUATE is reported differently, and the
+// distinction is deliberate (#69): it returns a plain wrapped error that does
+// NOT satisfy errors.Is(err, ErrNotAuthorized). A predicate that will not
+// compile or does not yield a bool has decided nothing, so calling it a denial
+// claims a fact this code does not have — and ErrNotAuthorized classifies 403,
+// an arm that renders the whole error chain to the client, while every
+// evaluator error embeds the predicate source verbatim. It still fails CLOSED;
+// see the note at the call site.
 //
 // Note: [AuthzSpec].Privileges is reserved for future resource-privilege checks
 // and is NOT evaluated by RoleAuthorizer.
@@ -135,7 +143,36 @@ func (RoleAuthorizer) Authorize(_ context.Context, spec AuthzSpec, actor Actor, 
 		}
 		ok, err := attrEval.EvalBool(spec.Attribute, env)
 		if err != nil {
-			return fmt.Errorf("%w: attribute predicate: %w", ErrNotAuthorized, err)
+			// ⚠ NOT wrapped in ErrNotAuthorized, deliberately, and this must
+			// stay that way. Two reasons, and the second is why it is a
+			// disclosure rather than only a modelling slip:
+			//
+			// A predicate that evaluates to false is a DENIAL. One that fails
+			// to evaluate has determined NOTHING — the policy is broken —
+			// so claiming ErrNotAuthorized asserts a fact this code does not
+			// have.
+			//
+			// And ErrNotAuthorized classifies 403, whose arm in
+			// httpcore.ClassifyError renders err.Error(): the whole wrapped
+			// chain, into the client's response body. Every error path in the
+			// evaluator embeds the expression SOURCE verbatim (compile %q,
+			// run %q, %q did not evaluate to bool). MEASURED before this fix,
+			// a denied caller received the deployment's own authorization rule:
+			//
+			//	403 {"message":"workflow-authz: not authorized: attribute
+			//	 predicate: workflow-expreval: \"actor.Attributes[...]\" did
+			//	 not evaluate to bool (got string)"}
+			//
+			// Unwrapped it falls to ClassifyError's 500 default, which sends an
+			// empty Message and whose raw error the adapters' writeErr logs —
+			// so operators keep the full diagnostic and the caller gets none of
+			// it.
+			//
+			// ⚠ It still fails CLOSED: this returns a non-nil error and every
+			// caller of Authorize treats any error as a refusal.
+			//
+			// TestRoleAuthorizer_PredicateFailureIsNotADenial pins all of this.
+			return fmt.Errorf("workflow-authz: attribute predicate: %w", err)
 		}
 		if !ok {
 			return ErrNotAuthorized
