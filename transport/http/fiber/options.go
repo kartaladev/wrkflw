@@ -13,6 +13,8 @@
 package fiber
 
 import (
+	"reflect"
+	"sync"
 	"time"
 
 	fiberlib "github.com/gofiber/fiber/v3"
@@ -85,17 +87,18 @@ func WithRequestActorTimeout(d time.Duration) httpcore.CustomizeOption[fiberlib.
 	return httpcore.WithRequestActorTimeout[fiberlib.Router](d)
 }
 
-// WithMiddleware wraps the router returned by cfg.Wrap in a fiber Group with
-// mw as middleware handlers, using fiber's Group("", mw...) signature.
+// WithMiddleware applies mw as fiber middleware ahead of the routes this
+// adapter mounts, by registering a Group("", mw...) on the router.
 //
-// ⚠ It does NOT confine mw to the routes this library mounts, despite mirroring
-// the gin adapter's shape. fiber's routing is path-based rather than
-// object-based, so a group at the empty prefix matches "/" and everything under
-// it. MEASURED on fiber v3.4.0: a handler passed here also runs for routes the
-// CONSUMER registered on the same app. The gin adapter's Group IS object-scoped
-// and does confine it — the two adapters diverge here, and this is the one that
-// is wider than it looks. Mount the library on a prefixed group of your own if
-// you need the narrower scope.
+// ⚠ SCOPE: this is APP-WIDE middleware, not per-group middleware, despite
+// mirroring the gin adapter's spelling. fiber's routing is path-based rather
+// than object-based, so a group at the empty prefix registers at "/" and
+// therefore matches every request the router sees — including routes the
+// CONSUMER registered on the same app. MEASURED on fiber v3.4.0. The gin
+// adapter's Group IS object-scoped and does confine mw to the library's routes;
+// the two adapters genuinely diverge here, and this is the wider of the two.
+// If you need the narrower scope, mount this library on a prefixed group of
+// your own and pass the option there.
 //
 // ⚠ mw composes OUTSIDE this adapter's per-route wrapper, which is where
 // X-Content-Type-Options: nosniff is set. A middleware that SHORT-CIRCUITS —
@@ -110,12 +113,77 @@ func WithRequestActorTimeout(d time.Duration) httpcore.CustomizeOption[fiberlib.
 // usually can — list [NosniffMiddleware] FIRST and the header is set before
 // anything after it can answer.
 func WithMiddleware(mw ...fiberlib.Handler) httpcore.CustomizeOption[fiberlib.Router] {
+	// Convert []fiberlib.Handler to []any for fiber's variadic Group call.
+	// Hoisted out of the closure: it does not depend on the router, and the
+	// closure now runs more than once.
+	args := make([]any, len(mw))
+	for i, h := range mw {
+		args[i] = h
+	}
+
+	// ⚠ ONE group per router, memoised — the registration is a SIDE EFFECT, and
+	// this closure is called once per Customize, not once per mount.
+	//
+	// httpcore.CustomizeConfig.Wrap is documented as transforming the router,
+	// which on gin it does: Group returns a new *RouterGroup object and calling
+	// it twice is harmless. On fiber, Group REGISTERS handlers at a path, so
+	// each call added another copy of mw at "/". Mount runs Customize three
+	// times (InstanceRoutes, TaskRoutes, MessageRoutes) and each calls Wrap
+	// once, so mw was registered three times, interleaved with the routes
+	// between them.
+	//
+	// MEASURED on fiber v3.4.0 before this memo, counting executions of one
+	// consumer middleware for one request:
+	//
+	//	GET  /instances/:id       1   (registered after the 1st copy)
+	//	POST /tasks/:token/claim  2   (after the 2nd)
+	//	POST /messages            3   (after the 3rd)
+	//	GET  <a consumer route>   3
+	//	GET  <unrouted path>      3
+	//
+	// So the count varied BY ENDPOINT — a rate limiter counted one POST
+	// /messages as three requests and one GET /instances/:id as one, and an
+	// unmatched path ran the consumer's auth work three times. Non-uniform is
+	// the part that made it survive: nothing in a response body shows it.
+	//
+	// Keyed by router rather than a plain sync.Once so that reusing one option
+	// value across two apps still registers on both — a bare Once would hand
+	// the second app the FIRST app's group, silently registering its routes on
+	// the wrong application.
+	//
+	// ⚠ The key is an INTERFACE, and Go panics ("hash of unhashable type") when
+	// the dynamic type behind an interface map key is not comparable. fiber's
+	// own *App and *Group are pointers, but fiber.Router is exported and every
+	// entry point here takes it, so a consumer may pass their own
+	// implementation — and a test double written as a struct VALUE embedding
+	// fiber.Router is not comparable. MEASURED: that panicked on the first Wrap
+	// call, at mount time, with no compile-time warning. A library must not
+	// panic because someone implemented its own exported interface.
+	//
+	// So the memo is guarded rather than assumed. A non-comparable router falls
+	// back to registering per call, which is exactly the behaviour that
+	// predates this memo: noisier (one copy of mw per Customize) but correct in
+	// the sense that every route still gets the middleware. Degrading to the
+	// older behaviour for an exotic router beats crashing on it, and the
+	// fallback is asserted in TestWithMiddleware_MemoAcrossRouterTypes so it
+	// stays a stated trade rather than an assumption.
+	//
+	// The mutex guards concurrent mounts; mounting is normally single-threaded.
+	var (
+		mu     sync.Mutex
+		groups = make(map[fiberlib.Router]fiberlib.Router)
+	)
 	return httpcore.WithRouterFunc(func(r fiberlib.Router) fiberlib.Router {
-		// Convert []fiberlib.Handler to []any for fiber's variadic Group call.
-		args := make([]any, len(mw))
-		for i, h := range mw {
-			args[i] = h
+		if !reflect.ValueOf(r).Comparable() {
+			return r.Group("", args...)
 		}
-		return r.Group("", args...)
+		mu.Lock()
+		defer mu.Unlock()
+		if g, ok := groups[r]; ok {
+			return g
+		}
+		g := r.Group("", args...)
+		groups[r] = g
+		return g
 	})
 }
