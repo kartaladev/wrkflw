@@ -79,7 +79,7 @@ func (s *Store) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Ver
 		}
 	}()
 
-	snap, err := json.Marshal(capHistory(step.State, s.historyCap))
+	snap, err := marshalSnapshot(step.State, s.historyCap)
 	if err != nil {
 		return 0, fmt.Errorf("workflow-store: create: marshal snapshot: %w", err)
 	}
@@ -229,7 +229,7 @@ func (s *Store) Commit(ctx context.Context, expected kernel.Version, step kernel
 		}
 	}()
 
-	snap, err := json.Marshal(capHistory(step.State, s.historyCap))
+	snap, err := marshalSnapshot(step.State, s.historyCap)
 	if err != nil {
 		wrapped := fmt.Errorf("workflow-store: commit: marshal snapshot: %w", err)
 		spanErr(wrapped)

@@ -21,6 +21,13 @@ func (s *Store) QuerierForTest(ctx context.Context) database.Querier {
 // CapHistory exposes the unexported capHistory helper for black-box tests.
 var CapHistory = capHistory
 
+// MarshalSnapshotForTest exposes the unexported marshalSnapshot helper — the
+// exact encoder Create and Commit persist the snapshot column with — so the
+// benchmarks measure the real per-step cost rather than a hand-copied
+// json.Marshal(capHistory(...)) that would drift away from it.
+// It MUST NOT be called from non-test code.
+var MarshalSnapshotForTest = marshalSnapshot
+
 // MapConflictForTest exposes the unexported mapConflict method for black-box
 // tests. It MUST NOT be called from non-test code.
 func (s *Store) MapConflictForTest(err error) error { return s.mapConflict(err) }
