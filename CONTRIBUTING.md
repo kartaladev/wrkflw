@@ -21,6 +21,17 @@ golangci-lint run ./...                          # lint — must be clean before
 go test -race -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1
 ```
 
+CI also runs three repo-specific checks. None needs Docker, so run them locally before pushing:
+
+```bash
+scripts/check-extraction.sh                      # internal/database stays extractable
+scripts/check-test-timeout.sh                    # Eventually budgets fit go test -timeout
+scripts/check-doc-refs.sh                        # no citations of deleted documents in *.go
+```
+
+The first needs the Go toolchain (`go list -deps`, which may hit the network on a cold module
+cache). The other two are pure bash + git + grep.
+
 ## Expectations for a change
 
 - **Test-driven.** Production code is written test-first (red → green → refactor). New exported
