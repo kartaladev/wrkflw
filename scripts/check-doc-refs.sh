@@ -42,10 +42,19 @@
 # rule whose target comes back is reported as needing narrowing rather than
 # silently switched off — see `rule_active` and the notice it prints.
 #
-# NON-VACUITY. `--self-test` plants each forbidden form in a fixture and asserts
-# the scanner reports it, then asserts a clean fixture reports nothing. It runs
-# on every invocation, so this check can never quietly stop being able to fail —
-# the class of vacuous check this repo has shipped before.
+# NON-VACUITY, in two halves — a green run has to prove BOTH, because either
+# one alone passes green while the check is dead:
+#
+#   * DETECTION — `--self-test` plants each forbidden form in a fixture and
+#     asserts the scanner reports it, then asserts a clean fixture reports
+#     nothing. It runs on every invocation, not only under the flag.
+#   * COVERAGE — `assert_covers_tree` asserts the scanned set is a superset of
+#     every tracked *.go file. Working regexes pointed at the wrong file set
+#     are exactly as useless as broken ones, and a plain "did we scan anything"
+#     count cannot tell the difference: any non-empty subset satisfies it.
+#
+# This is the class of vacuous check this repo has shipped before, and which
+# check-test-timeout.sh's own header calls out.
 #
 # Usage:
 #   scripts/check-doc-refs.sh              # scan the tree (run from anywhere)
@@ -95,7 +104,12 @@ rule_active() {
 # NUL-separated file list, print `file:line:text` for every match.
 scan() {
   local regex="$1" list="$2"
-  xargs -0 grep -n -H -I -E -e "${regex}" -- < "${list}" 2>/dev/null || true
+  # Deliberately NO -I. Go source is text — Go rejects a NUL byte outright — so
+  # -I bought nothing here and cost the guard its main claim: a .go file
+  # carrying a NUL was silently skipped while still being counted, which is a
+  # quiet bypass of a check whose whole pitch is that it has none. Without the
+  # flag such a file reports "Binary file ... matches", which fails loudly.
+  xargs -0 grep -n -H -E -e "${regex}" -- < "${list}" 2>/dev/null || true
 }
 
 go_file_list() {
@@ -104,9 +118,38 @@ go_file_list() {
   git ls-files -z --cached --others --exclude-standard -- '*.go' > "$1"
 }
 
+# The self-test proves the REGEXES detect. It cannot prove the FILE LIST covers
+# the tree, because the list is built from the real repository — and a scan of
+# the wrong set passes green no matter how good the regexes are. Narrowing the
+# pathspec in go_file_list from '*.go' to 'engine/*.go' reads as a harmless
+# scoping tweak and silently drops 947 files to 161, taking a live citation on
+# an exported doc comment with it. A `count > 0` guard does not notice: any
+# non-empty subset satisfies it.
+#
+# So assert coverage directly. SUPERSET, not equality: --others legitimately
+# adds untracked files, so equality would false-fail on any dirty tree.
+assert_covers_tree() {
+  local list="$1" tracked="$2.tracked" scanned="$2.scanned" missing count
+  git ls-files -z -- '*.go' | tr '\0' '\n' | sort > "${tracked}"
+  tr '\0' '\n' < "${list}" | sort > "${scanned}"
+
+  missing="$(comm -23 "${tracked}" "${scanned}")"
+  [ -n "${missing}" ] || return 0
+
+  count="$(printf '%s\n' "${missing}" | wc -l | tr -d ' ')"
+  {
+    echo "check-doc-refs: FAIL — the scan does not cover the tree."
+    echo "${count} tracked *.go file(s) are absent from the scanned set, so a citation in any of"
+    echo "them would pass unseen. The pathspec in go_file_list has been narrowed, or the list"
+    echo "was built from the wrong root. First few missing:"
+    printf '%s\n' "${missing}" | head -5 | sed 's/^/  /'
+  } >&2
+  exit 1
+}
+
 # --- self-test ---------------------------------------------------------------
 self_test() {
-  local tmp status=0 checked=0 hits
+  local tmp status=0 checked=0 hits declared
   tmp="$(mktemp -d)"
 
   # A clean file: near-misses that must NOT trip any rule.
@@ -152,8 +195,18 @@ EOF
 
   rm -rf "${tmp}"
 
-  if [ "${checked}" -lt 5 ]; then
-    echo "self-test: only ${checked} rules were exercised; the table has been emptied" >&2
+  # Derived from the table, never pinned to today's row count. A literal floor
+  # of 5 would hard-fail a sanctioned narrowing — merging the two ADR rows into
+  # one, say — while claiming "the table has been emptied" about a table holding
+  # four rules. That is the same over-specification the rule_active probes below
+  # avoid. What actually needs asserting is that the loop exercised every row it
+  # was given (catching a truncated read) and that there is at least one.
+  declared="$(rules | grep -c '[^[:space:]]' || true)"
+  if [ "${declared}" -lt 1 ]; then
+    echo "self-test: the rules table is empty; nothing would ever be checked" >&2
+    status=1
+  elif [ "${checked}" != "${declared}" ]; then
+    echo "self-test: the table declares ${declared} rules but only ${checked} were exercised" >&2
     status=1
   fi
 
@@ -176,7 +229,10 @@ EOF
     echo "check-doc-refs: SELF-TEST FAILED — the scanner can no longer be shown to detect what it claims to." >&2
     exit 1
   fi
-  echo "check-doc-refs: self-test OK — ${checked} rules each detect a planted citation in a doc comment, a line comment and a string, and none fires on clean source."
+  # States exactly what was proved, and no more. Detection is proved here; that
+  # the scan is pointed at the whole tree is a separate claim, proved against
+  # the real repository by assert_covers_tree.
+  echo "check-doc-refs: self-test OK — ${checked} rules each detect a planted citation in a doc comment, a line comment and a string, and none fires on clean source (detection only; tree coverage is asserted separately)."
 }
 
 # --- main --------------------------------------------------------------------
@@ -194,6 +250,9 @@ go_file_list "${tmp}/list"
 
 files="$(tr -cd '\0' < "${tmp}/list" | wc -c | tr -d ' ')"
 [ "${files}" -gt 0 ] || fail "no *.go files found under ${repo_root}; the scan would pass vacuously"
+
+# A non-empty list is not a covering one — see assert_covers_tree.
+assert_covers_tree "${tmp}/list" "${tmp}/cov"
 
 status=0
 active=0
@@ -244,4 +303,4 @@ EOF
   exit 1
 fi
 
-echo "check-doc-refs: OK — ${files} Go files, ${active} rules active, no dangling document references."
+echo "check-doc-refs: OK — ${files} Go files (every tracked *.go covered), ${active} rules active, no dangling document references."
