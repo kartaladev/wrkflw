@@ -17,8 +17,6 @@ If it doesn't exist, **proceed silently**. Don't flag its absence; don't suggest
 ```
 /
 ├── CONTEXT.md
-├── docs/
-│   └── agents/
 ├── engine/
 ├── persistence/
 ├── transport/

@@ -42,7 +42,8 @@ cache). The other two are pure bash + git + grep.
 - **Design decisions.** Record the rationale in the commit message and the PR body, and state the
   constraint it produced as a comment on the code it constrains — naming an identifier a reader can
   jump to (`ErrScopeLocalWithCompensateRef`), never a document. This repo keeps no ADR directory;
-  `scripts/check-doc-refs.sh` fails the build on citations of the deleted one.
+  `scripts/check-doc-refs.sh` fails the build on any `*.go` citation of the deleted one. Commit
+  messages are deliberately outside its scope, so quoting history there is fine.
 - **Engine purity.** The engine core (`engine/`, `model/`) must not import transport, storage-vendor,
   or event-bus packages — depend on the in-repo interfaces. Never import watermill, casbin, gocron, or
   clockwork directly from workflow/engine code.
