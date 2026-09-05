@@ -25,7 +25,7 @@ CI also runs three repo-specific checks. None needs Docker, so run them locally 
 
 ```bash
 scripts/check-extraction.sh                      # internal/database stays extractable
-scripts/check-test-timeout.sh                    # Eventually budgets fit go test -timeout
+scripts/check-test-timeout.sh                    # test wait budgets fit go test -timeout
 scripts/check-doc-refs.sh                        # no citations of deleted documents in *.go
 ```
 

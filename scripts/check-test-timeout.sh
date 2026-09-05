@@ -170,19 +170,24 @@ duration_ms() {
 # the package's test files, including the two families that are NOT paid on the
 # failing path:
 #
-#   * NEGATIVE WINDOWS — `case <-ch: t.Fatal(...)` opposite a bare `case
-#     <-time.After(d):`. A hand-rolled require.Never: the deadline is paid in
-#     full on every GREEN run and must stay SHORT, so bounding it from above is
-#     not what it needs. All six in the tree are 100-500ms.
-#   * FIXTURE FALLBACKS — time.After inside a test double or helper (a fake
-#     blocking action, a resolver that turns a hang into a readable failure).
-#     Not a deadline on an assertion at all.
+#   * NEGATIVE WINDOWS (6, 2.2s) — `case <-ch: t.Fatal(...)` opposite a bare
+#     `case <-time.After(d):`. A hand-rolled require.Never: paid in full on every
+#     GREEN run and wanting to stay SHORT, so bounding it from above is not what
+#     it needs.
+#   * A DRAIN LOOP (1, 0.2s) — the deadline is a loop's only exit. Not a negative
+#     window (nothing fails) but the same cost profile.
+#   * FIXTURE FALLBACKS (3, 6.0s) — time.After inside a test double or helper (a
+#     fake blocking action; a resolver that turns a hang into a readable
+#     failure). Not a deadline on an assertion at all.
+#   * AN ASSERTING BRANCH (1, 2.0s) — the deadline clause cancels and then
+#     asserts, so it is part of what the test exercises.
 #
-# Counting them anyway costs 2.2s repo-wide and buys a rule with no classifier
+# Counting them anyway costs 10.4s repo-wide and buys a rule with no classifier
 # in it. Over-approximating a CEILING is the safe direction — it can only make
 # the guard stricter, never laxer — whereas a bash classifier for "does the
 # sibling comm-clause call t.Fatal" would be exactly the kind of clever
-# line-oriented heuristic that silently mis-reads and under-counts.
+# line-oriented heuristic that silently mis-reads and under-counts. See
+# docs/agents/test-deadlines.md for the five constructs and their counts.
 
 status=0
 printf '%-44s %7s %6s %8s %6s %8s %9s %s\n' \
@@ -230,7 +235,7 @@ for dir in $(find . -name '*_test.go' -not -path './.git/*' -not -path './.claud
     ms="$(duration_ms "${expr}")"
     case "${ms}" in
       ''|*[!0-9]*)
-        fail "cannot parse the duration '${expr}' in ${pkg}: the guard counts integer literals like '2*time.Second' or '500*time.Millisecond'. A duration it cannot read is a deadline nobody is bounding — spell it as a literal, or hoist the wait to eventuallyBudget." ;;
+        fail "cannot parse the duration '${expr}' in ${pkg}: the guard counts integer literals like '2*time.Second' or '500*time.Millisecond'. (The quoted text stops at the first ')', so a nested call such as time.Duration(n)*time.Second reads truncated here.) A duration it cannot read is a deadline nobody is bounding — spell it as a literal, or hoist the wait to eventuallyBudget." ;;
     esac
     raw_ms=$(( raw_ms + ms ))
     raw_n=$(( raw_n + 1 ))

@@ -7,11 +7,16 @@ not arrived yet.
 
 `scripts/check-test-timeout.sh` cannot see this class. A budget guard asks **"did
 you wait long enough?"**; it cannot ask **"did you wait for the right thing?"**
-Every site below that the script scans at all used `eventuallyBudget` correctly
-and passed it. (It scans only packages carrying a `waitbudget_test.go`, so the
-`persistence` sites below were never examined by it — they pass explicit literal
-budgets. The script's own header calls a bare literal "a separate review
-problem"; that debt is real and stands, and it is #66's, not this document's.)
+Every site below that the script counts at all used `eventuallyBudget` correctly
+and passed it. (The `persistence` sites below are not counted: they pass explicit
+literal budgets, and the script finds Eventually sites by grepping the
+`eventuallyBudget` identifier. Its header calls a bare literal "a separate review
+problem"; that debt is real and still open. ⚠ This paragraph previously said the
+script "scans only packages carrying a `waitbudget_test.go`" and attributed the
+debt to #66 — both went stale when #66 landed: the script now walks every package
+with test files, and #66 covered the raw-`time.After` gap without touching literal
+budgets. The verdict was right and the mechanism wrong, which is the pattern this
+document's own ledger flags twice.)
 
 ## The rule
 
@@ -128,8 +133,10 @@ different proposition from one that never has.
 ## Related
 
 - #80 — the first confirmed instance and the fix shape.
-- #66 — raw `time.After` deadlines outside the budget guard, and the literal-budget
-  debt noted at the top of this document. Adjacent and disjoint; neither ticket
-  absorbs the other.
+- #66 — raw `time.After` deadlines outside the budget guard. Adjacent and
+  disjoint; neither ticket absorbs the other. Its output is
+  `docs/agents/test-deadlines.md`, which classifies the raw-deadline family the
+  way this document classifies waits. The literal-budget debt is in neither: see
+  that document's "What this ticket did not settle".
 - `scripts/check-test-timeout.sh` — the budget guard, and its own statement of
   what it does not cover.
