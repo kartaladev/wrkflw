@@ -93,12 +93,16 @@ The syntactic tell looks cheap: an `Eventually` whose condition reads identifier
 set A, immediately followed by an assertion reading identifier set B, with
 A ∩ B = ∅. Run it against the ledger and it fails in both directions.
 
-**It over-fires.** Exactly three rows above are identifier-disjoint: the
-`nonNilCh` defect, the `trigger_test.go` row, and `branch_routing`. Two of those
-three are correct — correct because an earlier wait already established the second
-signal, or because production code orders the writes (`Record` before `Drive`).
-Separating them needs a happens-before model spanning a database and a log
-handler. That is whole-program concurrency analysis, and it is not available here.
+**It over-fires.** Three rows above are identifier-disjoint on their face — the
+`nonNilCh` defect, the `trigger_test.go` row, and `branch_routing` — and two of
+the three are correct: correct because an earlier wait already established the
+second signal, or because production code orders the writes (`Record` before
+`Drive`). That count is already generous to the check, because it assumes the
+checker traces an assignment back to its source. A flow-insensitive one fares
+worse and flags `happy_path_vars_carry` as well, whose assertions read `succSt`
+rather than the `d.store` its wait polls. Separating true from false here needs a
+happens-before model spanning a database and a log handler. That is whole-program
+concurrency analysis, and it is not available here.
 
 **It also under-fires, on the one defect that started this.** #80's confirmed
 instance reads `reader` on both sides of the wait — `sumFor(reader, …)` then
