@@ -133,14 +133,40 @@ therefore tracks brace depth relative to the call and accepts a pair only at
 depth 0, which is where the budget argument lives and where nothing inside the
 closure can reach.
 
-Counting braces means skipping the places a brace is not punctuation — string,
-rune and raw-string literals, and line comments. A `}` inside a string within the
-closure otherwise drops depth to 0 while still inside it, and the same silent
-under-count returns through a narrower door. Requiring depth to stay non-negative
-does **not** catch that: the spurious close lands depth on exactly 0, the budget
-is taken there, and depth only goes negative afterwards. Skipping literals is
-what closes it, and it also stops a duration written inside a *message* string
-from ever being read as a budget.
+Counting braces means skipping every context in which a brace is not
+punctuation. **That set is closed by the Go spec, and there are five:**
+
+| | context | example | spans lines |
+| --- | --- | --- | --- |
+| 1 | interpreted string literal | `"…}…"` | no |
+| 2 | raw string literal | `` `…}…` `` | yes |
+| 3 | rune literal | `'}'` | no |
+| 4 | line comment | `// …}` | no |
+| 5 | general (block) comment | `/* … } */` | yes |
+
+All five are handled. That is the difference between "right about every shape
+anyone thought to try" and "right over every lexical context the language
+admits" — the second is checkable against the spec instead of against
+imagination, and there is no sixth to find, because a brace cannot occur anywhere
+else in Go source without being punctuation.
+
+Completeness matters because **each unhandled context is a silent under-count,
+not a loud one.** A `}` inside a string in the closure drops depth to 0 while
+still inside it, the next duration pair is taken as the budget, and the real
+budget is discarded — measured at a 300 s ceiling read as 5 s. Requiring depth to
+stay non-negative does **not** catch it: the spurious close lands depth on
+exactly 0, the budget is taken there, and depth only goes negative afterwards.
+
+Handling 1 and 2 has a second effect worth knowing: string contents never reach
+the matcher, so a duration written inside a *message* — `"tried 99*time.Second,
+99*time.Second, and gave up"` — can never be read as a budget.
+
+Four of the five were found by adversarial review rather than by writing them
+down, across three rounds, each a variant of one defect: the matcher reading
+something that is not the budget. Enumerating from the spec is what ended that,
+and it is the cheaper move whenever the enumeration is closed — the alternative
+is discovering the list one planted counterexample at a time and never knowing
+when to stop.
 
 The guard also reconciles: it counts Eventually *calls* independently and fails
 if the budgets it found do not **cover** them, so a budget it cannot read — a

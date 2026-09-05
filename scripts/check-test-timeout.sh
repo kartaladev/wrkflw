@@ -255,15 +255,30 @@ for dir in $(find . -name '*_test.go' -not -path './.git/*' -not -path './.claud
   # position-correct rather than order-correct, so it holds whether the budget
   # shares the call's line, follows a `},` close, or wraps to its own line.
   #
-  # Counting braces needs to skip the places a brace is not punctuation: string,
-  # rune and raw-string literals, and line comments. A `}` inside a string —
-  # `if strings.Contains(body, "}")` inside the closure — otherwise drops depth to
-  # 0 while still inside it, and the same silent under-count returns through a
-  # narrower door (measured: a 300s budget read as 5s). Note that requiring depth
-  # to stay non-negative does NOT catch that: the spurious close lands depth on
-  # exactly 0, the budget is taken there, and depth only goes negative afterwards.
-  # Skipping literals is what actually closes it. It also stops a duration written
-  # inside a MESSAGE string from ever being read as a budget.
+  # Counting braces means skipping every context in which a brace is not
+  # punctuation. That set is CLOSED by the Go spec, and there are five:
+  #
+  #   1. interpreted string literal   "…}…"      (escapes honoured)
+  #   2. raw string literal           `…}…`      (spans lines)
+  #   3. rune literal                 '}'
+  #   4. line comment                 // …}
+  #   5. general (block) comment      /* … } */  (spans lines)
+  #
+  # residue() handles all five, so this is not "every shape anyone thought to
+  # try" — it is every lexical context the language admits, and there is no sixth
+  # to find. Braces cannot occur anywhere else in Go source without being
+  # punctuation.
+  #
+  # Why it matters that the list is complete: each unhandled context is a SILENT
+  # UNDER-COUNT, not a loud one. A `}` inside a string in the closure drops depth
+  # to 0 while still inside it, the first duration pair after that point is taken
+  # as the budget, and the real budget is discarded — measured at a 300s ceiling
+  # read as 5s. Requiring depth to stay non-negative does NOT catch it: the
+  # spurious close lands depth on exactly 0, the budget is taken there, and depth
+  # only goes negative afterwards. Skipping the literal is what closes it.
+  #
+  # Handling 1 and 2 also stops a duration written inside a MESSAGE string from
+  # ever being read as a budget, since string contents never reach the matcher.
   #
   # The one-bit "which call" state assumes wait calls do not nest inside each
   # other's arguments. Verified in review at this commit by walking every test
@@ -287,11 +302,13 @@ for dir in $(find . -name '*_test.go' -not -path './.git/*' -not -path './.claud
         for (i = 1; i <= n; i++) {
           c = substr(s, i, 1)
           if (INRAW)  { if (c == BT) INRAW  = 0; continue }
+          if (INCOM)  { if (c == "*" && substr(s, i + 1, 1) == "/") { INCOM = 0; i++ } ; continue }
           if (INSTR)  { if (c == "\\") { i++; continue } ; if (c == "\"") INSTR  = 0; continue }
           if (INRUNE) { if (c == "\\") { i++; continue } ; if (c == SQ)   INRUNE = 0; continue }
           if (c == BT)   { INRAW  = 1; continue }
           if (c == "\"") { INSTR  = 1; continue }
           if (c == SQ)   { INRUNE = 1; continue }
+          if (c == "/" && substr(s, i + 1, 1) == "*") { INCOM = 1; i++; continue }
           if (c == "/" && substr(s, i + 1, 1) == "/") break
           if (c == "{") { DEPTH++; continue }
           if (c == "}") { DEPTH--; continue }
@@ -308,11 +325,11 @@ for dir in $(find . -name '*_test.go' -not -path './.git/*' -not -path './.claud
         }
         return ""
       }
-      FNR == 1      { pending = ""; DEPTH = 0; INRAW = 0 }
+      FNR == 1      { pending = ""; DEPTH = 0; INRAW = 0; INCOM = 0 }
       /^[ \t]*\/\// { next }
       pending == "" && match($0, /(require|assert)\.(Eventually|EventuallyWithT|Never|NeverWithT)\(/) {
         pending = ($0 ~ /(require|assert)\.(Never|NeverWithT)\(/) ? "NV" : "EV"
-        DEPTH = 0; INRAW = 0
+        DEPTH = 0; INRAW = 0; INCOM = 0
         r = residue(substr($0, RSTART + RLENGTH))
         if (r ~ /eventuallyBudget/) { pending = ""; next }
         b = takeBudget(r)
