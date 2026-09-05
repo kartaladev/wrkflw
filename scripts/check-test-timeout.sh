@@ -253,8 +253,17 @@ for dir in $(find . -name '*_test.go' -not -path './.git/*' -not -path './.claud
   # depth 0 — outside the condition closure, which is exactly where the budget
   # argument lives and where nothing inside the closure can reach. That is
   # position-correct rather than order-correct, so it holds whether the budget
-  # shares the call's line, follows a `},` close, or wraps to its own line, and it
-  # does not care what the closure body contains.
+  # shares the call's line, follows a `},` close, or wraps to its own line.
+  #
+  # Counting braces needs to skip the places a brace is not punctuation: string,
+  # rune and raw-string literals, and line comments. A `}` inside a string —
+  # `if strings.Contains(body, "}")` inside the closure — otherwise drops depth to
+  # 0 while still inside it, and the same silent under-count returns through a
+  # narrower door (measured: a 300s budget read as 5s). Note that requiring depth
+  # to stay non-negative does NOT catch that: the spurious close lands depth on
+  # exactly 0, the budget is taken there, and depth only goes negative afterwards.
+  # Skipping literals is what actually closes it. It also stops a duration written
+  # inside a MESSAGE string from ever being read as a budget.
   #
   # The one-bit "which call" state assumes wait calls do not nest inside each
   # other's arguments. Verified in review at this commit by walking every test
@@ -270,15 +279,24 @@ for dir in $(find . -name '*_test.go' -not -path './.git/*' -not -path './.claud
   lit_ms=0
   lit_n=0
   for expr in $(awk '
-      function residue(s, d,   i, c, out) {
+      BEGIN { SQ = sprintf("%c", 39); BT = sprintf("%c", 96) }
+      function residue(s,   i, c, n, out) {
         out = ""
-        for (i = 1; i <= length(s); i++) {
+        n = length(s)
+        INSTR = 0; INRUNE = 0          # Go string/rune literals cannot span a line
+        for (i = 1; i <= n; i++) {
           c = substr(s, i, 1)
-          if (c == "{") { d++; continue }
-          if (c == "}") { d--; continue }
-          if (d <= 0) out = out c
+          if (INRAW)  { if (c == BT) INRAW  = 0; continue }
+          if (INSTR)  { if (c == "\\") { i++; continue } ; if (c == "\"") INSTR  = 0; continue }
+          if (INRUNE) { if (c == "\\") { i++; continue } ; if (c == SQ)   INRUNE = 0; continue }
+          if (c == BT)   { INRAW  = 1; continue }
+          if (c == "\"") { INSTR  = 1; continue }
+          if (c == SQ)   { INRUNE = 1; continue }
+          if (c == "/" && substr(s, i + 1, 1) == "/") break
+          if (c == "{") { DEPTH++; continue }
+          if (c == "}") { DEPTH--; continue }
+          if (DEPTH <= 0) out = out c
         }
-        DEPTH = d
         return out
       }
       function takeBudget(r,   b) {
@@ -290,19 +308,19 @@ for dir in $(find . -name '*_test.go' -not -path './.git/*' -not -path './.claud
         }
         return ""
       }
-      FNR == 1      { pending = ""; depth = 0 }
+      FNR == 1      { pending = ""; DEPTH = 0; INRAW = 0 }
       /^[ \t]*\/\// { next }
       pending == "" && match($0, /(require|assert)\.(Eventually|EventuallyWithT|Never|NeverWithT)\(/) {
         pending = ($0 ~ /(require|assert)\.(Never|NeverWithT)\(/) ? "NV" : "EV"
-        depth = 0
-        r = residue(substr($0, RSTART + RLENGTH), depth); depth = DEPTH
+        DEPTH = 0; INRAW = 0
+        r = residue(substr($0, RSTART + RLENGTH))
         if (r ~ /eventuallyBudget/) { pending = ""; next }
         b = takeBudget(r)
         if (b != "") { if (pending == "EV") print b; pending = "" }
         next
       }
       pending != "" {
-        r = residue($0, depth); depth = DEPTH
+        r = residue($0)
         if (r ~ /eventuallyBudget/) { pending = ""; next }
         b = takeBudget(r)
         if (b != "") { if (pending == "EV") print b; pending = "" }
@@ -336,12 +354,17 @@ for dir in $(find . -name '*_test.go' -not -path './.git/*' -not -path './.claud
   # context.WithTimeout(ctx, eventuallyBudget)) is not a wait site at all. That
   # over-counts by one, which is the safe direction for a ceiling and must not be
   # mistaken for a missing site.
+  #
+  # Where that blinds it, measured rather than left implicit: sites == ev_calls
+  # exactly in every package EXCEPT myelector (3 vs 2), so the slack is one unit
+  # in one package — and a missed literal in myelector specifically would be
+  # absorbed by it rather than reported. Everywhere else the comparison is tight.
   ev_calls="$(cat "${dir}"/*_test.go 2>/dev/null \
     | grep -v -E '^[[:space:]]*//' \
     | grep -ohE '(require|assert)\.Eventually(WithT)?\(' \
     | wc -l | tr -d ' ' || true)"
   if (( sites + lit_n < ev_calls )); then
-    fail "${pkg}: ${ev_calls} Eventually call(s) but only $(( sites + lit_n )) accounted budget(s) (${sites} via eventuallyBudget, ${lit_n} literal). A budget that is neither the shared constant nor an integer duration literal is invisible to this ceiling — use eventuallyBudget, or spell the budget as a literal."
+    fail "${pkg}: ${ev_calls} Eventually call(s) but only $(( sites + lit_n )) accounted budget(s) (${sites} via eventuallyBudget, ${lit_n} literal). Either a budget is neither the shared constant nor an integer duration literal (use eventuallyBudget, or spell it as a literal), or brace depth never returned to 0 for one of these calls so its budget was never reached — check for an unbalanced brace the literal-skipping in section 3 does not handle."
   fi
 
   # -- raw select-deadline contribution ---------------------------------------

@@ -133,6 +133,15 @@ therefore tracks brace depth relative to the call and accepts a pair only at
 depth 0, which is where the budget argument lives and where nothing inside the
 closure can reach.
 
+Counting braces means skipping the places a brace is not punctuation — string,
+rune and raw-string literals, and line comments. A `}` inside a string within the
+closure otherwise drops depth to 0 while still inside it, and the same silent
+under-count returns through a narrower door. Requiring depth to stay non-negative
+does **not** catch that: the spurious close lands depth on exactly 0, the budget
+is taken there, and depth only goes negative afterwards. Skipping literals is
+what closes it, and it also stops a duration written inside a *message* string
+from ever being read as a budget.
+
 The guard also reconciles: it counts Eventually *calls* independently and fails
 if the budgets it found do not **cover** them, so a budget it cannot read — a
 named local, a computed expression — stops the build instead of quietly leaving
