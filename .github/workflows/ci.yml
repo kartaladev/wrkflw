@@ -104,6 +104,31 @@ jobs:
       - name: Check Eventually budget fits the test timeout
         run: bash scripts/check-test-timeout.sh
 
+  doc-refs:
+    name: dangling document references (*.go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # docs/adr/, docs/specs/, SECURITY.md and STABILITY.md were deleted in
+      # 12630621; #50 stripped the ~2,240 references that survived. Nothing
+      # stopped new ones being written and #55 wrote five more, two on exported
+      # doc comments that render on pkg.go.dev — caught only because someone
+      # happened to grep. This job is that grep, run every time.
+      #
+      # Scoped to *.go, which is both the escape hatch (commit messages and the
+      # docs/ tree are untouched) and what makes the strong tree-wide form
+      # possible: *.go is at zero, the tree overall is not. Tree-wide needs no
+      # merge base, so the default shallow checkout above is sufficient and
+      # there is no fetch-depth: 0 to forget.
+      #
+      # The script self-tests on every run, so a green result also proves the
+      # scanner can still fail. Pure bash + git + grep: no Go toolchain, no
+      # Docker. Its own job, so a violation is reported even when the suite is
+      # red for unrelated reasons.
+      - name: Check for dangling document references
+        run: bash scripts/check-doc-refs.sh
+
   lint:
     name: golangci-lint
     runs-on: ubuntu-latest
