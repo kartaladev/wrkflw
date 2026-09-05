@@ -39,8 +39,10 @@ cache). The other two are pure bash + git + grep.
   TDD discipline this repo follows.
 - **Coverage.** Touched packages should stay at **≥ 85%** line coverage.
 - **Lint clean.** `golangci-lint run ./...` must report zero issues.
-- **Architecture Decision Records.** Non-trivial design decisions are recorded as ADRs under
-  `docs/adr/NNNN-<slug>.md` using the Nygard template.
+- **Design decisions.** Record the rationale in the commit message and the PR body, and state the
+  constraint it produced as a comment on the code it constrains — naming an identifier a reader can
+  jump to (`ErrScopeLocalWithCompensateRef`), never a document. This repo keeps no ADR directory;
+  `scripts/check-doc-refs.sh` fails the build on citations of the deleted one.
 - **Engine purity.** The engine core (`engine/`, `model/`) must not import transport, storage-vendor,
   or event-bus packages — depend on the in-repo interfaces. Never import watermill, casbin, gocron, or
   clockwork directly from workflow/engine code.
@@ -52,7 +54,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) scoped to the a
 ```
 feat(action/httpcall): add response size cap
 fix(persistence): guard relay loop on context deadline
-docs(adr): record retryable-action error contract
+docs(agents): record the Eventually wait rule
 ```
 
 Commit one logical change at a time.
