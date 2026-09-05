@@ -28,7 +28,11 @@ the site in the tree that most needs to stay exactly as short as it is.
 
 Those five are exhaustive over the 45 and sum to it. Re-derive rather than trust
 the counts: they come from an AST pass classifying each clause body, and the
-table is only as current as the last person to run one.
+table is only as current as the last person to run one. Give that pass an
+UNCLASSIFIED bucket and read it — the first version of this table had three rows
+and was written by hand-filing the sites the classifier could not place, which
+put two of them under a heading defined to exclude them. The tool flagged the
+right sites and was overruled by prose.
 
 A **negative window** is a hand-rolled `require.Never`. Everything the repo says
 about Never budgets applies unchanged: raising one is pure cost on every passing
@@ -81,13 +85,17 @@ Two further reasons, either sufficient on its own:
 - **It would buy nothing.** The point of converting was to bring these inside the
   guard. The guard now counts them where they are.
 - **The defect it would treat is still a hypothesis.** Conversion means adopting
-  `eventuallyBudget`, i.e. 2 s → 10 s, across 34 sites of which exactly zero have
-  been observed to flake. CLAUDE.md's proof rule is that a defect is real once a
-  failing test reproduces it; until then it is a hypothesis and gets reported as
-  one. So the disciplined move is not "never widen" — it is to name the fix and
-  hold it until there is something to fix. That fix is stated below: a shared,
-  named, generous constant for real-I/O timeouts. This defers conversion pending
-  evidence rather than vetoing it.
+  `eventuallyBudget`, i.e. 2 s → 10 s, across 34 sites. Exactly one of those —
+  the fenced `scheduler/elector_test.go:179`, the failure #66 was filed on — has
+  ever been observed to fail, once, in CI, and it has never been reproduced. The
+  other 33 have not been observed at all. CLAUDE.md's proof rule turns on that
+  distinction: a defect is real once a failing test *reproduces* it, and an
+  observation is not a reproduction. So the disciplined move is not "never
+  widen" — it is to name the fix and hold it until there is something to fix.
+  That fix is stated above: a shared, named, generous constant for real-I/O
+  timeouts. This defers conversion pending evidence rather than vetoing it, and
+  #66 fences that one site off precisely so widening it does not get mistaken
+  for fixing it.
 
   Independently of that, several sites are hang watchdogs whose duration bounds
   an algorithmic property — `scheduler/trigger_test.go:749`, *"the scan is walking
