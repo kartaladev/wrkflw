@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stop dangling document references regrowing in Go source.
 #
-# 12630621 deleted docs/adr/ (125 ADRs), docs/specs/, SECURITY.md and
+# 12630621 deleted docs/adr/ (190 ADRs), docs/specs/, SECURITY.md and
 # STABILITY.md. #50 stripped the ~2,240 surviving references to them and a
 # follow-up caught one it missed, so every .go file in the tree is now at zero.
 # Nothing stopped new ones being written, and they already were: five dangling
