@@ -25,8 +25,10 @@
 #   * raising any `eventuallyBudget` far enough that budget x sites >= timeout;
 #   * adding enough new `eventuallyBudget` Eventually sites to one package to
 #     cross the same product;
-#   * adding a raw `time.After` deadline, or enough of them, to push one
-#     package's total over the timeout;
+#   * adding a raw `time.After` deadline, or a literal Eventually budget, or
+#     enough of either, to push one package's total over the timeout;
+#   * writing an Eventually whose budget this cannot attribute, which leaves the
+#     package's Eventually calls unaccounted and stops the build;
 #   * writing a `time.After` whose duration this cannot parse — a variable or a
 #     computed expression — which stops the build rather than being skipped;
 #   * lowering `-timeout` below an existing package's total;
@@ -34,15 +36,18 @@
 #
 # SCOPE (stated so nobody over-reads a green run):
 #
-#   COVERED — Eventually sites passing the shared `eventuallyBudget` constant,
-#   and raw `select { case <-time.After(d) }` deadlines in test files (added by
-#   #66: 45 of them across 27 files sat outside the old count entirely, because
-#   a raw select carries no identifier to grep and so fell outside even this
-#   caveat's original wording).
+#   COVERED — Eventually sites passing the shared `eventuallyBudget` constant;
+#   raw `select { case <-time.After(d) }` deadlines in test files (added by #66:
+#   45 of them across 27 files sat outside the old count entirely, because a raw
+#   select carries no identifier to grep and so fell outside even this caveat's
+#   original wording); and Eventually sites passing a bare duration literal
+#   (added by #99: 18 more across 8 packages, in neither of the other two sets).
 #
-#   NOT COVERED — an Eventually site passing a bare literal instead of the
-#   constant. Using the constant is the established convention and a literal is
-#   a separate review problem.
+#   NOT COVERED — an Eventually budget that is neither the shared constant nor an
+#   integer duration literal: a named local, a computed expression. That does not
+#   pass silently. Section 3's reconciliation counts Eventually CALLS against
+#   accounted budgets and stops the build when they do not cover it, so an
+#   unreadable budget is a loud failure rather than a quiet omission.
 #
 #   NOT COVERED, AND DELIBERATELY SO — `require.Never` budgets, and the raw
 #   negative windows that are their hand-rolled equivalent (see section 3).
@@ -190,8 +195,8 @@ duration_ms() {
 # docs/agents/test-deadlines.md for the five constructs and their counts.
 
 status=0
-printf '%-44s %7s %6s %8s %6s %8s %9s %s\n' \
-  PACKAGE BUDGET EV_SITES EV_COST RAW_N RAW_COST TOTAL VERDICT
+printf '%-42s %6s %5s %7s %6s %8s %6s %8s %8s %s\n' \
+  PACKAGE BUDGET EV_N EV_COST LIT_N LIT_COST RAW_N RAW_COST TOTAL VERDICT
 
 for dir in $(find . -name '*_test.go' -not -path './.git/*' -not -path './.claude/*' \
              | sed -e 's:/[^/]*$::' | sort -u); do
@@ -225,6 +230,160 @@ for dir in $(find . -name '*_test.go' -not -path './.git/*' -not -path './.claud
   fi
   ev_cost=$(( budget_s * sites ))
 
+  # -- literal Eventually budgets (#99) ---------------------------------------
+  #
+  # An Eventually passing a bare literal instead of eventuallyBudget carries no
+  # identifier, so the count above cannot see it. 18 such sites across 8 packages
+  # sat inside no ceiling at all: not identifier sites, and not raw time.After.
+  #
+  # Finding them needs to know WHICH call a duration belongs to, and WHERE in that
+  # call it sits. Two things a plain grep gets wrong:
+  #
+  #   * `schedule.EveryRandom(5*time.Second, 5*time.Second)` is an adjacent
+  #     duration pair that is not a wait budget at all; an adjacency regex alone
+  #     counts six of those.
+  #   * a duration pair INSIDE the condition closure —
+  #     `require.Eventually(t, func() bool { return f(10*time.Millisecond,
+  #     10*time.Millisecond) }, 300*time.Second, ...)` — is met BEFORE the real
+  #     budget. Taking the first pair after the call banks the inner one and
+  #     discards the budget, recording a 300s ceiling as 10ms. Silently, and in
+  #     the under-counting direction. (Found in review; reproduced both ways.)
+  #
+  # So awk tracks BRACE DEPTH relative to the call and accepts a pair only at
+  # depth 0 — outside the condition closure, which is exactly where the budget
+  # argument lives and where nothing inside the closure can reach. That is
+  # position-correct rather than order-correct, so it holds whether the budget
+  # shares the call's line, follows a `},` close, or wraps to its own line.
+  #
+  # Counting braces means skipping every context in which a brace is not
+  # punctuation. That set is CLOSED by the Go spec, and there are five:
+  #
+  #   1. interpreted string literal   "…}…"      (escapes honoured)
+  #   2. raw string literal           `…}…`      (spans lines)
+  #   3. rune literal                 '}'
+  #   4. line comment                 // …}
+  #   5. general (block) comment      /* … } */  (spans lines)
+  #
+  # residue() handles all five, so this is not "every shape anyone thought to
+  # try" — it is every lexical context the language admits, and there is no sixth
+  # to find. Braces cannot occur anywhere else in Go source without being
+  # punctuation.
+  #
+  # Why it matters that the list is complete: each unhandled context is a SILENT
+  # UNDER-COUNT, not a loud one. A `}` inside a string in the closure drops depth
+  # to 0 while still inside it, the first duration pair after that point is taken
+  # as the budget, and the real budget is discarded — measured at a 300s ceiling
+  # read as 5s. Requiring depth to stay non-negative does NOT catch it: the
+  # spurious close lands depth on exactly 0, the budget is taken there, and depth
+  # only goes negative afterwards. Skipping the literal is what closes it.
+  #
+  # Handling 1 and 2 also stops a duration written inside a MESSAGE string from
+  # ever being read as a budget, since string contents never reach the matcher.
+  #
+  # The one-bit "which call" state assumes wait calls do not nest inside each
+  # other's arguments. Verified in review at this commit by walking every test
+  # file's AST: zero nested wait calls in the tree. A future one would be
+  # mis-attributed, and the reconciliation below would not catch it.
+  #
+  # Never budgets are recognised and then DISCARDED, not counted. That is not a
+  # different policy from #66's raw negative windows — it is the SAME rule ("a
+  # Never budget is paid on every green run, wants to be short, and stays out of
+  # this ceiling") applied at two fidelities: #66 cannot tell a negative window
+  # apart in bash so it over-approximates and says so; here attribution makes the
+  # rule honourable exactly, so it is honoured exactly.
+  lit_ms=0
+  lit_n=0
+  for expr in $(awk '
+      BEGIN { SQ = sprintf("%c", 39); BT = sprintf("%c", 96) }
+      function residue(s,   i, c, n, out) {
+        out = ""
+        n = length(s)
+        INSTR = 0; INRUNE = 0          # Go string/rune literals cannot span a line
+        for (i = 1; i <= n; i++) {
+          c = substr(s, i, 1)
+          if (INRAW)  { if (c == BT) INRAW  = 0; continue }
+          if (INCOM)  { if (c == "*" && substr(s, i + 1, 1) == "/") { INCOM = 0; i++ } ; continue }
+          if (INSTR)  { if (c == "\\") { i++; continue } ; if (c == "\"") INSTR  = 0; continue }
+          if (INRUNE) { if (c == "\\") { i++; continue } ; if (c == SQ)   INRUNE = 0; continue }
+          if (c == BT)   { INRAW  = 1; continue }
+          if (c == "\"") { INSTR  = 1; continue }
+          if (c == SQ)   { INRUNE = 1; continue }
+          if (c == "/" && substr(s, i + 1, 1) == "*") { INCOM = 1; i++; continue }
+          if (c == "/" && substr(s, i + 1, 1) == "/") break
+          if (c == "{") { DEPTH++; continue }
+          if (c == "}") { DEPTH--; continue }
+          if (DEPTH <= 0) out = out c
+        }
+        return out
+      }
+      function takeBudget(r,   b) {
+        if (match(r, /[0-9]+[ \t]*\*[ \t]*time\.(Second|Millisecond|Minute)[ \t]*,[ \t]*([0-9]+[ \t]*\*[ \t]*)?time\.(Second|Millisecond|Minute)[ \t]*[,)]/)) {
+          b = substr(r, RSTART, RLENGTH)
+          sub(/[ \t]*,.*$/, "", b)
+          gsub(/[ \t]/, "", b)
+          return b
+        }
+        return ""
+      }
+      FNR == 1      { pending = ""; DEPTH = 0; INRAW = 0; INCOM = 0 }
+      /^[ \t]*\/\// { next }
+      pending == "" && match($0, /(require|assert)\.(Eventually|EventuallyWithT|Never|NeverWithT)\(/) {
+        pending = ($0 ~ /(require|assert)\.(Never|NeverWithT)\(/) ? "NV" : "EV"
+        DEPTH = 0; INRAW = 0; INCOM = 0
+        r = residue(substr($0, RSTART + RLENGTH))
+        if (r ~ /eventuallyBudget/) { pending = ""; next }
+        b = takeBudget(r)
+        if (b != "") { if (pending == "EV") print b; pending = "" }
+        next
+      }
+      pending != "" {
+        r = residue($0)
+        if (r ~ /eventuallyBudget/) { pending = ""; next }
+        b = takeBudget(r)
+        if (b != "") { if (pending == "EV") print b; pending = "" }
+      }
+    ' "${dir}"/*_test.go 2>/dev/null); do
+    ms="$(duration_ms "${expr}")"
+    case "${ms}" in
+      ''|*[!0-9]*)
+        fail "cannot parse the literal Eventually budget '${expr}' in ${pkg}: see the duration_ms note above." ;;
+    esac
+    lit_ms=$(( lit_ms + ms ))
+    lit_n=$(( lit_n + 1 ))
+  done
+  lit_s=$(( (lit_ms + 999) / 1000 ))
+
+  # -- every Eventually site's budget must be accounted for --------------------
+  #
+  # Count the Eventually-family CALLS independently and require that the budgets
+  # found — identifier uses plus literals — cover them. A site whose budget is
+  # neither (a named local, a computed expression) leaves calls unaccounted and
+  # stops the build, rather than vanishing from the ceiling.
+  #
+  # ⚠ WHAT THIS DOES NOT CATCH: it compares calls against the NUMBER of accounted
+  # budgets, so it detects a MISSING budget and is structurally blind to a WRONG
+  # one — a mis-attribution still consumes exactly one budget for exactly one
+  # call and leaves the arithmetic undisturbed. It is not a backstop for the
+  # depth tracking above; that has to be right on its own.
+  #
+  # The comparison is >= rather than ==: `sites` counts eventuallyBudget
+  # OCCURRENCES, and one of them (myelector/mysql_elector_heartbeat_test.go's
+  # context.WithTimeout(ctx, eventuallyBudget)) is not a wait site at all. That
+  # over-counts by one, which is the safe direction for a ceiling and must not be
+  # mistaken for a missing site.
+  #
+  # Where that blinds it, measured rather than left implicit: sites == ev_calls
+  # exactly in every package EXCEPT myelector (3 vs 2), so the slack is one unit
+  # in one package — and a missed literal in myelector specifically would be
+  # absorbed by it rather than reported. Everywhere else the comparison is tight.
+  ev_calls="$(cat "${dir}"/*_test.go 2>/dev/null \
+    | grep -v -E '^[[:space:]]*//' \
+    | grep -ohE '(require|assert)\.Eventually(WithT)?\(' \
+    | wc -l | tr -d ' ' || true)"
+  if (( sites + lit_n < ev_calls )); then
+    fail "${pkg}: ${ev_calls} Eventually call(s) but only $(( sites + lit_n )) accounted budget(s) (${sites} via eventuallyBudget, ${lit_n} literal). Either a budget is neither the shared constant nor an integer duration literal (use eventuallyBudget, or spell it as a literal), or brace depth never returned to 0 for one of these calls so its budget was never reached — check for an unbalanced brace the literal-skipping in section 3 does not handle."
+  fi
+
   # -- raw select-deadline contribution ---------------------------------------
   raw_ms=0
   raw_n=0
@@ -242,16 +401,17 @@ for dir in $(find . -name '*_test.go' -not -path './.git/*' -not -path './.claud
   done
   raw_s=$(( (raw_ms + 999) / 1000 ))  # round up, matching the budget rule above
 
-  (( sites > 0 || raw_n > 0 )) || continue
+  (( sites > 0 || lit_n > 0 || raw_n > 0 )) || continue
 
-  total=$(( ev_cost + raw_s ))
+  total=$(( ev_cost + lit_s + raw_s ))
   verdict=ok
   if (( total >= timeout_s )); then
     verdict='OVER LIMIT'
     status=1
   fi
-  printf '%-44s %6ds %6d %7ds %6d %7ds %8ds %s\n' \
-    "${pkg}" "${budget_s}" "${sites}" "${ev_cost}" "${raw_n}" "${raw_s}" "${total}" "${verdict}"
+  printf '%-42s %5ds %5d %6ds %6d %7ds %6d %7ds %7ds %s\n' \
+    "${pkg}" "${budget_s}" "${sites}" "${ev_cost}" "${lit_n}" "${lit_s}" \
+    "${raw_n}" "${raw_s}" "${total}" "${verdict}"
 done
 echo
 echo "go test -timeout: ${ci_timeout} (${timeout_s}s), agreed by ${workflow} and ${coverage}"

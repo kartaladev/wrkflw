@@ -106,16 +106,76 @@ Converting would also have shrunk the guard's population toward the vacuity this
 repo keeps having to reject: a check whose subject matter has been refactored out
 from under it passes from day one and proves nothing.
 
-## What this ticket did not settle
+## The literal-budget gap, closed
 
-The guard still finds Eventually sites by grepping the `eventuallyBudget`
-identifier, so an Eventually passing a bare literal budget is still uncounted —
-`persistence/chaining_e2e_test.go`'s `5*time.Second` is the live example. #66
-covered the raw-deadline gap and left that one open; `eventually-waits.md`
-previously attributed it to #66, which was only ever half right and is now
-resolved to: **still open, owned by nobody.** It needs either the convention
-(every Eventually passes a package `eventuallyBudget`) or a guard that counts
-literal budgets too.
+#66 left one hole and recorded it here: the guard found Eventually sites by
+grepping the `eventuallyBudget` identifier, so an Eventually passing a bare
+literal was in no ceiling at all — neither an identifier site nor a raw
+`time.After`. **#99 closed it**: 18 such sites across 8 packages are now counted,
+and this section's previous text — "still open, owned by nobody" — is superseded.
+
+Finding them needed something the earlier grep could not do. A literal budget has
+no distinctive token; what identifies it is *which call it belongs to*. An
+adjacency regex over `<duration>, <duration>,` also matches
+`schedule.EveryRandom(5*time.Second, 5*time.Second)`, which is not a wait budget
+at all. So the guard carries one bit of state — the wait call most recently
+opened — and attributes the next literal budget to it. That attribution is also
+what finally lets it honour the long-standing rule that `Never` budgets stay out
+of this ceiling: they are recognised and discarded rather than being
+indistinguishable.
+
+Attribution has to be position-correct, not merely order-correct. A duration pair
+inside the condition closure — `func() bool { return f(10*time.Millisecond,
+10*time.Millisecond) }, 300*time.Second, …` — is met *before* the real budget, so
+taking the first pair after the call banks the inner one and records a 300 s
+ceiling as 10 ms, silently and in the under-counting direction. The guard
+therefore tracks brace depth relative to the call and accepts a pair only at
+depth 0, which is where the budget argument lives and where nothing inside the
+closure can reach.
+
+Counting braces means skipping every context in which a brace is not
+punctuation. **That set is closed by the Go spec, and there are five:**
+
+| | context | example | spans lines |
+| --- | --- | --- | --- |
+| 1 | interpreted string literal | `"…}…"` | no |
+| 2 | raw string literal | `` `…}…` `` | yes |
+| 3 | rune literal | `'}'` | no |
+| 4 | line comment | `// …}` | no |
+| 5 | general (block) comment | `/* … } */` | yes |
+
+All five are handled. That is the difference between "right about every shape
+anyone thought to try" and "right over every lexical context the language
+admits" — the second is checkable against the spec instead of against
+imagination, and there is no sixth to find, because a brace cannot occur anywhere
+else in Go source without being punctuation.
+
+Completeness matters because **each unhandled context is a silent under-count,
+not a loud one.** A `}` inside a string in the closure drops depth to 0 while
+still inside it, the next duration pair is taken as the budget, and the real
+budget is discarded — measured at a 300 s ceiling read as 5 s. Requiring depth to
+stay non-negative does **not** catch it: the spurious close lands depth on
+exactly 0, the budget is taken there, and depth only goes negative afterwards.
+
+Handling 1 and 2 has a second effect worth knowing: string contents never reach
+the matcher, so a duration written inside a *message* — `"tried 99*time.Second,
+99*time.Second, and gave up"` — can never be read as a budget.
+
+Four of the five were found by adversarial review rather than by writing them
+down, across three rounds, each a variant of one defect: the matcher reading
+something that is not the budget. Enumerating from the spec is what ended that,
+and it is the cheaper move whenever the enumeration is closed — the alternative
+is discovering the list one planted counterexample at a time and never knowing
+when to stop.
+
+The guard also reconciles: it counts Eventually *calls* independently and fails
+if the budgets it found do not **cover** them, so a budget it cannot read — a
+named local, a computed expression — stops the build instead of quietly leaving
+the ceiling. ⚠ Read that precisely: it compares calls against the NUMBER of
+accounted budgets, so it catches a **missing** budget and is structurally blind
+to a **wrong** one — a mis-attribution consumes one budget for one call and
+leaves the arithmetic undisturbed. It is not a safety net under the depth
+tracking; that has to be right on its own.
 
 ## Related
 

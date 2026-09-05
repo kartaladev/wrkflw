@@ -7,16 +7,21 @@ not arrived yet.
 
 `scripts/check-test-timeout.sh` cannot see this class. A budget guard asks **"did
 you wait long enough?"**; it cannot ask **"did you wait for the right thing?"**
-Every site below that the script counts at all used `eventuallyBudget` correctly
-and passed it. (The `persistence` sites below are not counted: they pass explicit
-literal budgets, and the script finds Eventually sites by grepping the
-`eventuallyBudget` identifier. Its header calls a bare literal "a separate review
-problem"; that debt is real and still open. ⚠ This paragraph previously said the
-script "scans only packages carrying a `waitbudget_test.go`" and attributed the
-debt to #66 — both went stale when #66 landed: the script now walks every package
-with test files, and #66 covered the raw-`time.After` gap without touching literal
-budgets. The verdict was right and the mechanism wrong, which is the pattern this
-document's own ledger flags twice.)
+Every site below is counted by the script and passed it, including the
+`persistence` ones, which pass explicit literal budgets rather than
+`eventuallyBudget`. That still says nothing about whether any of them waits for
+the right thing.
+
+> ⚠ This paragraph has now gone stale twice, both times because a change
+> elsewhere moved the mechanism under it while the verdict stayed true. It first
+> said the script "scans only packages carrying a `waitbudget_test.go`" and that
+> the literal-budget debt was #66's; #66 made the script walk every package and
+> did not touch literal budgets. It then said the `persistence` sites "are not
+> counted" and the debt was "still open"; #99 made the script count literal
+> budgets. Corrected each time by the ticket that falsified it. The pattern —
+> right verdict, wrong reason — is the one this document's own ledger flags
+> twice, and prose describing another file's behaviour is where it keeps
+> recurring, because nothing checks it.
 
 ## The rule
 
