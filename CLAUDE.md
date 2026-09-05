@@ -18,6 +18,10 @@ Single-context: one root `CONTEXT.md`, created lazily. Decisions live in commit 
 
 Wait for every state the assertions read, not a signal that merely correlates with them. See `docs/agents/eventually-waits.md`.
 
+### Raw `time.After` deadlines
+
+Classify a `select` deadline by what its clause does, not by how long it is; every raw deadline is also counted against a per-package CI ceiling that rejects non-literal durations. See `docs/agents/test-deadlines.md`.
+
 ## Coding discipline
 
 **Route first.** Every Go task — writing, reviewing, debugging, setup — starts with `cc-skills-golang:golang-how-to`, which selects the golang skills that task needs.
