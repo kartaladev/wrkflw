@@ -119,9 +119,20 @@ func findInvokeAction(cmds []engine.Command, name string) (string, bool) {
 
 // driveInstance runs one instance through n loop passes, encoding the snapshot
 // after every step exactly as Create and Commit do when marshal is true.
-// Returns the number of transitions actually driven so the caller can report
-// per-transition cost against the real figure rather than the requested one.
-func driveInstance(ctx context.Context, b testing.TB, def *model.ProcessDefinition, n, historyCap int, marshal bool) int {
+//
+// Returns the number of transitions actually driven — so callers report
+// per-transition cost against the real figure rather than the requested one —
+// and the final state, for callers that want to inspect what accumulated.
+//
+// THE ONLY DRIVER. Both benchmarks and every guard in
+// history_cap_bench_guard_test.go reach the engine through this function. An
+// earlier revision had stateAfter carrying a second near-identical copy of this
+// loop, which meant the guards proved one driver while BenchmarkInstanceLifetime
+// — the one producing the headline result — ran on the other, unguarded:
+// truncating it left every guard green and the benchmark reporting a tidy,
+// meaningless curve. Collapsing the two is what makes the guards cover both.
+// Keep it that way; a second copy silently un-guards whichever benchmark uses it.
+func driveInstance(ctx context.Context, b testing.TB, def *model.ProcessDefinition, n, historyCap int, marshal bool) (int, engine.InstanceState) {
 	b.Helper()
 
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -153,7 +164,7 @@ func driveInstance(ctx context.Context, b testing.TB, def *model.ProcessDefiniti
 			sink += len(snap)
 		}
 	}
-	return transitions
+	return transitions, r.State
 }
 
 // BenchmarkInstanceLifetime measures what one instance costs over its whole
@@ -186,16 +197,21 @@ func BenchmarkInstanceLifetime(b *testing.B) {
 			b.Run(fmt.Sprintf("%s/transitions=%d", arm.name, n), func(b *testing.B) {
 				b.ReportAllocs()
 
-				driven := 0
+				// Accumulated, not sampled from the last iteration: the total
+				// is what the division actually wants, and it stays correct if
+				// an engine change ever makes the per-iteration count vary.
+				total := 0
 				for b.Loop() {
-					driven = driveInstance(ctx, b, def, n, arm.historyCap, arm.marshal)
+					driven, _ := driveInstance(ctx, b, def, n, arm.historyCap, arm.marshal)
+					total += driven
 				}
 
 				// Per-transition cost is where the exponent is easiest to read:
-				// it is flat for a linear system and grows with n for a
-				// quadratic one. Derived from the transitions actually driven.
-				if driven > 0 {
-					b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*driven), "ns/transition")
+				// flat for a linear system, growing with n for a quadratic one.
+				// Derived from the transitions actually driven, so a driver that
+				// stopped early could not quietly flatter the figure.
+				if total > 0 {
+					b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(total), "ns/transition")
 				}
 			})
 		}
@@ -215,16 +231,20 @@ func BenchmarkSnapshotMarshal(b *testing.B) {
 
 	for _, historyCap := range []int{0, 100} {
 		for _, n := range benchHistorySizes {
-			// Setup: drive an instance to n transitions ONCE, outside the
-			// measured region, then encode that finished state repeatedly.
-			def := benchLoopDef(n)
-			st := stateAfter(ctx, b, def, n)
-
 			name := fmt.Sprintf("cap=off/history=%d", n)
 			if historyCap > 0 {
 				name = fmt.Sprintf("cap=%d/history=%d", historyCap, n)
 			}
 			b.Run(name, func(b *testing.B) {
+				// Setup: drive an instance to n transitions ONCE, then encode
+				// that finished state repeatedly. Inside b.Run so that filtering
+				// to one sub-benchmark does not first drive every other size;
+				// still outside the measured region, because b.Loop resets the
+				// timer when it is first called. Verified rather than assumed:
+				// moving this in left ns/op unchanged.
+				def := benchLoopDef(n)
+				st := stateAfter(ctx, b, def, n)
+
 				b.ReportAllocs()
 				for b.Loop() {
 					snap, err := store.MarshalSnapshotForTest(st, historyCap)
@@ -240,29 +260,13 @@ func BenchmarkSnapshotMarshal(b *testing.B) {
 
 // stateAfter drives an instance to n transitions and returns the resulting
 // state, for callers that want to measure or assert something ABOUT that state
-// rather than the cost of reaching it. Takes testing.TB so the benchmarks and
-// the guard tests in history_cap_bench_guard_test.go drive the instance through
-// one shared code path — a guard that exercised its own copy of the driver
-// would stop guarding the moment the two diverged.
+// rather than the cost of reaching it.
+//
+// A thin wrapper over driveInstance rather than a second loop: see that
+// function's note. Marshalling is off because it does not affect the state
+// produced, only the cost of producing it.
 func stateAfter(ctx context.Context, b testing.TB, def *model.ProcessDefinition, n int) engine.InstanceState {
 	b.Helper()
-
-	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	r, err := engine.Step(ctx, def, engine.InstanceState{InstanceID: "bench-1"},
-		engine.NewStartInstance(t0, benchStartVars()), engine.StepOptions{})
-	if err != nil {
-		b.Fatalf("start instance: %v", err)
-	}
-	for i := 1; i <= n; i++ {
-		cmdID, ok := findInvokeAction(r.Commands, "work")
-		if !ok {
-			break
-		}
-		r, err = engine.Step(ctx, def, r.State,
-			engine.NewActionCompleted(t0, cmdID, map[string]any{"attempts": i}), engine.StepOptions{})
-		if err != nil {
-			b.Fatalf("transition %d: %v", i, err)
-		}
-	}
-	return r.State
+	_, st := driveInstance(ctx, b, def, n, 0, false)
+	return st
 }

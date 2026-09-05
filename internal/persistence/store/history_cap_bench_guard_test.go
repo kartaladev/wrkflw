@@ -19,10 +19,18 @@ import (
 // benchmark run would reveal it.
 //
 // These are the assertions that make the benchmark's numbers admissible. They
-// exercise the SAME driver the benchmarks use (stateAfter), so a guard cannot
-// pass against its own private copy of the logic. They run in the ordinary
-// `go test` suite rather than only under -bench, so they cannot rot unnoticed
-// while the benchmarks sit unused between performance pushes.
+// run in the ordinary `go test` suite rather than only under -bench, so they
+// cannot rot unnoticed while the benchmarks sit unused between performance
+// pushes.
+//
+// They reach the engine through driveInstance — the single driver BOTH
+// benchmarks use. That is load-bearing, and it was not always true: an earlier
+// revision had BenchmarkInstanceLifetime driving through driveInstance while
+// these guards went through a separate near-identical stateAfter loop, so
+// truncating the benchmark's driver left every assertion here green. The
+// benchmark producing the headline O(N^2) result was the one running unguarded.
+// stateAfter is now a thin wrapper over driveInstance; keep it that way, because
+// a guard that exercises its own copy of the logic guards nothing.
 
 // TestBenchDriverAccumulatesHistory pins the growth the benchmarks depend on:
 // driving n loop passes performs n transitions and leaves n compensation
