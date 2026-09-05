@@ -236,31 +236,76 @@ for dir in $(find . -name '*_test.go' -not -path './.git/*' -not -path './.claud
   # identifier, so the count above cannot see it. 18 such sites across 8 packages
   # sat inside no ceiling at all: not identifier sites, and not raw time.After.
   #
-  # Finding them needs to know WHICH call a duration belongs to, which a plain
-  # grep cannot do. `schedule.EveryRandom(5*time.Second, 5*time.Second)` is an
-  # adjacent duration pair that is not a wait budget at all, and an adjacency
-  # regex alone counts six of those. So awk carries one bit of state — the wait
-  # call most recently opened — and attributes the next literal budget to it.
+  # Finding them needs to know WHICH call a duration belongs to, and WHERE in that
+  # call it sits. Two things a plain grep gets wrong:
   #
-  # A call is disarmed either by consuming a budget or by seeing eventuallyBudget,
-  # so a shared-constant site never stays armed to swallow a later call's budget.
-  # FNR==1 resets between files. Never budgets are recognised and then DISCARDED,
-  # not counted: a Never budget is paid on every GREEN run, wants to be short, and
-  # is excluded from this ceiling by the same long-standing rule as before —
-  # attribution is what finally makes honouring that rule possible here.
+  #   * `schedule.EveryRandom(5*time.Second, 5*time.Second)` is an adjacent
+  #     duration pair that is not a wait budget at all; an adjacency regex alone
+  #     counts six of those.
+  #   * a duration pair INSIDE the condition closure —
+  #     `require.Eventually(t, func() bool { return f(10*time.Millisecond,
+  #     10*time.Millisecond) }, 300*time.Second, ...)` — is met BEFORE the real
+  #     budget. Taking the first pair after the call banks the inner one and
+  #     discards the budget, recording a 300s ceiling as 10ms. Silently, and in
+  #     the under-counting direction. (Found in review; reproduced both ways.)
+  #
+  # So awk tracks BRACE DEPTH relative to the call and accepts a pair only at
+  # depth 0 — outside the condition closure, which is exactly where the budget
+  # argument lives and where nothing inside the closure can reach. That is
+  # position-correct rather than order-correct, so it holds whether the budget
+  # shares the call's line, follows a `},` close, or wraps to its own line, and it
+  # does not care what the closure body contains.
+  #
+  # The one-bit "which call" state assumes wait calls do not nest inside each
+  # other's arguments. Verified in review at this commit by walking every test
+  # file's AST: zero nested wait calls in the tree. A future one would be
+  # mis-attributed, and the reconciliation below would not catch it.
+  #
+  # Never budgets are recognised and then DISCARDED, not counted. That is not a
+  # different policy from #66's raw negative windows — it is the SAME rule ("a
+  # Never budget is paid on every green run, wants to be short, and stays out of
+  # this ceiling") applied at two fidelities: #66 cannot tell a negative window
+  # apart in bash so it over-approximates and says so; here attribution makes the
+  # rule honourable exactly, so it is honoured exactly.
   lit_ms=0
   lit_n=0
   for expr in $(awk '
-      FNR == 1      { pending = "" }
-      /^[ \t]*\/\// { next }
-      /(require|assert)\.(Eventually|EventuallyWithT)\(/ { pending = "EV" }
-      /(require|assert)\.(Never|NeverWithT)\(/           { pending = "NV" }
-      /eventuallyBudget/                                 { pending = "" }
-      pending != "" && match($0, /[0-9]+[ \t]*\*[ \t]*time\.(Second|Millisecond|Minute)[ \t]*,[ \t]*([0-9]+[ \t]*\*[ \t]*)?time\.(Second|Millisecond|Minute)[ \t]*[,)]/) {
-        if (pending == "EV") {
-          b = substr($0, RSTART, RLENGTH); sub(/[ \t]*,.*$/, "", b); gsub(/[ \t]/, "", b); print b
+      function residue(s, d,   i, c, out) {
+        out = ""
+        for (i = 1; i <= length(s); i++) {
+          c = substr(s, i, 1)
+          if (c == "{") { d++; continue }
+          if (c == "}") { d--; continue }
+          if (d <= 0) out = out c
         }
-        pending = ""
+        DEPTH = d
+        return out
+      }
+      function takeBudget(r,   b) {
+        if (match(r, /[0-9]+[ \t]*\*[ \t]*time\.(Second|Millisecond|Minute)[ \t]*,[ \t]*([0-9]+[ \t]*\*[ \t]*)?time\.(Second|Millisecond|Minute)[ \t]*[,)]/)) {
+          b = substr(r, RSTART, RLENGTH)
+          sub(/[ \t]*,.*$/, "", b)
+          gsub(/[ \t]/, "", b)
+          return b
+        }
+        return ""
+      }
+      FNR == 1      { pending = ""; depth = 0 }
+      /^[ \t]*\/\// { next }
+      pending == "" && match($0, /(require|assert)\.(Eventually|EventuallyWithT|Never|NeverWithT)\(/) {
+        pending = ($0 ~ /(require|assert)\.(Never|NeverWithT)\(/) ? "NV" : "EV"
+        depth = 0
+        r = residue(substr($0, RSTART + RLENGTH), depth); depth = DEPTH
+        if (r ~ /eventuallyBudget/) { pending = ""; next }
+        b = takeBudget(r)
+        if (b != "") { if (pending == "EV") print b; pending = "" }
+        next
+      }
+      pending != "" {
+        r = residue($0, depth); depth = DEPTH
+        if (r ~ /eventuallyBudget/) { pending = ""; next }
+        b = takeBudget(r)
+        if (b != "") { if (pending == "EV") print b; pending = "" }
       }
     ' "${dir}"/*_test.go 2>/dev/null); do
     ms="$(duration_ms "${expr}")"
@@ -275,12 +320,16 @@ for dir in $(find . -name '*_test.go' -not -path './.git/*' -not -path './.claud
 
   # -- every Eventually site's budget must be accounted for --------------------
   #
-  # The attribution above is a heuristic, and a heuristic that silently misses a
-  # site reports a total that looks derived but under-counts. So count the
-  # Eventually-family CALLS independently and require that the budgets found —
-  # identifier uses plus literals — cover them. A site whose budget is neither
-  # (a named local, a computed expression) leaves calls unaccounted and stops the
-  # build, rather than vanishing from the ceiling.
+  # Count the Eventually-family CALLS independently and require that the budgets
+  # found — identifier uses plus literals — cover them. A site whose budget is
+  # neither (a named local, a computed expression) leaves calls unaccounted and
+  # stops the build, rather than vanishing from the ceiling.
+  #
+  # ⚠ WHAT THIS DOES NOT CATCH: it compares calls against the NUMBER of accounted
+  # budgets, so it detects a MISSING budget and is structurally blind to a WRONG
+  # one — a mis-attribution still consumes exactly one budget for exactly one
+  # call and leaves the arithmetic undisturbed. It is not a backstop for the
+  # depth tracking above; that has to be right on its own.
   #
   # The comparison is >= rather than ==: `sites` counts eventuallyBudget
   # OCCURRENCES, and one of them (myelector/mysql_elector_heartbeat_test.go's

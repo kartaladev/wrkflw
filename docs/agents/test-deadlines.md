@@ -124,10 +124,23 @@ what finally lets it honour the long-standing rule that `Never` budgets stay out
 of this ceiling: they are recognised and discarded rather than being
 indistinguishable.
 
-Because attribution is a heuristic, the guard reconciles: it counts Eventually
-*calls* independently and fails if the budgets it found do not cover them. A
-budget it cannot read — a named local, a computed expression — stops the build
-instead of quietly leaving the ceiling.
+Attribution has to be position-correct, not merely order-correct. A duration pair
+inside the condition closure — `func() bool { return f(10*time.Millisecond,
+10*time.Millisecond) }, 300*time.Second, …` — is met *before* the real budget, so
+taking the first pair after the call banks the inner one and records a 300 s
+ceiling as 10 ms, silently and in the under-counting direction. The guard
+therefore tracks brace depth relative to the call and accepts a pair only at
+depth 0, which is where the budget argument lives and where nothing inside the
+closure can reach.
+
+The guard also reconciles: it counts Eventually *calls* independently and fails
+if the budgets it found do not **cover** them, so a budget it cannot read — a
+named local, a computed expression — stops the build instead of quietly leaving
+the ceiling. ⚠ Read that precisely: it compares calls against the NUMBER of
+accounted budgets, so it catches a **missing** budget and is structurally blind
+to a **wrong** one — a mis-attribution consumes one budget for one call and
+leaves the arithmetic undisturbed. It is not a safety net under the depth
+tracking; that has to be right on its own.
 
 ## Related
 
