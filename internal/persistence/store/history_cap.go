@@ -1,6 +1,29 @@
 package store
 
-import "github.com/kartaladev/wrkflw/engine"
+import (
+	"encoding/json"
+
+	"github.com/kartaladev/wrkflw/engine"
+)
+
+// marshalSnapshot encodes the durable `snapshot` column for one step: the whole
+// InstanceState as a single JSON document, history-capped per n.
+//
+// Create and Commit both persist the snapshot this way and previously spelled
+// the two-call sequence out separately. Naming it once keeps the encoding in a
+// single place and, more to the point, gives the benchmarks something real to
+// measure: BenchmarkSnapshotMarshal calls THIS function, so it cannot drift
+// away from what the store actually does the way a hand-copied
+// json.Marshal(capHistory(...)) in a test would.
+//
+// Cost note, since it is the whole subject of the benchmarks: this is O(size of
+// the entire instance state), paid on EVERY step. History, Tasks,
+// RootCompensations and ArchivedCompensations all grow without bound unless n
+// caps the first of them, so an instance's total marshalling cost over its life
+// is quadratic in the number of transitions it makes.
+func marshalSnapshot(st engine.InstanceState, n int) ([]byte, error) {
+	return json.Marshal(capHistory(st, n))
+}
 
 // capHistory returns a copy of st whose History retains every OPEN visit
 // (LeftAt == nil) plus at most the most recent n CLOSED visits, preserving the
