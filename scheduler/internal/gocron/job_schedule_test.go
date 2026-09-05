@@ -14,6 +14,16 @@ import (
 	sched "github.com/kartaladev/wrkflw/scheduler/internal/gocron"
 )
 
+// ctxObservation is what the one-shot task records about the ctx gocron handed
+// it, captured synchronously from inside the task body. Both facts travel on ONE
+// channel so a single receive delivers everything the case asserts on: two
+// channels is two signals, and a wait that observes only one of them is the
+// defect #86 catalogues.
+type ctxObservation struct {
+	nonNil bool
+	live   bool
+}
+
 // TestGocronScheduler_ScheduleJob covers the Job-shaped scheduling entry
 // point (ScheduleJob): a zero-parameter `func(context.Context) error` task
 // registered against a TriggerDef, upsert-by-id semantics, singleton overrun
@@ -39,12 +49,10 @@ func TestGocronScheduler_ScheduleJob(t *testing.T) {
 				// itself from the test goroutine after receiving it would race
 				// against that cleanup, so the task records what it observed
 				// at fire time instead.
-				nonNilCh := make(chan bool, 1)
-				liveCh := make(chan bool, 1)
+				obsCh := make(chan ctxObservation, 1)
 				task := func(ctx context.Context) error {
 					fired.Add(1)
-					nonNilCh <- ctx != nil
-					liveCh <- ctx != nil && ctx.Err() == nil
+					obsCh <- ctxObservation{nonNil: ctx != nil, live: ctx != nil && ctx.Err() == nil}
 					return nil
 				}
 
@@ -55,15 +63,31 @@ func TestGocronScheduler_ScheduleJob(t *testing.T) {
 				require.NoError(t, clk.BlockUntilContext(t.Context(), 1))
 				clk.Advance(6 * time.Second)
 
-				require.Eventually(t, func() bool { return fired.Load() >= 1 }, eventuallyBudget, 5*time.Millisecond)
+				// Wait for the observation itself, not for `fired`. `fired.Add(1)`
+				// runs BEFORE the send, so a wait on the counter is satisfied while
+				// obsCh is still empty — and the non-blocking receive that used to
+				// follow took its `default` branch and failed a green run. Widening
+				// that window with a 200ms sleep between the two writes made it
+				// deterministic; gating on the value the assertions read removes it.
+				// obs is written by the condition closure on testify's goroutine and
+				// read here: ordered, because Eventually keeps one condition
+				// goroutine in flight and the receive that ends the wait orders the
+				// write before this read. It relies on require (not assert): on the
+				// timeout path a straggler closure can still write obs, and only
+				// FailNow stops this goroutine from reading it concurrently.
+				var obs ctxObservation
+				require.Eventually(t, func() bool {
+					select {
+					case obs = <-obsCh:
+						return true
+					default:
+						return false
+					}
+				}, eventuallyBudget, 5*time.Millisecond,
+					"the one-shot must fire and record the ctx it observed")
 
-				select {
-				case nonNil := <-nonNilCh:
-					require.True(t, nonNil, "task must receive a non-nil ctx from gocron")
-				default:
-					t.Fatal("expected the fired task to have captured a ctx")
-				}
-				assert.True(t, <-liveCh, "ctx must not already be done at fire time")
+				assert.True(t, obs.nonNil, "task must receive a non-nil ctx from gocron")
+				assert.True(t, obs.live, "ctx must not already be done at fire time")
 
 				require.Never(t, func() bool { return fired.Load() > 1 }, 150*time.Millisecond, 10*time.Millisecond,
 					"one-shot must fire exactly once")

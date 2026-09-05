@@ -167,6 +167,73 @@ func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, def
 	return driver
 }
 
+// awaitChainedSuccessor blocks until EVERY fact the caller is about to assert on
+// is durably present: the successor instance exists, has reached
+// StatusCompleted, and its lineage link has been recorded in the separate
+// ChainLinkStore. It returns both, so the caller asserts over a snapshot it
+// already waited for.
+//
+// The conjunction is the whole point (#86). Each caller used to wait only for
+// store.Load to stop erroring — "successor must start" — and then immediately
+// assert a status and a link that a different write, in a different store, is
+// responsible for. That holds today for two reasons the tests never state:
+// Chainer.Handle records the link BEFORE calling Drive, and a start→end
+// definition is created already-completed in a single Store.Create. Neither is a
+// promise. Measured: moving Handle's Record block below its Drive call AND
+// widening the gap to 200ms fails all three scenarios on all three dialects with
+// no test change. (The reorder ALONE passes — a sub-millisecond window against a
+// 20ms poll. The delay is what makes it deterministic; see
+// docs/agents/eventually-waits.md.) Waiting for the state actually asserted
+// removes the dependency.
+func awaitChainedSuccessor(t *testing.T, ctx context.Context, d chainingDialect, successorID string) (engine.InstanceState, kernel.ChainLink) {
+	t.Helper()
+
+	// st and link are written by the condition closure, which testify runs on its
+	// own goroutine. That is ordered, not racy: Eventually keeps exactly one
+	// condition goroutine in flight (it nils its tick channel until a result
+	// arrives) and the channel receive that ends the wait orders those writes
+	// before the read below. The timeout path is the one to be careful with — a
+	// straggler condition goroutine can still be running — so nothing on the
+	// failure path below reads st or link.
+	var (
+		st   engine.InstanceState
+		link kernel.ChainLink
+	)
+	ok := assert.Eventually(t, func() bool {
+		loaded, _, err := d.store.Load(ctx, successorID)
+		if err != nil || loaded.Status != engine.StatusCompleted {
+			return false
+		}
+		recorded, found, err := d.links.LookupBySuccessor(ctx, successorID)
+		if err != nil || !found {
+			return false
+		}
+		st, link = loaded, recorded
+		return true
+	}, 5*time.Second, 20*time.Millisecond,
+		"successor %s must complete AND have its chain link recorded", successorID)
+	if !ok {
+		// Say WHICH half failed and why. The condition can only report a bool, so
+		// the detail is re-read here, on the test goroutine, rather than captured
+		// out of the closure — capturing diagnostics would mean reading vars a
+		// straggler condition goroutine may still be writing. These values are read
+		// after the deadline, so a state that arrived late shows up as present;
+		// the wait still failed.
+		status := "<instance not loaded>" // Status is meaningless when Load errored
+		if loaded, _, loadErr := d.store.Load(ctx, successorID); loadErr == nil {
+			status = loaded.Status.String()
+		} else {
+			status += ": " + loadErr.Error()
+		}
+		_, found, linkErr := d.links.LookupBySuccessor(ctx, successorID)
+		require.FailNowf(t, "chained successor never materialised",
+			"successor %s, re-read after the wait expired: status=%s linkRecorded=%v linkErr=%v",
+			successorID, status, found, linkErr)
+	}
+
+	return st, link
+}
+
 // ---- main test ------------------------------------------------------------------
 
 // TestChainingE2E drives the full outbox→relay→chainer→successor loop across all
@@ -205,21 +272,11 @@ func TestChainingE2E(t *testing.T) {
 			require.NoError(t, err)
 			assert.GreaterOrEqual(t, drained, 1, "at least one outbox row must be drained")
 
-			// Wait for successor to appear.
-			require.Eventually(t, func() bool {
-				_, _, err := d.store.Load(ctx, "inst-a-next-completed")
-				return err == nil
-			}, 5*time.Second, 20*time.Millisecond, "successor inst-a-next-completed must start")
+			// Wait for the completed successor and its recorded link together.
+			succSt, link := awaitChainedSuccessor(t, ctx, d, "inst-a-next-completed")
 
-			succSt, _, err := d.store.Load(ctx, "inst-a-next-completed")
-			require.NoError(t, err)
-			assert.Equal(t, engine.StatusCompleted, succSt.Status, "successor must complete")
 			assert.Equal(t, "value-a", succSt.Variables["key"], "start vars must be carried to successor")
 
-			// Verify chain link.
-			link, ok, err := d.links.LookupBySuccessor(ctx, "inst-a-next-completed")
-			require.NoError(t, err)
-			require.True(t, ok, "chain link must be recorded")
 			assert.Equal(t, "inst-a", link.PredecessorID)
 			assert.Equal(t, model.Version("proc-a-succ", 1), link.SuccessorDefinitionRef)
 			assert.NotNil(t, link.StartVars)
@@ -235,15 +292,9 @@ func TestChainingE2E(t *testing.T) {
 			_, err = d.relay.DrainOnce(ctx)
 			require.NoError(t, err)
 
-			require.Eventually(t, func() bool {
-				_, _, err := d.store.Load(ctx, "inst-b-next-completed")
-				return err == nil
-			}, 5*time.Second, 20*time.Millisecond, "successor inst-b-next-completed must start")
-
 			// Verify it's the correct successor (proc-b-succ, not proc-a-succ).
-			link, ok, err := d.links.LookupBySuccessor(ctx, "inst-b-next-completed")
-			require.NoError(t, err)
-			require.True(t, ok, "chain link must be recorded for proc-b successor")
+			_, link := awaitChainedSuccessor(t, ctx, d, "inst-b-next-completed")
+
 			assert.Equal(t, "inst-b", link.PredecessorID)
 			assert.Equal(t, model.Version("proc-b-succ", 1), link.SuccessorDefinitionRef,
 				"branch routing must wire P_B → S_B, not S_A")
@@ -305,10 +356,7 @@ func TestChainingE2E(t *testing.T) {
 			assert.GreaterOrEqual(t, drained, 1,
 				"first DrainOnce must drain at least the predecessor's outbox row")
 
-			require.Eventually(t, func() bool {
-				_, _, err := d.store.Load(ctx, "inst-a-idem-next-completed")
-				return err == nil
-			}, 5*time.Second, 20*time.Millisecond, "successor must start after first drain")
+			awaitChainedSuccessor(t, ctx, d, "inst-a-idem-next-completed")
 
 			// Second drain — may drain the successor's own outbox row(s) but must
 			// NOT re-publish the predecessor's already-delivered row.

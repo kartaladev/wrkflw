@@ -66,6 +66,15 @@ func TestGocronNativeTriggers(t *testing.T) {
 			return !ok
 		}, eventuallyBudget, 5*time.Millisecond, "one-shot must be disarmed after firing")
 
+		// NOT an instance of #86's wait-on-one-signal-assert-on-another shape,
+		// recorded here so the next sweep does not re-flag it. Read alone, the
+		// disarm wait above and this counter assertion are two different signals
+		// written by two different pieces of code — but the `fired >= 1` wait a few
+		// lines up already established this one, and a one-shot cannot fire twice,
+		// so >= 1 and == 1 coincide. Measured both ways: sleeping 300ms before
+		// fired.Add(1) keeps this green over -count=5, and the same sleep with that
+		// wait deleted fails here with `expected: 1, actual: 0` — exactly the
+		// mechanism the sweep predicted, already guarded.
 		assert.EqualValues(t, 1, fired.Load(), "must fire exactly once")
 	})
 
