@@ -189,6 +189,12 @@ func TestNewDBEnforcer_WatcherReloadFailureIsObservable(t *testing.T) {
 	}, 15*time.Second, 25*time.Millisecond,
 		"a failed cross-node reload must produce an ERROR log record; got: %q", logBuf.String())
 
+	// Safe against #86's shape, recorded so the next sweep does not re-flag it:
+	// the waited-for message and this node_id are two attributes of ONE
+	// slog.Record (db.go's single ErrorContext call). slog.TextHandler formats a
+	// record into one buffer and issues one Write, and syncBuffer.Write holds the
+	// mutex for it, so the message substring cannot become visible without
+	// node_id. Two records would be a genuine instance; one record is not.
 	assert.Contains(t, logBuf.String(), nodeID, "the record must name this node")
 }
 
