@@ -106,16 +106,28 @@ Converting would also have shrunk the guard's population toward the vacuity this
 repo keeps having to reject: a check whose subject matter has been refactored out
 from under it passes from day one and proves nothing.
 
-## What this ticket did not settle
+## The literal-budget gap, closed
 
-The guard still finds Eventually sites by grepping the `eventuallyBudget`
-identifier, so an Eventually passing a bare literal budget is still uncounted —
-`persistence/chaining_e2e_test.go`'s `5*time.Second` is the live example. #66
-covered the raw-deadline gap and left that one open; `eventually-waits.md`
-previously attributed it to #66, which was only ever half right and is now
-resolved to: **still open, owned by nobody.** It needs either the convention
-(every Eventually passes a package `eventuallyBudget`) or a guard that counts
-literal budgets too.
+#66 left one hole and recorded it here: the guard found Eventually sites by
+grepping the `eventuallyBudget` identifier, so an Eventually passing a bare
+literal was in no ceiling at all — neither an identifier site nor a raw
+`time.After`. **#99 closed it**: 18 such sites across 8 packages are now counted,
+and this section's previous text — "still open, owned by nobody" — is superseded.
+
+Finding them needed something the earlier grep could not do. A literal budget has
+no distinctive token; what identifies it is *which call it belongs to*. An
+adjacency regex over `<duration>, <duration>,` also matches
+`schedule.EveryRandom(5*time.Second, 5*time.Second)`, which is not a wait budget
+at all. So the guard carries one bit of state — the wait call most recently
+opened — and attributes the next literal budget to it. That attribution is also
+what finally lets it honour the long-standing rule that `Never` budgets stay out
+of this ceiling: they are recognised and discarded rather than being
+indistinguishable.
+
+Because attribution is a heuristic, the guard reconciles: it counts Eventually
+*calls* independently and fails if the budgets it found do not cover them. A
+budget it cannot read — a named local, a computed expression — stops the build
+instead of quietly leaving the ceiling.
 
 ## Related
 

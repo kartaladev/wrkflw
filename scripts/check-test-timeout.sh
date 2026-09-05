@@ -25,8 +25,10 @@
 #   * raising any `eventuallyBudget` far enough that budget x sites >= timeout;
 #   * adding enough new `eventuallyBudget` Eventually sites to one package to
 #     cross the same product;
-#   * adding a raw `time.After` deadline, or enough of them, to push one
-#     package's total over the timeout;
+#   * adding a raw `time.After` deadline, or a literal Eventually budget, or
+#     enough of either, to push one package's total over the timeout;
+#   * writing an Eventually whose budget this cannot attribute, which leaves the
+#     package's Eventually calls unaccounted and stops the build;
 #   * writing a `time.After` whose duration this cannot parse — a variable or a
 #     computed expression — which stops the build rather than being skipped;
 #   * lowering `-timeout` below an existing package's total;
@@ -34,15 +36,18 @@
 #
 # SCOPE (stated so nobody over-reads a green run):
 #
-#   COVERED — Eventually sites passing the shared `eventuallyBudget` constant,
-#   and raw `select { case <-time.After(d) }` deadlines in test files (added by
-#   #66: 45 of them across 27 files sat outside the old count entirely, because
-#   a raw select carries no identifier to grep and so fell outside even this
-#   caveat's original wording).
+#   COVERED — Eventually sites passing the shared `eventuallyBudget` constant;
+#   raw `select { case <-time.After(d) }` deadlines in test files (added by #66:
+#   45 of them across 27 files sat outside the old count entirely, because a raw
+#   select carries no identifier to grep and so fell outside even this caveat's
+#   original wording); and Eventually sites passing a bare duration literal
+#   (added by #99: 18 more across 8 packages, in neither of the other two sets).
 #
-#   NOT COVERED — an Eventually site passing a bare literal instead of the
-#   constant. Using the constant is the established convention and a literal is
-#   a separate review problem.
+#   NOT COVERED — an Eventually budget that is neither the shared constant nor an
+#   integer duration literal: a named local, a computed expression. That does not
+#   pass silently. Section 3's reconciliation counts Eventually CALLS against
+#   accounted budgets and stops the build when they do not cover it, so an
+#   unreadable budget is a loud failure rather than a quiet omission.
 #
 #   NOT COVERED, AND DELIBERATELY SO — `require.Never` budgets, and the raw
 #   negative windows that are their hand-rolled equivalent (see section 3).
@@ -190,8 +195,8 @@ duration_ms() {
 # docs/agents/test-deadlines.md for the five constructs and their counts.
 
 status=0
-printf '%-44s %7s %6s %8s %6s %8s %9s %s\n' \
-  PACKAGE BUDGET EV_SITES EV_COST RAW_N RAW_COST TOTAL VERDICT
+printf '%-42s %6s %5s %7s %6s %8s %6s %8s %8s %s\n' \
+  PACKAGE BUDGET EV_N EV_COST LIT_N LIT_COST RAW_N RAW_COST TOTAL VERDICT
 
 for dir in $(find . -name '*_test.go' -not -path './.git/*' -not -path './.claude/*' \
              | sed -e 's:/[^/]*$::' | sort -u); do
@@ -225,6 +230,71 @@ for dir in $(find . -name '*_test.go' -not -path './.git/*' -not -path './.claud
   fi
   ev_cost=$(( budget_s * sites ))
 
+  # -- literal Eventually budgets (#99) ---------------------------------------
+  #
+  # An Eventually passing a bare literal instead of eventuallyBudget carries no
+  # identifier, so the count above cannot see it. 18 such sites across 8 packages
+  # sat inside no ceiling at all: not identifier sites, and not raw time.After.
+  #
+  # Finding them needs to know WHICH call a duration belongs to, which a plain
+  # grep cannot do. `schedule.EveryRandom(5*time.Second, 5*time.Second)` is an
+  # adjacent duration pair that is not a wait budget at all, and an adjacency
+  # regex alone counts six of those. So awk carries one bit of state — the wait
+  # call most recently opened — and attributes the next literal budget to it.
+  #
+  # A call is disarmed either by consuming a budget or by seeing eventuallyBudget,
+  # so a shared-constant site never stays armed to swallow a later call's budget.
+  # FNR==1 resets between files. Never budgets are recognised and then DISCARDED,
+  # not counted: a Never budget is paid on every GREEN run, wants to be short, and
+  # is excluded from this ceiling by the same long-standing rule as before —
+  # attribution is what finally makes honouring that rule possible here.
+  lit_ms=0
+  lit_n=0
+  for expr in $(awk '
+      FNR == 1      { pending = "" }
+      /^[ \t]*\/\// { next }
+      /(require|assert)\.(Eventually|EventuallyWithT)\(/ { pending = "EV" }
+      /(require|assert)\.(Never|NeverWithT)\(/           { pending = "NV" }
+      /eventuallyBudget/                                 { pending = "" }
+      pending != "" && match($0, /[0-9]+[ \t]*\*[ \t]*time\.(Second|Millisecond|Minute)[ \t]*,[ \t]*([0-9]+[ \t]*\*[ \t]*)?time\.(Second|Millisecond|Minute)[ \t]*[,)]/) {
+        if (pending == "EV") {
+          b = substr($0, RSTART, RLENGTH); sub(/[ \t]*,.*$/, "", b); gsub(/[ \t]/, "", b); print b
+        }
+        pending = ""
+      }
+    ' "${dir}"/*_test.go 2>/dev/null); do
+    ms="$(duration_ms "${expr}")"
+    case "${ms}" in
+      ''|*[!0-9]*)
+        fail "cannot parse the literal Eventually budget '${expr}' in ${pkg}: see the duration_ms note above." ;;
+    esac
+    lit_ms=$(( lit_ms + ms ))
+    lit_n=$(( lit_n + 1 ))
+  done
+  lit_s=$(( (lit_ms + 999) / 1000 ))
+
+  # -- every Eventually site's budget must be accounted for --------------------
+  #
+  # The attribution above is a heuristic, and a heuristic that silently misses a
+  # site reports a total that looks derived but under-counts. So count the
+  # Eventually-family CALLS independently and require that the budgets found —
+  # identifier uses plus literals — cover them. A site whose budget is neither
+  # (a named local, a computed expression) leaves calls unaccounted and stops the
+  # build, rather than vanishing from the ceiling.
+  #
+  # The comparison is >= rather than ==: `sites` counts eventuallyBudget
+  # OCCURRENCES, and one of them (myelector/mysql_elector_heartbeat_test.go's
+  # context.WithTimeout(ctx, eventuallyBudget)) is not a wait site at all. That
+  # over-counts by one, which is the safe direction for a ceiling and must not be
+  # mistaken for a missing site.
+  ev_calls="$(cat "${dir}"/*_test.go 2>/dev/null \
+    | grep -v -E '^[[:space:]]*//' \
+    | grep -ohE '(require|assert)\.Eventually(WithT)?\(' \
+    | wc -l | tr -d ' ' || true)"
+  if (( sites + lit_n < ev_calls )); then
+    fail "${pkg}: ${ev_calls} Eventually call(s) but only $(( sites + lit_n )) accounted budget(s) (${sites} via eventuallyBudget, ${lit_n} literal). A budget that is neither the shared constant nor an integer duration literal is invisible to this ceiling — use eventuallyBudget, or spell the budget as a literal."
+  fi
+
   # -- raw select-deadline contribution ---------------------------------------
   raw_ms=0
   raw_n=0
@@ -242,16 +312,17 @@ for dir in $(find . -name '*_test.go' -not -path './.git/*' -not -path './.claud
   done
   raw_s=$(( (raw_ms + 999) / 1000 ))  # round up, matching the budget rule above
 
-  (( sites > 0 || raw_n > 0 )) || continue
+  (( sites > 0 || lit_n > 0 || raw_n > 0 )) || continue
 
-  total=$(( ev_cost + raw_s ))
+  total=$(( ev_cost + lit_s + raw_s ))
   verdict=ok
   if (( total >= timeout_s )); then
     verdict='OVER LIMIT'
     status=1
   fi
-  printf '%-44s %6ds %6d %7ds %6d %7ds %8ds %s\n' \
-    "${pkg}" "${budget_s}" "${sites}" "${ev_cost}" "${raw_n}" "${raw_s}" "${total}" "${verdict}"
+  printf '%-42s %5ds %5d %6ds %6d %7ds %6d %7ds %7ds %s\n' \
+    "${pkg}" "${budget_s}" "${sites}" "${ev_cost}" "${lit_n}" "${lit_s}" \
+    "${raw_n}" "${raw_s}" "${total}" "${verdict}"
 done
 echo
 echo "go test -timeout: ${ci_timeout} (${timeout_s}s), agreed by ${workflow} and ${coverage}"
