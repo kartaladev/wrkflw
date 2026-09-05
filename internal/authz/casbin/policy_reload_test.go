@@ -184,10 +184,17 @@ func TestNewDBEnforcer_WatcherReloadFailureIsObservable(t *testing.T) {
 	_, err = pool.Exec(t.Context(), `SELECT pg_notify($1, $2)`, channel, "peer-node")
 	require.NoError(t, err, "notify")
 
-	require.Eventually(t, func() bool {
-		return strings.Contains(logBuf.String(), "cross-node policy reload failed")
-	}, 15*time.Second, 25*time.Millisecond,
-		"a failed cross-node reload must produce an ERROR log record; got: %q", logBuf.String())
+	// Read the buffer INSIDE the condition. Passing logBuf.String() as a msgAndArgs
+	// value evaluated it at the call — before the wait started, when the buffer was
+	// still empty — so on the timeout path the diagnostic could only ever report
+	// got: "" (#92), losing the contents at exactly the moment they are worth
+	// seeing. EventuallyWithT re-reads every tick and, on timeout, reports the last
+	// completed tick's failure: the state the verdict was actually based on, and no
+	// read after the deadline that could show a record which arrived too late.
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		assert.Contains(c, logBuf.String(), "cross-node policy reload failed",
+			"a failed cross-node reload must produce an ERROR log record")
+	}, 15*time.Second, 25*time.Millisecond)
 
 	// Safe against #86's shape, recorded so the next sweep does not re-flag it:
 	// the waited-for message and this node_id are two attributes of ONE
