@@ -18,9 +18,9 @@ Single-context: one root `CONTEXT.md`, created lazily. Decisions live in commit 
 
 Wait for every state the assertions read, not a signal that merely correlates with them. See `docs/agents/eventually-waits.md`.
 
-### Test deadlines
+### Raw `time.After` deadlines
 
-Classify a `select`/`time.After` deadline by what its clause does, not by how long it is — a clause that fails the test wants to be generous, one that is the benign exit wants to stay short. See `docs/agents/test-deadlines.md`.
+Classify a `select` deadline by what its clause does, not by how long it is; every raw deadline is also counted against a per-package CI ceiling that rejects non-literal durations. See `docs/agents/test-deadlines.md`.
 
 ## Coding discipline
 

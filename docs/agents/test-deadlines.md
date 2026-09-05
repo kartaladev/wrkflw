@@ -20,7 +20,7 @@ the site in the tree that most needs to stay exactly as short as it is.
 
 | Construct | The deadline clause… | Paid | Wants to be | n |
 | --- | --- | --- | --- | --- |
-| **Timeout** | fails the test | on FAILURE only | generous | 34 |
+| **Timeout** | fails the test | on FAILURE only | *usually* generous — but see the watchdogs below | 34 |
 | **Negative window** | is the benign exit; a sibling clause fails | EVERY GREEN RUN | short | 6 |
 | **Drain / loop exit** | is a loop's only exit; nothing fails | EVERY GREEN RUN | short | 1 |
 | **Fixture fallback** | returns a value from a test double or helper | rarely, often never | irrelevant | 3 |
