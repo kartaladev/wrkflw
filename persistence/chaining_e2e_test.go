@@ -179,29 +179,57 @@ func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, def
 // responsible for. That holds today for two reasons the tests never state:
 // Chainer.Handle records the link BEFORE calling Drive, and a start→end
 // definition is created already-completed in a single Store.Create. Neither is a
-// promise. Moving Handle's Record block below its Drive call — two lines, no test
-// change — makes the link assertion in all three scenarios fail; measured.
-// Waiting for the state actually asserted removes that dependency.
+// promise. Measured: moving Handle's Record block below its Drive call AND
+// widening the gap to 200ms fails all three scenarios on all three dialects with
+// no test change. (The reorder ALONE passes — a sub-millisecond window against a
+// 20ms poll. The delay is what makes it deterministic; see
+// docs/agents/eventually-waits.md.) Waiting for the state actually asserted
+// removes the dependency.
 func awaitChainedSuccessor(t *testing.T, ctx context.Context, d chainingDialect, successorID string) (engine.InstanceState, kernel.ChainLink) {
 	t.Helper()
 
+	// st and link are written by the condition closure, which testify runs on its
+	// own goroutine. That is ordered, not racy: Eventually keeps exactly one
+	// condition goroutine in flight (it nils its tick channel until a result
+	// arrives) and the channel receive that ends the wait orders those writes
+	// before the read below. The timeout path is the one to be careful with — a
+	// straggler condition goroutine can still be running — so nothing on the
+	// failure path below reads st or link.
 	var (
 		st   engine.InstanceState
 		link kernel.ChainLink
 	)
-	require.Eventually(t, func() bool {
+	ok := assert.Eventually(t, func() bool {
 		loaded, _, err := d.store.Load(ctx, successorID)
 		if err != nil || loaded.Status != engine.StatusCompleted {
 			return false
 		}
-		recorded, ok, err := d.links.LookupBySuccessor(ctx, successorID)
-		if err != nil || !ok {
+		recorded, found, err := d.links.LookupBySuccessor(ctx, successorID)
+		if err != nil || !found {
 			return false
 		}
 		st, link = loaded, recorded
 		return true
 	}, 5*time.Second, 20*time.Millisecond,
 		"successor %s must complete AND have its chain link recorded", successorID)
+	if !ok {
+		// Say WHICH half failed and why. The condition can only report a bool, so
+		// the detail is re-read here, on the test goroutine, rather than captured
+		// out of the closure — capturing diagnostics would mean reading vars a
+		// straggler condition goroutine may still be writing. These values are read
+		// after the deadline, so a state that arrived late shows up as present;
+		// the wait still failed.
+		status := "<instance not loaded>" // Status is meaningless when Load errored
+		if loaded, _, loadErr := d.store.Load(ctx, successorID); loadErr == nil {
+			status = loaded.Status.String()
+		} else {
+			status += ": " + loadErr.Error()
+		}
+		_, found, linkErr := d.links.LookupBySuccessor(ctx, successorID)
+		require.FailNowf(t, "chained successor never materialised",
+			"successor %s, re-read after the wait expired: status=%s linkRecorded=%v linkErr=%v",
+			successorID, status, found, linkErr)
+	}
 
 	return st, link
 }

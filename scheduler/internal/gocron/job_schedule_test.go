@@ -69,6 +69,12 @@ func TestGocronScheduler_ScheduleJob(t *testing.T) {
 				// follow took its `default` branch and failed a green run. Widening
 				// that window with a 200ms sleep between the two writes made it
 				// deterministic; gating on the value the assertions read removes it.
+				// obs is written by the condition closure on testify's goroutine and
+				// read here: ordered, because Eventually keeps one condition
+				// goroutine in flight and the receive that ends the wait orders the
+				// write before this read. It relies on require (not assert): on the
+				// timeout path a straggler closure can still write obs, and only
+				// FailNow stops this goroutine from reading it concurrently.
 				var obs ctxObservation
 				require.Eventually(t, func() bool {
 					select {
