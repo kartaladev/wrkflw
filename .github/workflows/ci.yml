@@ -90,18 +90,24 @@ jobs:
         run: bash scripts/check-extraction.sh
 
   test-timeout-budget:
-    name: Eventually budget vs go test -timeout
+    name: Test wait budget vs go test -timeout
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      # eventuallyBudget x the densest package's site count must stay under the
-      # go test binary timeout, or a mass failure is reported
+      # A package's worst-case failure cost — eventuallyBudget x its site count,
+      # PLUS the sum of its raw `select { case <-time.After(d) }` deadlines —
+      # must stay under the go test binary timeout, or a mass failure is reported
       # as "panic: test timed out" with no assertion messages. Every number is
       # derived from source. Pure bash + grep: no Go toolchain, no Docker.
       # Deliberately its own job so a violation is reported even when the suite
       # itself is the thing timing out.
-      - name: Check Eventually budget fits the test timeout
+      #
+      # The raw-deadline half was added by #66: 45 such deadlines across 27 files
+      # carried no identifier for the old grep to find, so they sat outside the
+      # count entirely. Renamed from "Eventually budget" because the job no
+      # longer covers only Eventually sites.
+      - name: Check test wait budgets fit the test timeout
         run: bash scripts/check-test-timeout.sh
 
   doc-refs:
