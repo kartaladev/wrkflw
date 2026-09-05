@@ -12,7 +12,11 @@ The five canonical triage roles, each label string equal to its name (`needs-tri
 
 ### Domain docs
 
-Single-context: one root `CONTEXT.md` and one `docs/adr/`. See `docs/agents/domain.md`.
+Single-context: one root `CONTEXT.md`, created lazily. Decisions live in commit messages, PR bodies and code comments, not a document tree. See `docs/agents/domain.md`.
+
+### Eventually waits
+
+Wait for every state the assertions read, not a signal that merely correlates with them. See `docs/agents/eventually-waits.md`.
 
 ## Coding discipline
 
