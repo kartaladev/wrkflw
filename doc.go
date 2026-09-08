@@ -48,11 +48,91 @@
 //     complete, reassign). MemTaskStore for tests; wire a SQL-backed store for
 //     production.
 //
+// # Trust boundary
+//
+// wrkflw authenticates nobody. Every HTTP route group this library mounts runs
+// with whatever identity the surrounding application has already established.
+// The boundary is the router group you mount onto, and securing it is the
+// consumer's job:
+//
+//   - Authentication is always yours. Mount the route groups from
+//     transport/http/stdlib, transport/http/gin or transport/http/fiber onto a
+//     group your own middleware has already authenticated. The library supplies
+//     no default and no opt-out; the SECURITY note in the godoc of each
+//     route-group type says what a caller reaching it could do. Only TaskRoutes
+//     checks that an identity exists at all — it resolves the configured
+//     RequestActorFunc and fails closed with 401 or 503. The instance and admin
+//     routes DO resolve it, on every request, but only to decide how much to
+//     disclose; they never refuse. The message and health routes never ask.
+//   - RequestActorFunc answers who, never may. It names the caller and grants
+//     nothing. Returning a well-formed actor from it is not an authorization
+//     decision, and no route consults it to decide whether an operation is
+//     permitted on a particular instance.
+//   - Identity LIFTS the redaction on instance reads; it does not gate them.
+//     This is the most counter-intuitive thing in this section. The reads apply
+//     a projection with TWO inputs — the disclosure set you configured, and
+//     whether the transport could identify the caller — and no authorization
+//     step on either. Under the default, empty set: an UNIDENTIFIED caller
+//     receives a structural skeleton (IDs, status, timestamps, history, token
+//     and task state), and an IDENTIFIED caller receives everything,
+//     unprojected — variables, start variables, scopes, incidents, compensation
+//     records, and each task's claim, completion and candidates. Identity here
+//     means the consumer's own RequestActorFunc returned a non-empty Actor.ID.
+//     See [github.com/kartaladev/wrkflw/transport/http/httpcore.DisclosingMapper].
+//   - The disclosure set widens the projection for EVERYONE, identified or not.
+//     Every category you add is disclosed to unidentified callers too: configure
+//     [github.com/kartaladev/wrkflw/authz.DiscloseVariables] and any caller
+//     reaching the route receives process variables, scopes and compensation
+//     records without ever being identified.
+//     [github.com/kartaladev/wrkflw/authz.DiscloseAll] goes further — it
+//     short-circuits identity resolution entirely, so RequestActorFunc is never
+//     called and every caller is treated as identified. The default is the empty
+//     set, which discloses nothing beyond the skeleton, and nothing in this
+//     library adds to it for you.
+//   - There is no per-instance access control, so lifting the redaction lifts it
+//     for EVERY instance. GetInstance, the snapshot read and the actionable read
+//     take an instance ID and no actor. Mounting behind auth middleware — which
+//     is what this section tells you to do — therefore satisfies the identity
+//     check for every logged-in caller and hands each of them the full state of
+//     ANY instance ID they can name, across tenants. The library has no owner or
+//     tenant concept; enforce ownership yourself if you need one.
+//   - "Identity" means two different things here, deliberately. The human-task
+//     guard refuses only the wholly zero actor, so the kiosk claimant — an actor
+//     carrying roles but no ID — may claim and complete tasks. The disclosure
+//     decision is stricter and requires a non-empty Actor.ID, so that same
+//     caller is UNIDENTIFIED for reads and receives the projection. An actor can
+//     therefore act without being able to see.
+//   - Instance IDs are identifiers, not secrets. The default generator
+//     ([github.com/kartaladev/wrkflw/runtime/idgen.XID]) is time- and
+//     counter-ordered, so a caller holding one ID can derive its neighbours —
+//     and holding an ID is the only thing the read routes require.
+//     Enumerability is by design and is not a protection; put the access control
+//     in your middleware.
+//   - Authorization inside the library reaches human tasks only. An
+//     [github.com/kartaladev/wrkflw/authz.Authorizer] is consulted by
+//     [github.com/kartaladev/wrkflw/runtime/task.TaskService] in Claim,
+//     Complete, Reassign and RefreshCandidates, against the task's eligibility
+//     spec. Nothing else authorizes. The disclosure decision above is the one
+//     the transport itself makes, and it governs what a caller may SEE, never
+//     what it may DO.
+//   - Admin routes are only partly default-absent. Four register
+//     unconditionally: GET /admin/instances, the incident-resolve route,
+//     POST /admin/instances/{id}/compensation/resolve-stall — which takes a
+//     required body and mutates the instance — and
+//     POST /admin/instances/{id}/cancel. Only the routes behind the optional
+//     DeadLetters, Policies, RelayStats, Timers and Lineage fields stay absent
+//     while their field is nil. For the four that are always there, absence is
+//     not the protection — AdminRoutes has no authentication of its own.
+//
 // # Authorization
 //
 //   - authz        The pluggable Authorizer abstraction (role, resource, and
-//     attribute-based) evaluated at human-task nodes. Implement this interface
-//     to integrate any authorization backend.
+//     attribute-based). It is evaluated in the human-task service, not in the
+//     transports or the engine: runtime/task.TaskService calls it from Claim,
+//     Complete, Reassign and RefreshCandidates, and those four are the only
+//     calls the library makes. See the Trust boundary section above for what
+//     that does and does not protect. Implement this interface to integrate any
+//     authorization backend.
 //   - casbinauthz  The consumer-facing façade for the casbin-backed authorizer.
 //     Single constructor: NewCasbinAuthorizer(opts…) — exactly one source option
 //     (FromEnforcer, FromStrings, or FromDB) required.
@@ -65,7 +145,8 @@
 //     pure-endpoint funcs, DTOs (validated via go-playground/validator/v10),
 //     ClassifyError (5xx redaction), Instrumentation.Observe (static route template),
 //     and the RouteCustomizer[R] / CustomizeOption[R] generic seam.
-//     Admin routes are default-absent: mount AdminRoutes on a consumer-secured group.
+//     Mount AdminRoutes on a consumer-secured group; see the Trust boundary
+//     section above for which of its routes are default-absent and which are not.
 //     The engine core never imports transport packages.
 //   - service      The application-layer Service façade consumed by transports:
 //     StartInstance, GetInstance, ClaimTask, CompleteTask, ResolveIncident, etc.
