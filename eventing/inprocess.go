@@ -72,9 +72,12 @@ const defaultRedeliveryBackoff = 10 * time.Millisecond
 // see [Handler] for that discipline.
 //
 // The context a handler receives is rebuilt from the envelope's metadata, so the
-// trace parent it carries is REMOTE and UNVERIFIED: it is whatever the publisher
-// wrote, exactly as a trace context arriving over a real broker would be. Treat
-// it as correlation, never as evidence of where an envelope came from.
+// trace parent it carries is REMOTE and UNVERIFIED — whatever the publisher
+// wrote, exactly as a trace context arriving over a real broker would be, and
+// forgeable by anyone who can publish. It is observability context, not
+// authoritative: never an input to identity, authorization or any decision the
+// system acts on, in the same sense that [MetaDefinitionRef] is routing context
+// rather than proof of provenance.
 //
 // The bus starts no goroutines of its own: [InProcess.Subscribe] runs its
 // delivery loop on the caller's goroutine, and [InProcess.Start] runs it on one
@@ -160,16 +163,10 @@ func (b *InProcess) Publish(ctx context.Context, ev kernel.OutboxEvent) error {
 	return b.pub.Publish(ctx, ev)
 }
 
-// fanout is the PublishFunc [NewPublisher] wraps. Each subscription gets its own
-// copy of BOTH the metadata map and the body bytes, so no handler can observe
-// another's mutations — the isolation a real broker gives for free by handing
-// each consumer its own bytes off the wire. Cloning one and sharing the other
-// would be worse than sharing both: it reads as isolation and is not.
-//
-// The cost is a copy per subscriber per envelope. That is the right trade for a
-// bus whose stated job is tests, examples and single-process deployments, where
-// a handler that behaves differently here than behind a real broker is the
-// expensive failure.
+// fanout is the PublishFunc [NewPublisher] wraps. It queues the SAME Envelope
+// value on every matching subscription and copies nothing: isolation is owned
+// entirely by dispatch, which clones per delivery attempt. Doing it here as well
+// would be both redundant and insufficient — see the comment there.
 func (b *InProcess) fanout(_ context.Context, env Envelope) error {
 	b.mu.Lock()
 	if b.closed {
@@ -180,10 +177,7 @@ func (b *InProcess) fanout(_ context.Context, env Envelope) error {
 	b.mu.Unlock()
 
 	for _, s := range subs {
-		copied := env
-		copied.Metadata = maps.Clone(env.Metadata)
-		copied.Body = bytes.Clone(env.Body)
-		s.push(copied)
+		s.push(env)
 	}
 	return nil
 }
@@ -335,13 +329,36 @@ func (b *InProcess) deliver(ctx context.Context, s *subscription, h Handler) err
 // must end.
 func (b *InProcess) dispatch(ctx context.Context, env Envelope, h Handler) error {
 	for {
+		// A FRESH COPY PER DELIVERY ATTEMPT — not per subscriber — is what makes
+		// "each subscription is independent" true. Both are needed and one place
+		// owns both:
+		//
+		//   - across subscribers, because a delivered Envelope is the handler's
+		//     to do as it likes, exactly as a real broker hands each consumer its
+		//     own bytes off the wire;
+		//   - across ATTEMPTS, because this loop re-extracts the handler context
+		//     from Metadata below on every retry. A handler that stamps a key in,
+		//     or decodes Body in place, would otherwise corrupt its own next
+		//     attempt — and the trace context that attempt is built from.
+		//
+		// Cloning in fanout instead covers only the first case, which is why the
+		// copy lives here. watermill's gochannel put it in the same place, inside
+		// its retry loop, naming retries in the comment.
+		//
+		// On the happy path this is one clone, the same cost as cloning per
+		// subscriber. It only multiplies for a handler that is already failing,
+		// where a timer and a four-attribute log line dominate anyway.
+		attempt := env
+		attempt.Metadata = maps.Clone(env.Metadata)
+		attempt.Body = bytes.Clone(env.Body)
+
 		// The handler's context is rebuilt from the envelope's metadata rather
 		// than inherited from the publisher: a real broker hands a consumer bytes
 		// and headers, never a Go value, so parenting has to survive that. What
 		// IS inherited is the subscription's own lifetime — cancelling the
 		// subscription cancels the handler.
-		hctx := b.propagator.Extract(ctx, propagation.MapCarrier(env.Metadata))
-		err := h(hctx, env)
+		hctx := b.propagator.Extract(ctx, propagation.MapCarrier(attempt.Metadata))
+		err := h(hctx, attempt)
 		if err == nil {
 			return nil
 		}

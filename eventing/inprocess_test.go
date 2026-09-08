@@ -579,3 +579,71 @@ func TestPublishToAClosedBusLogsAtDebugNotError(t *testing.T) {
 	assert.Zero(t, rec.count(slog.LevelError),
 		"a publish refused by a closing bus must NOT be logged at ERROR")
 }
+
+// TestInProcessGivesEachDeliveryAttemptItsOwnEnvelope is the REDELIVERY half of
+// isolation, and the half a per-subscriber clone does not cover.
+//
+// dispatch holds one Envelope and loops over it, re-extracting the handler
+// context from env.Metadata on every attempt. So a handler that writes to the
+// envelope it was handed corrupts its OWN next attempt — including the trace
+// context that attempt is built from — even when each subscriber already has a
+// private copy. watermill's gochannel cloned inside its retry loop for exactly
+// this reason, naming retries in the comment; per delivery ATTEMPT is where the
+// copy belongs.
+func TestInProcessGivesEachDeliveryAttemptItsOwnEnvelope(t *testing.T) {
+	t.Parallel()
+
+	bus := eventing.NewInProcess(eventing.WithRedeliveryBackoff(5 * time.Millisecond))
+	t.Cleanup(func() { require.NoError(t, bus.Close()) })
+
+	type received struct {
+		body       string
+		instanceID string
+	}
+	var (
+		mu       sync.Mutex
+		attempts []received
+	)
+
+	stop, err := bus.Start(t.Context(), eventing.TopicInstanceCompleted,
+		func(_ context.Context, env eventing.Envelope) error {
+			mu.Lock()
+			attempts = append(attempts, received{string(env.Body), env.Metadata[eventing.MetaInstanceID]})
+			n := len(attempts)
+			mu.Unlock()
+
+			// Scribble on the envelope we were handed, exactly as a handler doing
+			// an in-place decode or a bytes.Replace would.
+			env.Body[0] = 'X'
+			env.Metadata[eventing.MetaInstanceID] = "clobbered-on-the-first-attempt"
+
+			if n == 1 {
+				return errors.New("nack once, so the same envelope comes back")
+			}
+			return nil
+		})
+	require.NoError(t, err)
+	defer stop()
+
+	require.NoError(t, bus.Publish(t.Context(), kernel.OutboxEvent{
+		Topic:      eventing.TopicInstanceCompleted,
+		InstanceID: "p1",
+		Payload:    map[string]any{"k": "v"},
+	}))
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(attempts) >= 2
+	}, 3*time.Second, 5*time.Millisecond, "the nacked envelope must be redelivered")
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, attempts, 2, "exactly one nack then one ack")
+	assert.Equal(t, `{"k":"v"}`, attempts[0].body)
+	assert.Equal(t, "p1", attempts[0].instanceID)
+	assert.Equal(t, `{"k":"v"}`, attempts[1].body,
+		"a redelivered envelope must be a fresh copy, not the one the last attempt scribbled on")
+	assert.Equal(t, "p1", attempts[1].instanceID,
+		"metadata too: the handler context of attempt 2 is extracted from this map")
+}

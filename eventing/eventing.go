@@ -126,6 +126,14 @@ func WithMeterProvider(mp metric.MeterProvider) Option {
 // which is a no-op until a deployment sets it. Pass this to match a deployment
 // that propagates something else (B3, Jaeger, a composite). A nil propagator is
 // ignored.
+//
+// MIND WHAT A COMPOSITE CARRIES. Whatever the propagator writes goes into
+// Envelope.Metadata and travels to the broker in cleartext, so composing
+// propagation.Baggage{} ships the process's OpenTelemetry baggage with every
+// event — commonly tenant ids, user ids and feature flags, to an operator who
+// may be a third party and to every consumer of the topic. The default writes
+// the W3C traceparent/tracestate pair and nothing else. Add baggage only when
+// you know what is in it and where the topic goes.
 func WithPropagator(p propagation.TextMapPropagator) Option {
 	return func(o *options) {
 		if p != nil {
