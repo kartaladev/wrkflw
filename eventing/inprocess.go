@@ -57,11 +57,13 @@ const defaultRedeliveryBackoff = 10 * time.Millisecond
 //
 // # Delivery
 //
-// Each subscription is an independent FIFO queue with its own copy of every
-// envelope, so one slow handler cannot stall another subscription, Publish never
-// blocks on a handler, and no handler can observe another's mutations. A handler
-// that returns an error nacks, and the SAME envelope is handed back after
-// [WithRedeliveryBackoff] until it acks or the subscription ends.
+// Each subscription has its own FIFO queue, so one slow handler cannot stall
+// another subscription and Publish never blocks on a handler. The Envelope a
+// [Handler] receives is a fresh copy, cloned per DELIVERY ATTEMPT rather than
+// per subscriber, so no handler can observe another's mutations — or its own
+// previous attempt's. A handler that returns an error nacks, and the same
+// envelope is handed back after [WithRedeliveryBackoff] until it acks or the
+// subscription ends.
 //
 // At-least-once delivery is the point of that, and it has a cost worth stating
 // plainly: an always-failing handler blocks its own subscription's queue AND

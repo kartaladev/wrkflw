@@ -204,17 +204,6 @@ func TestInProcessCloseEndsEverySubscription(t *testing.T) {
 		return true
 	}, 3*time.Second, 10*time.Millisecond, "all subscriptions must go live")
 
-	// Then wait for every subscription to go IDLE, not merely live. Delivery is
-	// FIFO per subscription, so a sentinel published after the probe loop is seen
-	// only once every earlier probe has been consumed — at which point each
-	// subscription is parked on an empty queue.
-	//
-	// This is the difference between the two ways a loop can notice Close, and
-	// only one of them is the interesting one. A subscription with a backlog
-	// notices between envelopes; a parked one has to be woken. Closing while
-	// backlogged tests the first and says nothing about the second — measured:
-	// deleting the Close case from the parked select leaves this test green
-	// unless it waits for idleness first.
 	// Then wait for every subscription to go IDLE, not merely live — and assert
 	// that WITHOUT depending on delivery order. Publishing has stopped, so each
 	// queue is finite and draining; two consecutive samples that agree, a tick
@@ -249,11 +238,13 @@ func TestInProcessCloseEndsEverySubscription(t *testing.T) {
 		"all subscriptions must drain to idle once publishing stops")
 
 	// MEASURED LIMIT OF THIS TEST, so nobody over-reads a green run: it pins the
-	// CONTRACT (every Subscribe returns) deterministically — 6/6 green on correct
-	// code — but it does NOT reliably pin WHICH exit the loop takes. Deleting the
-	// Close case from the parked select above kills it only 6 times in 12,
-	// because a loop still working through a backlog leaves via the
-	// between-envelopes check instead and that is a legitimate exit too.
+	// CONTRACT (every Subscribe returns) deterministically — green on every run
+	// against correct code — but it does NOT reliably pin WHICH exit the loop
+	// takes. Deleting the Close case from the parked select above kills it only
+	// sometimes, because a loop still working through a backlog leaves via the
+	// between-envelopes check instead and that is a legitimate exit too. The rate
+	// is machine-dependent and deliberately not quoted here: it was measured at
+	// 6-in-12 on one machine and 2-in-12 on another.
 	// Forcing the parked path needs to observe the park, which no exported API
 	// allows; that gap is tracked separately.
 	// TestInProcessCloseEndsASubscriptionParkedInTheRedeliveryBackoff is the

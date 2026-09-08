@@ -23,7 +23,8 @@
 //  1. Opens a database and applies schema migrations idempotently.
 //  2. Defines a predecessor process (proc-a) and a successor (proc-a-succ).
 //  3. Wires: ProcessDriver + Chainer + ChainerRunner + in-process pub/sub + Relay.
-//  4. Starts the ChainerRunner goroutine (subscribing before any relay publish).
+//  4. Starts the ChainerRunner goroutine, which must subscribe before the relay
+//     publishes — an ordering this example relies on but cannot enforce.
 //  5. Runs the predecessor instance "demo-pred" to completion.
 //  6. Drains the relay once to publish the terminal outbox event.
 //  7. Polls (≤10 s) until the successor "demo-pred-next-completed" appears.
@@ -277,8 +278,9 @@ func run(logger *slog.Logger) error {
 	// ── Wire the in-process pub/sub first — relay and ChainerRunner both need it ─
 	//
 	// The bus is non-persistent: envelopes published to a topic nobody has
-	// subscribed yet are dropped. The ChainerRunner goroutine subscribes below
-	// BEFORE DrainOnce.
+	// subscribed yet are dropped. The ChainerRunner goroutine started below is
+	// expected to subscribe before DrainOnce runs, but nothing enforces that —
+	// see the note there.
 	bus := eventing.NewInProcess(eventing.WithLogger(logger))
 	defer func() { _ = bus.Close() }()
 
