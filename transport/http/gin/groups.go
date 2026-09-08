@@ -15,6 +15,20 @@ import (
 
 // InstanceRoutes mounts the five instance-lifecycle endpoints onto a gin.IRouter.
 // It implements httpcore.RouteCustomizer[gin.IRouter].
+//
+// SECURITY: these routes have NO built-in authentication and NO per-instance
+// access control. Any caller that reaches them may start, read and signal ANY
+// instance whose ID it can name, and instance IDs are enumerable by design
+// rather than secret.
+//
+// Identity LIFTS the redaction on these reads rather than gating them. A caller
+// the transport cannot identify receives a structural projection -- IDs, status,
+// timestamps, history, token and task state. An identified caller receives
+// everything: variables, start variables, scopes, incidents, compensation
+// records, and each task's claim, completion and candidates -- for ANY instance
+// ID. Mounting these onto an authenticated group, which you should still do,
+// therefore WIDENS what every logged-in caller can read. No owner or tenant
+// check exists below this seam; add one yourself.
 type InstanceRoutes struct {
 	// Svc is the application service. Must not be nil.
 	Svc service.Service
@@ -106,6 +120,14 @@ func (ir InstanceRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeO
 
 // MessageRoutes mounts the message-delivery endpoint onto a gin.IRouter.
 // It implements httpcore.RouteCustomizer[gin.IRouter].
+//
+// SECURITY: this route has NO built-in authentication and NO authorization.
+// Any caller that reaches it may deliver a message to ANY instance waiting on
+// one, and so may drive an instance forward without ever naming itself. A
+// message is routed by name and correlation key, neither of which is a secret
+// or a credential. Mount MessageRoutes only onto a router group your own auth
+// middleware already protects; nothing below this seam checks who the caller
+// is.
 type MessageRoutes struct {
 	// Svc is the application service. Must not be nil.
 	Svc service.Service
@@ -146,6 +168,19 @@ func (mr MessageRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOp
 
 // TaskRoutes mounts the three human-task action endpoints onto a gin.IRouter.
 // It implements httpcore.RouteCustomizer[gin.IRouter].
+//
+// SECURITY: these routes have NO built-in authentication. They require an
+// actor identity, which they take from the configured RequestActor, and they
+// authorize that actor against the task's eligibility rule ONLY.
+//
+// "Requires an identity" is weaker than it sounds. Only the wholly zero actor
+// is refused, so the kiosk claimant -- roles but no ID -- is admitted here and
+// may claim and complete tasks, while the instance reads treat that same caller
+// as UNIDENTIFIED and hand it the redacted projection. An actor can act without
+// being able to see. Reassign authorizes the reassigner, never the person
+// reassigned to, and nothing here establishes that an identity is genuine.
+// Mount TaskRoutes only onto a router group your own auth middleware already
+// protects, which is what makes the actor trustworthy.
 type TaskRoutes struct {
 	// Svc is the application service. Must not be nil.
 	Svc service.Service
@@ -248,6 +283,7 @@ func (tr TaskRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOptio
 // have wired.
 //
 // It implements httpcore.RouteCustomizer[gin.IRouter].
+//
 // SECURITY: these routes have NO built-in authentication. Mount AdminRoutes only
 // onto a router group already protected by your auth middleware (admin-by-
 // composition); otherwise the admin endpoints are exposed unauthenticated.
@@ -545,6 +581,12 @@ func (ar AdminRoutes) Customize(r ginlib.IRouter, opts ...httpcore.CustomizeOpti
 
 // HealthRoutes mounts the /healthz and /readyz probes onto a gin.IRouter.
 // It implements httpcore.RouteCustomizer[gin.IRouter].
+//
+// SECURITY: these routes have NO built-in authentication. The /readyz body
+// names every configured check and reports which of them is unavailable, so it
+// discloses your dependency topology to any caller that reaches it. Mount
+// HealthRoutes on an internal listener, or onto a protected group, whenever
+// that disclosure matters.
 type HealthRoutes struct {
 	// Checks are evaluated by /readyz. An empty slice means always healthy.
 	Checks []httpcore.HealthCheck
