@@ -22,14 +22,17 @@ import (
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
 	watermillpub "github.com/kartaladev/wrkflw/internal/eventing/watermill"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
+
+	"context"
 )
 
 // Compile-time guard: the internal adapter satisfies the public port.
 var _ kernel.OutboxPublisher = (*watermillpub.Publisher)(nil)
 
-// Option configures a publisher.
+// Option configures a publisher, an in-process bus, or a chaining runner.
 type Option func(*options)
 
 type options struct {
@@ -38,23 +41,46 @@ type options struct {
 	mp     metric.MeterProvider
 }
 
-// WithLogger sets the structured logger (default slog.Default()).
-func WithLogger(l *slog.Logger) Option { return func(o *options) { o.logger = l } }
-
-// WithTracerProvider sets the tracer provider (default: otel global).
-func WithTracerProvider(tp trace.TracerProvider) Option { return func(o *options) { o.tp = tp } }
-
-// WithMeterProvider sets the meter provider (default: otel global).
-func WithMeterProvider(mp metric.MeterProvider) Option { return func(o *options) { o.mp = mp } }
-
-// NewPublisher wraps a watermill message.Publisher as a kernel.OutboxPublisher,
-// mapping each OutboxEvent to a watermill message.
-func NewPublisher(pub message.Publisher, opts ...Option) kernel.OutboxPublisher {
-	var o options
+// newOptions applies opts over the package defaults, so every constructor
+// resolves "unset" the same way and no caller has to nil-check.
+func newOptions(opts ...Option) options {
+	o := options{
+		logger: slog.Default(),
+		tp:     otel.GetTracerProvider(),
+		mp:     otel.GetMeterProvider(),
+	}
 	for _, fn := range opts {
 		fn(&o)
 	}
-	return watermillpub.NewPublisher(pub, toInternal(o)...)
+	return o
+}
+
+// WithLogger sets the structured logger (default slog.Default()). A nil logger
+// is ignored.
+func WithLogger(l *slog.Logger) Option {
+	return func(o *options) {
+		if l != nil {
+			o.logger = l
+		}
+	}
+}
+
+// WithTracerProvider sets the tracer provider (default: the otel global).
+func WithTracerProvider(tp trace.TracerProvider) Option {
+	return func(o *options) {
+		if tp != nil {
+			o.tp = tp
+		}
+	}
+}
+
+// WithMeterProvider sets the meter provider (default: the otel global).
+func WithMeterProvider(mp metric.MeterProvider) Option {
+	return func(o *options) {
+		if mp != nil {
+			o.mp = mp
+		}
+	}
 }
 
 // NewGoChannelPublisher builds an in-process GoChannel pub/sub and returns a
@@ -62,28 +88,15 @@ func NewPublisher(pub message.Publisher, opts ...Option) kernel.OutboxPublisher 
 // or tests), and an io.Closer to release it. No external broker is required.
 // GoChannel ships in watermill core, so this adds no broker dependency.
 func NewGoChannelPublisher(opts ...Option) (kernel.OutboxPublisher, message.Subscriber, io.Closer) {
-	var o options
-	for _, fn := range opts {
-		fn(&o)
+	o := newOptions(opts...)
+	gc := gochannel.NewGoChannel(gochannel.Config{}, watermillpub.NewWatermillLogger(o.logger))
+	publish := func(ctx context.Context, env Envelope) error {
+		msg := message.NewMessage(env.ID, env.Body)
+		for k, v := range env.Metadata {
+			msg.Metadata.Set(k, v)
+		}
+		msg.SetContext(ctx)
+		return gc.Publish(env.Topic, msg)
 	}
-	logger := o.logger
-	if logger == nil {
-		logger = slog.Default()
-	}
-	gc := gochannel.NewGoChannel(gochannel.Config{}, watermillpub.NewWatermillLogger(logger))
-	return NewPublisher(gc, opts...), gc, gc
-}
-
-func toInternal(o options) []watermillpub.Option {
-	var out []watermillpub.Option
-	if o.logger != nil {
-		out = append(out, watermillpub.WithLogger(o.logger))
-	}
-	if o.tp != nil {
-		out = append(out, watermillpub.WithTracerProvider(o.tp))
-	}
-	if o.mp != nil {
-		out = append(out, watermillpub.WithMeterProvider(o.mp))
-	}
-	return out
+	return NewPublisher(publish, opts...), gc, gc
 }

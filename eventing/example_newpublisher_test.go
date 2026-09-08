@@ -4,42 +4,27 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ThreeDotsLabs/watermill/message"
-
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/eventing"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
-// capturePublisher is a trivial watermill message.Publisher that records the
-// messages it is handed, standing in for a real broker publisher (Kafka, NATS,
-// Redis Streams, watermill-SQL, …). It exists only to make this example runnable
-// without a broker dependency.
-type capturePublisher struct {
-	topics []string
-	msgs   []*message.Message
-}
-
-func (c *capturePublisher) Publish(topic string, msgs ...*message.Message) error {
-	for _, m := range msgs {
-		c.topics = append(c.topics, topic)
-		c.msgs = append(c.msgs, m)
-	}
-	return nil
-}
-
-func (c *capturePublisher) Close() error { return nil }
-
-// ExampleNewPublisher shows how a consumer reaches any external broker: wrap the
-// broker's watermill message.Publisher with eventing.NewPublisher and hand the
-// result to persistence.NewRelay. Every published message carries the
-// process-instance id as metadata (for partition/ordering) and uses the outbox
-// dedup key as its UUID (for at-least-once dedup on the consumer).
+// ExampleNewPublisher shows how a consumer reaches any external broker: write a
+// PublishFunc that hands one Envelope to the broker client you already run, wrap
+// it with eventing.NewPublisher, and give the result to persistence.NewRelay.
+// Every envelope carries the process-instance id as metadata (for
+// partition/ordering) and uses the outbox dedup key as its ID (for at-least-once
+// dedup on the consumer).
 func ExampleNewPublisher() {
-	// In production this is kafka.NewPublisher(...) / nats.NewPublisher(...) / etc.
-	broker := &capturePublisher{}
+	// In production the body of this function is one call into kafka.Writer /
+	// nats.Conn / redis.Client. Here it just records what it was handed.
+	var seen []eventing.Envelope
+	publish := func(_ context.Context, env eventing.Envelope) error {
+		seen = append(seen, env)
+		return nil
+	}
 
-	pub := eventing.NewPublisher(broker)
+	pub := eventing.NewPublisher(publish)
 
 	// The outbox relay calls Publish for each drained row; here we publish one
 	// event directly to show the mapping.
@@ -51,14 +36,16 @@ func ExampleNewPublisher() {
 		Payload:       map[string]any{"status": "completed"},
 	})
 
-	m := broker.msgs[0]
-	fmt.Println("topic:", broker.topics[0])
-	fmt.Println("uuid:", m.UUID)
-	fmt.Println("instance_id:", m.Metadata.Get("instance_id"))
-	fmt.Println("definition_ref:", m.Metadata.Get("definition_ref"))
+	env := seen[0]
+	fmt.Println("topic:", env.Topic)
+	fmt.Println("id:", env.ID)
+	fmt.Println("instance_id:", env.Metadata[eventing.MetaInstanceID])
+	fmt.Println("definition_ref:", env.Metadata[eventing.MetaDefinitionRef])
+	fmt.Println("body:", string(env.Body))
 	// Output:
 	// topic: instance.completed
-	// uuid: order-42:3:0
+	// id: order-42:3:0
 	// instance_id: order-42
 	// definition_ref: order-flow:1
+	// body: {"status":"completed"}
 }
