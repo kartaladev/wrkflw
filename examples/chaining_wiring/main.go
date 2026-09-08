@@ -331,8 +331,14 @@ func run(logger *slog.Logger) error {
 
 	// ── Start the ChainerRunner goroutine BEFORE any relay publish ────────────
 	//
-	// Run's subscriptions must be established before DrainOnce publishes the
-	// terminal event, or the envelope is dropped (the bus is non-persistent).
+	// The bus is non-persistent, so an envelope published before Run's
+	// subscriptions exist is dropped. Starting the goroutine here does NOT
+	// enforce that ordering — it only makes it overwhelmingly likely, since the
+	// predecessor instance runs against a real database before the drain below.
+	// Chainer.Run has no readiness signal to wait on (unlike InProcess.Start,
+	// which returns once its subscription is live), so an example cannot close
+	// the window; the poll further down has a deadline and reports it as a clear
+	// timeout if it ever loses the race.
 	done := make(chan error, 1)
 	go func() { done <- cr.Run(ctx, bus) }()
 

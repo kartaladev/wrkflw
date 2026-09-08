@@ -3,6 +3,7 @@ package eventing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -18,6 +19,16 @@ import (
 )
 
 const instrumentationName = "github.com/kartaladev/wrkflw/eventing"
+
+// isBenignBusShutdown reports whether err is (or wraps) [ErrBusClosed] — an
+// in-process bus refusing a publish after Close. A relay draining concurrently
+// with a graceful shutdown reaches this by design, so it is logged at DEBUG
+// rather than ERROR. It is the outbound twin of isBenignDriverShutdown, which
+// demotes the same category on the consuming side; without it a clean shutdown
+// emits ERROR alarms for an entirely expected condition.
+func isBenignBusShutdown(err error) bool {
+	return errors.Is(err, ErrBusClosed)
+}
 
 // PublishFunc delivers one [Envelope] to a broker. It is the single seam between
 // wrkflw and whatever messaging client a consumer already runs: implement it over
@@ -137,9 +148,19 @@ func (p *publisher) publishOne(ctx context.Context, ev kernel.OutboxEvent) error
 	p.propagator.Inject(ctx, propagation.MapCarrier(env.Metadata))
 
 	if err := p.publish(ctx, env); err != nil {
-		p.logger.ErrorContext(ctx, "eventing: publish failed",
-			slog.String("topic", ev.Topic), slog.String("instance_id", ev.InstanceID),
-			slog.Any("error", err))
+		// Mirror of the inbound discipline in isBenignDriverShutdown: a publish
+		// refused because the bus is closing is the expected shape of a graceful
+		// shutdown, not an incident. The error is still returned — the relay
+		// leaves the outbox row pending and retries — but logging it at ERROR
+		// would fill a shutdown with alarms for something working as designed.
+		if isBenignBusShutdown(err) {
+			p.logger.DebugContext(ctx, "eventing: publish refused; bus is closing",
+				slog.String("topic", ev.Topic), slog.String("instance_id", ev.InstanceID))
+		} else {
+			p.logger.ErrorContext(ctx, "eventing: publish failed",
+				slog.String("topic", ev.Topic), slog.String("instance_id", ev.InstanceID),
+				slog.Any("error", err))
+		}
 		return fmt.Errorf("workflow-eventing: publish topic=%q: %w", ev.Topic, err)
 	}
 

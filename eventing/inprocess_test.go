@@ -3,7 +3,9 @@ package eventing_test
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -188,9 +190,12 @@ func TestInProcessCloseEndsEverySubscription(t *testing.T) {
 	// three are registered, which is the precondition the assertion below reads.
 	// The bus drops publishes that land before a Subscribe registers.
 	require.Eventually(t, func() bool {
-		require.NoError(t, bus.Publish(t.Context(), kernel.OutboxEvent{
+		// Not require.NoError: a testify condition runs on its own goroutine, and
+		// t.FailNow from there is undefined behaviour per the testing docs. A
+		// publish error surfaces as this wait timing out with its message.
+		_ = bus.Publish(t.Context(), kernel.OutboxEvent{
 			Topic: eventing.TopicInstanceCompleted, InstanceID: "probe", Payload: map[string]any{},
-		}))
+		})
 		for _, c := range live {
 			if c.len() == 0 {
 				return false
@@ -210,20 +215,49 @@ func TestInProcessCloseEndsEverySubscription(t *testing.T) {
 	// backlogged tests the first and says nothing about the second — measured:
 	// deleting the Close case from the parked select leaves this test green
 	// unless it waits for idleness first.
-	const sentinelID = "sentinel:1:0"
-	require.NoError(t, bus.Publish(t.Context(), kernel.OutboxEvent{
-		Topic: eventing.TopicInstanceCompleted, InstanceID: "sentinel",
-		DedupKey: sentinelID, Payload: map[string]any{},
-	}))
+	// Then wait for every subscription to go IDLE, not merely live — and assert
+	// that WITHOUT depending on delivery order. Publishing has stopped, so each
+	// queue is finite and draining; two consecutive samples that agree, a tick
+	// apart, mean the loops are parked on an empty queue whatever order they
+	// drained in.
+	//
+	// This is the difference between the two ways a loop can notice Close, and
+	// only one of them is the interesting one. A subscription with a backlog
+	// notices between envelopes; a parked one has to be woken. Closing while
+	// backlogged tests the first and says nothing about the second.
+	//
+	// An earlier version proved idleness with a sentinel envelope asserted to
+	// arrive last, which silently assumed FIFO: under LIFO the sentinel arrives
+	// FIRST, the wait passes with a backlog still queued, and the test reverts to
+	// the weak form it was rewritten to escape. Measured — a LIFO mutation left
+	// that version green. Sampling for quiescence has no such assumption.
+	prev := make([]int, len(live))
+	for i, c := range live {
+		prev[i] = c.len()
+	}
 	require.Eventually(t, func() bool {
-		for _, c := range live {
-			envs := c.snapshot()
-			if len(envs) == 0 || envs[len(envs)-1].ID != sentinelID {
-				return false
+		stable := true
+		for i, c := range live {
+			n := c.len()
+			if n != prev[i] {
+				stable = false
 			}
+			prev[i] = n
 		}
-		return true
-	}, 3*time.Second, 10*time.Millisecond, "all subscriptions must drain to idle")
+		return stable
+	}, 3*time.Second, 50*time.Millisecond,
+		"all subscriptions must drain to idle once publishing stops")
+
+	// MEASURED LIMIT OF THIS TEST, so nobody over-reads a green run: it pins the
+	// CONTRACT (every Subscribe returns) deterministically — 6/6 green on correct
+	// code — but it does NOT reliably pin WHICH exit the loop takes. Deleting the
+	// Close case from the parked select above kills it only 6 times in 12,
+	// because a loop still working through a backlog leaves via the
+	// between-envelopes check instead and that is a legitimate exit too.
+	// Forcing the parked path needs to observe the park, which no exported API
+	// allows; that gap is tracked separately.
+	// TestInProcessCloseEndsASubscriptionParkedInTheRedeliveryBackoff is the
+	// deterministic parked-park counterpart — a 30s backoff cannot be raced.
 
 	require.NoError(t, bus.Close())
 
@@ -393,4 +427,155 @@ func TestPublishSpanParentsHandlerSpan(t *testing.T) {
 		"the handler span must be in the publish span's trace")
 	assert.Equal(t, publish.SpanContext.SpanID(), handle.Parent.SpanID(),
 		"the handler span's parent must be the publish span itself")
+}
+
+// TestInProcessGivesEachSubscriptionItsOwnEnvelope asserts the isolation the
+// InProcess doc promises: two subscriptions on one topic each get their OWN copy
+// of the metadata map AND the body bytes, so neither can observe the other's
+// mutations.
+//
+// A real broker gives this for free — each consumer reads its own bytes off the
+// wire — so a bus that shared them would let a handler pass here and misbehave
+// the moment a Kafka client replaced it, which is precisely the difference the
+// Envelope seam exists to erase. The gate makes the test deterministic rather
+// than delivery-order dependent: the second handler reads only after the first
+// has mutated.
+func TestInProcessGivesEachSubscriptionItsOwnEnvelope(t *testing.T) {
+	t.Parallel()
+
+	bus := eventing.NewInProcess()
+	t.Cleanup(func() { require.NoError(t, bus.Close()) })
+
+	mutated := make(chan struct{})
+	stopFirst, err := bus.Start(t.Context(), eventing.TopicInstanceCompleted,
+		func(_ context.Context, env eventing.Envelope) error {
+			env.Body[0] = 'X'
+			env.Metadata[eventing.MetaInstanceID] = "clobbered-by-the-first-handler"
+			close(mutated)
+			return nil
+		})
+	require.NoError(t, err)
+	defer stopFirst()
+
+	second := make(chan eventing.Envelope, 1)
+	stopSecond, err := bus.Start(t.Context(), eventing.TopicInstanceCompleted,
+		func(_ context.Context, env eventing.Envelope) error {
+			<-mutated // read only after the first handler has scribbled on its copy
+			second <- env
+			return nil
+		})
+	require.NoError(t, err)
+	defer stopSecond()
+
+	require.NoError(t, bus.Publish(t.Context(), kernel.OutboxEvent{
+		Topic:      eventing.TopicInstanceCompleted,
+		InstanceID: "p1",
+		Payload:    map[string]any{"k": "v"},
+	}))
+
+	got := <-second
+	assert.Equal(t, byte('{'), got.Body[0],
+		"the body must be cloned per subscription, not shared")
+	assert.JSONEq(t, `{"k":"v"}`, string(got.Body))
+	assert.Equal(t, "p1", got.Metadata[eventing.MetaInstanceID],
+		"the metadata map must be cloned per subscription, not shared")
+}
+
+// TestInProcessCloseCancelsTheContextsItCreated asserts Close honours its own
+// doc — "ends every live subscription" — for the context registration, not just
+// the goroutine.
+//
+// Before this, cancel was reachable only from inside stop's sync.Once, so a bus
+// Closed without calling stop left the derived context uncancelled and still
+// attached to its parent: the loop exited, but the registration lived until the
+// PARENT was cancelled. go vet's lostcancel structurally cannot see it, because
+// cancel escapes into a closure.
+func TestInProcessCloseCancelsTheContextsItCreated(t *testing.T) {
+	t.Parallel()
+
+	bus := eventing.NewInProcess()
+
+	captured := make(chan context.Context, 1)
+	stop, err := bus.Start(t.Context(), eventing.TopicInstanceCompleted,
+		func(hctx context.Context, _ eventing.Envelope) error {
+			captured <- hctx
+			return nil
+		})
+	require.NoError(t, err)
+	defer stop()
+
+	require.NoError(t, bus.Publish(t.Context(), kernel.OutboxEvent{
+		Topic: eventing.TopicInstanceCompleted, InstanceID: "p1", Payload: map[string]any{},
+	}))
+
+	handlerCtx := <-captured
+	require.NoError(t, handlerCtx.Err(), "the handler's context must be live during delivery")
+
+	require.NoError(t, bus.Close())
+
+	require.Eventually(t, func() bool { return handlerCtx.Err() != nil },
+		3*time.Second, 5*time.Millisecond,
+		"Close must cancel the context Start derived, or its registration on the parent is stranded")
+	assert.ErrorIs(t, handlerCtx.Err(), context.Canceled)
+}
+
+// TestInProcessCloseEndsASubscriptionParkedInTheRedeliveryBackoff is the LIVENESS
+// half of Close: a handler that nacks forever leaves its subscription asleep in
+// the backoff, not in the queue wait, and Close has to reach it there too.
+//
+// The backoff below is deliberately far longer than the test's own patience, so
+// a Close that failed to interrupt it could not be mistaken for a slow one.
+func TestInProcessCloseEndsASubscriptionParkedInTheRedeliveryBackoff(t *testing.T) {
+	t.Parallel()
+
+	bus := eventing.NewInProcess(eventing.WithRedeliveryBackoff(30 * time.Second))
+
+	var attempts atomic.Int64
+	done := make(chan error, 1)
+	go func() {
+		done <- bus.Subscribe(t.Context(), eventing.TopicInstanceCompleted,
+			func(context.Context, eventing.Envelope) error {
+				attempts.Add(1)
+				return errors.New("this handler never acks")
+			})
+	}()
+
+	require.Eventually(t, func() bool {
+		_ = bus.Publish(t.Context(), kernel.OutboxEvent{
+			Topic: eventing.TopicInstanceCompleted, InstanceID: "p1", Payload: map[string]any{},
+		})
+		return attempts.Load() > 0
+	}, 3*time.Second, 10*time.Millisecond, "the handler must have nacked at least once")
+
+	require.NoError(t, bus.Close())
+
+	select {
+	case err := <-done:
+		assert.NoError(t, err, "Close is an orderly stop, not a subscription failure")
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close did not end a subscription parked in the redelivery backoff")
+	}
+}
+
+// TestPublishToAClosedBusLogsAtDebugNotError is the outbound twin of
+// TestChainerRunLogsBenignShutdownAtDebug. A relay draining while the bus closes
+// is what a graceful shutdown looks like, so the refusal is still reported and
+// still returned as an error — but at DEBUG, because an operator paging on
+// ERROR should not be woken by a clean shutdown.
+func TestPublishToAClosedBusLogsAtDebugNotError(t *testing.T) {
+	t.Parallel()
+
+	rec := newLevelCountHandler()
+	bus := eventing.NewInProcess(eventing.WithLogger(slog.New(rec)))
+	require.NoError(t, bus.Close())
+
+	err := bus.Publish(t.Context(), kernel.OutboxEvent{
+		Topic: eventing.TopicInstanceCompleted, InstanceID: "p1", Payload: map[string]any{},
+	})
+
+	require.ErrorIs(t, err, eventing.ErrBusClosed,
+		"a closed bus must refuse rather than silently drop, so the relay leaves the row pending")
+	assert.Positive(t, rec.count(slog.LevelDebug), "the refusal must still be recorded, at DEBUG")
+	assert.Zero(t, rec.count(slog.LevelError),
+		"a publish refused by a closing bus must NOT be logged at ERROR")
 }

@@ -1,6 +1,7 @@
 package eventing
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -34,25 +35,46 @@ const defaultRedeliveryBackoff = 10 * time.Millisecond
 // persistence.NewRelay, a [Subscriber] for [Chainer.Run] or your own handlers,
 // and an [io.Closer].
 //
-// # Non-persistent
+// # Non-persistent, at BOTH ends
 //
-// An envelope published to a topic NOBODY IS SUBSCRIBED TO YET IS DROPPED. That
-// is a deliberate choice, not an oversight — it is the behaviour of the
-// in-memory bus this replaced, and buffering instead would mean an unbounded
-// queue with no consumer to bound it — and it is the one property that surprises
-// people: a Publish that races a Subscribe silently delivers to no one. Two ways
-// to sequence it — [InProcess.Start], which returns only once the subscription
-// is live, or republishing until the effect appears (what a [Chainer.Run] test
-// must do, because Run starts its own subscriptions).
+// An envelope published to a topic with no live subscription IS DROPPED, and
+// Publish still returns nil. That is a deliberate choice, not an oversight — it
+// is the behaviour of the in-memory bus this replaced, and buffering instead
+// would mean an unbounded queue with no consumer to bound it — and it is the one
+// property that surprises people. It has TWO windows, not one:
+//
+//   - STARTUP: a Publish that races a Subscribe delivers to no one. Sequence it
+//     with [InProcess.Start], which returns only once the subscription is live,
+//     or by republishing until the effect appears (what a [Chainer.Run] test must
+//     do, because Run starts its own subscriptions).
+//   - SHUTDOWN: a Publish that races a stop function, or that lands after the
+//     last subscription on the topic has ended, is dropped just as silently.
+//     Stop publishing before you stop subscribing. This matters most behind
+//     persistence.Relay, which treats a nil from Publish as delivered and marks
+//     the outbox row published — so an envelope lost in this window is lost for
+//     good. [InProcess.Close] is the safe order: it refuses later publishes with
+//     [ErrBusClosed] rather than accepting and dropping them.
 //
 // # Delivery
 //
-// Each subscription is an independent FIFO queue: one slow handler cannot stall
-// another subscription, and Publish never blocks on a handler. A handler that
-// returns an error nacks, and the SAME envelope is handed back after
-// [WithRedeliveryBackoff] until it acks or the subscription ends — so an
-// always-failing handler holds up that one subscription's queue, at-least-once
-// delivery being the point. Ack poison payloads; see [Handler].
+// Each subscription is an independent FIFO queue with its own copy of every
+// envelope, so one slow handler cannot stall another subscription, Publish never
+// blocks on a handler, and no handler can observe another's mutations. A handler
+// that returns an error nacks, and the SAME envelope is handed back after
+// [WithRedeliveryBackoff] until it acks or the subscription ends.
+//
+// At-least-once delivery is the point of that, and it has a cost worth stating
+// plainly: an always-failing handler blocks its own subscription's queue AND
+// that queue GROWS WITHOUT BOUND, because Publish keeps appending to it and
+// never blocks. There is no cap, no drop policy and no dead-letter path here.
+// A poison envelope that a handler nacks forever is therefore a memory leak, not
+// merely a stalled consumer — ack poison payloads rather than nacking them, and
+// see [Handler] for that discipline.
+//
+// The context a handler receives is rebuilt from the envelope's metadata, so the
+// trace parent it carries is REMOTE and UNVERIFIED: it is whatever the publisher
+// wrote, exactly as a trace context arriving over a real broker would be. Treat
+// it as correlation, never as evidence of where an envelope came from.
 //
 // The bus starts no goroutines of its own: [InProcess.Subscribe] runs its
 // delivery loop on the caller's goroutine, and [InProcess.Start] runs it on one
@@ -78,10 +100,17 @@ var (
 // subscription is one live Subscribe call: an unbounded FIFO of envelopes plus a
 // one-slot signal channel. Unbounded is what keeps Publish non-blocking, so a
 // stuck handler cannot deadlock a publisher — the cost is that a subscription
-// wedged on a poison envelope grows its queue, which the doc comment on
-// [InProcess] states.
+// wedged on a poison envelope grows its queue without bound, which the doc
+// comment on [InProcess] states as part of the delivery contract.
+//
+// cancel is set only for a subscription created by [InProcess.Start], which owns
+// the context it derived; it is nil for [InProcess.Subscribe], whose context
+// belongs to the caller. [InProcess.Close] calls the ones it has, so closing the
+// bus without calling a stop function releases the context registration rather
+// than stranding it until the parent is cancelled.
 type subscription struct {
 	notify chan struct{}
+	cancel context.CancelFunc
 
 	mu    sync.Mutex
 	queue []Envelope
@@ -132,7 +161,15 @@ func (b *InProcess) Publish(ctx context.Context, ev kernel.OutboxEvent) error {
 }
 
 // fanout is the PublishFunc [NewPublisher] wraps. Each subscription gets its own
-// copy of the metadata, so one handler mutating it cannot corrupt another's.
+// copy of BOTH the metadata map and the body bytes, so no handler can observe
+// another's mutations — the isolation a real broker gives for free by handing
+// each consumer its own bytes off the wire. Cloning one and sharing the other
+// would be worse than sharing both: it reads as isolation and is not.
+//
+// The cost is a copy per subscriber per envelope. That is the right trade for a
+// bus whose stated job is tests, examples and single-process deployments, where
+// a handler that behaves differently here than behind a real broker is the
+// expensive failure.
 func (b *InProcess) fanout(_ context.Context, env Envelope) error {
 	b.mu.Lock()
 	if b.closed {
@@ -145,6 +182,7 @@ func (b *InProcess) fanout(_ context.Context, env Envelope) error {
 	for _, s := range subs {
 		copied := env
 		copied.Metadata = maps.Clone(env.Metadata)
+		copied.Body = bytes.Clone(env.Body)
 		s.push(copied)
 	}
 	return nil
@@ -155,7 +193,7 @@ func (b *InProcess) fanout(_ context.Context, env Envelope) error {
 // cancellation and nil on Close. See [InProcess] for the delivery and
 // redelivery contract.
 func (b *InProcess) Subscribe(ctx context.Context, topic string, h Handler) error {
-	s, err := b.register(topic)
+	s, err := b.register(topic, nil)
 	if err != nil {
 		return err
 	}
@@ -168,13 +206,23 @@ func (b *InProcess) Subscribe(ctx context.Context, topic string, h Handler) erro
 // follows cannot be dropped, which a bare `go bus.Subscribe(…)` does not
 // guarantee. The returned stop function ends the subscription and waits for the
 // loop to finish, so a test or a shutdown path leaks nothing; it is safe to call
-// more than once.
+// concurrently and more than once, and later callers block until the first has
+// joined.
+//
+// DO NOT CALL stop FROM INSIDE THE HANDLER IT STOPPED. Waiting for the loop to
+// finish means waiting for the handler to return, so a handler that calls its
+// own stop deadlocks itself — and because the wait is a channel receive, it
+// deadlocks silently rather than panicking. To end a subscription from within
+// its own handler, cancel the context passed to Start (or call [InProcess.Close])
+// and let the handler return normally; stop then joins from wherever it is
+// called next.
 func (b *InProcess) Start(ctx context.Context, topic string, h Handler) (stop func(), err error) {
-	s, err := b.register(topic)
+	loopCtx, cancel := context.WithCancel(ctx)
+	s, err := b.register(topic, cancel)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
-	loopCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -191,26 +239,52 @@ func (b *InProcess) Start(ctx context.Context, topic string, h Handler) (stop fu
 	}, nil
 }
 
-// Close ends every live subscription and refuses further publishes. It is
-// idempotent.
+// Close ends every live subscription and refuses further publishes with
+// [ErrBusClosed]. It is idempotent, and it is safe to call without having called
+// any stop function: for a subscription created by [InProcess.Start] it also
+// cancels the context that subscription derived, so the registration on the
+// parent context is released rather than stranded. A handler in flight sees that
+// cancellation on its own ctx.
+//
+// A subscription created by [InProcess.Subscribe] returns nil from Subscribe,
+// but its context belongs to the caller and is NOT cancelled here — the bus
+// never cancels a context it did not create.
+//
+// Close does not wait for delivery loops to finish. Use a stop function from
+// [InProcess.Start] when you need to join them.
 func (b *InProcess) Close() error {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	if b.closed {
+		b.mu.Unlock()
 		return nil
 	}
 	b.closed = true
 	close(b.done)
+	// Collect before unlocking and cancel after: a cancel can wake a delivery
+	// loop that immediately calls unregister, which takes this same mutex.
+	var cancels []context.CancelFunc
+	for _, list := range b.subs {
+		for _, s := range list {
+			if s.cancel != nil {
+				cancels = append(cancels, s.cancel)
+			}
+		}
+	}
+	b.mu.Unlock()
+
+	for _, cancel := range cancels {
+		cancel()
+	}
 	return nil
 }
 
-func (b *InProcess) register(topic string) (*subscription, error) {
+func (b *InProcess) register(topic string, cancel context.CancelFunc) (*subscription, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.closed {
 		return nil, ErrBusClosed
 	}
-	s := &subscription{notify: make(chan struct{}, 1)}
+	s := &subscription{notify: make(chan struct{}, 1), cancel: cancel}
 	b.subs[topic] = append(b.subs[topic], s)
 	return s, nil
 }
