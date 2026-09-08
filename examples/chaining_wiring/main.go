@@ -22,8 +22,9 @@
 //
 //  1. Opens a database and applies schema migrations idempotently.
 //  2. Defines a predecessor process (proc-a) and a successor (proc-a-succ).
-//  3. Wires: ProcessDriver + Chainer + ChainerRunner + GoChannel pub/sub + Relay.
-//  4. Starts the ChainerRunner goroutine (subscribing before any relay publish).
+//  3. Wires: ProcessDriver + Chainer + ChainerRunner + in-process pub/sub + Relay.
+//  4. Starts the ChainerRunner goroutine, which must subscribe before the relay
+//     publishes — an ordering this example relies on but cannot enforce.
 //  5. Runs the predecessor instance "demo-pred" to completion.
 //  6. Drains the relay once to publish the terminal outbox event.
 //  7. Polls (≤10 s) until the successor "demo-pred-next-completed" appears.
@@ -84,7 +85,7 @@ type backend struct {
 }
 
 // openBackend opens the chosen database backend, applies schema migrations, and
-// returns the assembled backend. pub is the GoChannel publisher the relay uses
+// returns the assembled backend. pub is the in-process publisher the relay uses
 // to emit events; it must be constructed before calling openBackend because the
 // relay subscribes to it at construction time.
 //
@@ -274,16 +275,18 @@ func run(logger *slog.Logger) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// ── Wire GoChannel pub/sub first — the relay and ChainerRunner both need it ─
+	// ── Wire the in-process pub/sub first — relay and ChainerRunner both need it ─
 	//
-	// GoChannel is non-persistent: messages published before Subscribe is called
-	// are dropped. The ChainerRunner goroutine subscribes below BEFORE DrainOnce.
-	pub, sub, closer := eventing.NewGoChannelPublisher(eventing.WithLogger(logger))
-	defer func() { _ = closer.Close() }()
+	// The bus is non-persistent: envelopes published to a topic nobody has
+	// subscribed yet are dropped. The ChainerRunner goroutine started below is
+	// expected to subscribe before DrainOnce runs, but nothing enforces that —
+	// see the note there.
+	bus := eventing.NewInProcess(eventing.WithLogger(logger))
+	defer func() { _ = bus.Close() }()
 
 	// ── Open the selected backend ─────────────────────────────────────────────
 	logger.Info("opening backend", "db", *dbKind)
-	be, err := openBackend(ctx, *dbKind, *dsn, pub, logger)
+	be, err := openBackend(ctx, *dbKind, *dsn, bus, logger)
 	if err != nil {
 		return fmt.Errorf("open %s backend: %w", *dbKind, err)
 	}
@@ -330,10 +333,16 @@ func run(logger *slog.Logger) error {
 
 	// ── Start the ChainerRunner goroutine BEFORE any relay publish ────────────
 	//
-	// The GoChannel subscriber must be established before DrainOnce publishes the
-	// terminal event, or the message is dropped (GoChannel is non-persistent).
+	// The bus is non-persistent, so an envelope published before Run's
+	// subscriptions exist is dropped. Starting the goroutine here does NOT
+	// enforce that ordering — it only makes it overwhelmingly likely, since the
+	// predecessor instance runs against a real database before the drain below.
+	// Chainer.Run has no readiness signal to wait on (unlike InProcess.Start,
+	// which returns once its subscription is live), so an example cannot close
+	// the window; the poll further down has a deadline and reports it as a clear
+	// timeout if it ever loses the race.
 	done := make(chan error, 1)
-	go func() { done <- cr.Run(ctx, sub) }()
+	go func() { done <- cr.Run(ctx, bus) }()
 
 	// ── Run the predecessor instance to completion ────────────────────────────
 	predID := "demo-pred"

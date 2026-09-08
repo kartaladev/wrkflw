@@ -1,89 +1,155 @@
 // Package eventing is the consumer-facing façade for publishing wrkflw domain
-// events to a broker via watermill. Wrap any watermill message.Publisher with
-// NewPublisher and hand the result to persistence.NewRelay. watermill is
-// confined to this package and internal/eventing/watermill; engine/model/runtime
-// never import it.
+// events to a message broker, and for consuming them back.
+//
+// wrkflw does not choose your broker, import its client, or appear in its
+// configuration. The whole surface between this package and the outside world is
+// two function types and a struct:
+//
+//   - [Envelope] — one published event as id, topic, string metadata and a JSON
+//     body. No messaging library appears in it.
+//   - [PublishFunc] — func(context.Context, Envelope) error. Write one over the
+//     client you already run, wrap it with [NewPublisher], and hand the result to
+//     persistence.NewRelay as a kernel.OutboxPublisher.
+//   - [Handler] — the same shape in the other direction, for consuming. Mount
+//     [NewChainHandler] or [NewMessageHandler] on your own subscription, or on a
+//     [Subscriber].
+//
+// So reaching Kafka, NATS, Redis Streams or a SQL queue is a function you write,
+// not an adapter this package ships and has to keep current.
+// TestEventingDependencyGraphNamesNoVendorDirectly holds that line: nothing in
+// this package's own imports names a third-party module beyond OpenTelemetry.
+//
+// # No broker at all
+//
+// [NewInProcess] is a complete in-memory pub/sub bus — publisher, subscriber and
+// closer in one value — for tests, examples and single-process deployments. Read
+// its doc comment before relying on it: like every broker-less bus it is
+// non-persistent, so an envelope published to a topic nobody has subscribed yet
+// is dropped.
+//
+// # Trace context
+//
+// [NewPublisher] injects W3C trace context into Envelope.Metadata, and a
+// subscriber rebuilds the handler's context from it, so a span the handler
+// starts is a child of the publish span across a process boundary. The
+// propagator defaults to propagation.TraceContext{} rather than the
+// OpenTelemetry global, which is a no-op until a deployment sets it — see
+// [WithPropagator].
 //
 // # Process-instance chaining
 //
-// The subscriber side of process-instance chaining also lives here so
-// runtime stays watermill-free: NewChainHandler adapts a runtime.Chainer to a
-// watermill no-publish handler you mount on your own message.Router, and
-// NewChainerRunner / Chainer.Run is a turnkey wrapper that subscribes the three
-// status-accurate terminal topics (instance.completed / instance.failed /
-// instance.terminated) and drives the chaining core.
+// The subscriber side of process-instance chaining lives here so runtime keeps
+// no messaging concerns: [NewChainHandler] adapts a runtime.Chainer to a
+// [Handler] you mount on your own subscription, and [NewChainerRunner] /
+// [Chainer.Run] is a turnkey wrapper that subscribes the three status-accurate
+// terminal topics ([TopicInstanceCompleted], [TopicInstanceFailed],
+// [TopicInstanceTerminated]) and drives the chaining core.
 package eventing
 
 import (
-	"io"
 	"log/slog"
+	"time"
 
-	"github.com/ThreeDotsLabs/watermill/message"
-	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
-	watermillpub "github.com/kartaladev/wrkflw/internal/eventing/watermill"
-	"github.com/kartaladev/wrkflw/runtime/kernel"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Compile-time guard: the internal adapter satisfies the public port.
-var _ kernel.OutboxPublisher = (*watermillpub.Publisher)(nil)
-
-// Option configures a publisher.
+// Option configures a publisher, an in-process bus, or a chaining runner.
 type Option func(*options)
 
 type options struct {
-	logger *slog.Logger
-	tp     trace.TracerProvider
-	mp     metric.MeterProvider
+	logger            *slog.Logger
+	tp                trace.TracerProvider
+	mp                metric.MeterProvider
+	propagator        propagation.TextMapPropagator
+	redeliveryBackoff time.Duration
 }
 
-// WithLogger sets the structured logger (default slog.Default()).
-func WithLogger(l *slog.Logger) Option { return func(o *options) { o.logger = l } }
-
-// WithTracerProvider sets the tracer provider (default: otel global).
-func WithTracerProvider(tp trace.TracerProvider) Option { return func(o *options) { o.tp = tp } }
-
-// WithMeterProvider sets the meter provider (default: otel global).
-func WithMeterProvider(mp metric.MeterProvider) Option { return func(o *options) { o.mp = mp } }
-
-// NewPublisher wraps a watermill message.Publisher as a kernel.OutboxPublisher,
-// mapping each OutboxEvent to a watermill message.
-func NewPublisher(pub message.Publisher, opts ...Option) kernel.OutboxPublisher {
-	var o options
+// newOptions applies opts over the package defaults, so every constructor
+// resolves "unset" the same way and no caller has to nil-check.
+func newOptions(opts ...Option) options {
+	o := options{
+		logger: slog.Default(),
+		tp:     otel.GetTracerProvider(),
+		mp:     otel.GetMeterProvider(),
+		// NOT otel.GetTextMapPropagator(). The default global propagator is a
+		// no-op: unless the deployment calls otel.SetTextMapPropagator, it has no
+		// Fields() and injects nothing, so a publisher reaching for it would write
+		// no trace context at all — silently, and only in production, since a test
+		// that sets the global would pass. This package states which keys it
+		// writes, so it names the propagator that writes them. Override with
+		// WithPropagator; an inbound HTTP server is the opposite case and should
+		// honour the deployment's global instead.
+		propagator:        propagation.TraceContext{},
+		redeliveryBackoff: defaultRedeliveryBackoff,
+	}
 	for _, fn := range opts {
 		fn(&o)
 	}
-	return watermillpub.NewPublisher(pub, toInternal(o)...)
+	return o
 }
 
-// NewGoChannelPublisher builds an in-process GoChannel pub/sub and returns a
-// kernel.OutboxPublisher over it, the matching Subscriber (for in-process consumers
-// or tests), and an io.Closer to release it. No external broker is required.
-// GoChannel ships in watermill core, so this adds no broker dependency.
-func NewGoChannelPublisher(opts ...Option) (kernel.OutboxPublisher, message.Subscriber, io.Closer) {
-	var o options
-	for _, fn := range opts {
-		fn(&o)
+// WithLogger sets the structured logger (default slog.Default()). A nil logger
+// is ignored.
+func WithLogger(l *slog.Logger) Option {
+	return func(o *options) {
+		if l != nil {
+			o.logger = l
+		}
 	}
-	logger := o.logger
-	if logger == nil {
-		logger = slog.Default()
-	}
-	gc := gochannel.NewGoChannel(gochannel.Config{}, watermillpub.NewWatermillLogger(logger))
-	return NewPublisher(gc, opts...), gc, gc
 }
 
-func toInternal(o options) []watermillpub.Option {
-	var out []watermillpub.Option
-	if o.logger != nil {
-		out = append(out, watermillpub.WithLogger(o.logger))
+// WithTracerProvider sets the tracer provider (default: the otel global).
+func WithTracerProvider(tp trace.TracerProvider) Option {
+	return func(o *options) {
+		if tp != nil {
+			o.tp = tp
+		}
 	}
-	if o.tp != nil {
-		out = append(out, watermillpub.WithTracerProvider(o.tp))
+}
+
+// WithMeterProvider sets the meter provider (default: the otel global).
+func WithMeterProvider(mp metric.MeterProvider) Option {
+	return func(o *options) {
+		if mp != nil {
+			o.mp = mp
+		}
 	}
-	if o.mp != nil {
-		out = append(out, watermillpub.WithMeterProvider(o.mp))
+}
+
+// WithPropagator sets the OpenTelemetry propagator used to write trace context
+// into Envelope.Metadata on publish, and to rebuild a handler's context from it
+// on delivery. Default: propagation.TraceContext{} — the W3C traceparent /
+// tracestate pair — chosen explicitly rather than taken from the otel global,
+// which is a no-op until a deployment sets it. Pass this to match a deployment
+// that propagates something else (B3, Jaeger, a composite). A nil propagator is
+// ignored.
+//
+// MIND WHAT A COMPOSITE CARRIES. Whatever the propagator writes goes into
+// Envelope.Metadata and travels to the broker in cleartext, so composing
+// propagation.Baggage{} ships the process's OpenTelemetry baggage with every
+// event — commonly tenant ids, user ids and feature flags, to an operator who
+// may be a third party and to every consumer of the topic. The default writes
+// the W3C traceparent/tracestate pair and nothing else. Add baggage only when
+// you know what is in it and where the topic goes.
+func WithPropagator(p propagation.TextMapPropagator) Option {
+	return func(o *options) {
+		if p != nil {
+			o.propagator = p
+		}
 	}
-	return out
+}
+
+// WithRedeliveryBackoff sets how long [NewInProcess]'s bus waits before handing a
+// nacked envelope back to the same handler (default 10ms). It is paid on every
+// retry, so it wants to stay short; raise it when a handler's failures are worth
+// pacing. A non-positive duration is ignored.
+func WithRedeliveryBackoff(d time.Duration) Option {
+	return func(o *options) {
+		if d > 0 {
+			o.redeliveryBackoff = d
+		}
+	}
 }

@@ -125,9 +125,9 @@ func run(logger *slog.Logger) error {
 		return oerr
 	}
 
-	// --- Eventing: in-process publisher (GoChannel; no broker needed) ---
-	publisher, _, evClose := eventing.NewGoChannelPublisher(eventing.WithLogger(logger))
-	shutdown.AddCloser(evClose)
+	// --- Eventing: in-process pub/sub bus (no broker needed) ---
+	publisher := eventing.NewInProcess(eventing.WithLogger(logger))
+	shutdown.AddCloser(publisher)
 
 	// --- Outbox relay: drains wrkflw_outbox and publishes events ---
 	// SQLite has no LISTEN/NOTIFY; NewSQLiteRelay is poll-only — do NOT pass

@@ -4,7 +4,7 @@
 // all three supported database dialects (Postgres, MySQL, SQLite):
 //
 //	Store.Commit (writes outbox row)
-//	  → relay.DrainOnce (reads outbox, publishes via GoChannel pub/sub)
+//	  → relay.DrainOnce (reads outbox, publishes via the in-process pub/sub bus)
 //	    → eventing.Chainer.Run (subscribes; calls runtime.Chainer.Handle)
 //	      → runtime.Chainer.Handle (evaluates policy, starts successor via driver.Drive, records ChainLink)
 //
@@ -13,11 +13,9 @@ package persistence_test
 
 import (
 	"context"
-	"io"
 	"testing"
 	"time"
 
-	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -51,12 +49,10 @@ func buildDef(t *testing.T, id string, version int) *model.ProcessDefinition {
 
 // chainingDialect bundles the objects needed by each dialect sub-test.
 type chainingDialect struct {
-	store  persistence.InstanceStore
-	links  kernel.ChainLinkStore
-	relay  persistence.Relay
-	pub    kernel.OutboxPublisher
-	sub    message.Subscriber
-	closer io.Closer
+	store persistence.InstanceStore
+	links kernel.ChainLinkStore
+	relay persistence.Relay
+	bus   *eventing.InProcess
 }
 
 // forEachChainingDialect runs fn as a sub-test for each of the three supported
@@ -77,12 +73,12 @@ func forEachChainingDialect(t *testing.T, fn func(t *testing.T, d chainingDialec
 
 		links, err := persistence.NewChainLinkStore(pool)
 		require.NoError(t, err)
-		pub, sub, closer := eventing.NewGoChannelPublisher()
-		relay, err := persistence.NewRelay(pool, pub)
+		bus := eventing.NewInProcess()
+		relay, err := persistence.NewRelay(pool, bus)
 		require.NoError(t, err)
 
-		fn(t, chainingDialect{store: st, links: links, relay: relay, pub: pub, sub: sub, closer: closer})
-		require.NoError(t, closer.Close())
+		fn(t, chainingDialect{store: st, links: links, relay: relay, bus: bus})
+		require.NoError(t, bus.Close())
 	})
 
 	t.Run("mysql", func(t *testing.T) {
@@ -96,12 +92,12 @@ func forEachChainingDialect(t *testing.T, fn func(t *testing.T, d chainingDialec
 
 		links, err := persistence.NewMySQLChainLinkStore(db)
 		require.NoError(t, err)
-		pub, sub, closer := eventing.NewGoChannelPublisher()
-		relay, err := persistence.NewMySQLRelay(db, pub)
+		bus := eventing.NewInProcess()
+		relay, err := persistence.NewMySQLRelay(db, bus)
 		require.NoError(t, err)
 
-		fn(t, chainingDialect{store: st, links: links, relay: relay, pub: pub, sub: sub, closer: closer})
-		require.NoError(t, closer.Close())
+		fn(t, chainingDialect{store: st, links: links, relay: relay, bus: bus})
+		require.NoError(t, bus.Close())
 	})
 
 	t.Run("sqlite", func(t *testing.T) {
@@ -115,12 +111,12 @@ func forEachChainingDialect(t *testing.T, fn func(t *testing.T, d chainingDialec
 
 		links, err := persistence.NewSQLiteChainLinkStore(db)
 		require.NoError(t, err)
-		pub, sub, closer := eventing.NewGoChannelPublisher()
-		relay, err := persistence.NewSQLiteRelay(db, pub)
+		bus := eventing.NewInProcess()
+		relay, err := persistence.NewSQLiteRelay(db, bus)
 		require.NoError(t, err)
 
-		fn(t, chainingDialect{store: st, links: links, relay: relay, pub: pub, sub: sub, closer: closer})
-		require.NoError(t, closer.Close())
+		fn(t, chainingDialect{store: st, links: links, relay: relay, bus: bus})
+		require.NoError(t, bus.Close())
 	})
 }
 
@@ -156,7 +152,7 @@ func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, def
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = cr.Run(ctx, d.sub)
+		_ = cr.Run(ctx, d.bus)
 	}()
 
 	t.Cleanup(func() {

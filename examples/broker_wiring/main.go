@@ -4,14 +4,14 @@
 // The engine writes domain events (status-accurate terminal events like
 // instance.completed, and SendTask outbound messages) into the transactional
 // outbox. A relay drains the outbox and hands each event to a kernel.OutboxPublisher.
-// eventing.NewPublisher adapts ANY watermill message.Publisher to that port — so
-// reaching Kafka, NATS JetStream, Redis Streams, or watermill-SQL is a one-line
-// swap: replace demoPublisher below with your broker's watermill publisher.
+// eventing.NewPublisher adapts a plain eventing.PublishFunc to that port — so
+// reaching Kafka, NATS JetStream, Redis Streams, or a SQL queue is a one-line
+// swap: replace demoBroker.publish below with a call into your broker's client.
 //
-// This program uses an in-repo demoPublisher (which just prints each message) so
-// it runs with no broker and no extra dependency. It prints the EXACT message a
-// real broker would receive, including the instance_id metadata a Kafka
-// partitioner keys on and the UUID (= outbox dedup key) a consumer dedupes on.
+// This program uses an in-repo demoBroker (which just prints each envelope) so it
+// runs with no broker and no extra dependency. It prints the EXACT envelope a
+// real broker client would receive, including the instance_id metadata a Kafka
+// partitioner keys on and the id (= outbox dedup key) a consumer dedupes on.
 package main
 
 import (
@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/ThreeDotsLabs/watermill/message"
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
 
 	"github.com/kartaladev/wrkflw/definition"
@@ -30,35 +29,30 @@ import (
 	"github.com/kartaladev/wrkflw/runtime"
 )
 
-// demoPublisher stands in for a real broker's watermill message.Publisher. In
-// production this is kafka.NewPublisher(...) / nats.NewPublisher(...) /
-// redisstream.NewPublisher(...) / sql.NewPublisher(...). It prints each message
-// so you can see precisely what the broker receives.
+// demoBroker stands in for a real broker client. In production this holds a
+// kafka.Writer / nats.Conn / redis.Client / *sql.DB, and publish calls into it.
+// Here it prints each envelope so you can see precisely what the broker receives.
 //
-// It implements watermill's message.Publisher (Publish + Close) — the SAME
-// interface every real watermill broker publisher implements — which is exactly
-// why the swap is one line: eventing.NewPublisher accepts any message.Publisher.
-// A consumer replaces demoPublisher{} with their broker's publisher and changes
-// nothing else.
-type demoPublisher struct{}
+// publish has the signature of eventing.PublishFunc — a plain
+// func(context.Context, eventing.Envelope) error — which is exactly why the swap
+// is one line: eventing.NewPublisher accepts any function of that shape, so a
+// consumer replaces the body below with one call into their own client and
+// changes nothing else. No messaging library appears in wrkflw's API at all.
+type demoBroker struct{}
 
-func (demoPublisher) Publish(topic string, msgs ...*message.Message) error {
-	// One watermill message per outbox event. The engine populates the fields a
-	// downstream broker/consumer needs: UUID is the outbox row's dedup key (a
-	// consumer keys idempotency on it), instance_id is the partition key a Kafka
-	// partitioner uses to keep one instance's events in order, and definition_ref
-	// identifies the process the event came from. A real broker keys/routes on
-	// exactly these; printing them shows the wire shape without a broker.
-	for _, m := range msgs {
-		fmt.Printf("→ publish  topic=%q  uuid=%q\n", topic, m.UUID)
-		fmt.Printf("    metadata: instance_id=%q definition_ref=%q\n",
-			m.Metadata.Get("instance_id"), m.Metadata.Get("definition_ref"))
-		fmt.Printf("    payload:  %s\n", string(m.Payload))
-	}
+func (demoBroker) publish(_ context.Context, env eventing.Envelope) error {
+	// One envelope per outbox event. The engine populates the fields a downstream
+	// broker/consumer needs: ID is the outbox row's dedup key (a consumer keys
+	// idempotency on it), instance_id is the partition key a Kafka partitioner
+	// uses to keep one instance's events in order, and definition_ref identifies
+	// the process the event came from. A real broker keys/routes on exactly
+	// these; printing them shows the wire shape without a broker.
+	fmt.Printf("→ publish  topic=%q  id=%q\n", env.Topic, env.ID)
+	fmt.Printf("    metadata: instance_id=%q definition_ref=%q\n",
+		env.Metadata[eventing.MetaInstanceID], env.Metadata[eventing.MetaDefinitionRef])
+	fmt.Printf("    payload:  %s\n", string(env.Body))
 	return nil
 }
-
-func (demoPublisher) Close() error { return nil }
 
 func main() {
 	if err := run(); err != nil {
@@ -109,9 +103,9 @@ func run() error {
 	}
 	fmt.Printf("instance %q reached %s\n\n", final.InstanceID, final.Status)
 
-	// The broker wiring: wrap the broker's watermill publisher with NewPublisher
-	// (adapting message.Publisher → the engine's kernel.OutboxPublisher port) and
-	// hand it to the relay. Swap demoPublisher{} for your real broker publisher.
+	// The broker wiring: wrap the broker's publish function with NewPublisher
+	// (adapting PublishFunc → the engine's kernel.OutboxPublisher port) and hand it
+	// to the relay. Swap demoBroker{}.publish for your real broker's publish call.
 	//
 	// The relay is the OUTBOX drainer: it reads rows the engine committed to the
 	// outbox table (in the same tx as the state change), publishes each, and marks
@@ -119,7 +113,7 @@ func run() error {
 	// with state changes and at-least-once. It is deliberately decoupled from the
 	// engine: the engine only writes rows, the relay only publishes them, so the
 	// broker choice never touches workflow code.
-	relay, err := persistence.NewSQLiteRelay(db, eventing.NewPublisher(demoPublisher{}))
+	relay, err := persistence.NewSQLiteRelay(db, eventing.NewPublisher(demoBroker{}.publish))
 	if err != nil {
 		return err
 	}

@@ -45,8 +45,10 @@ cache). The other two are pure bash + git + grep.
   `scripts/check-doc-refs.sh` fails the build on any `*.go` citation of the deleted one. Commit
   messages are deliberately outside its scope, so quoting history there is fine.
 - **Engine purity.** The engine core (`engine/`, `model/`) must not import transport, storage-vendor,
-  or event-bus packages — depend on the in-repo interfaces. Never import watermill, casbin, gocron, or
-  clockwork directly from workflow/engine code.
+  or event-bus packages — depend on the in-repo interfaces. Never import casbin, gocron, or clockwork
+  directly from workflow/engine code. There is no event-bus vendor left to name: a broker is reached
+  through `eventing.PublishFunc` and `eventing.Handler`, which a consumer implements over their own
+  client.
 
 ## Commit messages
 

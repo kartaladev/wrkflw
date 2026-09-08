@@ -123,9 +123,9 @@ func run(logger *slog.Logger) error {
 	meterProvider := sdkmetric.NewMeterProvider()
 	shutdown.Add(meterProvider.Shutdown)
 
-	// --- Eventing: in-process publisher (GoChannel; no broker needed) ---
-	publisher, _, evClose := eventing.NewGoChannelPublisher(eventing.WithLogger(logger))
-	shutdown.AddCloser(evClose)
+	// --- Eventing: in-process pub/sub bus (no broker needed) ---
+	publisher := eventing.NewInProcess(eventing.WithLogger(logger))
+	shutdown.AddCloser(publisher)
 
 	// --- Store, timers, relay, readiness probe (Postgres when DATABASE_URL is set) ---
 	memStore, merr := kernel.NewMemInstanceStore()

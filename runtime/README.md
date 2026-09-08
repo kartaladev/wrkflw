@@ -620,12 +620,14 @@ if err != nil { log.Fatal(err) }
 ```
 
 The terminal event reaches the `Chainer` over the broker: mount
-`eventing.NewChainHandler(chainer)` on your own `message.Router`, or run the
-turnkey `eventing.NewChainerRunner(chainer).Run(ctx, sub)` which subscribes the
-`instance.completed` / `instance.failed` / `instance.terminated` topics. All
-watermill stays in `eventing`; `runtime` never imports it. `Handle` is
-idempotent — a redelivered terminal event is a clean no-op. See
-[`ExampleChainer`](chainer_example_test.go).
+`eventing.NewChainHandler(chainer)` on your own subscription, or run the turnkey
+`eventing.NewChainerRunner(chainer).Run(ctx, sub)` — where `sub` is any
+`eventing.Subscriber`, including the broker-less `eventing.NewInProcess()` —
+which subscribes the `instance.completed` / `instance.failed` /
+`instance.terminated` topics. No messaging library appears in `eventing`'s API
+or in `runtime` at all: the seam is `eventing.PublishFunc` outbound and
+`eventing.Handler` inbound. `Handle` is idempotent — a redelivered terminal
+event is a clean no-op. See [`ExampleChainer`](chainer_example_test.go).
 
 > **Terminal events are status-accurate.** Each terminal status emits
 > exactly one event: completed→`instance.completed`, failed→`instance.failed`,
