@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -55,7 +54,7 @@ type chainingDialect struct {
 	links  kernel.ChainLinkStore
 	relay  persistence.Relay
 	pub    kernel.OutboxPublisher
-	sub    message.Subscriber
+	sub    eventing.Subscriber
 	closer io.Closer
 }
 

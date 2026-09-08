@@ -8,24 +8,34 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
-// ExampleNewGoChannelPublisher shows publishing an outbox event in-process and
-// receiving it on the subscriber side.
-func ExampleNewGoChannelPublisher() {
-	pub, sub, closer := eventing.NewGoChannelPublisher()
-	defer func() { _ = closer.Close() }()
+// ExampleNewInProcess shows publishing an outbox event with no broker at all and
+// receiving it on a subscription. Start returns once the subscription is live,
+// which is what makes the publish below safe: the bus is non-persistent, so an
+// envelope published to a topic nobody has subscribed yet is dropped.
+func ExampleNewInProcess() {
+	bus := eventing.NewInProcess()
+	defer func() { _ = bus.Close() }()
 
 	ctx := context.Background()
-	msgs, _ := sub.Subscribe(ctx, "instance.completed")
+	received := make(chan eventing.Envelope, 1)
+	stop, err := bus.Start(ctx, eventing.TopicInstanceCompleted,
+		func(_ context.Context, env eventing.Envelope) error {
+			received <- env
+			return nil
+		})
+	if err != nil {
+		panic(err)
+	}
+	defer stop()
 
-	_ = pub.Publish(ctx, kernel.OutboxEvent{
-		Topic:      "instance.completed",
+	_ = bus.Publish(ctx, kernel.OutboxEvent{
+		Topic:      eventing.TopicInstanceCompleted,
 		Payload:    map[string]any{"order": "A-1"},
 		DedupKey:   "inst-1:1:0",
 		InstanceID: "inst-1",
 	})
 
-	msg := <-msgs
-	fmt.Println(msg.Metadata.Get("instance_id"), string(msg.Payload))
-	msg.Ack()
+	env := <-received
+	fmt.Println(env.Metadata[eventing.MetaInstanceID], string(env.Body))
 	// Output: inst-1 {"order":"A-1"}
 }

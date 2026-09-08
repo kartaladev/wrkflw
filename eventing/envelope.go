@@ -1,5 +1,7 @@
 package eventing
 
+import "context"
+
 // Metadata keys carried by every Envelope that [NewPublisher] produces. They are
 // the routing contract between the publish side and the handlers in this package
 // ([NewChainHandler], [NewMessageHandler]); a consumer wiring its own broker
@@ -36,4 +38,29 @@ type Envelope struct {
 	Metadata map[string]string
 	// Body is the JSON encoding of the outbox event payload.
 	Body []byte
+}
+
+// Handler processes one delivered [Envelope]. It is the shape both
+// [NewChainHandler] and [NewMessageHandler] return, and the shape a
+// [Subscriber] calls.
+//
+// The ctx a Handler receives is NOT the publisher's context — a real broker
+// hands a consumer bytes and headers, never a Go value. It is rebuilt on the
+// delivery side from Envelope.Metadata (see [WithPropagator]), so a span the
+// handler starts parents onto the publish span across a process boundary.
+//
+// The returned error is the ack/nack decision, and the whole of it: nil acks
+// (the envelope is done), non-nil nacks (the envelope is re-delivered). Ack a
+// poison payload — a body that will never decode — or the broker loops on it
+// forever; nack only what a retry could fix.
+type Handler func(ctx context.Context, env Envelope) error
+
+// Subscriber delivers the envelopes published to one topic to a [Handler].
+//
+// Subscribe BLOCKS: it owns the delivery loop and returns only when ctx is done
+// or the subscription is closed, so the caller decides which goroutine the loop
+// runs on. Implement it over your own broker's consumer to reuse this package's
+// handlers; [NewInProcess] is the built-in implementation.
+type Subscriber interface {
+	Subscribe(ctx context.Context, topic string, h Handler) error
 }

@@ -17,6 +17,7 @@ package eventing
 import (
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
@@ -37,10 +38,11 @@ var _ kernel.OutboxPublisher = (*watermillpub.Publisher)(nil)
 type Option func(*options)
 
 type options struct {
-	logger     *slog.Logger
-	tp         trace.TracerProvider
-	mp         metric.MeterProvider
-	propagator propagation.TextMapPropagator
+	logger            *slog.Logger
+	tp                trace.TracerProvider
+	mp                metric.MeterProvider
+	propagator        propagation.TextMapPropagator
+	redeliveryBackoff time.Duration
 }
 
 // newOptions applies opts over the package defaults, so every constructor
@@ -58,7 +60,8 @@ func newOptions(opts ...Option) options {
 		// writes, so it names the propagator that writes them. Override with
 		// WithPropagator; an inbound HTTP server is the opposite case and should
 		// honour the deployment's global instead.
-		propagator: propagation.TraceContext{},
+		propagator:        propagation.TraceContext{},
+		redeliveryBackoff: defaultRedeliveryBackoff,
 	}
 	for _, fn := range opts {
 		fn(&o)
@@ -109,11 +112,23 @@ func WithPropagator(p propagation.TextMapPropagator) Option {
 	}
 }
 
+// WithRedeliveryBackoff sets how long [NewInProcess]'s bus waits before handing a
+// nacked envelope back to the same handler (default 10ms). It is paid on every
+// retry, so it wants to stay short; raise it when a handler's failures are worth
+// pacing. A non-positive duration is ignored.
+func WithRedeliveryBackoff(d time.Duration) Option {
+	return func(o *options) {
+		if d > 0 {
+			o.redeliveryBackoff = d
+		}
+	}
+}
+
 // NewGoChannelPublisher builds an in-process GoChannel pub/sub and returns a
 // kernel.OutboxPublisher over it, the matching Subscriber (for in-process consumers
 // or tests), and an io.Closer to release it. No external broker is required.
 // GoChannel ships in watermill core, so this adds no broker dependency.
-func NewGoChannelPublisher(opts ...Option) (kernel.OutboxPublisher, message.Subscriber, io.Closer) {
+func NewGoChannelPublisher(opts ...Option) (kernel.OutboxPublisher, Subscriber, io.Closer) {
 	o := newOptions(opts...)
 	gc := gochannel.NewGoChannel(gochannel.Config{}, watermillpub.NewWatermillLogger(o.logger))
 	publish := func(ctx context.Context, env Envelope) error {
@@ -124,5 +139,31 @@ func NewGoChannelPublisher(opts ...Option) (kernel.OutboxPublisher, message.Subs
 		msg.SetContext(ctx)
 		return gc.Publish(env.Topic, msg)
 	}
-	return NewPublisher(publish, opts...), gc, gc
+	return NewPublisher(publish, opts...), gochannelSubscriber{gc: gc}, gc
+}
+
+// gochannelSubscriber adapts watermill's channel-returning Subscriber to the
+// blocking, handler-style Subscriber port so the watermill path and the
+// Envelope path can coexist while the two are swapped over.
+type gochannelSubscriber struct{ gc *gochannel.GoChannel }
+
+func (s gochannelSubscriber) Subscribe(ctx context.Context, topic string, h Handler) error {
+	msgs, err := s.gc.Subscribe(ctx, topic)
+	if err != nil {
+		return err
+	}
+	for msg := range msgs {
+		env := Envelope{
+			ID:       msg.UUID,
+			Topic:    msg.Metadata.Get(MetaTopic),
+			Metadata: map[string]string(msg.Metadata),
+			Body:     msg.Payload,
+		}
+		if h(msg.Context(), env) != nil {
+			msg.Nack()
+			continue
+		}
+		msg.Ack()
+	}
+	return ctx.Err()
 }

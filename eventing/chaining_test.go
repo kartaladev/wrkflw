@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ThreeDotsLabs/watermill/message"
 	clockwork "github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/flow"
@@ -58,14 +58,21 @@ func chainCore(t *testing.T, starter chain.InstanceStarter, capture *[]chain.Cha
 	return c
 }
 
+// TestChainHandlerProjection is the ack/nack contract of NewChainHandler,
+// row by row. A returned error nacks (the broker re-delivers); nil acks.
 func TestChainHandlerProjection(t *testing.T) {
-	tests := map[string]struct {
-		topic  string
-		body   string
-		assert func(t *testing.T, err error, starter *capturingStarter, seen []chain.ChainEvent)
-	}{
+	t.Parallel()
+
+	type testCase struct {
+		topic      string
+		body       string
+		starterErr error
+		assert     func(t *testing.T, err error, starter *capturingStarter, seen []chain.ChainEvent)
+	}
+
+	tests := map[string]testCase{
 		"completed topic projects OutcomeCompleted with vars": {
-			topic: "instance.completed",
+			topic: eventing.TopicInstanceCompleted,
 			body:  `{"orderID":"o-7"}`,
 			assert: func(t *testing.T, err error, starter *capturingStarter, seen []chain.ChainEvent) {
 				require.NoError(t, err)
@@ -78,7 +85,7 @@ func TestChainHandlerProjection(t *testing.T) {
 			},
 		},
 		"failed topic projects OutcomeFailed": {
-			topic: "instance.failed",
+			topic: eventing.TopicInstanceFailed,
 			body:  `{"error":"boom"}`,
 			assert: func(t *testing.T, err error, starter *capturingStarter, seen []chain.ChainEvent) {
 				require.NoError(t, err)
@@ -88,7 +95,7 @@ func TestChainHandlerProjection(t *testing.T) {
 			},
 		},
 		"terminated topic projects OutcomeTerminated": {
-			topic: "instance.terminated",
+			topic: eventing.TopicInstanceTerminated,
 			body:  `{"error":"cancelled"}`,
 			assert: func(t *testing.T, err error, starter *capturingStarter, seen []chain.ChainEvent) {
 				require.NoError(t, err)
@@ -107,27 +114,43 @@ func TestChainHandlerProjection(t *testing.T) {
 			},
 		},
 		"malformed payload is acked without chaining": {
-			topic: "instance.completed",
+			topic: eventing.TopicInstanceCompleted,
 			body:  `{not json`,
 			assert: func(t *testing.T, err error, starter *capturingStarter, seen []chain.ChainEvent) {
 				require.NoError(t, err, "poison payload must ack (no infinite re-delivery loop)")
 				assert.Empty(t, seen)
 			},
 		},
+		"a transient start failure is returned so the envelope is nacked": {
+			topic:      eventing.TopicInstanceCompleted,
+			body:       `{}`,
+			starterErr: errors.New("db down"),
+			assert: func(t *testing.T, err error, starter *capturingStarter, _ []chain.ChainEvent) {
+				require.Error(t, err, "a transient start failure must return an error so the envelope is nacked")
+				assert.NotEmpty(t, starter.startedIDs(), "the start was attempted before it failed")
+			},
+		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			var mu sync.Mutex
 			var seen []chain.ChainEvent
-			starter := &capturingStarter{}
+			starter := &capturingStarter{err: tc.starterErr}
 			h := eventing.NewChainHandler(chainCore(t, starter, &seen, &mu))
 
-			msg := message.NewMessage("uuid-1", []byte(tc.body))
-			msg.Metadata.Set("topic", tc.topic)
-			msg.Metadata.Set("instance_id", "p1")
-			msg.Metadata.Set("definition_ref", "approval:1")
-			err := h(msg)
+			err := h(t.Context(), eventing.Envelope{
+				ID:    "uuid-1",
+				Topic: tc.topic,
+				Metadata: map[string]string{
+					eventing.MetaTopic:         tc.topic,
+					eventing.MetaInstanceID:    "p1",
+					eventing.MetaDefinitionRef: "approval:1",
+				},
+				Body: []byte(tc.body),
+			})
 
 			mu.Lock()
 			seenCopy := append([]chain.ChainEvent(nil), seen...)
@@ -137,31 +160,20 @@ func TestChainHandlerProjection(t *testing.T) {
 	}
 }
 
-// TestChainHandlerTransientErrorNacks asserts a transient start failure is
-// returned (so the broker re-delivers), not swallowed.
-func TestChainHandlerTransientErrorNacks(t *testing.T) {
-	var mu sync.Mutex
-	var seen []chain.ChainEvent
-	starter := &capturingStarter{err: errors.New("db down")}
-	h := eventing.NewChainHandler(chainCore(t, starter, &seen, &mu))
-
-	msg := message.NewMessage("uuid-1", []byte(`{}`))
-	msg.Metadata.Set("topic", "instance.completed")
-	msg.Metadata.Set("instance_id", "p1")
-	require.Error(t, h(msg), "a transient start failure must return an error so the message is nacked")
-}
-
-// errSubscriber is a message.Subscriber whose Subscribe always fails.
+// errSubscriber is an eventing.Subscriber whose Subscribe always fails.
 type errSubscriber struct{ err error }
 
-func (e errSubscriber) Subscribe(context.Context, string) (<-chan *message.Message, error) {
-	return nil, e.err
-}
-func (e errSubscriber) Close() error { return nil }
+func (e errSubscriber) Subscribe(context.Context, string, eventing.Handler) error { return e.err }
 
-// TestChainerRunSubscribeError asserts Run surfaces a Subscribe failure (and, by
-// subscribing all topics before starting any goroutine, does not leak workers).
+// TestChainerRunSubscribeError asserts Run surfaces a Subscribe failure. Because
+// Subscribe now BLOCKS and owns its own delivery loop, the old "subscribe every
+// topic before starting any goroutine" shape is impossible; the property it
+// bought — one failing subscription strands none of the others — is re-established
+// by cancelling the sibling subscriptions and waiting for all of them to return.
+// TestChainerRunLeaksNoGoroutines is the leak half of the same invariant.
 func TestChainerRunSubscribeError(t *testing.T) {
+	t.Parallel()
+
 	policy := func(context.Context, chain.ChainEvent) (chain.SuccessorDecision, bool) {
 		return chain.SuccessorDecision{}, false
 	}
@@ -176,7 +188,7 @@ func TestChainerRunSubscribeError(t *testing.T) {
 }
 
 // TestChainerRunStartsSuccessorEndToEnd drives the full subscription loop over a
-// real GoChannel pub/sub + a real ProcessDriver + MemInstanceStore + MemChainLinkStore: a
+// real in-process pub/sub + a real ProcessDriver + MemInstanceStore + MemChainLinkStore: a
 // published instance.completed event starts the mapped successor exactly once.
 func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
@@ -207,11 +219,11 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- cr.Run(ctx, sub) }()
 
-	// GoChannel is non-persistent: publishing before Run subscribes drops the
+	// The bus is non-persistent: publishing before Run subscribes drops the
 	// message. Republish on each tick until the (idempotent) chaining lands.
 	require.Eventually(t, func() bool {
 		_ = pub.Publish(ctx, kernel.OutboxEvent{
-			Topic:      "instance.completed",
+			Topic:      eventing.TopicInstanceCompleted,
 			Payload:    map[string]any{"orderID": "o-9"},
 			InstanceID: "p1",
 		})
@@ -279,11 +291,11 @@ func TestChainerRunLogsBenignShutdownAtDebug(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- cr.Run(ctx, sub) }()
 
-	// GoChannel drops messages published before Run subscribes; republish until the
+	// The bus drops messages published before Run subscribes; republish until the
 	// benign-shutdown DEBUG record appears (proving the handler ran and nacked).
 	require.Eventually(t, func() bool {
 		_ = pub.Publish(ctx, kernel.OutboxEvent{
-			Topic:      "instance.completed",
+			Topic:      eventing.TopicInstanceCompleted,
 			Payload:    map[string]any{},
 			InstanceID: "p1",
 		})
@@ -296,4 +308,108 @@ func TestChainerRunLogsBenignShutdownAtDebug(t *testing.T) {
 
 	cancel()
 	assert.ErrorIs(t, <-done, context.Canceled)
+}
+
+// blockingSubscriber counts how many Subscribe calls are live. It blocks on ctx
+// for every topic except failTopic, where it returns err immediately — the
+// mid-flight failure P4 is about.
+type blockingSubscriber struct {
+	failTopic string
+	err       error
+
+	mu   sync.Mutex
+	live int
+	seen []string
+}
+
+func (b *blockingSubscriber) Subscribe(ctx context.Context, topic string, _ eventing.Handler) error {
+	b.mu.Lock()
+	b.seen = append(b.seen, topic)
+	if topic == b.failTopic {
+		b.mu.Unlock()
+		return b.err
+	}
+	b.live++
+	b.mu.Unlock()
+
+	<-ctx.Done()
+
+	b.mu.Lock()
+	b.live--
+	b.mu.Unlock()
+	return ctx.Err()
+}
+
+func (b *blockingSubscriber) liveCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.live
+}
+
+func (b *blockingSubscriber) topics() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]string(nil), b.seen...)
+}
+
+// TestChainerRunLeaksNoGoroutines is the leak half of the invariant the old
+// "subscribe every topic before starting any goroutine" comment protected: with
+// Subscribe now blocking, three subscriptions all start and all stop, and one
+// failing mid-flight strands none of the others.
+//
+// Deliberately NOT parallel — goleak reads the whole process's goroutine set.
+func TestChainerRunLeaksNoGoroutines(t *testing.T) {
+	ignore := goleak.IgnoreCurrent()
+	defer goleak.VerifyNone(t, ignore)
+
+	policy := func(context.Context, chain.ChainEvent) (chain.SuccessorDecision, bool) {
+		return chain.SuccessorDecision{}, false
+	}
+	core, err := chain.NewChainer(&capturingStarter{}, policy)
+	require.NoError(t, err)
+
+	t.Run("an orderly cancellation stops all three", func(t *testing.T) {
+		sub := &blockingSubscriber{}
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan error, 1)
+		go func() { done <- eventing.NewChainerRunner(core).Run(ctx, sub) }()
+
+		require.Eventually(t, func() bool { return sub.liveCount() == 3 },
+			3*time.Second, 5*time.Millisecond, "all three terminal topics must be subscribed")
+
+		cancel()
+		assert.ErrorIs(t, <-done, context.Canceled)
+		assert.Zero(t, sub.liveCount(), "every subscription must have returned")
+	})
+
+	t.Run("one subscription failing strands none of the others", func(t *testing.T) {
+		sentinel := errors.New("broker refused the topic")
+		sub := &blockingSubscriber{failTopic: eventing.TopicInstanceTerminated, err: sentinel}
+
+		done := make(chan error, 1)
+		go func() { done <- eventing.NewChainerRunner(core).Run(t.Context(), sub) }()
+
+		var err error
+		select {
+		case err = <-done:
+		case <-time.After(5 * time.Second):
+			// Bounded so a Run that never cancels its siblings fails HERE, naming
+			// the invariant, instead of deadlocking into "panic: test timed out"
+			// with no assertion message at all.
+			t.Fatal("Run did not return after one subscription failed; its siblings were never cancelled")
+		}
+
+		require.ErrorIs(t, err, sentinel)
+		assert.ElementsMatch(t, chainTopicsForTest, sub.topics(),
+			"every topic must have been attempted before Run returned")
+		assert.Zero(t, sub.liveCount(),
+			"the two healthy subscriptions must have been cancelled and joined, not stranded")
+	})
+}
+
+// chainTopicsForTest names the three terminal topics Run must subscribe.
+var chainTopicsForTest = []string{
+	eventing.TopicInstanceCompleted,
+	eventing.TopicInstanceFailed,
+	eventing.TopicInstanceTerminated,
 }

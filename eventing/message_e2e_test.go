@@ -1,7 +1,6 @@
 package eventing_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -64,8 +63,8 @@ func senderDef() *model.ProcessDefinition {
 //
 //  1. A receiver process parks on a ReceiveTask awaiting "OrderPlaced".
 //  2. A sender process runs a SendTask that emits "OrderPlaced" into wrkflw_outbox.
-//  3. The relay drains the outbox and publishes to an in-process GoChannel broker.
-//  4. eventing.NewMessageHandler decodes the message and calls runner.DeliverMessage.
+//  3. The relay drains the outbox and publishes to an in-process bus.
+//  4. eventing.NewMessageHandler decodes the envelope and calls driver.DeliverMessage.
 //  5. The receiver instance advances past the ReceiveTask and reaches StatusCompleted.
 //
 // The test uses a real PostgreSQL container (via testcontainers) for the Postgres store
@@ -80,16 +79,11 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 	store, err := persistence.OpenPostgres(ctx, pool)
 	require.NoError(t, err)
 
-	// ── 2. In-process GoChannel broker ───────────────────────────────────────
-	// pub is a kernel.OutboxPublisher backed by a GoChannel; sub is the matching
-	// message.Subscriber; closer tears the GoChannel down at test end.
-	pub, sub, closer := eventing.NewGoChannelPublisher()
-	defer func() { require.NoError(t, closer.Close()) }()
-
-	// Subscribe BEFORE running the sender so the GoChannel buffers the message
-	// (GoChannel is non-persistent; a publish before Subscribe drops the message).
-	msgs, err := sub.Subscribe(ctx, "message.OrderPlaced")
-	require.NoError(t, err)
+	// ── 2. In-process bus ────────────────────────────────────────────────────
+	// bus is the kernel.OutboxPublisher the relay drains into AND the Subscriber
+	// the handler is mounted on. Close tears it down at test end.
+	bus := eventing.NewInProcess()
+	defer func() { require.NoError(t, bus.Close()) }()
 
 	// ── 3. Runner (shared by receiver and sender) ────────────────────────────
 	// The driver resolves the correlated instance's definition from its own
@@ -123,8 +117,18 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 		`SELECT count(*) FROM wrkflw_outbox WHERE topic = 'message.OrderPlaced'`).Scan(&n))
 	require.Equal(t, 1, n, "exactly one message.OrderPlaced outbox row expected")
 
-	// ── 6. Relay drains the outbox → publishes to GoChannel ─────────────────
-	relay, err := persistence.NewRelay(pool, pub)
+	// ── 6. Mount the message handler on the bus ──────────────────────────────
+	// NewMessageHandler decodes the message.OrderPlaced payload and calls deliver,
+	// which routes to driver.DeliverMessage to resume the parked receiver. Start
+	// returns only once the subscription is LIVE, so the relay's publish below
+	// cannot be dropped — the bus is non-persistent, like every broker-less bus.
+	stop, err := bus.Start(ctx, eventing.TopicMessagePrefix+"OrderPlaced",
+		eventing.NewMessageHandler(driver.DeliverMessage))
+	require.NoError(t, err)
+	defer stop()
+
+	// ── 7. Relay drains the outbox → publishes to the bus ───────────────────
+	relay, err := persistence.NewRelay(pool, bus)
 	require.NoError(t, err)
 	drained, err := relay.DrainOnce(ctx)
 	require.NoError(t, err)
@@ -133,40 +137,15 @@ func TestSendTaskOutboxResumesReceiveTaskViaMessageHandler(t *testing.T) {
 	require.GreaterOrEqual(t, drained, 1,
 		"relay must drain at least the message.OrderPlaced outbox row")
 
-	// ── 7. Read from GoChannel and call the message handler ──────────────────
-	// NewMessageHandler decodes the message.OrderPlaced payload and calls deliver,
-	// which routes to runner.DeliverMessage to resume the parked receiver.
-	deliver := eventing.NewMessageHandler(driver.DeliverMessage)
-
-	// Drain the GoChannel until we see and process the message.OrderPlaced message.
-	// Other outbox events (instance.completed for the sender) land on different
-	// topics and are not in this subscription channel, so we read until the channel
-	// is empty or we process the target message.
-	ctx2, cancel2 := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel2()
-
-	delivered := false
-	for !delivered {
-		select {
-		case msg, ok := <-msgs:
-			if !ok {
-				t.Fatal("subscription channel closed unexpectedly")
-			}
-			// Only process message.OrderPlaced; ignore anything else on this topic.
-			topic := msg.Metadata.Get("topic")
-			if topic != "message.OrderPlaced" {
-				msg.Ack()
-				continue
-			}
-			require.NoError(t, deliver(msg), "NewMessageHandler must not error on a valid OrderPlaced message")
-			msg.Ack()
-			delivered = true
-		case <-ctx2.Done():
-			t.Fatal("timed out waiting for message.OrderPlaced to arrive in GoChannel subscription")
-		}
-	}
-
 	// ── 8. Assert the receiver advanced past the ReceiveTask ─────────────────
+	// The wait below reads the receiver's FINAL state, so that is what it waits
+	// for — not the handler having been called, which merely correlates with it.
+	require.Eventually(t, func() bool {
+		st, _, err := store.Load(ctx, "recv-inst-1")
+		return err == nil && st.Status == engine.StatusCompleted
+	}, 10*time.Second, 25*time.Millisecond,
+		"the receiver must complete once the relayed message.OrderPlaced is delivered")
+
 	final, _, err := store.Load(ctx, "recv-inst-1")
 	require.NoError(t, err)
 	assert.Equal(t, engine.StatusCompleted, final.Status,

@@ -12,7 +12,7 @@
 //
 //	SendTask node            → engine.SendMessage command
 //	deliverLoop edge         → message.OrderPlaced OutboxEvent (committed with state)
-//	relay.DrainOnce          → publishes to the broker (here an in-process GoChannel)
+//	relay.DrainOnce          → publishes to the broker (here an in-process bus)
 //	eventing.NewMessageHandler(driver.DeliverMessage)
 //	                         → decodes + routes to the correlated ReceiveTask
 //
@@ -133,18 +133,28 @@ func run() error {
 	fmt.Println("--- Order Intake → Fulfilment: Node-Driven Message Routing ---")
 
 	// The message.* subscriber is the ONLY place DeliverMessage is called, and it is
-	// wired once here — not at the SendTask call site. NewGoChannelPublisher gives an
-	// in-process broker; a real deployment swaps in Kafka/NATS/etc. (see broker_wiring).
-	pub, sub, closer := eventing.NewGoChannelPublisher()
-	defer func() { _ = closer.Close() }()
+	// wired once here — not at the SendTask call site. NewInProcess gives a
+	// broker-less bus; a real deployment swaps in Kafka/NATS/etc. (see broker_wiring).
+	bus := eventing.NewInProcess()
+	defer func() { _ = bus.Close() }()
 
-	// Subscribe BEFORE the relay publishes: GoChannel is non-persistent, so a publish
-	// before Subscribe is dropped.
-	msgs, err := sub.Subscribe(ctx, "message.OrderPlaced")
+	// Mount the handler BEFORE the relay publishes: the bus is non-persistent, so a
+	// publish that lands before a subscription exists is dropped. Start returns only
+	// once the subscription is live, which is what makes the ordering deterministic.
+	routed := make(chan struct{}, 1)
+	deliver := eventing.NewMessageHandler(driver.DeliverMessage)
+	stop, err := bus.Start(ctx, eventing.TopicMessagePrefix+"OrderPlaced",
+		func(hctx context.Context, env eventing.Envelope) error {
+			if err := deliver(hctx, env); err != nil {
+				return err // nack: the bus redelivers
+			}
+			routed <- struct{}{}
+			return nil
+		})
 	if err != nil {
 		return err
 	}
-	deliver := eventing.NewMessageHandler(driver.DeliverMessage)
+	defer stop()
 
 	// Park the receiver on its ReceiveTask.
 	recvSt, err := driver.Drive(ctx, recvDef, "recv-o-1", map[string]any{"orderId": "o-1"})
@@ -162,10 +172,10 @@ func run() error {
 	}
 	fmt.Printf("sender status=%s (SendTask committed message to outbox)\n", view.StatusString(sendSt.Status))
 
-	// Relay drains the outbox → publishes to the GoChannel broker. In production the
-	// relay runs continuously via relay.Run(ctx); DrainOnce keeps this example a single
+	// Relay drains the outbox → publishes to the bus. In production the relay runs
+	// continuously via relay.Run(ctx); DrainOnce keeps this example a single
 	// synchronous pass.
-	relay, err := persistence.NewSQLiteRelay(db, pub)
+	relay, err := persistence.NewSQLiteRelay(db, bus)
 	if err != nil {
 		return err
 	}
@@ -173,19 +183,15 @@ func run() error {
 		return err
 	}
 
-	// Read the message off the broker and route it through the handler, which calls
-	// DeliverMessage to resume the parked receiver.
+	// The handler runs on the bus's own subscription goroutine; wait for it to have
+	// routed the message before reading the receiver's state.
 	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	select {
-	case msg := <-msgs:
-		if err := deliver(msg); err != nil {
-			return fmt.Errorf("handler deliver: %w", err)
-		}
-		msg.Ack()
+	case <-routed:
 		fmt.Println("message.OrderPlaced routed through NewMessageHandler → DeliverMessage")
 	case <-waitCtx.Done():
-		return fmt.Errorf("timed out waiting for message.OrderPlaced on the broker")
+		return fmt.Errorf("timed out waiting for message.OrderPlaced to be routed")
 	}
 
 	// The receiver has advanced past the ReceiveTask, through fulfil → end.
