@@ -2,8 +2,8 @@
 // DECLARATIVE authoring side. A Validator is the executable check; a
 // ValidationStrategy (attached to a definition node) provides the runtime
 // Validator. Concrete strategies live in opt-in adapter subpackages
-// (definition/model/validate/expr, .../callback, .../jsonschema, .../avro) so
-// the definition/engine core imports no schema library. The executor side
+// (definition/model/validate/expr, .../callback, .../jsonschema) so the
+// definition/engine core imports no schema library. The executor side
 // (Gate, ErrInvalidInput) lives in runtime/validation, which depends on this
 // package.
 package validate
@@ -25,7 +25,7 @@ type ValidationStrategy interface {
 	NewValidator() (Validator, error)
 }
 
-// DescribableStrategy is implemented by DECLARATIVE strategies (expr/json-schema/avro) so
+// DescribableStrategy is implemented by DECLARATIVE strategies (expr/json-schema) so
 // they round-trip through wire/YAML. The callback strategy does NOT implement it.
 type DescribableStrategy interface {
 	ValidationStrategy
@@ -34,6 +34,6 @@ type DescribableStrategy interface {
 
 // ValidationDescriptor is the serialized form stored on a node's wire representation.
 type ValidationDescriptor struct {
-	Kind   string `json:"kind" yaml:"kind"`                         // "expr" | "json-schema" | "avro" (registry key)
+	Kind   string `json:"kind" yaml:"kind"`                         // "expr" | "json-schema" (registry key)
 	Schema string `json:"schema,omitempty" yaml:"schema,omitempty"` // schema text / predicate list (adapter-interpreted)
 }

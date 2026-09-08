@@ -30,8 +30,8 @@ var defaultRegistry = NewRegistry()
 // DefaultRegistry is the process-global registry consulted on durable reload
 // (ProcessDefinition.UnmarshalJSON) and as build()'s fallback when no explicit
 // loader registry is configured. Adapters register their kind here via init(), so
-// importing a validation adapter (validate/expr, validate/jsonschema,
-// validate/avro) arms durable reload for that kind.
+// importing a validation adapter (validate/expr, validate/jsonschema) arms
+// durable reload for that kind.
 func DefaultRegistry() *Registry { return defaultRegistry }
 
 // Register maps kind -> factory in the DefaultRegistry. It is the convenience
