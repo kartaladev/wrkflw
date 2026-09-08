@@ -46,12 +46,9 @@ cache). The other two are pure bash + git + grep.
   messages are deliberately outside its scope, so quoting history there is fine.
 - **Engine purity.** The engine core (`engine/`, `model/`) must not import transport, storage-vendor,
   or event-bus packages — depend on the in-repo interfaces. Never import casbin, gocron, or clockwork
-  directly from workflow/engine code. There is no longer an event-bus vendor to name: the eventing
-  façade reaches a broker through `eventing.PublishFunc` and `eventing.Handler`, which a consumer
-  implements over their own client, so the rule for messaging is that no such dependency exists to
-  import. `engine/purity_test.go`'s `deniedEngineImports` still carries a `watermill` entry and a
-  `casbin` entry; whether a deny-list keeps naming a module the tree no longer depends on is a
-  maintainer call, open as #125, and the `casbin` half of it is the one #115 has to settle.
+  directly from workflow/engine code. There is no event-bus vendor left to name: a broker is reached
+  through `eventing.PublishFunc` and `eventing.Handler`, which a consumer implements over their own
+  client.
 
 ## Commit messages
 
