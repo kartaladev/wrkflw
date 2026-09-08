@@ -23,14 +23,6 @@ func isBenignDriverShutdown(err error) bool {
 	return errors.Is(err, kernel.ErrDriverShuttingDown)
 }
 
-// chainTopics are the three status-accurate terminal topics a chaining consumer
-// subscribes. The map also drives topic→Outcome projection.
-var chainTopics = map[string]kernel.ChainOutcome{
-	"instance.completed":  kernel.OutcomeCompleted,
-	"instance.failed":     kernel.OutcomeFailed,
-	"instance.terminated": kernel.OutcomeTerminated,
-}
-
 // NewChainHandler adapts the broker-agnostic runtime.Chainer core to a watermill
 // no-publish handler. A consumer mounts it on their own message.Router (their
 // retry/poison/DLQ middleware wraps it), registering it for the three terminal

@@ -24,6 +24,7 @@ import (
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
 	"context"
@@ -36,9 +37,10 @@ var _ kernel.OutboxPublisher = (*watermillpub.Publisher)(nil)
 type Option func(*options)
 
 type options struct {
-	logger *slog.Logger
-	tp     trace.TracerProvider
-	mp     metric.MeterProvider
+	logger     *slog.Logger
+	tp         trace.TracerProvider
+	mp         metric.MeterProvider
+	propagator propagation.TextMapPropagator
 }
 
 // newOptions applies opts over the package defaults, so every constructor
@@ -48,6 +50,15 @@ func newOptions(opts ...Option) options {
 		logger: slog.Default(),
 		tp:     otel.GetTracerProvider(),
 		mp:     otel.GetMeterProvider(),
+		// NOT otel.GetTextMapPropagator(). The default global propagator is a
+		// no-op: unless the deployment calls otel.SetTextMapPropagator, it has no
+		// Fields() and injects nothing, so a publisher reaching for it would write
+		// no trace context at all — silently, and only in production, since a test
+		// that sets the global would pass. This package states which keys it
+		// writes, so it names the propagator that writes them. Override with
+		// WithPropagator; an inbound HTTP server is the opposite case and should
+		// honour the deployment's global instead.
+		propagator: propagation.TraceContext{},
 	}
 	for _, fn := range opts {
 		fn(&o)
@@ -79,6 +90,21 @@ func WithMeterProvider(mp metric.MeterProvider) Option {
 	return func(o *options) {
 		if mp != nil {
 			o.mp = mp
+		}
+	}
+}
+
+// WithPropagator sets the OpenTelemetry propagator used to write trace context
+// into Envelope.Metadata on publish, and to rebuild a handler's context from it
+// on delivery. Default: propagation.TraceContext{} — the W3C traceparent /
+// tracestate pair — chosen explicitly rather than taken from the otel global,
+// which is a no-op until a deployment sets it. Pass this to match a deployment
+// that propagates something else (B3, Jaeger, a composite). A nil propagator is
+// ignored.
+func WithPropagator(p propagation.TextMapPropagator) Option {
+	return func(o *options) {
+		if p != nil {
+			o.propagator = p
 		}
 	}
 }

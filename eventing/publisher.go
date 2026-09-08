@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/kartaladev/wrkflw/runtime/kernel"
@@ -35,9 +36,10 @@ type PublishFunc func(ctx context.Context, env Envelope) error
 // one OTel span and increments wrkflw_eventing_published_total.
 type publisher struct {
 	publish    PublishFunc
-	logger    *slog.Logger
-	tracer    trace.Tracer
-	published metric.Int64Counter
+	logger     *slog.Logger
+	tracer     trace.Tracer
+	propagator propagation.TextMapPropagator
+	published  metric.Int64Counter
 }
 
 // Compile-time check: the façade satisfies the engine-side port.
@@ -59,10 +61,11 @@ func NewPublisher(publish PublishFunc, opts ...Option) kernel.OutboxPublisher {
 		o.logger.Warn("eventing: counter init failed; using no-op", slog.Any("error", err))
 	}
 	return &publisher{
-		publish:   publish,
-		logger:    o.logger,
-		tracer:    o.tp.Tracer(instrumentationName),
-		published: counter,
+		publish:    publish,
+		logger:     o.logger,
+		tracer:     o.tp.Tracer(instrumentationName),
+		propagator: o.propagator,
+		published:  counter,
 	}
 }
 
@@ -110,6 +113,12 @@ func (p *publisher) publishOne(ctx context.Context, ev kernel.OutboxEvent) error
 		},
 		Body: payload,
 	}
+	// Trace context travels IN the envelope, not alongside it in a Go context: a
+	// real broker hands the consumer bytes and headers, never the publisher's
+	// ctx. Metadata is a map[string]string, which is propagation.MapCarrier
+	// exactly, so no adapter is needed. ctx here is the publish span's context,
+	// so a consumer that extracts these keys parents onto eventing.publish.
+	p.propagator.Inject(ctx, propagation.MapCarrier(env.Metadata))
 
 	if err := p.publish(ctx, env); err != nil {
 		p.logger.ErrorContext(ctx, "eventing: publish failed",
