@@ -31,7 +31,8 @@ type PublishFunc func(ctx context.Context, env Envelope) error
 
 // publisher adapts a [PublishFunc] to [kernel.OutboxPublisher]. It maps one
 // OutboxEvent to one Envelope: the envelope id is the event's DedupKey (or a
-// fresh UUID when empty) so redeliveries are deduplicable, and the instance id is
+// generated id when empty — see [Envelope.ID] for what that is and why the
+// relay never needs it) so redeliveries are deduplicable, and the instance id is
 // set as metadata for per-instance partitioning/ordering. Each Publish call emits
 // one OTel span and increments wrkflw_eventing_published_total.
 type publisher struct {
@@ -41,9 +42,10 @@ type publisher struct {
 	propagator propagation.TextMapPropagator
 	published  metric.Int64Counter
 	// ids mints an envelope id for an outbox event that carries no dedup key.
-	// It is the repo's own generator (runtime/idgen), which is what keeps this
+	// It is the repo's own generator (idgen.XID), which is what keeps this
 	// package's direct imports free of any third-party name — see
-	// TestEventingDependencyGraphNamesNoVendorDirectly.
+	// TestEventingDependencyGraphNamesNoVendorDirectly. Its output is unique and
+	// k-sortable, not random; see [Envelope.ID].
 	ids idgen.Generator
 }
 
@@ -107,6 +109,10 @@ func (p *publisher) publishOne(ctx context.Context, ev kernel.OutboxEvent) error
 
 	id := ev.DedupKey
 	if id == "" {
+		// Unreachable from the relay — wrkflw_outbox.dedup_key is NOT NULL
+		// UNIQUE in every dialect — so this serves a caller driving Publish
+		// directly. The id is unique and k-sortable, NOT unguessable; see
+		// Envelope.ID before keying anything on it.
 		generated, err := p.ids.NewID()
 		if err != nil {
 			return fmt.Errorf("workflow-eventing: mint envelope id: %w", err)

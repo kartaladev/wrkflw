@@ -27,8 +27,18 @@ const (
 // text-map carrier: [NewPublisher] injects the W3C trace context into it, and a
 // subscriber rebuilds the handler's context from it. See [WithPropagator].
 type Envelope struct {
-	// ID is the outbox row's dedup key when the event carries one, and a fresh
-	// UUID otherwise. Consumers key idempotency on it.
+	// ID is the outbox row's dedup key when the event carries one, and a
+	// generated id otherwise. Consumers key idempotency on it.
+	//
+	// The generated form is idgen.XID — 20 characters of base32hex built from a
+	// timestamp, machine id, process id and counter. It is unique and
+	// k-sortable, NOT random and NOT unguessable. Never treat an Envelope.ID as
+	// a token, a capability, or anything an authorization decision reads.
+	//
+	// That branch is in practice unreachable from the relay: wrkflw_outbox's
+	// dedup_key column is NOT NULL UNIQUE in every dialect, so an event the
+	// relay drains always arrives with one. It exists for a caller driving
+	// Publish directly.
 	ID string
 	// Topic is the destination topic, e.g. "instance.completed" or
 	// "message.OrderPlaced".
