@@ -130,7 +130,7 @@ func TestPublisherMapsOutboxEventToEnvelope(t *testing.T) {
 				assert.Equal(t, "eventing.publish", spans[0].Name)
 				attrs := map[string]string{}
 				for _, a := range spans[0].Attributes {
-					attrs[string(a.Key)] = a.Value.Emit()
+					attrs[string(a.Key)] = a.Value.String()
 				}
 				assert.Equal(t, "instance.terminated", attrs["messaging.destination"])
 				assert.Equal(t, "order-45", attrs["wrkflw.instance_id"])
