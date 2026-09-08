@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.uber.org/goleak"
 
 	"github.com/kartaladev/wrkflw/eventing"
@@ -318,4 +320,77 @@ func TestInProcessLeaksNoGoroutines(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, bus.Close())
 	stopSecond()
+}
+
+// publisherOnlyKey marks a value put in the PUBLISHER's context. A handler must
+// never see it: that is what "the trace context travels in the envelope" means
+// concretely, as opposed to a Go context being smuggled across the delivery.
+type publisherOnlyKey struct{}
+
+// TestPublishSpanParentsHandlerSpan is the end-to-end trace requirement: a span
+// a handler starts is a CHILD of the eventing.publish span, and it gets there
+// through Envelope.Metadata rather than through a shared context.
+//
+// The distinction is the whole point. The library this replaced carried the
+// publisher's live context OBJECT to the handler, which works only while
+// publisher and consumer share a process — put a real broker in the middle and
+// the context is gone, because a broker hands a consumer bytes and headers. So
+// the test asserts both halves: the handler's span parents onto the publish
+// span, AND a value placed in the publisher's context does NOT reach the
+// handler. Deleting the propagator Extract from InProcess.dispatch turns the
+// first half red.
+func TestPublishSpanParentsHandlerSpan(t *testing.T) {
+	t.Parallel()
+
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+
+	bus := eventing.NewInProcess(eventing.WithTracerProvider(tp))
+	t.Cleanup(func() { require.NoError(t, bus.Close()) })
+
+	tracer := tp.Tracer("consumer")
+	sawPublisherValue := make(chan bool, 1)
+	handled := make(chan struct{})
+
+	stop, err := bus.Start(t.Context(), eventing.TopicInstanceCompleted,
+		func(hctx context.Context, _ eventing.Envelope) error {
+			sawPublisherValue <- hctx.Value(publisherOnlyKey{}) != nil
+			_, span := tracer.Start(hctx, "consumer.handle")
+			span.End()
+			close(handled)
+			return nil
+		})
+	require.NoError(t, err)
+	defer stop()
+
+	publishCtx := context.WithValue(t.Context(), publisherOnlyKey{}, "publisher-only")
+	require.NoError(t, bus.Publish(publishCtx, kernel.OutboxEvent{
+		Topic:      eventing.TopicInstanceCompleted,
+		InstanceID: "p1",
+		Payload:    map[string]any{},
+	}))
+
+	<-handled
+	assert.False(t, <-sawPublisherValue,
+		"the handler must not inherit the publisher's context; a broker would never carry it")
+
+	require.NoError(t, tp.ForceFlush(t.Context()))
+	spans := tracetest.SpanStubsFromReadOnlySpans(sr.Ended())
+
+	var publish, handle tracetest.SpanStub
+	for _, s := range spans {
+		switch s.Name {
+		case "eventing.publish":
+			publish = s
+		case "consumer.handle":
+			handle = s
+		}
+	}
+	require.NotEmpty(t, publish.Name, "the publish span must have been recorded")
+	require.NotEmpty(t, handle.Name, "the handler span must have been recorded")
+
+	assert.Equal(t, publish.SpanContext.TraceID(), handle.SpanContext.TraceID(),
+		"the handler span must be in the publish span's trace")
+	assert.Equal(t, publish.SpanContext.SpanID(), handle.Parent.SpanID(),
+		"the handler span's parent must be the publish span itself")
 }

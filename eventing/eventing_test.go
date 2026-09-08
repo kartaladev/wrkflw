@@ -6,7 +6,6 @@ import (
 	"maps"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/propagation"
@@ -37,7 +36,9 @@ func TestPublisherMapsOutboxEventToEnvelope(t *testing.T) {
 	type testCase struct {
 		event      kernel.OutboxEvent
 		publishErr error
-		assert     func(t *testing.T, sent []eventing.Envelope, spans tracetest.SpanStubs, err error)
+		// publishes is how many times the same event is published; 0 means once.
+		publishes int
+		assert    func(t *testing.T, sent []eventing.Envelope, spans tracetest.SpanStubs, err error)
 	}
 
 	sentinel := errors.New("broker unavailable")
@@ -71,17 +72,19 @@ func TestPublisherMapsOutboxEventToEnvelope(t *testing.T) {
 				assert.Equal(t, []byte(`{"status":"completed"}`), sent[0].Body)
 			},
 		},
-		"an event with no dedup key gets a generated uuid": {
+		"an event with no dedup key gets a freshly minted, unique id": {
 			event: kernel.OutboxEvent{
 				Topic:      "instance.failed",
 				InstanceID: "order-43",
 				Payload:    map[string]any{"error": "boom"},
 			},
+			publishes: 2,
 			assert: func(t *testing.T, sent []eventing.Envelope, _ tracetest.SpanStubs, err error) {
 				require.NoError(t, err)
-				require.Len(t, sent, 1)
-				_, parseErr := uuid.Parse(sent[0].ID)
-				assert.NoError(t, parseErr, "an empty dedup key must yield a parseable UUID, not an empty id")
+				require.Len(t, sent, 2)
+				assert.NotEmpty(t, sent[0].ID, "an empty dedup key must still yield an id")
+				assert.NotEqual(t, sent[0].ID, sent[1].ID,
+					"two events with no dedup key must not collide on the same envelope id")
 				assert.Equal(t, "", sent[0].Metadata["definition_ref"],
 					"a zero DefinitionRef still writes the key, empty")
 			},
@@ -153,7 +156,11 @@ func TestPublisherMapsOutboxEventToEnvelope(t *testing.T) {
 				eventing.WithMeterProvider(mp),
 			)
 
-			err := pub.Publish(t.Context(), tc.event)
+			publishes := max(tc.publishes, 1)
+			var err error
+			for range publishes {
+				err = pub.Publish(t.Context(), tc.event)
+			}
 
 			require.NoError(t, tp.ForceFlush(t.Context()))
 			tc.assert(t, sent, tracetest.SpanStubsFromReadOnlySpans(sr.Ended()), err)

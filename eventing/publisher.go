@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
@@ -14,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/kartaladev/wrkflw/runtime/idgen"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
@@ -40,6 +40,11 @@ type publisher struct {
 	tracer     trace.Tracer
 	propagator propagation.TextMapPropagator
 	published  metric.Int64Counter
+	// ids mints an envelope id for an outbox event that carries no dedup key.
+	// It is the repo's own generator (runtime/idgen), which is what keeps this
+	// package's direct imports free of any third-party name — see
+	// TestEventingDependencyGraphNamesNoVendorDirectly.
+	ids idgen.Generator
 }
 
 // Compile-time check: the façade satisfies the engine-side port.
@@ -66,6 +71,7 @@ func NewPublisher(publish PublishFunc, opts ...Option) kernel.OutboxPublisher {
 		tracer:     o.tp.Tracer(instrumentationName),
 		propagator: o.propagator,
 		published:  counter,
+		ids:        idgen.XID(),
 	}
 }
 
@@ -101,7 +107,11 @@ func (p *publisher) publishOne(ctx context.Context, ev kernel.OutboxEvent) error
 
 	id := ev.DedupKey
 	if id == "" {
-		id = uuid.NewString()
+		generated, err := p.ids.NewID()
+		if err != nil {
+			return fmt.Errorf("workflow-eventing: mint envelope id: %w", err)
+		}
+		id = generated
 	}
 	env := Envelope{
 		ID:    id,

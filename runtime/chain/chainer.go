@@ -19,9 +19,9 @@ import (
 )
 
 // ChainEvent is the broker-agnostic input to a chaining decision, projected from
-// a terminal outbox event. The watermill adapter (eventing) builds it
-// from the message topic + metadata + body; the runtime core never sees
-// watermill.
+// a terminal outbox event. eventing.NewChainHandler builds it from an
+// eventing.Envelope's topic + metadata + body; the runtime core never sees a
+// messaging library at all.
 type ChainEvent struct {
 	// PredecessorID is the instance that reached a terminal state.
 	PredecessorID string

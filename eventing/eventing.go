@@ -1,38 +1,60 @@
 // Package eventing is the consumer-facing façade for publishing wrkflw domain
-// events to a broker via watermill. Wrap any watermill message.Publisher with
-// NewPublisher and hand the result to persistence.NewRelay. watermill is
-// confined to this package and internal/eventing/watermill; engine/model/runtime
-// never import it.
+// events to a message broker, and for consuming them back.
+//
+// wrkflw does not choose your broker, import its client, or appear in its
+// configuration. The whole surface between this package and the outside world is
+// two function types and a struct:
+//
+//   - [Envelope] — one published event as id, topic, string metadata and a JSON
+//     body. No messaging library appears in it.
+//   - [PublishFunc] — func(context.Context, Envelope) error. Write one over the
+//     client you already run, wrap it with [NewPublisher], and hand the result to
+//     persistence.NewRelay as a kernel.OutboxPublisher.
+//   - [Handler] — the same shape in the other direction, for consuming. Mount
+//     [NewChainHandler] or [NewMessageHandler] on your own subscription, or on a
+//     [Subscriber].
+//
+// So reaching Kafka, NATS, Redis Streams or a SQL queue is a function you write,
+// not an adapter this package ships and has to keep current.
+// TestEventingDependencyGraphNamesNoVendorDirectly holds that line: nothing in
+// this package's own imports names a third-party module beyond OpenTelemetry.
+//
+// # No broker at all
+//
+// [NewInProcess] is a complete in-memory pub/sub bus — publisher, subscriber and
+// closer in one value — for tests, examples and single-process deployments. Read
+// its doc comment before relying on it: like every broker-less bus it is
+// non-persistent, so an envelope published to a topic nobody has subscribed yet
+// is dropped.
+//
+// # Trace context
+//
+// [NewPublisher] injects W3C trace context into Envelope.Metadata, and a
+// subscriber rebuilds the handler's context from it, so a span the handler
+// starts is a child of the publish span across a process boundary. The
+// propagator defaults to propagation.TraceContext{} rather than the
+// OpenTelemetry global, which is a no-op until a deployment sets it — see
+// [WithPropagator].
 //
 // # Process-instance chaining
 //
-// The subscriber side of process-instance chaining also lives here so
-// runtime stays watermill-free: NewChainHandler adapts a runtime.Chainer to a
-// watermill no-publish handler you mount on your own message.Router, and
-// NewChainerRunner / Chainer.Run is a turnkey wrapper that subscribes the three
-// status-accurate terminal topics (instance.completed / instance.failed /
-// instance.terminated) and drives the chaining core.
+// The subscriber side of process-instance chaining lives here so runtime keeps
+// no messaging concerns: [NewChainHandler] adapts a runtime.Chainer to a
+// [Handler] you mount on your own subscription, and [NewChainerRunner] /
+// [Chainer.Run] is a turnkey wrapper that subscribes the three status-accurate
+// terminal topics ([TopicInstanceCompleted], [TopicInstanceFailed],
+// [TopicInstanceTerminated]) and drives the chaining core.
 package eventing
 
 import (
-	"io"
 	"log/slog"
 	"time"
 
-	"github.com/ThreeDotsLabs/watermill/message"
-	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
-	watermillpub "github.com/kartaladev/wrkflw/internal/eventing/watermill"
-	"github.com/kartaladev/wrkflw/runtime/kernel"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
-
-	"context"
 )
-
-// Compile-time guard: the internal adapter satisfies the public port.
-var _ kernel.OutboxPublisher = (*watermillpub.Publisher)(nil)
 
 // Option configures a publisher, an in-process bus, or a chaining runner.
 type Option func(*options)
@@ -122,48 +144,4 @@ func WithRedeliveryBackoff(d time.Duration) Option {
 			o.redeliveryBackoff = d
 		}
 	}
-}
-
-// NewGoChannelPublisher builds an in-process GoChannel pub/sub and returns a
-// kernel.OutboxPublisher over it, the matching Subscriber (for in-process consumers
-// or tests), and an io.Closer to release it. No external broker is required.
-// GoChannel ships in watermill core, so this adds no broker dependency.
-func NewGoChannelPublisher(opts ...Option) (kernel.OutboxPublisher, Subscriber, io.Closer) {
-	o := newOptions(opts...)
-	gc := gochannel.NewGoChannel(gochannel.Config{}, watermillpub.NewWatermillLogger(o.logger))
-	publish := func(ctx context.Context, env Envelope) error {
-		msg := message.NewMessage(env.ID, env.Body)
-		for k, v := range env.Metadata {
-			msg.Metadata.Set(k, v)
-		}
-		msg.SetContext(ctx)
-		return gc.Publish(env.Topic, msg)
-	}
-	return NewPublisher(publish, opts...), gochannelSubscriber{gc: gc}, gc
-}
-
-// gochannelSubscriber adapts watermill's channel-returning Subscriber to the
-// blocking, handler-style Subscriber port so the watermill path and the
-// Envelope path can coexist while the two are swapped over.
-type gochannelSubscriber struct{ gc *gochannel.GoChannel }
-
-func (s gochannelSubscriber) Subscribe(ctx context.Context, topic string, h Handler) error {
-	msgs, err := s.gc.Subscribe(ctx, topic)
-	if err != nil {
-		return err
-	}
-	for msg := range msgs {
-		env := Envelope{
-			ID:       msg.UUID,
-			Topic:    msg.Metadata.Get(MetaTopic),
-			Metadata: map[string]string(msg.Metadata),
-			Body:     msg.Payload,
-		}
-		if h(msg.Context(), env) != nil {
-			msg.Nack()
-			continue
-		}
-		msg.Ack()
-	}
-	return ctx.Err()
 }

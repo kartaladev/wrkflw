@@ -34,14 +34,15 @@ const defaultRedeliveryBackoff = 10 * time.Millisecond
 // persistence.NewRelay, a [Subscriber] for [Chainer.Run] or your own handlers,
 // and an [io.Closer].
 //
-// # Non-persistent, exactly like the GoChannel it replaces
+// # Non-persistent
 //
-// An envelope published to a topic NOBODY IS SUBSCRIBED TO YET IS DROPPED. This
-// is deliberate parity with watermill's gochannel.Config{}, whose behaviour this
-// type was written to preserve, and it is the one property that surprises
+// An envelope published to a topic NOBODY IS SUBSCRIBED TO YET IS DROPPED. That
+// is a deliberate choice, not an oversight — it is the behaviour of the
+// in-memory bus this replaced, and buffering instead would mean an unbounded
+// queue with no consumer to bound it — and it is the one property that surprises
 // people: a Publish that races a Subscribe silently delivers to no one. Two ways
 // to sequence it — [InProcess.Start], which returns only once the subscription
-// is live, or republishing until the effect appears (what a Chainer.Run test
+// is live, or republishing until the effect appears (what a [Chainer.Run] test
 // must do, because Run starts its own subscriptions).
 //
 // # Delivery

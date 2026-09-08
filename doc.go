@@ -164,9 +164,11 @@
 //     persistence/cache/ottercache (maypok86/otter, in-memory), persistence/cache/rediscache
 //     (go-redis, distributed), persistence/cache/memcache (gomemcache, distributed).
 //     Each adapter is an optional dependency imported only by its subpackage.
-//   - eventing     The eventing façade for publishing domain events (outbox).
-//     Keeps watermill confined: runtime/engine never import it. Provides
-//     NewGoChannelPublisher, NewMessageHandler, NewChainerRunner.
+//   - eventing     The eventing façade for publishing domain events (outbox) and
+//     consuming them back. No messaging library is imported anywhere in the tree:
+//     the seams are eventing.PublishFunc and eventing.Handler over an
+//     eventing.Envelope, so a consumer supplies their own broker client. Provides
+//     NewPublisher, NewInProcess, NewMessageHandler, NewChainerRunner.
 //   - scheduler    The façade over the timer/deadline scheduler (gocron v2 behind
 //     the abstraction). Provides the gocron-backed Scheduler; the in-memory
 //     MemScheduler test double lives in the processtest harness package.

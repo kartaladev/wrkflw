@@ -212,17 +212,17 @@ func TestChainerRunStartsSuccessorEndToEnd(t *testing.T) {
 	core, err := chain.NewChainer(driver, policy, chain.WithChainLinks(links), chain.WithClock(clk))
 	require.NoError(t, err)
 
-	pub, sub, closer := eventing.NewGoChannelPublisher()
-	defer func() { require.NoError(t, closer.Close()) }()
+	bus := eventing.NewInProcess()
+	defer func() { require.NoError(t, bus.Close()) }()
 
 	cr := eventing.NewChainerRunner(core)
 	done := make(chan error, 1)
-	go func() { done <- cr.Run(ctx, sub) }()
+	go func() { done <- cr.Run(ctx, bus) }()
 
 	// The bus is non-persistent: publishing before Run subscribes drops the
 	// message. Republish on each tick until the (idempotent) chaining lands.
 	require.Eventually(t, func() bool {
-		_ = pub.Publish(ctx, kernel.OutboxEvent{
+		_ = bus.Publish(ctx, kernel.OutboxEvent{
 			Topic:      eventing.TopicInstanceCompleted,
 			Payload:    map[string]any{"orderID": "o-9"},
 			InstanceID: "p1",
@@ -284,17 +284,17 @@ func TestChainerRunLogsBenignShutdownAtDebug(t *testing.T) {
 	core := chainCore(t, starter, &seen, &mu)
 
 	rec := newLevelCountHandler()
-	pub, sub, closer := eventing.NewGoChannelPublisher()
-	defer func() { require.NoError(t, closer.Close()) }()
+	bus := eventing.NewInProcess()
+	defer func() { require.NoError(t, bus.Close()) }()
 
 	cr := eventing.NewChainerRunner(core, eventing.WithLogger(slog.New(rec)))
 	done := make(chan error, 1)
-	go func() { done <- cr.Run(ctx, sub) }()
+	go func() { done <- cr.Run(ctx, bus) }()
 
 	// The bus drops messages published before Run subscribes; republish until the
 	// benign-shutdown DEBUG record appears (proving the handler ran and nacked).
 	require.Eventually(t, func() bool {
-		_ = pub.Publish(ctx, kernel.OutboxEvent{
+		_ = bus.Publish(ctx, kernel.OutboxEvent{
 			Topic:      eventing.TopicInstanceCompleted,
 			Payload:    map[string]any{},
 			InstanceID: "p1",
