@@ -12,8 +12,8 @@ import (
 // validate.DescribableStrategy nor a pending reconstruction placeholder
 // (PendingValidation) — i.e. a validation/callback strategy. Callback strategies
 // are a Go-authoring-only escape hatch and cannot round-trip through wire/YAML;
-// use a declarative strategy (validation/expr, validation/jsonschema,
-// validation/avro) to persist a definition.
+// use a declarative strategy (validation/expr, validation/jsonschema) to
+// persist a definition.
 var ErrUnserializableValidation = errors.New("workflow-model: validation strategy is not serializable")
 
 // ErrValidationNotReconstructed is returned by a pending validation strategy's
