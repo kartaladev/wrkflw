@@ -518,6 +518,13 @@ func scanInternalLeaks(root string, known map[string]openLeak, seals map[string]
 //     second file imports no internal package. Measured at the time of writing:
 //     the module has 5 exported aliases and NONE resolves to an internal
 //     package, so the hole is real but currently unexploited.
+//   - ARRAY LENGTHS. consumerReachableTypeExprs recurses into an ArrayType's
+//     ELEMENT only, so an internal constant used as the length —
+//     `[secret.N]byte` — is no longer reported; before the recursion arm was
+//     added, taking the array whole did report it. A deliberate narrowing with
+//     zero instances in this module, recorded because silence about a
+//     regression is the thing this file's own standard forbids, not the
+//     behaviour itself.
 //   - METHODS PROMOTED THROUGH AN EMBEDDED UNEXPORTED TYPE, and NAMED
 //     UNEXPORTED TYPES BEHIND AN EXPORTED FIELD. Both need the declaration of a
 //     type this walk never resolves: an exported struct embedding an unexported
@@ -555,7 +562,8 @@ func TestNoExportedSignatureNamesAnInternalType(t *testing.T) {
 		assert.True(t, seenKnown[key],
 			"knownOpenInternalLeaks entry %q (expecting %s) no longer matches any offender — "+
 				"the leak was fixed or now names a different internal package; delete the entry "+
-				"or correct its path, or the next leak at that symbol ships unnoticed",
-			key, leak.importPath)
+				"or correct its path, or the next leak at that symbol ships unnoticed.\n"+
+				"The tolerance was recorded because: %s",
+			key, leak.importPath, leak.why)
 	}
 }

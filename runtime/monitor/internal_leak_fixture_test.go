@@ -130,8 +130,9 @@ type NestedHiddenPtr struct {
 
 // NOT reported: an exported struct whose ONLY internal-naming field is
 // unexported. This is the accept half for narrowing the domain to
-// consumer-reachable parts -- without it, widening the walk reports 12 correct
-// designs in this module (Authorizer.inner, OutboxStatsCollector.tel, ...).
+// consumer-reachable parts -- without it, widening the walk reports 13 offender
+// lines across 8 correct declarations in this module (Authorizer.inner,
+// OutboxStatsCollector.tel, CallNotifier.logOpt, ...).
 type HiddenFieldOnly struct {
 	hidden secret.T
 }
