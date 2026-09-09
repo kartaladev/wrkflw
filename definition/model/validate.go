@@ -368,6 +368,17 @@ var (
 	// may share its ID with a node. Like ErrDuplicateNodeID, uniqueness is
 	// scoped to a single definition.
 	ErrDuplicateFlowID = errors.New("workflow-definition: duplicate flow id")
+	// ErrForeignNodeType is returned when a node's dynamic type is not the
+	// concrete type its kind registered. Node is a closed set: each NodeKind is
+	// owned by exactly one type in definition/{activity,event,gateway}, recorded
+	// at registration time. A consumer can still satisfy Node by embedding
+	// model.Base — that door cannot be closed by an unexported method, since the
+	// leaf types embed Base too — so it is closed here instead, at the mandatory
+	// Validate gate, before any of the 29 bare type assertions in the leaf
+	// ToWire/ValidationGet/ValidationSet specs and in engine/step_nodes.go can
+	// reach the node and panic on it. The error names the node id, the type the
+	// kind registered, and the type actually found.
+	ErrForeignNodeType = errors.New("workflow-definition: foreign node type for kind")
 )
 
 // Validate checks structural well-formedness of a process definition. It
