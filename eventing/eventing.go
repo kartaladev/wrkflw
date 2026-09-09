@@ -24,11 +24,12 @@
 // [NewInProcess] is a complete in-memory pub/sub bus — publisher, subscriber and
 // closer in one value — for tests, examples and single-process deployments. Read
 // its doc comment before relying on it: like every broker-less bus it is
-// non-persistent, so an envelope published to a topic nobody has subscribed yet
-// is dropped — and Publish still returns nil, which behind an outbox relay marks
-// the row published. [WithRequireSubscription] turns that particular drop into
-// an error instead; it is opt-in, and the option documents both why and which
-// half of the problem it does not reach.
+// non-persistent, so an envelope published to a topic with no live subscription
+// is dropped. Whether Publish TELLS you depends on the topic: one this bus has
+// subscribed at some point returns [ErrNoSubscription], by default, so an outbox
+// relay retries the row instead of marking it published; one nobody has ever
+// subscribed returns nil and drops silently, unless [WithRequireSubscription]
+// names it. See [InProcess] for both windows and for what remains lost.
 //
 // # Trace context
 //
@@ -69,11 +70,10 @@ type options struct {
 	propagator        propagation.TextMapPropagator
 	redeliveryBackoff time.Duration
 
-	// requireSubscription is the opt-in from [WithRequireSubscription];
-	// requireSubscriptionTopics narrows it, and nil-with-the-flag-set means
-	// every topic. Two fields rather than a nil-vs-empty slice convention,
-	// because "strict everywhere" and "strict nowhere" must not be the same
-	// zero value.
+	// requireSubscriptionTopics accumulates the topics named across every call
+	// to [WithRequireSubscription]. Nil and empty mean the same thing —
+	// escalate nothing — which is what makes an empty configuration safe
+	// rather than total; there is deliberately no "every topic" mode.
 	requireSubscriptionTopics []string
 }
 

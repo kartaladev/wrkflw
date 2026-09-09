@@ -59,8 +59,10 @@ const defaultRedeliveryBackoff = 10 * time.Millisecond
 // WHETHER PUBLISH TELLS YOU depends on whether the topic has ever been
 // subscribed on this bus. A topic that HAS been, and now has no live
 // subscription, returns [ErrNoSubscription]. A topic that NEVER has returns nil
-// and drops silently: that is fire-and-forget, and policing it would turn every
-// legitimately unconsumed topic into a retrying outbox row.
+// and drops silently — unless [WithRequireSubscription] names it, which
+// escalates that topic from the very first publish. Silence is the default there
+// because policing every never-subscribed topic would turn each legitimately
+// unconsumed one into a retrying outbox row.
 //
 // The drop has TWO windows, not one:
 //
@@ -84,8 +86,11 @@ const defaultRedeliveryBackoff = 10 * time.Millisecond
 //     accepted onto a live subscription's queue and then discarded because that
 //     subscription ends before draining it still returns nil, because there WAS
 //     a subscription at fanout time — when Publish returns, the information
-//     does not exist yet. And a bus whose topics were NEVER subscribed reports
-//     nothing at all, by design. For both, the ordering above is the remedy.
+//     does not exist yet; ordering is the only remedy. The second is a topic
+//     that was NEVER subscribed, which reports nothing by default — and that
+//     one IS addressable: name it in [WithRequireSubscription] and it is
+//     escalated from the first publish. It is listed here because it is lost
+//     unless you opt in, not because nothing can be done.
 //
 // # Delivery
 //
