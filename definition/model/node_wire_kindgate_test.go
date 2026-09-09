@@ -294,3 +294,75 @@ func TestKindGateKeepsTheLegacyTimerRelocation(t *testing.T) {
 	var again model.ProcessDefinition
 	require.NoError(t, json.Unmarshal(back, &again))
 }
+
+// TestKindGateReachesIntoANestedSubprocess is the depth half of the safety
+// argument. TestNoWireOutputIsRefusedByTheKindGate fills Subprocess from the
+// generic pointer probe — a pointer to an EMPTY definition — so it never
+// exercises a nested definition with nodes in it, and its doc comment should not
+// be read as depth coverage.
+//
+// Depth is covered instead by recursion: ProcessDefinition.Subprocess is a
+// *ProcessDefinition with its own UnmarshalJSON on the JSON side, and
+// coreFromYAML re-enters fromNodeYAML on the YAML side. Both therefore re-run
+// the gate at every level. This pins that in both directions — a legal inner
+// node survives, a misplaced key on an inner node is refused — because a gate
+// that only reached the top level would pass every other test in this file.
+func TestKindGateReachesIntoANestedSubprocess(t *testing.T) {
+	t.Parallel()
+
+	inner := func(extra string) string {
+		return `{"id":"outer","version":1,"nodes":[{"id":"sub","kind":"subProcess","subprocess":{` +
+			`"id":"inner","version":1,"nodes":[{"id":"i_start","kind":"startEvent"},` +
+			`{"id":"i_end","kind":"endEvent"` + extra + `}],` +
+			`"flows":[{"id":"if1","source":"i_start","target":"i_end"}]}}],"flows":[]}`
+	}
+
+	t.Run("a legal inner node survives", func(t *testing.T) {
+		t.Parallel()
+
+		var def model.ProcessDefinition
+		require.NoError(t, json.Unmarshal([]byte(inner(`,"end_behavior":"terminate"`)), &def))
+		require.Len(t, def.Nodes, 1)
+	})
+
+	t.Run("a misplaced key on an inner node is refused", func(t *testing.T) {
+		t.Parallel()
+
+		var def model.ProcessDefinition
+		err := json.Unmarshal([]byte(inner(`,"action":"charge"`)), &def)
+		require.ErrorIs(t, err, model.ErrKeyNotOnKind)
+		// The diagnostic names the INNER node, which is the only way an author
+		// finds the line: "i_end", not the enclosing "sub".
+		assert.Contains(t, err.Error(), "i_end")
+		assert.Contains(t, err.Error(), "action")
+	})
+
+	t.Run("YAML reaches the same depth", func(t *testing.T) {
+		t.Parallel()
+
+		src := `
+id: outer
+version: 1
+nodes:
+  - id: sub
+    kind: subProcess
+    subprocess:
+      id: inner
+      version: 1
+      nodes:
+        - id: i_start
+          kind: startEvent
+        - id: i_end
+          kind: endEvent
+          action: charge
+      flows:
+        - id: if1
+          source: i_start
+          target: i_end
+flows: []
+`
+		_, err := model.ParseYAML(strings.NewReader(src))
+		require.ErrorIs(t, err, model.ErrKeyNotOnKind)
+		assert.Contains(t, err.Error(), "i_end")
+	})
+}

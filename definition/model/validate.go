@@ -502,8 +502,10 @@ var (
 	//
 	// node_wire_keys.go holds the gate, how each kind's read set is derived from
 	// its own registered spec rather than from a hand-written table, and the one
-	// documented limit: a key present with its zero value is indistinguishable
-	// from an absent key and stays accepted.
+	// documented limit, which is asymmetric: a key present with a SCALAR zero
+	// ("action":"", "manual":false, "rule":null) is indistinguishable from an
+	// absent key and stays accepted, while an empty COMPOSITE ("outcomes":[],
+	// "retry_policy":{}) is not a Go zero value and is refused.
 	ErrKeyNotOnKind = errors.New("workflow-definition: node kind does not carry key")
 )
 

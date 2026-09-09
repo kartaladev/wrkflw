@@ -39,14 +39,25 @@ import (
 // RELOCATED, not lost, and the probe sees the relocation because the
 // reconstructed node differs.
 //
-// THE DOCUMENTED LIMIT: a key present with its ZERO value is indistinguishable
-// from an absent key, so `"action":""` or `"manual":false` on an
-// exclusiveGateway is still accepted and still dropped. That is the same
-// reasoning the `"rule":null` case already carries in this package (see
-// NodeWire.Rule: a literal null "loses nothing: there is no rule in it to
-// lose"). A zero-valued misplaced key carries no information, so discarding it
-// discards nothing. The limit holds for zero values ONLY — it is not a general
-// absent-versus-empty tolerance, and any key with a non-zero value is gated.
+// THE DOCUMENTED LIMIT, AND IT IS ASYMMETRIC. The gate tests the decoded wire
+// STRUCT with reflect.IsZero, so a key present with a SCALAR zero —
+// `"action":""`, `"manual":false`, `"rule":null` — is indistinguishable from an
+// absent key and is accepted and dropped. An EMPTY COMPOSITE is not:
+// `"outcomes":[]` decodes to a non-nil empty slice and `"retry_policy":{}` to a
+// non-nil pointer, neither of which is a Go zero value, so both ARE refused.
+//
+// Name the asymmetry rather than round it off. "A zero-valued key is accepted"
+// invites the AUTHOR-INTENT reading, under which `[]` carries exactly as little
+// information as `""` and should behave the same way — and it does not. Two
+// careful readers of an earlier wording of this paragraph reached opposite
+// conclusions about it, which is why the word "scalar" is load-bearing here.
+//
+// The accepted half is the reasoning this package already carries for
+// `"rule":null` (see NodeWire.Rule: a literal null "loses nothing: there is no
+// rule in it to lose"). The refused half fails CLOSED, and costs nothing this
+// library writes: omitempty drops a nil slice and a nil pointer, so ToWire never
+// emits `[]` or `{}` in the first place. The exposure is hand-authored input and
+// templated emitters only.
 //
 // OUT OF SCOPE, deliberately, and tracked separately: a key that is legal on the
 // kind but dropped in the wrong COMBINATION (`error_code` without
@@ -66,11 +77,11 @@ import (
 // CONDITIONAL field, one read only inside a branch some other key selects.
 //
 // This is a hand-maintained table and therefore the one drift risk in the
-// design. It is kept to the smallest shape that removes the blindness — FOUR
+// design. It is kept to the smallest shape that removes the blindness — FIVE
 // field entries here, plus ONE type-level entry for *TriggerWire in probeValue
 // (a zero TriggerWire.Kind matches no arm of ReadTrigger's switch, the same
 // blindness one level down) — rather than a kind-by-field matrix. Be exact
-// about the count: it is five overrides in two shapes, not four in one, and
+// about the count: it is six overrides in two shapes, not five in one, and
 // TestClosedVocabularyProbesStayValid pins BOTH shapes, failing if any probe
 // value falls out of its vocabulary or if the generic probe would have done.
 //
@@ -90,8 +101,9 @@ type keyProbe struct {
 }
 
 // closedVocabularyProbes carries the probe overrides, keyed by NodeWire field
-// name. Every entry traces to definition/event/event.go's EndEvent.FromWire,
-// which is the only leaf spec that reads a field conditionally or by vocabulary.
+// name. Four trace to definition/event/event.go's EndEvent.FromWire, the only
+// leaf spec that reads a field conditionally or by an inline vocabulary; the
+// fifth traces to a PARSER, which is a vocabulary spelled differently.
 var closedVocabularyProbes = map[string]keyProbe{
 	// "terminate" and "error" are the whole vocabulary; anything else falls
 	// through the switch and means "a normal end".
@@ -99,6 +111,19 @@ var closedVocabularyProbes = map[string]keyProbe{
 	"TerminationReason":  {companion: endTerminate},
 	"TerminationOutcome": {value: "abort", companion: endTerminate},
 	"ErrorCode":          {companion: endError},
+	// DefRef is listed even though the GENERIC probe currently reveals it, which
+	// makes this the one entry that removes a LATENT dependency rather than a
+	// present blindness. callActivity.FromWire reads def_ref through
+	// ParseQualifier (definition/activity/activity.go: parseOrZero), and a bare
+	// string with no colon parses as an unpinned id — so today the read set holds
+	// def_ref only because "wrkflw-key-probe" happens to be a legal qualifier.
+	// Tighten that parser (require an explicit version, add a charset rule) and
+	// def_ref would silently leave callActivity's read set, at which point every
+	// stored callActivity definition stops loading. An explicitly legal qualifier
+	// deletes the dependency on that accident, and
+	// TestClosedVocabularyProbesStayValid pins the accident itself so a tightened
+	// parser fails there loudly instead of here silently.
+	"DefRef": {value: "other-process:1"},
 }
 
 func endTerminate(w *NodeWire) { w.EndBehavior = "terminate" }
