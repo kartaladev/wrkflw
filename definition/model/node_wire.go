@@ -209,7 +209,38 @@ type definitionWire struct {
 
 // MarshalJSON serializes a ProcessDefinition to JSON using the flat NodeWire
 // form so stored JSONB definitions remain backward-compatible.
+//
+// checkNodeTypes runs first, over this level's nodes only, before either
+// ValidationStrategyFor or toWire touches one. For a kind with a ValidationGet
+// slot (userTask, receiveTask, startEvent, intermediateCatchEvent), both
+// dispatch on the node's concrete type with a bare assertion, so a foreign
+// node — one satisfying Node and claiming a registered kind without being that
+// kind's concrete type — would otherwise panic instead of being refused
+// (#147). BREAKING, for the four gateway kinds only (exclusiveGateway,
+// parallelGateway, inclusiveGateway, eventBasedGateway — see
+// definition/gateway/gateway.go): neither ToWire nor ValidationGet asserts
+// there, so a foreign node under one of them marshalled cleanly before this
+// gate, and now returns ErrForeignNodeType instead. That is success -> error,
+// not panic -> error — the only class of node whose MarshalJSON result changes
+// in that direction. It brings MarshalJSON in line with Validate, which
+// already refused the same node; nothing that Validate rejects becomes newly
+// acceptable here.
+//
+// The flat check is enough for a nested subprocess too: NodeWire.Subprocess is
+// a *ProcessDefinition with its own MarshalJSON, so json.Marshal recurses into
+// it below and re-runs this same gate at every level for free — but that
+// recursion is UNBOUNDED, unlike validateNodeTypes' cycle-guarded walk. A
+// cyclic subprocess pointer graph is pre-existing (Validate itself accepts one
+// today; validateNodeTypes' cycle guard only stops it from being walked twice,
+// not from being marshalled), reachable only through in-process Go
+// construction — never through JSON or YAML input — and not introduced by this
+// gate: json.Marshal aborts the process on it with or without checkNodeTypes
+// in front, since the missing guard is in the check, not in encoding/json's
+// own recursion. Tracked as a follow-up, not fixed here.
 func (d ProcessDefinition) MarshalJSON() ([]byte, error) {
+	if err := checkNodeTypes(d.Nodes); err != nil {
+		return nil, err
+	}
 	dw := definitionWire{
 		ID:            d.ID,
 		Version:       d.Version,

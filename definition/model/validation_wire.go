@@ -79,10 +79,31 @@ func PutValidation(s validate.ValidationStrategy) *validate.ValidationDescriptor
 // registered spec rather than type-switching on concrete node types, since
 // model must not import the leaf node packages (definition/event,
 // definition/activity) that define them.
+//
+// The early return above is unchanged by #147 and runs BEFORE the type check
+// below it: for a kind with no ValidationGet slot, a foreign node returns nil
+// here, exactly as a genuine node of that kind would — there is no validation
+// to skip, so nothing fails open. Only for a kind WITH a ValidationGet slot
+// (userTask, receiveTask, startEvent, intermediateCatchEvent) does this still
+// panic on a foreign node. ErrForeignNodeType's doc comment records why this
+// exported signature is not changed to return an error, and why a nil return
+// for an unrecognized type is ruled out as failing open (#147) — for the kinds
+// that DO assert, that is: this function cannot fail open on a kind that never
+// asserted in the first place. What changed under #147, for the asserting
+// kinds, is the panic's diagnostic only: ValidationGet's own bare assertion
+// would panic with Go's opaque "interface conversion" message, so this checks
+// the type gate first — via checkNodeTypes, the single implementation of the
+// rule — and panics with an error naming ErrForeignNodeType, the node id, and
+// both types, matching the message a caller would see from Validate. Same
+// fail-closed direction, strictly better message, no signature change — an
+// improvement to the residue, not a fix.
 func ValidationStrategyFor(n Node) validate.ValidationStrategy {
 	s, ok := specFor(n.Kind())
 	if !ok || s.ValidationGet == nil {
 		return nil
+	}
+	if err := checkNodeTypes([]Node{n}); err != nil {
+		panic(err)
 	}
 	return s.ValidationGet(n)
 }

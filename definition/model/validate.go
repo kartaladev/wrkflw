@@ -404,20 +404,38 @@ var (
 	//   - Builder.Build, before it reconciles validation strategies (that
 	//     reconciliation dispatches ValidationGet, a bare assertion, so gating
 	//     only Validate left the ordinary authoring path panicking).
-	// Both call the same checkNodeTypes. Those are the two ingresses through
-	// which a definition legitimately enters the module.
+	//   - ProcessDefinition.MarshalJSON (#147), which runs checkNodeTypes over
+	//     its own level's nodes before touching any of them. This one matters
+	//     more than the placement suggests: for any kind with a ValidationGet
+	//     (userTask, receiveTask, ...) the bare assertion that panics is inside
+	//     ValidationStrategyFor, called BEFORE toWire — so gating only toWire
+	//     would have left this ingress open for exactly those kinds. A nested
+	//     subprocess is covered too, for free: NodeWire.Subprocess is a
+	//     *ProcessDefinition with its own MarshalJSON, so json.Marshal recurses
+	//     into it and re-runs this same gate at every level.
+	// All three call the same checkNodeTypes.
 	//
-	// NOT GATED — still panics on a foreign node, by design or by deferral:
+	// NOT GATED — a foreign node is not refused here, by design or by deferral:
 	//   - engine.Step, which does not call Validate: the escape hatch #53
-	//     documented and deliberately left open.
-	//   - ProcessDefinition.MarshalJSON, which calls toWire with no Validate in
-	//     front of it (node_wire.go). Tracked as a follow-up; serializing an
-	//     unvalidated definition is the more likely of the two to be reached.
+	//     documented and deliberately left open. Panics unconditionally on a
+	//     counterfeit.
 	//   - ValidationStrategyFor, exported here, which dispatches ValidationGet on
-	//     whatever node it is handed. It returns no error, so it has no way to
-	//     report a counterfeit; returning nil would fail open and hide one, which
-	//     is worse than the panic. Callers pass nodes from a validated
-	//     definition.
+	//     whatever node it is handed — but only for a kind WITH a ValidationGet
+	//     slot (userTask, receiveTask, startEvent, intermediateCatchEvent) does
+	//     that dispatch, and so the panic, happen at all; for any other kind the
+	//     pre-existing early return above the type check answers nil first, same
+	//     as for a genuine node of that kind, so there is nothing to fail open
+	//     on there. For the kinds that DO assert: it returns no error, so it has
+	//     no way to report a counterfeit; returning nil would fail open and hide
+	//     one, which is worse than the panic (#147). Callers pass nodes from a
+	//     validated definition — true for both in-tree definition stores, the
+	//     only in-tree call site that could have handed it an unvalidated node
+	//     is listed under GATED above and is closed by gating its caller instead
+	//     of changing this exported signature. That guarantee does not extend to
+	//     a consumer supplying its own kernel.DefinitionStore: such a node would
+	//     still fail closed via the panic above, which is why this residue is
+	//     documentable rather than fixable. A consumer calling
+	//     ValidationStrategyFor directly on an asserting kind still panics.
 	//
 	// And what the control is FOR: it hardens against in-process Go construction
 	// and third-party Go extension, not against hostile JSON or YAML. fromWire
