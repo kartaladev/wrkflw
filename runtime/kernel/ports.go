@@ -71,3 +71,30 @@ type InstanceStore interface {
 	Load(ctx context.Context, id string) (engine.InstanceState, Version, error)
 	Commit(ctx context.Context, expected Version, step AppliedStep) (Version, error)
 }
+
+// PendingCommandClearer is an OPTIONAL [InstanceStore] capability: it drops the
+// [engine.InstanceState.PendingCommands] mark from an instance's durable
+// snapshot once the runtime has performed those commands.
+//
+// It is probed by type assertion, exactly like [TxRunner], so an existing
+// InstanceStore implementation keeps compiling and keeps working. A store that
+// does not implement it simply leaves the mark in place until the instance's
+// next committed step overwrites the snapshot; the runtime's recovery sweep
+// stays correct either way, because it re-drives at-least-once and its lease
+// window bounds how often, but such a store re-performs a parked instance's
+// commands once per lease until something else advances it.
+//
+// Three properties are contractual, and each is load-bearing:
+//
+//   - It does NOT advance the optimistic-concurrency token. Clearing the mark
+//     records that work already committed has now been performed; it is not a
+//     new applied step, and bumping the version would invalidate the token the
+//     caller is still holding mid-loop.
+//   - It records NO journal entry and NO outbox event. The journal is the
+//     replay log of applied triggers, and this applies none.
+//   - A STALE expected is not an error. A later step has already rewritten the
+//     snapshot, mark included, so there is nothing to clear and nothing to
+//     report. Implementations return nil.
+type PendingCommandClearer interface {
+	ClearPendingCommands(ctx context.Context, id string, expected Version) error
+}

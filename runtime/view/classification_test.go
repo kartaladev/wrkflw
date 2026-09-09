@@ -50,7 +50,14 @@ var classification = map[string]map[string]disposition{
 		"Timers":          withheld, "ArmedEvents": withheld, "Boundaries": withheld,
 		"EventTriggeredSubprocesses": withheld, "DeferredCompensationThrows": withheld,
 		"RecentCompensationCmdIDs": withheld,
-		"CmdSeq":                   withheld, "TokenSeq": withheld, "TaskSeq": withheld,
+		// Runtime crash-recovery bookkeeping (#110). Withheld and NOT gated:
+		// PendingCommand embeds an action's Input and a signal's Payload — process
+		// variables by another name — so disclosing it under gatedOperations would
+		// leak exactly what gatedVariables exists to fence. A consumer that wants
+		// to know an instance is mid-recovery reads it through operations
+		// tooling, not through the instance projection.
+		"PendingCommands": withheld, "PendingCommandsAt": withheld,
+		"CmdSeq": withheld, "TokenSeq": withheld, "TaskSeq": withheld,
 		"TimerSeq": withheld, "ScopeSeq": withheld, "IncidentSeq": withheld,
 	},
 	"Token": {

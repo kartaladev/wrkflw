@@ -82,7 +82,15 @@ func stateWithSecretEverywhere(t *testing.T) engine.InstanceState {
 		// police them. A zero value here would make its assertion vacuous for that field.
 		DeferredCompensationThrows: []string{secret},
 		RecentCompensationCmdIDs:   []string{secret},
-		CmdSeq:                     7, TokenSeq: 7, TaskSeq: 7,
+		// An EIGHTH variables site, and the reason PendingCommands is withheld
+		// rather than gated: a pending InvokeAction carries the action's Input,
+		// which is process variables under another name.
+		PendingCommands: []engine.PendingCommand{{
+			Kind: engine.PendingInvokeAction, CommandID: "cmd-1", Name: "notify",
+			Input: vars(),
+		}},
+		PendingCommandsAt: now,
+		CmdSeq:            7, TokenSeq: 7, TaskSeq: 7,
 		TimerSeq: 7, ScopeSeq: 7, IncidentSeq: 7,
 	}
 	// ⚠ The compensation cursor's TYPE is unexported, but every one of its fields is

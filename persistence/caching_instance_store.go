@@ -19,6 +19,8 @@ var (
 	_ kernel.InstanceStore = (*CachingInstanceStore)(nil)
 	_ kernel.JournalReader = (*CachingInstanceStore)(nil)
 	_ kernel.TxRunner      = (*CachingInstanceStore)(nil)
+
+	_ kernel.PendingCommandClearer = (*CachingInstanceStore)(nil)
 )
 
 const defaultInstanceCacheTTL = 5 * time.Minute
@@ -370,4 +372,31 @@ func (c *CachingInstanceStore) RunInTx(ctx context.Context, fn func(context.Cont
 	})
 	succeeded = err == nil
 	return err
+}
+
+// ClearPendingCommands forwards the optional [kernel.PendingCommandClearer]
+// capability to the backing store and then EVICTS the cached entry.
+//
+// Forwarding is required, not optional decoration: the driver probes for this
+// capability by type assertion (as it does for [kernel.TxRunner]), so a wrapper
+// that swallowed it would silently degrade every wrapped store to "the mark is
+// never cleared" — and the recovery sweep would then re-perform a parked
+// instance's commands once per lease, forever.
+//
+// Eviction rather than an in-place cache update: the clear rewrites the durable
+// snapshot WITHOUT advancing the version, so a cached entry keyed on that same
+// version would still compare current while carrying the stale mark. Evicting is
+// the only correct move, and it is cheap — a clear happens once per park, not
+// once per step. A backing store without the capability is a documented no-op:
+// nothing was written, so nothing is evicted.
+func (c *CachingInstanceStore) ClearPendingCommands(ctx context.Context, id string, expected kernel.Version) error {
+	clearer, ok := c.backing.(kernel.PendingCommandClearer)
+	if !ok {
+		return nil
+	}
+	if err := clearer.ClearPendingCommands(ctx, id, expected); err != nil {
+		return err
+	}
+	c.evict(ctx, id)
+	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/kartaladev/wrkflw/engine"
 )
@@ -16,6 +17,8 @@ var (
 	_ JournalReader  = (*MemInstanceStore)(nil)
 	_ InstanceLister = (*MemInstanceStore)(nil)
 	_ TxRunner       = (*MemInstanceStore)(nil)
+
+	_ PendingCommandClearer = (*MemInstanceStore)(nil)
 )
 
 // memInstance is the in-memory record for one instance.
@@ -271,4 +274,20 @@ func (m *MemInstanceStore) List(_ context.Context, filter InstanceFilter) (Insta
 		page.TotalCount = count
 	}
 	return page, nil
+}
+
+// ClearPendingCommands implements the optional [PendingCommandClearer]
+// capability: it drops the pending-command mark from id's snapshot when the
+// instance is still at expected, without advancing the version and without
+// touching the journal. A stale expected, or an unknown id, is a no-op.
+func (m *MemInstanceStore) ClearPendingCommands(_ context.Context, id string, expected Version) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	inst, ok := m.instances[id]
+	if !ok || inst.version != expected {
+		return nil
+	}
+	inst.state.PendingCommands = nil
+	inst.state.PendingCommandsAt = time.Time{}
+	return nil
 }

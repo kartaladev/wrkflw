@@ -351,3 +351,60 @@ func WithCompensationStallTimeout(d time.Duration) Option {
 func WithCompensationRetryPolicy(p model.RetryPolicy) Option {
 	return func(driver *ProcessDriver) { driver.compensationRetryPolicy = &p }
 }
+
+// WithInstanceLister wires the instance-enumeration capability the crash-
+// recovery sweep needs (see [ProcessDriver.RecoverPendingCommands]).
+//
+// It is only required when the configured store cannot enumerate instances
+// itself. [kernel.MemInstanceStore] can, and is probed automatically, so the
+// in-memory and test wirings need no option. The SQL path does need it: there
+// the lister is a separate type over the same connection
+// (persistence.NewLister), not the instance store.
+//
+// Without a lister — neither this option nor an enumerable store — the recovery
+// sweep is a documented no-op and the driver behaves exactly as it did before
+// recovery existed.
+func WithInstanceLister(lister kernel.InstanceLister) Option {
+	return func(driver *ProcessDriver) { driver.lister = lister }
+}
+
+// WithRecoveryLease sets how old a pending-command mark must be before a
+// PERIODIC recovery pass ([ProcessDriver.RunRecoverySweep]) re-drives it.
+// Default: defaultRecoveryLease (5m). A non-positive value is ignored.
+//
+// The lease exists to keep a sweep tick from overtaking a perform that is
+// legitimately still running, so it wants to sit comfortably above the longest
+// action the driver will wait on — compare [WithActionTimeout], which bounds
+// exactly that for an in-process invocation.
+//
+// It does NOT apply to the boot pass: a mark found at boot cannot belong to a
+// perform this process is running. See [ProcessDriver.RecoverPendingCommands].
+func WithRecoveryLease(d time.Duration) Option {
+	return func(driver *ProcessDriver) {
+		if d > 0 {
+			driver.recoveryLease = d
+		}
+	}
+}
+
+// WithRecoverySweepInterval sets the gap between
+// [ProcessDriver.RunRecoverySweep] passes. Default:
+// defaultRecoverySweepInterval (1m). A non-positive value is ignored.
+func WithRecoverySweepInterval(d time.Duration) Option {
+	return func(driver *ProcessDriver) {
+		if d > 0 {
+			driver.recoverySweepInterval = d
+		}
+	}
+}
+
+// WithRecoverySweepBatchSize sets the instance page size one recovery pass
+// reads. Default: defaultRecoverySweepBatchSize (100). A non-positive value is
+// ignored; [kernel.NormalizeLimit] clamps the effective page to [1, 200].
+func WithRecoverySweepBatchSize(n int) Option {
+	return func(driver *ProcessDriver) {
+		if n > 0 {
+			driver.recoverySweepBatchSize = n
+		}
+	}
+}

@@ -464,6 +464,38 @@ type InstanceState struct {
 	// Compensating and DeferredCompensationThrows.
 	RecentCompensationCmdIDs []string
 
+	// PendingCommands is RUNTIME bookkeeping, and the ONE field on this struct the
+	// engine neither reads nor writes. It records the commands the runtime
+	// committed with this snapshot and had not yet performed at the instant it
+	// committed them.
+	//
+	// It lives here because the snapshot is the only durable per-instance record
+	// that survives a lost process, and because a command has no other durable
+	// form anywhere in the system: StepResult.Commands is a return value, and the
+	// outbox carries EVENTS derived from commands. Without it, a process that
+	// dies between a step's commit and its perform leaves an instance parked with
+	// nothing that will ever move it (issue #110).
+	//
+	// The engine's own purity is unaffected: Step never inspects it, never
+	// branches on it, and never sets it. cloneState deep-copies it for the same
+	// reason it deep-copies Tasks — PendingCommand carries maps.
+	//
+	// Serialisation follows PendingCancel / PendingFinalStatus: an additive field
+	// on the persisted JSON snapshot, no migration, nil when nothing is pending
+	// so an unmarked snapshot is byte-identical to one written before this
+	// existed.
+	PendingCommands []PendingCommand
+
+	// PendingCommandsAt is the instant PendingCommands was stamped, read as a
+	// LEASE by the runtime's recovery sweep: a mark younger than the lease is
+	// assumed to belong to a live in-process perform and is left alone, so a
+	// long-running action is not invoked twice by a sweep tick that overtakes it.
+	//
+	// Paired with PendingCommands exactly as PendingFinalErr is paired with
+	// PendingFinalStatus: both are written together and cleared together, and the
+	// zero value accompanies an empty PendingCommands.
+	PendingCommandsAt time.Time
+
 	// Deterministic ID counters (never randomness or the clock).
 	CmdSeq   int
 	TokenSeq int

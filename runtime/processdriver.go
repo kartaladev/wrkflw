@@ -163,6 +163,22 @@ type ProcessDriver struct {
 	// consumer manages its lifecycle.
 	ownedScheduler *scheduler.NativeScheduler
 
+	// lister is the OPTIONAL instance-enumeration capability the recovery sweep
+	// needs (see runtime/recovery_sweep.go). nil means "not configured
+	// explicitly" — the sweep then probes the store, which covers
+	// kernel.MemInstanceStore. Set via [WithInstanceLister].
+	lister kernel.InstanceLister
+	// recoveryLease is how old a pending-command mark must be before a PERIODIC
+	// sweep tick re-drives it. It protects a perform that is legitimately still
+	// running; the boot pass ignores it on purpose. Set via [WithRecoveryLease].
+	recoveryLease time.Duration
+	// recoverySweepInterval is the gap between [ProcessDriver.RunRecoverySweep]
+	// passes. Set via [WithRecoverySweepInterval].
+	recoverySweepInterval time.Duration
+	// recoverySweepBatchSize is the instance page size one sweep pass reads.
+	// Set via [WithRecoverySweepBatchSize].
+	recoverySweepBatchSize int
+
 	// gate is the executor-side validation memoizer (runtime/validation.Gate)
 	// used by validateInput to compile-once-and-cache each
 	// validate.ValidationStrategy by its descriptor (kind + schema). Always
@@ -213,6 +229,9 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 		jitter:                  kernel.NewJitterSource(),
 		actionTimeout:           defaultActionTimeout,
 		candidateResolveTimeout: defaultCandidateResolveTimeout,
+		recoveryLease:           defaultRecoveryLease,
+		recoverySweepInterval:   defaultRecoverySweepInterval,
+		recoverySweepBatchSize:  defaultRecoverySweepBatchSize,
 		msgWaiters:              make(map[msgKey]string),
 		gate:                    validation.NewGate(),
 	}
@@ -276,9 +295,16 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 	return driver, nil
 }
 
-// Start starts the driver-owned in-process default scheduler (created by
-// [NewProcessDriver] when no [WithScheduler] was supplied), binding its lifetime
-// to ctx: cancelling ctx stops the scheduler. Start is idempotent.
+// Start performs boot recovery and then starts the driver-owned in-process
+// default scheduler (created by [NewProcessDriver] when no [WithScheduler] was
+// supplied), binding its lifetime to ctx: cancelling ctx stops the scheduler.
+// Start is idempotent.
+//
+// Boot recovery is [ProcessDriver.RecoverPendingCommands]: one pass that
+// re-drives every instance whose most recent committed step carries commands a
+// previous process committed but never performed. It runs whether or not the
+// scheduler is driver-owned, needs an enumeration capability to do anything
+// (see [WithInstanceLister]), and never fails Start — see the call site.
 //
 // It is optional — the owned scheduler also auto-starts on the first timer it is
 // asked to arm — but calling Start lets a consumer tie the scheduler's goroutine
@@ -290,6 +316,23 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 // externally-initiated work with [ErrDriverShuttingDown]; Start does not un-drain a
 // driver (the owned scheduler is already closed and Start surfaces its terminal error).
 func (driver *ProcessDriver) Start(ctx context.Context) error {
+	// Boot recovery (#110) runs FIRST and unconditionally — before the owned-
+	// scheduler early return below, because a driver given a consumer-owned
+	// scheduler needs recovery just as much as one that owns its own.
+	//
+	// Its error is logged rather than returned: recovery is a repair pass over
+	// state a previous process left behind, and refusing to start because that
+	// repair failed would take a partially-degraded deployment offline entirely.
+	// The periodic sweep retries what this pass could not do. Call
+	// [ProcessDriver.RecoverPendingCommands] directly for a caller that wants
+	// the error and the count.
+	if n, err := driver.RecoverPendingCommands(ctx); err != nil {
+		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: boot recovery sweep failed, continuing",
+			append(driver.obs.tel.LogAttrs(ctx), slog.Any("error", err))...)
+	} else if n > 0 {
+		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelInfo, "runtime: boot recovery sweep re-drove committed steps whose commands were never performed",
+			append(driver.obs.tel.LogAttrs(ctx), slog.Int("instances", n))...)
+	}
 	if driver.ownedScheduler == nil {
 		return nil
 	}
@@ -787,6 +830,27 @@ func (driver *ProcessDriver) deliverLoop(
 		}
 		armJobs, cancelKeys := driver.timerJobsFor(stepCtx, def, res.Commands, t, st.InstanceID, armedRecurring)
 
+		// CRASH-RECOVERY MARK (#110). Record, on the state about to be committed,
+		// the commands this step will NOT have performed by the time the commit
+		// lands — everything the perform dispatch at the bottom of this loop is
+		// still to do. A process that dies in the window between the commit below
+		// and that dispatch otherwise leaves a durable snapshot whose commands
+		// nothing will ever run: nothing re-drives a parked action token, and the
+		// only durable record of a command is this one.
+		//
+		// The assignment is unconditional in BOTH directions. Clearing it when the
+		// step has nothing to recover is not a tidy-up: st was cloned from the
+		// LOADED snapshot, which may still carry the previous step's mark, and
+		// leaving that behind would re-drive commands this step has already
+		// superseded.
+		if pending := engine.PendingCommandsFor(res.Commands); len(pending) > 0 {
+			st.PendingCommands = pending
+			st.PendingCommandsAt = driver.clk.Now().UTC()
+		} else {
+			st.PendingCommands = nil
+			st.PendingCommandsAt = time.Time{}
+		}
+
 		appliedStep := kernel.AppliedStep{State: st, Trigger: t, Events: events, CallOutcome: outcome}
 
 		if create {
@@ -906,14 +970,60 @@ func (driver *ProcessDriver) deliverLoop(
 			}
 			next, err := driver.perform(stepCtx, def, st, c)
 			if err != nil {
+				// Leave the mark standing. This is the one in-process failure the
+				// recovery sweep can also see, and dropping it here would trade a
+				// recoverable instance for an unrecoverable one.
 				return st, err
 			}
 			if next != nil {
 				queue = append(queue, next)
 			}
 		}
+
+		// Every command of this step has been performed, so the mark has served
+		// its purpose. Drop it in memory — a following iteration's commit then
+		// persists the cleared value at no extra cost — and durably only when the
+		// queue has drained, because that is the one exit where no further commit
+		// will rewrite this snapshot and the mark would otherwise outlive the work
+		// it describes.
+		if len(st.PendingCommands) > 0 {
+			st.PendingCommands = nil
+			st.PendingCommandsAt = time.Time{}
+			if len(queue) == 0 {
+				driver.clearPendingCommands(ctx, st.InstanceID, token)
+			}
+		}
 	}
 	return st, nil
+}
+
+// clearPendingCommands drops the durable crash-recovery mark for instanceID at
+// token, when the configured store carries the optional
+// [kernel.PendingCommandClearer] capability.
+//
+// The capability is PROBED, not required — the same shape as
+// [kernel.TxRunner]'s probe on the commit path — so every existing InstanceStore
+// implementation keeps working. A store without it degrades to "the mark is
+// cleared by the instance's next committed step", which for a parked instance
+// means the recovery sweep re-performs its commands once per lease window until
+// something advances it. That is the documented cost of not implementing the
+// capability, and it is why both in-tree stores do.
+//
+// A failure here never fails the step: the work it describes has already been
+// performed and committed. The residual is a redundant re-drive, which every
+// path through this mechanism is already required to tolerate.
+func (driver *ProcessDriver) clearPendingCommands(ctx context.Context, instanceID string, token kernel.Version) {
+	clearer, ok := driver.store.(kernel.PendingCommandClearer)
+	if !ok {
+		return
+	}
+	if err := clearer.ClearPendingCommands(ctx, instanceID, token); err != nil {
+		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn,
+			"runtime: could not clear the pending-command mark; the recovery sweep may re-perform this step",
+			append(driver.obs.tel.LogAttrs(ctx),
+				slog.String("instance_id", instanceID),
+				slog.Any("error", err))...)
+	}
 }
 
 // validateInput enforces the target node's validation strategy against an external-input trigger's

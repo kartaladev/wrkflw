@@ -228,6 +228,13 @@ func NewProcessEngine(opts ...Option) (*ProcessEngine, error) {
 			runtime.WithDefinitions(c.reg),
 			runtime.WithClock(c.clk),
 			runtime.WithIDGenerator(c.idgen),
+			// The engine already holds an instance lister for its own read APIs,
+			// and in the durable path it is the ONLY lister there is — a real
+			// durable InstanceStore does not double as one, so without this the
+			// driver's crash-recovery sweep (#110) would silently do nothing on
+			// exactly the deployments that need it. Validation guarantees it is
+			// non-nil by here.
+			runtime.WithInstanceLister(c.lister),
 		}
 		if c.timerStore != nil {
 			dopts = append(dopts, runtime.WithTimerStore(c.timerStore))
