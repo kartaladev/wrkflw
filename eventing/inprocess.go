@@ -156,6 +156,7 @@ type InProcess struct {
 var (
 	_ kernel.OutboxPublisher = (*InProcess)(nil)
 	_ Subscriber             = (*InProcess)(nil)
+	_ Starter                = (*InProcess)(nil)
 	_ io.Closer              = (*InProcess)(nil)
 )
 

@@ -83,10 +83,20 @@ func NewChainHandler(core *chain.Chainer, opts ...Option) Handler {
 }
 
 // Chainer is the turnkey convenience wrapper around NewChainHandler for consumers
-// who do not run their own broker subscriptions. Run subscribes the three terminal
-// topics and drives the chaining core until ctx is cancelled (mirrors
-// runtime.CallNotifier.Run). Consumers who want their own retry/poison/DLQ
-// middleware should mount NewChainHandler on their own subscription instead.
+// who do not run their own broker subscriptions. It subscribes the three terminal
+// topics and drives the chaining core, by either of two entry points:
+//
+//   - [Chainer.Start] takes a [Starter] and returns once all three topics are
+//     LIVE, so a publish that follows cannot be dropped. Prefer it — [NewInProcess]
+//     is a Starter, and this is the only one of the two safe behind an outbox
+//     relay, which publishes each row exactly once.
+//   - [Chainer.Run] takes a bare [Subscriber] and BLOCKS until ctx is cancelled
+//     (mirroring runtime.CallNotifier.Run). It offers no readiness signal,
+//     because Subscribe blocks and registers internally, leaving no edge to
+//     sequence a publish against.
+//
+// Consumers who want their own retry/poison/DLQ middleware should mount
+// NewChainHandler on their own subscription instead.
 type Chainer struct {
 	handler Handler
 	logger  *slog.Logger
@@ -122,7 +132,9 @@ func (c *Chainer) handle(ctx context.Context, env Envelope) error {
 }
 
 // Run subscribes the three terminal topics on sub and drives the chaining core
-// for each delivered envelope until ctx is cancelled.
+// for each delivered envelope until ctx is cancelled. A handler error nacks the
+// envelope (re-delivery); success acks it. Run returns ctx.Err() on cancellation
+// after all three subscriptions have returned.
 //
 // PREFER [Chainer.Start] WHERE sub IS ALSO A [Starter] — [NewInProcess] is. Run
 // takes a bare [Subscriber], whose Subscribe blocks and registers internally, so
@@ -131,11 +143,6 @@ func (c *Chainer) handle(ctx context.Context, env Envelope) error {
 // persistence.Relay — which publishes each outbox row exactly once — that is a
 // lost chain start, not a late one. Run remains the entry point for a broker
 // that offers only Subscribe.
-//
-// Run subscribes the three terminal topics on sub and drives the chaining core
-// for each delivered envelope until ctx is cancelled. A handler error nacks the
-// envelope (re-delivery); success acks it. Run returns ctx.Err() on cancellation
-// after all three subscriptions have returned.
 //
 // Subscribe BLOCKS and owns its own loop, so the three run on goroutines Run
 // starts. The invariant the old channel-based shape got from subscribing
@@ -177,9 +184,20 @@ func (c *Chainer) Run(ctx context.Context, sub Subscriber) error {
 // and it is what makes the turnkey path safe behind persistence.Relay, which
 // publishes each outbox row exactly once and marks it published on a nil return.
 //
-// The returned stop ends all three subscriptions and waits for their delivery
-// loops to finish, so a caller that defers it leaks nothing. It is safe to call
-// more than once.
+// TWO THINGS END THESE SUBSCRIPTIONS, not one. The returned stop ends all three
+// and waits for their delivery loops to finish, so a caller that defers it leaks
+// nothing; it is safe to call more than once. But ctx OWNS THEIR LIFETIME TOO —
+// it is handed to sub.Start, and [InProcess.Start] derives each delivery loop's
+// context from it — so cancelling ctx tears down all three even though Start
+// already returned success.
+//
+// PASS A LIFETIME-SCOPED ctx, NOT A STARTUP-SCOPED ONE. A ctx that ends when
+// wiring finishes silently un-subscribes the chaining path, and downstream that
+// is not quiet: [InProcess] then refuses later publishes to those topics with
+// [ErrNoSubscription], so a relay leaves the outbox rows pending and retries
+// them. Run has the same dependency and states it as "until ctx is cancelled";
+// it is spelled out here because Start returning success makes it easy to
+// assume the subscriptions have outlived their ctx.
 //
 // On a partial failure Start stops the subscriptions it has already started
 // before returning the error, so a failure on one strands none of the others —

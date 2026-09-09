@@ -585,6 +585,34 @@ func (r *recordingStarter) snapshot() (started, stopped []string) {
 	return append([]string(nil), r.started...), append([]string(nil), r.stopped...)
 }
 
+// errStartRefused is the broker error every partial-failure row injects.
+var errStartRefused = errors.New("broker refused the topic")
+
+// requireStartFailed is the outcome assertion every partial-failure row shares:
+// the caller learns which topic failed, and gets NO stop function — a non-nil
+// stop beside an error is a handle to something that never attached.
+func requireStartFailed(t *testing.T, stop func(), err error, failTopic string) {
+	t.Helper()
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errStartRefused, "the broker's error must reach the caller")
+	assert.Contains(t, err.Error(), failTopic, "and it must name the topic that failed")
+	assert.Nil(t, stop,
+		"a failed Start must return no stop function, or a caller has something "+
+			"to call that never attached")
+}
+
+// TestChainerStartStopIsIdempotentAndJoins is deliberately NOT folded into the
+// table below, and this is the documented deviation
+// (.claude/skills/table-test permits splitting where setup diverges): it
+// exercises the SUCCESS path — Start returns, then stop is called twice —
+// whereas every row below exercises a FAILED Start that returns no stop at all.
+// There is no shared "call SUT, assert" shape to fold; the two differ in what
+// they call after Start, not merely in inputs. Measured, and this is the reason
+// that decided it: mutations S1 (only the first topic started), S3 (stop not
+// idempotent) and S4 (stop does not join) are killed by THIS test, and S3 by
+// this test ALONE — folding it in as a row risked losing a discriminator no
+// other row carries.
+//
 // TestChainerStartStrandsNothingOnPartialFailure holds the invariant Start's doc
 // promises and Run documents for itself: a failure on one subscription strands
 // none of the others.
@@ -605,21 +633,49 @@ func TestChainerStartStrandsNothingOnPartialFailure(t *testing.T) {
 
 	type testCase struct {
 		failTopic string
-		// wantStarted is the prefix of chainTopicOrder started before the failure.
-		wantStarted []string
+		// assert reads the outcome of the failed Start plus the topics the Starter
+		// actually saw. Closure form, not want/wantStarted fields, per
+		// .claude/skills/table-test: the rows differ in what they can say — the
+		// first-topic row asserts an ABSENCE where the others assert a matched
+		// pair — and a shared field could not express that difference.
+		assert func(t *testing.T, stop func(), err error, started, stopped []string)
 	}
+
+	// requireUnwound is the assertion the last two rows share: whatever Start
+	// brought up, it must have brought back down before returning the error.
+	requireUnwound := func(t *testing.T, want []string, started, stopped []string) {
+		t.Helper()
+		assert.Equal(t, want, started,
+			"Start must attempt the topics in chainTopicOrder and stop at the failure")
+		assert.ElementsMatch(t, started, stopped,
+			"every subscription Start brought up must be stopped again before it "+
+				"returns the error — otherwise it is live with no way to reach it")
+	}
+
 	cases := map[string]testCase{
 		"the first topic fails: nothing was started, nothing to strand": {
-			failTopic:   eventing.TopicInstanceCompleted,
-			wantStarted: nil,
+			failTopic: eventing.TopicInstanceCompleted,
+			assert: func(t *testing.T, stop func(), err error, started, stopped []string) {
+				requireStartFailed(t, stop, err, eventing.TopicInstanceCompleted)
+				assert.Empty(t, started, "nothing may have been started")
+				assert.Empty(t, stopped, "and so nothing may have needed stopping")
+			},
 		},
 		"the middle topic fails: the one already live must be stopped": {
-			failTopic:   eventing.TopicInstanceFailed,
-			wantStarted: []string{eventing.TopicInstanceCompleted},
+			failTopic: eventing.TopicInstanceFailed,
+			assert: func(t *testing.T, stop func(), err error, started, stopped []string) {
+				requireStartFailed(t, stop, err, eventing.TopicInstanceFailed)
+				requireUnwound(t, []string{eventing.TopicInstanceCompleted}, started, stopped)
+			},
 		},
 		"the last topic fails: both already live must be stopped": {
-			failTopic:   eventing.TopicInstanceTerminated,
-			wantStarted: []string{eventing.TopicInstanceCompleted, eventing.TopicInstanceFailed},
+			failTopic: eventing.TopicInstanceTerminated,
+			assert: func(t *testing.T, stop func(), err error, started, stopped []string) {
+				requireStartFailed(t, stop, err, eventing.TopicInstanceTerminated)
+				requireUnwound(t,
+					[]string{eventing.TopicInstanceCompleted, eventing.TopicInstanceFailed},
+					started, stopped)
+			},
 		},
 	}
 
@@ -627,24 +683,11 @@ func TestChainerStartStrandsNothingOnPartialFailure(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			sentinel := errors.New("broker refused the topic")
-			sub := &recordingStarter{failTopic: tc.failTopic, err: sentinel}
+			sub := &recordingStarter{failTopic: tc.failTopic, err: errStartRefused}
 
 			stop, err := eventing.NewChainerRunner(core).Start(t.Context(), sub)
-
-			require.Error(t, err)
-			assert.ErrorIs(t, err, sentinel, "the broker's error must reach the caller")
-			assert.Contains(t, err.Error(), tc.failTopic, "and it must name the topic that failed")
-			assert.Nil(t, stop,
-				"a failed Start must return no stop function, or a caller has something "+
-					"to call that never attached")
-
 			started, stopped := sub.snapshot()
-			assert.Equal(t, tc.wantStarted, started,
-				"Start must attempt the topics in chainTopicOrder and stop at the failure")
-			assert.ElementsMatch(t, started, stopped,
-				"every subscription Start brought up must be stopped again before it "+
-					"returns the error — otherwise it is live with no way to reach it")
+			tc.assert(t, stop, err, started, stopped)
 		})
 	}
 }
@@ -677,4 +720,115 @@ func TestChainerStartStopIsIdempotentAndJoins(t *testing.T) {
 	_, stoppedAgain := sub.snapshot()
 	assert.Len(t, stoppedAgain, len(chainTopicsForTest),
 		"a second stop must not stop anything twice")
+}
+
+// TestChainerStartStopJoinsTheDeliveryLoops is the precise half of Start's
+// "a caller that defers it leaks nothing" promise, and it is the assertion the
+// goleak test below structurally CANNOT make.
+//
+// MEASURED, and it is why both tests exist: goleak retries for a few hundred
+// milliseconds, so a stop that returns WITHOUT joining is absorbed — the loops
+// end on their own inside the retry window and goleak sees a clean process.
+// Mutation S4 (`go stops[i]()`) survives the goleak test for exactly that
+// reason. The negative window below is what fails on it, immediately: the
+// chaining policy holds the delivery loop inside the handler, so a stop that
+// returned early would return while a loop is provably still running.
+//
+// This mirrors TestInProcessStopJoinsItsDeliveryLoop, which owns the same
+// property one layer down and records the same goleak limitation.
+func TestChainerStartStopJoinsTheDeliveryLoops(t *testing.T) {
+	t.Parallel()
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	policy := func(context.Context, chain.ChainEvent) (chain.SuccessorDecision, bool) {
+		once.Do(func() { close(entered) })
+		<-release // hold the delivery loop inside the handler
+		return chain.SuccessorDecision{}, false
+	}
+	core, err := chain.NewChainer(&capturingStarter{}, policy)
+	require.NoError(t, err)
+
+	bus := eventing.NewInProcess()
+	t.Cleanup(func() { require.NoError(t, bus.Close()) })
+
+	stop, err := eventing.NewChainerRunner(core).Start(t.Context(), bus)
+	require.NoError(t, err)
+
+	require.NoError(t, bus.Publish(t.Context(), kernel.OutboxEvent{
+		Topic: eventing.TopicInstanceCompleted, InstanceID: "p1", Payload: map[string]any{},
+	}))
+	<-entered // a delivery loop is now parked inside the handler
+
+	stopped := make(chan struct{})
+	go func() { stop(); close(stopped) }()
+
+	// A negative window: stop MUST still be blocked while that loop runs. Paid in
+	// full on every green run, so it stays short (docs/agents/test-deadlines.md).
+	select {
+	case <-stopped:
+		t.Fatal("stop returned while a chaining delivery loop was still inside the handler")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+	select {
+	case <-stopped:
+	case <-time.After(3 * time.Second):
+		t.Fatal("stop did not return after the delivery loops finished")
+	}
+}
+
+// TestChainerStartLeaksNoGoroutinesOverARealBus closes the one gap the round-1
+// review named as its own weakest clear, and it is worth stating why the
+// existing coverage did not reach it.
+//
+// Every other Start test drives a recordingStarter, whose stop functions have NO
+// DELIVERY LOOP to join. Those tests therefore prove that Start CALLS its
+// children's stops synchronously — they cannot see a failure to JOIN a real
+// loop, because there is no loop. Start's doc promises "a caller that defers it
+// leaks nothing", and over a real bus that promise is delegated entirely to
+// InProcess.Start. This test is the end-to-end half.
+//
+// Deliberately NOT parallel: goleak reads the whole process's goroutine set, and
+// Go runs a package's sequential tests before releasing its parallel ones, so
+// this sees only what it created. It mirrors TestChainerRunLeaksNoGoroutines,
+// which covers Run only.
+func TestChainerStartLeaksNoGoroutinesOverARealBus(t *testing.T) {
+	ignore := goleak.IgnoreCurrent()
+	defer goleak.VerifyNone(t, ignore)
+
+	policy := func(context.Context, chain.ChainEvent) (chain.SuccessorDecision, bool) {
+		return chain.SuccessorDecision{}, false
+	}
+	core, err := chain.NewChainer(&capturingStarter{}, policy)
+	require.NoError(t, err)
+
+	bus := eventing.NewInProcess()
+	cr := eventing.NewChainerRunner(core)
+
+	stop, err := cr.Start(t.Context(), bus)
+	require.NoError(t, err)
+
+	// Deliver something first, so the loops are demonstrably running rather than
+	// parked having never started — a leak check over three loops that never
+	// woke would be the weaker probe.
+	require.NoError(t, bus.Publish(t.Context(), kernel.OutboxEvent{
+		Topic: eventing.TopicInstanceCompleted, InstanceID: "p1", Payload: map[string]any{},
+	}))
+
+	stop()
+
+	// Close is registered as CLEANUP, not deferred, and the ordering is the whole
+	// point: deferred functions run before t.Cleanup ones, so goleak's VerifyNone
+	// (deferred first, therefore last of the defers) observes the process while
+	// the bus is still OPEN — i.e. with nothing but stop() having ended the loops.
+	//
+	// Closing the bus inline here instead would make this test unable to fail:
+	// Close ends every subscription itself, so a stop that never joined would be
+	// covered for by Close and goleak would see a clean process. Measured — that
+	// is exactly what the first version of this test did, and mutation S4 (stop
+	// returns without joining) survived it.
+	t.Cleanup(func() { require.NoError(t, bus.Close()) })
 }

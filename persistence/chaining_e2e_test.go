@@ -308,7 +308,7 @@ func TestChainingE2E(t *testing.T) {
 			_, err = d.relay.DrainOnce(ctx)
 			require.NoError(t, err)
 
-			// Allow the ChainerRunner goroutine time to process the event.
+			// Allow the chaining subscriptions time to process the event.
 			time.Sleep(200 * time.Millisecond)
 
 			// No successor must have been created.

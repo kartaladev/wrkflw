@@ -90,6 +90,14 @@ type Subscriber interface {
 // the subscription is live re-creates the very false guarantee it exists to
 // remove.
 //
+// CONTRACT: on a non-nil error, return a NIL stop. A implementation that
+// returned both would leave a live subscription its caller has no handle for —
+// the caller has an error and is entitled to discard everything else, so a live
+// stop it never sees is a leak by construction. [Chainer.Start] relies on this
+// when it unwinds a partial failure. No guard enforces it here: an in-tree
+// implementation cannot exercise the branch, and an untestable defensive branch
+// is worse than a stated contract.
+//
 // [NewInProcess] implements it via [InProcess.Start].
 type Starter interface {
 	Start(ctx context.Context, topic string, h Handler) (stop func(), err error)
