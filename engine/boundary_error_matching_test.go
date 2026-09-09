@@ -825,16 +825,26 @@ func TestBoundaryRoutingUnderCallerChosenKeyNames(t *testing.T) {
 		{
 			// The second barrier, and the one that is real. The attacker supplies
 			// NAMES, so the sharp question is whether a caller-chosen key can
-			// change what a definition's program MEANS. expr's builtins are not
-			// shadowable by env keys, so `len(...)` still calls len even with a
-			// process variable called "len" in scope.
-			name: "DOES NOT REPRODUCE: a process variable cannot shadow an expr builtin",
-			expr: `len(_error) > 3`,
+			// change what a definition's program MEANS in CALL position. It
+			// cannot, under this package's compile config — see the comment on
+			// env["_error"] in step_errors.go, and the 71-builtin sweep in
+			// TestBuiltinsAreNotShadowableByEnvKeys, which is what carries the
+			// general claim. This case pins the reachable instance of it.
+			//
+			// The `plantReached` conjunct is load-bearing and must not be
+			// dropped. Without it the case asserts only that len() is the
+			// builtin, which is equally true when the planted variables never
+			// reach the env at all — so it would pass over an env it had no
+			// effect on, which is the vacuity this group keeps having to reject.
+			// Now the case fails unless the plant demonstrably arrived.
+			name: "DOES NOT REPRODUCE: a process variable cannot shadow an expr builtin in call position",
+			expr: `len(_error) > 3 && plantReached == "yes"`,
 			keys: []string{"harmless"},
-			vars: map[string]any{"len": "pwned", "lower": "pwned", "nil": "pwned"},
+			vars: map[string]any{"len": "pwned", "lower": "pwned", "plantReached": "yes"},
 			assert: func(t *testing.T, r engine.StepResult) {
 				// len() must still be the builtin: the message is far longer than
-				// 3, so a shadowed len returning anything else would flip this.
+				// 3, so a shadowed len returning "pwned" would make len(_error)
+				// a type error and the boundary would not catch.
 				assertCaught(t, r)
 			},
 		},
@@ -842,9 +852,9 @@ func TestBoundaryRoutingUnderCallerChosenKeyNames(t *testing.T) {
 			// at-limit refuse beside the shadowing accept, so it is not satisfied
 			// by a predicate that is true whatever len does.
 			name: "at-limit for shadowing: the same predicate is false when the builtin says so",
-			expr: `len(_error) > 100000`,
+			expr: `len(_error) > 100000 && plantReached == "yes"`,
 			keys: []string{"harmless"},
-			vars: map[string]any{"len": "pwned"},
+			vars: map[string]any{"len": "pwned", "plantReached": "yes"},
 			assert: func(t *testing.T, r engine.StepResult) {
 				assertPropagated(t, r)
 			},

@@ -65,12 +65,28 @@ func boundaryErrorMatches(n event.BoundaryEvent, vars map[string]any, cause erro
 		//     name shaped like expr source is never parsed as source. Every
 		//     expr.Compile site in the tree takes definition- or config-authored
 		//     text; none compiles a runtime value.
-		//  2. NO SHADOWING. The attacker supplies NAMES, so the sharp attack is
-		//     whether a caller-chosen key can change what a definition's program
-		//     MEANS. It cannot: expr's builtins are not shadowable by env keys,
-		//     and `len(order) > 3`, `lower(name)`, `trim(x)` and `x == nil`
-		//     evaluate byte-identically with "len"/"lower"/"trim"/"nil" planted
-		//     in the environment as strings or as functions.
+		//  2. NO SHADOWING IN CALL POSITION — but read the scope, because this
+		//     one is a property of the COMPILE CONFIGURATION and not of expr.
+		//     The attacker supplies NAMES, so the sharp attack is whether a
+		//     caller-chosen key can change what a definition's program MEANS. In
+		//     call and operator position it cannot: expr resolves a name to a
+		//     builtin from the source token alone, and its only override
+		//     (conf.Config.IsOverridden) consults the map handed to expr.Env,
+		//     which internal/expreval never passes. Swept over all 71 builtins in
+		//     TestBuiltinsAreNotShadowableByEnvKeys; 0 shadowable.
+		//
+		//     ⚠ ONE OPTION DELETES IT, and nothing else would fail:
+		//     expr.Compile(`len(xs)`, AllowUndefinedVariables()) gives 2, while
+		//     adding expr.Env(vars) gives "PWNED" for the same env. expr.Env is
+		//     the idiomatic way to get type checking, so that is a plausible
+		//     future improvement; it would also make expreval's program cache
+		//     unsound, since programs are keyed by the code string alone. The
+		//     sweep above exists to fail when it happens.
+		//
+		//     BARE-IDENTIFIER POSITION IS NOT COVERED. Most names resolve from
+		//     the environment when used as a bare value, so a predicate like
+		//     `count > 5` reads an ordinary caller-writable variable. That is the
+		//     data-influence half above, not a barrier against it.
 		//
 		// ⚠ strconv.Quote is NOT one of them, and this comment used to say it
 		// was. It escapes quotes inside a key but wraps them in two unescaped "
