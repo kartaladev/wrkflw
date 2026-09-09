@@ -101,6 +101,26 @@ var knownOpenInternalLeaks = map[string]string{
 		"\"bring your own dialect.Locker\", which no consumer can name",
 }
 
+// intentionalCapabilitySeals are exported signatures that name an internal type
+// ON PURPOSE. They are the opposite of knownOpenInternalLeaks: not debt to be
+// paid down, but the mechanism working as designed, and "fixing" one by the
+// remedy this guard suggests would break the thing it protects.
+//
+// A capability seal is an internal token type in an exported signature, used so
+// that the function is callable from inside its own subtree and nowhere else.
+// Being uncallable by a consumer is the objective, not the accident.
+//
+// Keyed "<path>:<symbol>", valued with the internal import path the signature is
+// expected to name. BOTH must match for the exemption to apply. Keying on the
+// symbol alone would fail open: a future, unrelated internal type added to the
+// same signature would inherit the exemption silently. It is also SELF-CLEANING
+// like the map above — an entry matching no offender fails the test.
+var intentionalCapabilitySeals = map[string]string{
+	// The kindreg.Token parameter is what makes model.RegisterKind uncallable by
+	// a consumer, which is the point of it: Node is a closed set (Refs #46).
+	"definition/model/registry.go:RegisterKind": "github.com/kartaladev/wrkflw/definition/internal/kindreg",
+}
+
 // TestNoExportedSignatureNamesAnInternalType walks every non-internal,
 // non-test Go file in the module and fails if a consumer-reachable exported
 // signature names a type from an internal/ package.
@@ -122,6 +142,7 @@ func TestNoExportedSignatureNamesAnInternalType(t *testing.T) {
 
 	var offenders []string
 	seenKnown := make(map[string]bool, len(knownOpenInternalLeaks))
+	seenSeal := make(map[string]bool, len(intentionalCapabilitySeals))
 
 	require.NoError(t, filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -173,6 +194,13 @@ func TestNoExportedSignatureNamesAnInternalType(t *testing.T) {
 						seenKnown[key] = true
 						return true
 					}
+					// A deliberate capability seal is exempt only when it names
+					// the exact internal package it was sanctioned for; any other
+					// internal type at the same symbol is still an offender.
+					if want, sealed := intentionalCapabilitySeals[key]; sealed && want == importPath {
+						seenSeal[key] = true
+						return true
+					}
 					offenders = append(offenders, fmt.Sprintf("%s:%d %s names %s.%s (%s)",
 						rel, fset.Position(fn.Pos()).Line, fn.Name.Name,
 						pkgIdent.Name, sel.Sel.Name, importPath))
@@ -184,8 +212,19 @@ func TestNoExportedSignatureNamesAnInternalType(t *testing.T) {
 	}))
 
 	assert.Empty(t, offenders,
-		"an exported signature naming an internal/ type is uncallable by a consumer; "+
-			"give the package its own Option type and keep the internal one in an unexported field")
+		"an exported signature naming an internal/ type is uncallable by a consumer. "+
+			"If that is accidental, give the package its own Option type and keep the internal "+
+			"one in an unexported field. If it is deliberate — an internal capability token, "+
+			"whose whole point is that consumers cannot call the function — do NOT apply that "+
+			"remedy: it would unseal what the token seals. Add the symbol to "+
+			"intentionalCapabilitySeals with the internal import path it is sanctioned for")
+
+	for key, want := range intentionalCapabilitySeals {
+		assert.True(t, seenSeal[key],
+			"intentionalCapabilitySeals entry %q (expecting %s) no longer matches any offender — "+
+				"the seal was removed or now names a different internal package; delete the entry "+
+				"or correct its path, or the next leak at that symbol ships unnoticed", key, want)
+	}
 
 	for key := range knownOpenInternalLeaks {
 		assert.True(t, seenKnown[key],
