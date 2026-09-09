@@ -413,3 +413,268 @@ var chainTopicsForTest = []string{
 	eventing.TopicInstanceFailed,
 	eventing.TopicInstanceTerminated,
 }
+
+// gatedStarter wraps a Starter and holds every registration until release is
+// closed. It is the whole of the readiness probe: with it, a caller that only
+// *thinks* it has subscribed is separated from one that has, because the
+// registration provably has not happened until the test allows it.
+//
+// It deliberately implements Start only. A Subscriber-shaped gate cannot express
+// the same thing: Subscribe blocks and registers internally, so there is no
+// moment at which the caller can be said to have finished registering.
+type gatedStarter struct {
+	inner   eventing.Starter
+	release chan struct{}
+}
+
+func (g *gatedStarter) Start(ctx context.Context, topic string, h eventing.Handler) (func(), error) {
+	<-g.release
+	return g.inner.Start(ctx, topic, h)
+}
+
+// gatedSubscriber is the same gate over the blocking Subscriber shape, for the
+// Run half of the comparison.
+type gatedSubscriber struct {
+	inner   eventing.Subscriber
+	release chan struct{}
+}
+
+func (g *gatedSubscriber) Subscribe(ctx context.Context, topic string, h eventing.Handler) error {
+	<-g.release
+	return g.inner.Subscribe(ctx, topic, h)
+}
+
+// TestChainerStartIsReadyBeforeItReturns is THE RED for #134, and it is a
+// genuine one: it fails against Run and passes against Start.
+//
+// The turnkey chaining path is driven by persistence.Relay, which publishes each
+// outbox row EXACTLY ONCE and marks it published on a nil return. So the
+// republish-until-it-lands loop that every other test in this file uses is not
+// available to a real deployment — it is a test affordance papering over a
+// missing readiness edge. This test therefore publishes ONCE, with no loop, and
+// asserts the successor starts anyway.
+//
+// The gate is what makes it deterministic rather than a race that usually wins:
+// registration cannot happen until the test closes release, and the test closes
+// it only AFTER publishing. Against Run the envelope is provably already gone;
+// against Start the publish cannot even be reached until all three topics are
+// live.
+//
+// MEASURED BLIND SPOT, so nobody reads this test as covering more than it does:
+// it publishes to chainTopicOrder[0], so a Start that brought up only the FIRST
+// topic and returned would pass it. That mutation was run, and it is
+// TestChainerStartStopIsIdempotentAndJoins and the partial-failure rows that
+// catch it, by asserting over which topics the Starter actually saw. "All three
+// are live" is asserted there, not here; this test asserts only that whatever
+// Start brought up was live before it returned.
+func TestChainerStartIsReadyBeforeItReturns(t *testing.T) {
+	t.Parallel()
+
+	newStack := func(t *testing.T) (*eventing.Chainer, *eventing.InProcess, kernel.InstanceStore) {
+		t.Helper()
+		clk := clockwork.NewFakeClock()
+		store, err := kernel.NewMemInstanceStore()
+		require.NoError(t, err)
+		driver, err := runtime.NewProcessDriver(runtime.WithInstanceStore(store), runtime.WithClock(clk))
+		require.NoError(t, err)
+		succ := &model.ProcessDefinition{
+			ID: "fulfillment", Version: 1,
+			Nodes: []model.Node{event.NewStart("s"), event.NewEnd("e")},
+			Flows: []flow.SequenceFlow{{ID: "f", Source: "s", Target: "e"}},
+		}
+		policy := func(_ context.Context, ev chain.ChainEvent) (chain.SuccessorDecision, bool) {
+			return chain.SuccessorDecision{Def: succ, Vars: ev.Result}, true
+		}
+		core, err := chain.NewChainer(driver, policy,
+			chain.WithChainLinks(kernel.NewMemChainLinkStore()), chain.WithClock(clk))
+		require.NoError(t, err)
+		bus := eventing.NewInProcess()
+		t.Cleanup(func() { require.NoError(t, bus.Close()) })
+		return eventing.NewChainerRunner(core), bus, store
+	}
+
+	// publishOnce is the relay's shape: one publish, no retry, nil means done.
+	publishOnce := func(t *testing.T, bus *eventing.InProcess, id string) {
+		t.Helper()
+		require.NoError(t, bus.Publish(t.Context(), kernel.OutboxEvent{
+			Topic: eventing.TopicInstanceCompleted, InstanceID: id,
+			Payload: map[string]any{"orderID": "o-9"},
+		}))
+	}
+
+	t.Run("Start returns only once every topic is live, so a single publish lands", func(t *testing.T) {
+		t.Parallel()
+
+		cr, bus, store := newStack(t)
+		gate := &gatedStarter{inner: bus, release: make(chan struct{})}
+		close(gate.release) // Start must do its own sequencing; the gate is open
+
+		stop, err := cr.Start(t.Context(), gate)
+		require.NoError(t, err)
+		t.Cleanup(stop)
+
+		publishOnce(t, bus, "p1")
+
+		require.Eventually(t, func() bool {
+			_, _, err := store.Load(t.Context(), "p1-next-completed")
+			return err == nil
+		}, 3*time.Second, 5*time.Millisecond,
+			"a single relay-style publish after Start must reach the chainer; "+
+				"Start returning means every terminal topic is live")
+	})
+
+	t.Run("Run has no readiness edge, so the same single publish is lost", func(t *testing.T) {
+		t.Parallel()
+
+		cr, bus, store := newStack(t)
+		gate := &gatedSubscriber{inner: bus, release: make(chan struct{})}
+
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { done <- cr.Run(ctx, gate) }()
+
+		// The gate proves the registration has NOT happened. This is what makes
+		// the loss deterministic rather than a race the test usually wins.
+		publishOnce(t, bus, "p2")
+		close(gate.release)
+
+		// A negative window: the envelope was dropped at fanout, so no amount of
+		// waiting produces the successor. Paid on every green run, so it is short
+		// (see docs/agents/test-deadlines.md).
+		require.Never(t, func() bool {
+			_, _, err := store.Load(t.Context(), "p2-next-completed")
+			return err == nil
+		}, 300*time.Millisecond, 25*time.Millisecond,
+			"CHARACTERISATION of the defect #134 names: Run offers no edge to "+
+				"sequence a publish against, so a relay-style single publish is lost")
+
+		cancel()
+		<-done
+	})
+}
+
+// recordingStarter is a Starter double that records which topics were started
+// and which of the returned stop functions were called, and can fail one topic.
+type recordingStarter struct {
+	failTopic string
+	err       error
+
+	mu      sync.Mutex
+	started []string
+	stopped []string
+}
+
+func (r *recordingStarter) Start(_ context.Context, topic string, _ eventing.Handler) (func(), error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if topic == r.failTopic {
+		return nil, r.err
+	}
+	r.started = append(r.started, topic)
+	return func() {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.stopped = append(r.stopped, topic)
+	}, nil
+}
+
+func (r *recordingStarter) snapshot() (started, stopped []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.started...), append([]string(nil), r.stopped...)
+}
+
+// TestChainerStartStrandsNothingOnPartialFailure holds the invariant Start's doc
+// promises and Run documents for itself: a failure on one subscription strands
+// none of the others.
+//
+// Start establishes it BY CONSTRUCTION rather than by cancellation — it stops
+// what it has already started before returning — so the failure mode it guards
+// against is a leaked live subscription on a bus the caller believes it never
+// successfully attached to, with no stop function to reach it by, since Start
+// returned nil.
+func TestChainerStartStrandsNothingOnPartialFailure(t *testing.T) {
+	t.Parallel()
+
+	policy := func(context.Context, chain.ChainEvent) (chain.SuccessorDecision, bool) {
+		return chain.SuccessorDecision{}, false
+	}
+	core, err := chain.NewChainer(&capturingStarter{}, policy)
+	require.NoError(t, err)
+
+	type testCase struct {
+		failTopic string
+		// wantStarted is the prefix of chainTopicOrder started before the failure.
+		wantStarted []string
+	}
+	cases := map[string]testCase{
+		"the first topic fails: nothing was started, nothing to strand": {
+			failTopic:   eventing.TopicInstanceCompleted,
+			wantStarted: nil,
+		},
+		"the middle topic fails: the one already live must be stopped": {
+			failTopic:   eventing.TopicInstanceFailed,
+			wantStarted: []string{eventing.TopicInstanceCompleted},
+		},
+		"the last topic fails: both already live must be stopped": {
+			failTopic:   eventing.TopicInstanceTerminated,
+			wantStarted: []string{eventing.TopicInstanceCompleted, eventing.TopicInstanceFailed},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			sentinel := errors.New("broker refused the topic")
+			sub := &recordingStarter{failTopic: tc.failTopic, err: sentinel}
+
+			stop, err := eventing.NewChainerRunner(core).Start(t.Context(), sub)
+
+			require.Error(t, err)
+			assert.ErrorIs(t, err, sentinel, "the broker's error must reach the caller")
+			assert.Contains(t, err.Error(), tc.failTopic, "and it must name the topic that failed")
+			assert.Nil(t, stop,
+				"a failed Start must return no stop function, or a caller has something "+
+					"to call that never attached")
+
+			started, stopped := sub.snapshot()
+			assert.Equal(t, tc.wantStarted, started,
+				"Start must attempt the topics in chainTopicOrder and stop at the failure")
+			assert.ElementsMatch(t, started, stopped,
+				"every subscription Start brought up must be stopped again before it "+
+					"returns the error — otherwise it is live with no way to reach it")
+		})
+	}
+}
+
+// TestChainerStartStopIsIdempotentAndJoins pins the rest of Start's stop
+// contract: it ends every subscription, waits for the delivery loops, and is
+// safe to call more than once.
+func TestChainerStartStopIsIdempotentAndJoins(t *testing.T) {
+	t.Parallel()
+
+	policy := func(context.Context, chain.ChainEvent) (chain.SuccessorDecision, bool) {
+		return chain.SuccessorDecision{}, false
+	}
+	core, err := chain.NewChainer(&capturingStarter{}, policy)
+	require.NoError(t, err)
+
+	sub := &recordingStarter{}
+	stop, err := eventing.NewChainerRunner(core).Start(t.Context(), sub)
+	require.NoError(t, err)
+
+	started, stopped := sub.snapshot()
+	assert.Equal(t, chainTopicsForTest, started, "all three terminal topics must be live")
+	assert.Empty(t, stopped, "and none stopped while Start succeeded")
+
+	stop()
+	_, stopped = sub.snapshot()
+	assert.ElementsMatch(t, chainTopicsForTest, stopped, "stop must end every subscription")
+
+	assert.NotPanics(t, stop, "stop must be safe to call more than once")
+	_, stoppedAgain := sub.snapshot()
+	assert.Len(t, stoppedAgain, len(chainTopicsForTest),
+		"a second stop must not stop anything twice")
+}

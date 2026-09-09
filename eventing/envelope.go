@@ -74,3 +74,23 @@ type Handler func(ctx context.Context, env Envelope) error
 type Subscriber interface {
 	Subscribe(ctx context.Context, topic string, h Handler) error
 }
+
+// Starter is the READINESS half of a [Subscriber]: it registers a subscription
+// and returns only once that subscription is LIVE, so a publish issued after it
+// returns cannot be dropped for want of a subscriber. The returned stop function
+// ends the subscription and waits for its delivery loop to finish.
+//
+// This is a separate interface rather than a method on [Subscriber] because the
+// two express different things and not every broker can offer both. Subscribe
+// BLOCKS and registers somewhere inside itself, so a caller has no edge to
+// sequence against — which is precisely why [Chainer.Run] cannot promise
+// readiness and [Chainer.Start] can. A broker whose consumer registration is
+// synchronous can implement this; one whose registration completes
+// asynchronously should not pretend to, because a Starter that returns before
+// the subscription is live re-creates the very false guarantee it exists to
+// remove.
+//
+// [NewInProcess] implements it via [InProcess.Start].
+type Starter interface {
+	Start(ctx context.Context, topic string, h Handler) (stop func(), err error)
+}

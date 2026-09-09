@@ -5,7 +5,7 @@
 //
 //	Store.Commit (writes outbox row)
 //	  → relay.DrainOnce (reads outbox, publishes via the in-process pub/sub bus)
-//	    → eventing.Chainer.Run (subscribes; calls runtime.Chainer.Handle)
+//	    → eventing.Chainer.Start (subscribes; calls runtime.Chainer.Handle)
 //	      → runtime.Chainer.Handle (evaluates policy, starts successor via driver.Drive, records ChainLink)
 //
 // It exercises this seam against a real database.
@@ -122,9 +122,17 @@ func forEachChainingDialect(t *testing.T, fn func(t *testing.T, d chainingDialec
 
 // ---- shared wiring ---------------------------------------------------------------
 
-// wireChainerRunner builds the full chaining stack over d and starts the
-// ChainerRunner goroutine. It registers cleanup via t.Cleanup. The returned
-// driver is ready to call Run against.
+// wireChainerRunner builds the full chaining stack over d and brings the three
+// terminal-topic subscriptions up with Chainer.Start, which returns only once
+// all three are LIVE. It registers cleanup via t.Cleanup. The returned driver is
+// ready to call Run against.
+//
+// The readiness edge is why this helper no longer starts a goroutine and no
+// longer needs a timeout to bound it. It used to `go cr.Run(...)` and hope the
+// subscriptions existed before the scenarios below called DrainOnce EXACTLY
+// ONCE; nothing enforced that, and a lost envelope surfaced as an
+// awaitChainedSuccessor timeout far from its cause. Start removes the race
+// rather than widening a budget around it.
 func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, defSB *model.ProcessDefinition) *runtime.ProcessDriver {
 	t.Helper()
 
@@ -147,18 +155,12 @@ func wireChainerRunner(t *testing.T, d chainingDialect, defPA, defPB, defSA, def
 	require.NoError(t, err)
 	cr := eventing.NewChainerRunner(core)
 
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		_ = cr.Run(ctx, d.bus)
-	}()
-
-	t.Cleanup(func() {
-		cancel()
-		<-done
-	})
+	// Returns only once every terminal topic is live, so the DrainOnce below
+	// cannot outrun the subscriptions. stop ends all three and joins their
+	// delivery loops.
+	stop, err := cr.Start(t.Context(), d.bus)
+	require.NoError(t, err)
+	t.Cleanup(stop)
 
 	return driver
 }

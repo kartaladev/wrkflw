@@ -122,6 +122,17 @@ func (c *Chainer) handle(ctx context.Context, env Envelope) error {
 }
 
 // Run subscribes the three terminal topics on sub and drives the chaining core
+// for each delivered envelope until ctx is cancelled.
+//
+// PREFER [Chainer.Start] WHERE sub IS ALSO A [Starter] — [NewInProcess] is. Run
+// takes a bare [Subscriber], whose Subscribe blocks and registers internally, so
+// Run has no edge at which the subscriptions are known to be live and can offer
+// the caller no readiness signal. A publish that races it is dropped, and behind
+// persistence.Relay — which publishes each outbox row exactly once — that is a
+// lost chain start, not a late one. Run remains the entry point for a broker
+// that offers only Subscribe.
+//
+// Run subscribes the three terminal topics on sub and drives the chaining core
 // for each delivered envelope until ctx is cancelled. A handler error nacks the
 // envelope (re-delivery); success acks it. Run returns ctx.Err() on cancellation
 // after all three subscriptions have returned.
@@ -158,4 +169,46 @@ func (c *Chainer) Run(ctx context.Context, sub Subscriber) error {
 		return err
 	}
 	return ctx.Err()
+}
+
+// Start registers the three terminal topics on sub and returns only once ALL
+// THREE are live, so a publish issued after it returns cannot be dropped for
+// want of a subscriber. That is the readiness edge [Chainer.Run] cannot offer,
+// and it is what makes the turnkey path safe behind persistence.Relay, which
+// publishes each outbox row exactly once and marks it published on a nil return.
+//
+// The returned stop ends all three subscriptions and waits for their delivery
+// loops to finish, so a caller that defers it leaks nothing. It is safe to call
+// more than once.
+//
+// On a partial failure Start stops the subscriptions it has already started
+// before returning the error, so a failure on one strands none of the others —
+// the same invariant Run documents above, established here by construction
+// rather than by cancellation. TestChainerStartStrandsNothingOnPartialFailure
+// holds it.
+//
+// DO NOT CALL stop FROM INSIDE A CHAINING HANDLER. Waiting for the loops to
+// finish means waiting for the handler to return, so a handler that stops its
+// own subscription deadlocks itself — see [InProcess.Start], which owns the same
+// hazard.
+func (c *Chainer) Start(ctx context.Context, sub Starter) (stop func(), err error) {
+	stops := make([]func(), 0, len(chainTopicOrder))
+	stopAll := func() {
+		// Reverse order, so teardown mirrors setup. Each stop joins its own loop.
+		for i := len(stops) - 1; i >= 0; i-- {
+			stops[i]()
+		}
+	}
+
+	for _, topic := range chainTopicOrder {
+		topicStop, err := sub.Start(ctx, topic, c.handle)
+		if err != nil {
+			stopAll()
+			return nil, fmt.Errorf("workflow-eventing: chain start %q: %w", topic, err)
+		}
+		stops = append(stops, topicStop)
+	}
+
+	var once sync.Once
+	return func() { once.Do(stopAll) }, nil
 }
