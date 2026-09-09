@@ -910,15 +910,27 @@ func TestTrigger_NextMonthlyScanJumpsWholeGridStrides(t *testing.T) {
 //	1               7                 2026-08-24            true
 //	2               14                2026-08-31            true
 //	MaxUint32       30064771065       82316573-12-27        true
-//	MaxUint64/7     -2                zero                  false
-//	MaxUint64       -7                2026-08-10            TRUE   ← 10 days in the PAST
+//	MaxUint/7       -2                zero                  false
+//	MaxUint         -7                2026-08-10            TRUE   ← 10 days in the PAST
 //
-// The MaxUint64 row is the defect: a next fire strictly BEFORE `after`,
+// Those numeric columns are a 64-bit measurement, where math.MaxUint is
+// math.MaxUint64. On a 32-bit platform math.MaxUint is 4294967295, which moves
+// two of the three products and not the third: MaxUint32 becomes -7 and
+// MaxUint/7 becomes -4, while the MaxUint row's product is -7 on BOTH word
+// sizes. It also collapses two rows into one interval, since MaxUint32 and
+// MaxUint are the same value there.
+//
+// No row's assertion moves either way, because what the rows assert is
+// post-clamp behaviour: maxSchedulableInterval is 1<<20 = 1048576, and every
+// interval from the MaxUint32 row down still exceeds it on either word size, so
+// each is refused.
+//
+// The MaxUint row is the defect: a next fire strictly BEFORE `after`,
 // reported ok=true. A past next-run accepted as valid is the never-due /
 // past-due-arm class this package exists to refuse; see maxSchedulableInterval
 // for what gocron does when handed one.
 //
-// ⚠ Asserting only `ok` would pass today on the MaxUint64 row — it IS true.
+// ⚠ Asserting only `ok` would pass today on the MaxUint row — it IS true.
 // Every ok=true row therefore also asserts `!next.Before(after)`.
 func TestTrigger_NextCalendarIntervalCannotOverflow(t *testing.T) {
 	t.Parallel()
@@ -975,25 +987,25 @@ func TestTrigger_NextCalendarIntervalCannotOverflow(t *testing.T) {
 			assert: refused,
 		},
 		{
-			name:   "weekly MaxUint64/7 is refused",
-			trig:   scheduler.Weekly(math.MaxUint64/7, []time.Weekday{time.Monday}),
+			name:   "weekly MaxUint/7 is refused",
+			trig:   scheduler.Weekly(math.MaxUint/7, []time.Weekday{time.Monday}),
 			assert: refused,
 		},
 		{
 			// THE defect row: unclamped this returns 2026-08-10 (ten days
 			// before `after`) with ok=true.
-			name:   "weekly MaxUint64 is refused, never a PAST next-run with ok=true",
-			trig:   scheduler.Weekly(math.MaxUint64, []time.Weekday{time.Monday}),
+			name:   "weekly MaxUint is refused, never a PAST next-run with ok=true",
+			trig:   scheduler.Weekly(math.MaxUint, []time.Weekday{time.Monday}),
 			assert: refused,
 		},
 		{
-			name:   "daily MaxUint64 is refused (the scan bound overflows too)",
-			trig:   scheduler.Daily(math.MaxUint64),
+			name:   "daily MaxUint is refused (the scan bound overflows too)",
+			trig:   scheduler.Daily(math.MaxUint),
 			assert: refused,
 		},
 		{
-			name:   "monthly MaxUint64 is refused",
-			trig:   scheduler.Monthly(math.MaxUint64, []int{1}),
+			name:   "monthly MaxUint is refused",
+			trig:   scheduler.Monthly(math.MaxUint, []int{1}),
 			assert: refused,
 		},
 	}
