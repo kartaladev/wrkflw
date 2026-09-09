@@ -42,7 +42,8 @@
 //
 //   - action       The service-action catalog: named, interface-based actions
 //     referenced from definition nodes. Provides DefaultCatalog, MapCatalog,
-//     Registry, ActionFunc adapter, and retry-contract helpers (NonRetryable,
+//     Registry, ActionFunc adapter, Typed for actions written against the
+//     consumer's own Go types, and retry-contract helpers (NonRetryable,
 //     IsRetryable). Subpackages: httpcall, email, transform, logaction.
 //   - humantask    Human-task model and the ports that drive human work (claim,
 //     complete, reassign). MemTaskStore for tests; wire a SQL-backed store for
