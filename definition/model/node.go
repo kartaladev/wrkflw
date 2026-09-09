@@ -4,11 +4,44 @@ import (
 	"github.com/kartaladev/wrkflw/definition/schedule"
 )
 
-// Node is a single point in a process: an event, activity, or gateway. The
-// concrete types (one per NodeKind) live in the node-family leaf packages —
-// definition/event, definition/gateway, definition/activity — and are built with
-// their New* constructors. Each embeds the shared identity/field-group types
-// declared here (Base, ActivityFields, WaitFields, TaskAction).
+// Node is a single point in a process: an event, activity, or gateway.
+//
+// Node is a CLOSED SET, not a consumer extension seam. The concrete types — one
+// per NodeKind — live in the node-family leaf packages (definition/event,
+// definition/gateway, definition/activity), are built with their New*
+// constructors, and each embeds the shared identity/field-group types declared
+// here (Base, ActivityFields, WaitFields, TaskAction). Implementing this
+// interface outside those packages is not supported, and the engine will not
+// execute the result.
+//
+// The interface cannot enforce that by itself. Sealing it with an unexported
+// method does not work here: the leaf types satisfy Node by embedding Base, and
+// any consumer can embed Base too, inheriting the seal along with it. So the set
+// is closed on either side of the interface instead:
+//
+//   - Registration is closed at compile time. RegisterKind takes a capability
+//     token from definition/internal/kindreg, which only definition/... can
+//     import, so a consumer cannot claim a kind.
+//   - Construction is closed at the two ingresses through which a definition
+//     legitimately enters the module: model.Validate and Builder.Build. Each
+//     kind records the concrete type its FromWire returns, and both ingresses
+//     run the same check, rejecting a node whose dynamic type differs with
+//     ErrForeignNodeType.
+//
+// That second half is what lets the leaf NodeSpec functions and
+// engine/step_nodes.go assert node.(activity.UserTask) bare rather than
+// defensively — but it holds only for a node that arrived through one of those
+// two doors. Three paths are deliberately not gated and still panic on a
+// counterfeit: engine.Step, which does not validate (#53's escape hatch);
+// ProcessDefinition.MarshalJSON; and ValidationStrategyFor, which returns no
+// error and so cannot report one. ErrForeignNodeType's doc comment carries the
+// authoritative list.
+//
+// Consumers extend workflows through actions and validation strategies, which
+// are registration seams built for it. Consumer-defined KINDS are a different
+// feature and are not available: a new kind needs execution semantics in the
+// engine's strategy table, not merely a type that satisfies this interface, so
+// supporting them would mean designing a strategy-registration seam of its own.
 type Node interface {
 	Kind() NodeKind
 	ID() string

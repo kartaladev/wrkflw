@@ -107,6 +107,19 @@ func (c *definitionCore) build() (*ProcessDefinition, error) {
 	if reg == nil {
 		reg = validate.DefaultRegistry()
 	}
+	// Gate node types BEFORE reconciling. reconcileNodeValidation dispatches the
+	// kind's ValidationGet, which is one of the bare type assertions, on a
+	// caller-supplied node — so without this the ordinary authoring path panics
+	// on a counterfeit instead of reporting ErrForeignNodeType, and it does so
+	// before Validate below ever runs.
+	//
+	// The flat top-level slice is deliberately enough here: reconciliation only
+	// ever touches these nodes, and any nested subprocess definition is gated by
+	// the recursive pass inside Validate at the end of this function. This is not
+	// missing recursion.
+	if err := checkNodeTypes(c.nodes); err != nil {
+		return nil, err
+	}
 	for i, n := range c.nodes {
 		reconciled, err := reconcileNodeValidation(n, reg)
 		if err != nil {

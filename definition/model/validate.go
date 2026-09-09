@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"unicode"
 )
@@ -368,6 +369,46 @@ var (
 	// may share its ID with a node. Like ErrDuplicateNodeID, uniqueness is
 	// scoped to a single definition.
 	ErrDuplicateFlowID = errors.New("workflow-definition: duplicate flow id")
+	// ErrForeignNodeType is returned when a node's dynamic type is not the
+	// concrete type its kind registered. Node is a closed set: each NodeKind is
+	// owned by exactly one type in definition/{activity,event,gateway}, recorded
+	// at registration time. A consumer can still satisfy Node by embedding
+	// model.Base — that door cannot be closed by an unexported method, since the
+	// leaf types embed Base too — so it is closed here instead. The error names
+	// the node id, the type the kind registered, and the type actually found.
+	//
+	// SCOPE, stated precisely because the 29 bare type assertions in the leaf
+	// ToWire/ValidationGet/ValidationSet specs and in engine/step_nodes.go rest
+	// on it, and because two earlier versions of this comment claimed more than
+	// the code delivered.
+	//
+	// GATED — a foreign node is reported here, never panics:
+	//   - Validate, over the whole definition tree including nested subprocesses,
+	//     before any structural check dereferences a node.
+	//   - Builder.Build, before it reconciles validation strategies (that
+	//     reconciliation dispatches ValidationGet, a bare assertion, so gating
+	//     only Validate left the ordinary authoring path panicking).
+	// Both call the same checkNodeTypes. Those are the two ingresses through
+	// which a definition legitimately enters the module.
+	//
+	// NOT GATED — still panics on a foreign node, by design or by deferral:
+	//   - engine.Step, which does not call Validate: the escape hatch #53
+	//     documented and deliberately left open.
+	//   - ProcessDefinition.MarshalJSON, which calls toWire with no Validate in
+	//     front of it (node_wire.go). Tracked as a follow-up; serializing an
+	//     unvalidated definition is the more likely of the two to be reached.
+	//   - ValidationStrategyFor, exported here, which dispatches ValidationGet on
+	//     whatever node it is handed. It returns no error, so it has no way to
+	//     report a counterfeit; returning nil would fail open and hide one, which
+	//     is worse than the panic. Callers pass nodes from a validated
+	//     definition.
+	//
+	// And what the control is FOR: it hardens against in-process Go construction
+	// and third-party Go extension, not against hostile JSON or YAML. fromWire
+	// and fromNodeYAML build nodes only through the registered FromWire specs, so
+	// they emit a leaf type or ErrKindNotRegistered and nothing else — a foreign
+	// type cannot be deserialized into existence in the first place.
+	ErrForeignNodeType = errors.New("workflow-definition: foreign node type for kind")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -379,8 +420,96 @@ func Validate(d *ProcessDefinition) error {
 	if d.Version < 1 {
 		errs = append(errs, fmt.Errorf("%w: got %d", ErrInvalidVersion, d.Version))
 	}
+	// The node-type gate runs over the WHOLE tree before any structural check.
+	// It has to: validateStructure reads node fields through toWire(n), which
+	// dispatches to the leaf ToWire spec and asserts the concrete type bare, so a
+	// counterfeit panics the moment any check touches it. Gating only the current
+	// level is not enough — isEventTriggeredSubprocess reaches one level DOWN
+	// (toWire over sub.StartNodes()) from checks that run long before the nested
+	// recursion, so a foreign node reporting KindStartEvent inside a subprocess
+	// was dereferenced before its own level had been gated. Nothing structural
+	// runs until the whole tree is known to be type-clean.
+	if err := validateNodeTypes(d, make(map[*ProcessDefinition]bool)); err != nil {
+		errs = append(errs, err)
+		return errors.Join(errs...)
+	}
 	if err := validateStructure(d, make(map[*ProcessDefinition]bool)); err != nil {
 		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
+// checkNodeTypes refuses any node in nodes whose dynamic type is not the one its
+// kind registered. It is the single implementation of the rule; every ingress
+// that can reach a caller-supplied node calls this, directly or through
+// [validateNodeTypes].
+//
+// One function called at the few doors is not the "comma-ok at 29 sites" that
+// #26 rejected. The 29 bare assertions stay bare precisely because the check
+// lives here instead: the invariant is stated once, and the doors are counted.
+//
+// It is flat by design — no descent. Callers holding a whole definition tree
+// want [validateNodeTypes]; callers holding one level's nodes want this.
+func checkNodeTypes(nodes []Node) error {
+	var errs []error
+	for _, n := range nodes {
+		want, recorded := nodeTypeFor(n.Kind())
+		if !recorded {
+			continue
+		}
+		if got := reflect.TypeOf(n); got != want {
+			errs = append(errs, fmt.Errorf(
+				"%w: node %q declares kind %s (%s) but is %s",
+				ErrForeignNodeType, n.ID(), n.Kind(), want, got,
+			))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// validateNodeTypes refuses any node whose dynamic type is not the one its kind
+// registered, over the entire definition tree, and is the reason every later
+// check may assert a node's concrete type bare.
+//
+// It gates a level BEFORE descending through it, which is what makes the descent
+// itself safe: reading toWire(n).Subprocess is only sound once n has been proved
+// to be the type its kind claims. That ordering is the whole design — a pre-pass
+// that descended first would panic on exactly the input it exists to reject.
+//
+// visited is its OWN cycle guard, deliberately not shared with
+// validateStructure's seen map: marking definitions in that map here would make
+// validateStructure skip every definition this pass had already walked. Cyclic
+// subprocess pointer graphs are hand-constructible, so the guard is required.
+//
+// Only kinds that recorded a concrete type are checked. A kind with no entry —
+// never registered, or registered without a FromWire to derive a type from — is
+// ErrKindNotRegistered's business, not this function's.
+func validateNodeTypes(d *ProcessDefinition, visited map[*ProcessDefinition]bool) error {
+	if d == nil || visited[d] {
+		return nil
+	}
+	visited[d] = true
+
+	if err := checkNodeTypes(d.Nodes); err != nil {
+		// This level is not type-clean, so its nodes must not be dereferenced —
+		// descending now is the panic this whole pass exists to prevent.
+		return err
+	}
+
+	var errs []error
+	for _, n := range d.Nodes {
+		if n.Kind() != KindSubProcess {
+			continue
+		}
+		sub := toWire(n).Subprocess
+		if sub == nil {
+			// A missing nested definition is ErrMissingSubprocess's report, made
+			// by validateStructure; nothing to gate here.
+			continue
+		}
+		if nestedErr := validateNodeTypes(sub, visited); nestedErr != nil {
+			errs = append(errs, fmt.Errorf("subprocess %q: %w", n.ID(), nestedErr))
+		}
 	}
 	return errors.Join(errs...)
 }
@@ -399,6 +528,14 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 
 	var errs []error
 
+	// Every check below reaches node fields through toWire(n), which asserts the
+	// node's concrete type bare. That is safe because Validate has already run
+	// validateNodeTypes over the whole tree and returned on any violation, so no
+	// node reaching here can be a counterfeit. There is deliberately no per-level
+	// gate in this function: a per-level gate was the original fix and it was not
+	// enough, because isEventTriggeredSubprocess reads one level down from checks
+	// that run before the recursion below.
+	//
 	// Identity, checked before anything reads an ID: a node ID is this
 	// definition's lookup key (d.Node is a first-wins linear scan, and
 	// d.Outgoing/d.Incoming filter the flows by the same string), so a duplicate

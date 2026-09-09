@@ -7,6 +7,7 @@
 package event
 
 import (
+	"github.com/kartaladev/wrkflw/definition/internal/kindreg"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/definition/model/validate"
 	"github.com/kartaladev/wrkflw/definition/schedule"
@@ -44,6 +45,14 @@ type StartEvent struct {
 
 // Kind returns model.KindStartEvent.
 func (StartEvent) Kind() model.NodeKind { return model.KindStartEvent }
+
+// Compile-time proof that StartEvent still satisfies model.Node. Node is a closed
+// set — one concrete type per kind, recorded at registration and enforced at
+// the Validate gate by model.ErrForeignNodeType — so a type that silently
+// stopped implementing Node would take its kind out of the set with no build
+// error at all: nothing here assigns these values to a model.Node anywhere the
+// compiler would notice. These assignments are that missing signal.
+var _ model.Node = StartEvent{}
 
 // TerminationOutcome selects the terminal status a force-termination end event
 // drives the instance to.
@@ -122,6 +131,8 @@ type EndEvent struct {
 // Kind returns model.KindEndEvent.
 func (EndEvent) Kind() model.NodeKind { return model.KindEndEvent }
 
+var _ model.Node = EndEvent{}
+
 // IntermediateCatchEvent waits for a timer, signal, or message. It can wait, so
 // it embeds model.WaitFields (deadline escalation + reminders).
 type IntermediateCatchEvent struct {
@@ -139,9 +150,9 @@ type IntermediateCatchEvent struct {
 }
 
 // Kind returns model.KindIntermediateCatchEvent.
-func (IntermediateCatchEvent) Kind() model.NodeKind {
-	return model.KindIntermediateCatchEvent
-}
+func (IntermediateCatchEvent) Kind() model.NodeKind { return model.KindIntermediateCatchEvent }
+
+var _ model.Node = IntermediateCatchEvent{}
 
 // IntermediateThrowEvent throws a signal (broadcast to every waiting instance).
 // Compensation throws are a separate node kind — see CompensationThrowEvent.
@@ -151,9 +162,9 @@ type IntermediateThrowEvent struct {
 }
 
 // Kind returns model.KindIntermediateThrowEvent.
-func (IntermediateThrowEvent) Kind() model.NodeKind {
-	return model.KindIntermediateThrowEvent
-}
+func (IntermediateThrowEvent) Kind() model.NodeKind { return model.KindIntermediateThrowEvent }
+
+var _ model.Node = IntermediateThrowEvent{}
 
 // BoundaryEvent is attached to an activity and fires on timer, signal, message,
 // or error.
@@ -185,6 +196,8 @@ type BoundaryEvent struct {
 // Kind returns model.KindBoundaryEvent.
 func (BoundaryEvent) Kind() model.NodeKind { return model.KindBoundaryEvent }
 
+var _ model.Node = BoundaryEvent{}
+
 // CompensationThrowEvent triggers intra-process compensation when reached. It
 // runs completed compensable activities' compensation actions in reverse order,
 // then continues past the throw (it does NOT terminate). With CompensateRef set
@@ -206,6 +219,8 @@ type CompensationThrowEvent struct {
 
 // Kind returns model.KindCompensationThrowEvent.
 func (CompensationThrowEvent) Kind() model.NodeKind { return model.KindCompensationThrowEvent }
+
+var _ model.Node = CompensationThrowEvent{}
 
 // --- constructors ---
 
@@ -277,7 +292,7 @@ func NewBoundary(id, attachedTo string, opts ...BoundaryOption) model.Node {
 // --- serialization registration ---
 
 func init() {
-	model.RegisterKind(model.KindStartEvent, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindStartEvent, model.NodeSpec{
 		Name: "startEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			n := StartEvent{Base: b, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey,
@@ -304,7 +319,7 @@ func init() {
 			return v
 		},
 	})
-	model.RegisterKind(model.KindEndEvent, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindEndEvent, model.NodeSpec{
 		Name: "endEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			e := EndEvent{Base: b}
@@ -336,7 +351,7 @@ func init() {
 			}
 		},
 	})
-	model.RegisterKind(model.KindIntermediateCatchEvent, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindIntermediateCatchEvent, model.NodeSpec{
 		Name: "intermediateCatchEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			n := IntermediateCatchEvent{Base: b, WaitFields: w.Wait(),
@@ -360,7 +375,7 @@ func init() {
 			return v
 		},
 	})
-	model.RegisterKind(model.KindIntermediateThrowEvent, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindIntermediateThrowEvent, model.NodeSpec{
 		Name: "intermediateThrowEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return IntermediateThrowEvent{Base: b, SignalName: w.SignalName}
@@ -369,7 +384,7 @@ func init() {
 			w.SignalName = n.(IntermediateThrowEvent).SignalName
 		},
 	})
-	model.RegisterKind(model.KindCompensationThrowEvent, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindCompensationThrowEvent, model.NodeSpec{
 		Name: "compensationThrowEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return CompensationThrowEvent{Base: b, CompensateRef: w.CompensateRef, ScopeLocal: w.CompensateScopeLocal}
@@ -379,7 +394,7 @@ func init() {
 			w.CompensateRef, w.CompensateScopeLocal = v.CompensateRef, v.ScopeLocal
 		},
 	})
-	model.RegisterKind(model.KindBoundaryEvent, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindBoundaryEvent, model.NodeSpec{
 		Name: "boundaryEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return BoundaryEvent{Base: b, AttachedTo: w.AttachedTo, NonInterrupting: w.NonInterrupting, ErrorCode: w.ErrorCode,

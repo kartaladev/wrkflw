@@ -2,7 +2,9 @@ package model
 
 import (
 	"errors"
+	"reflect"
 
+	"github.com/kartaladev/wrkflw/definition/internal/kindreg"
 	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
 
@@ -39,10 +41,33 @@ type NodeSpec struct {
 // RegisterKind; read (never written) at runtime.
 var nodeRegistry = map[NodeKind]NodeSpec{}
 
+// nodeTypes maps each registered kind to the concrete type that owns it, derived
+// at registration time from what the kind's FromWire returns. It is the lookup
+// behind [ErrForeignNodeType]: a node reporting a kind whose entry here does not
+// match the node's dynamic type is a counterfeit, and Validate refuses it.
+//
+// A kind with a nil FromWire has no entry — definition/model/registry_test.go
+// registers synthetic kinds with only a ToWire, and recording unconditionally
+// would nil-panic the test binary at that call. A missing entry means the gate
+// stays silent for that kind, which is also the right answer for a kind that was
+// never registered at all: that is ErrKindNotRegistered's diagnosis, not this
+// one's.
+var nodeTypes = map[NodeKind]reflect.Type{}
+
 // RegisterKind registers the serialization spec for a node kind. It is called
 // from leaf-package init functions; calling it twice for the same kind, or with
 // an empty name, is a programmer error and panics.
-func RegisterKind(k NodeKind, s NodeSpec) {
+//
+// The [kindreg.Token] first parameter closes registration to consumers: Node is
+// a closed set (see the Node doc comment), and kindreg lives under
+// definition/internal, so nothing outside definition/ can name the token type or
+// call this function at all. Pass kindreg.Grant().
+//
+// Inside definition/ the token is obtainable by any package, since Go scopes the
+// internal rule to definition/ as a whole rather than to the four packages that
+// happen to use it. The seal is against consumers of this module, not against
+// this module's own subtree.
+func RegisterKind(_ kindreg.Token, k NodeKind, s NodeSpec) {
 	if s.Name == "" {
 		panic("workflow-definition: RegisterKind with empty Name")
 	}
@@ -52,6 +77,39 @@ func RegisterKind(k NodeKind, s NodeSpec) {
 	nodeRegistry[k] = s
 	nodeKindNames[k] = s.Name
 	nodeKindByName[s.Name] = k
+	if s.FromWire != nil {
+		// FromWire on a zero Base and a zero NodeWire is the cheapest way to name
+		// the concrete type without every leaf having to declare it a second
+		// time. All 17 real kinds return their own type from a zero wire without
+		// panicking.
+		//
+		// Note what does NOT protect that, since an earlier version of this
+		// comment claimed it did: a future FromWire that panics on a zero wire
+		// takes down package initialization for every binary importing the leaf,
+		// and nodetype_guard_test.go cannot catch it — that guard lives in
+		// package kinds_test and imports definition/kinds, so the offending
+		// init() runs while the guard's own test binary is initializing and
+		// aborts it before any assertion executes. The failure is loud and
+		// immediate (nothing that imports the leaf will start), but it is caught
+		// by everything breaking at once, not by that test.
+		//
+		// A FromWire returning a nil Node would make reflect.TypeOf nil, and
+		// storing that would put a PRESENT key with a nil value in the map —
+		// which reads as "this kind recorded a type" while matching no node at
+		// all, rejecting every genuine node of the kind. No current kind does it;
+		// recording nothing keeps the failure in the same shape as a kind with no
+		// FromWire (silent gate) instead of inventing a third one.
+		if t := reflect.TypeOf(s.FromWire(Base{}, NodeWire{})); t != nil {
+			nodeTypes[k] = t
+		}
+	}
+}
+
+// nodeTypeFor returns the concrete type recorded for a kind, and whether the
+// kind recorded one at all.
+func nodeTypeFor(k NodeKind) (reflect.Type, bool) {
+	t, ok := nodeTypes[k]
+	return t, ok
 }
 
 // specFor returns the registered spec for a kind.
