@@ -3,6 +3,8 @@ package model
 import (
 	"errors"
 	"testing"
+
+	"github.com/kartaladev/wrkflw/definition/internal/kindreg"
 )
 
 // TestFromWireUnregisteredKindIsLoud verifies the deserializer fails loudly when
@@ -20,11 +22,11 @@ func TestFromWireUnregisteredKindIsLoud(t *testing.T) {
 // programmer error.
 func TestRegisterKindDuplicatePanics(t *testing.T) {
 	const k = NodeKind(9998)
-	RegisterKind(k, NodeSpec{Name: "synthetic-9998", ToWire: func(Node, *NodeWire) {}})
+	RegisterKind(kindreg.Grant(), k, NodeSpec{Name: "synthetic-9998", ToWire: func(Node, *NodeWire) {}})
 	defer func() {
 		if recover() == nil {
 			t.Fatal("expected panic on duplicate RegisterKind")
 		}
 	}()
-	RegisterKind(k, NodeSpec{Name: "synthetic-9998-dup", ToWire: func(Node, *NodeWire) {}})
+	RegisterKind(kindreg.Grant(), k, NodeSpec{Name: "synthetic-9998-dup", ToWire: func(Node, *NodeWire) {}})
 }

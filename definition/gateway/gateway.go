@@ -10,7 +10,10 @@
 // and the runtime), not from any option here.
 package gateway
 
-import "github.com/kartaladev/wrkflw/definition/model"
+import (
+	"github.com/kartaladev/wrkflw/definition/internal/kindreg"
+	"github.com/kartaladev/wrkflw/definition/model"
+)
 
 // ExclusiveGateway routes to exactly one outgoing flow (XOR split / merge).
 type ExclusiveGateway struct{ model.Base }
@@ -80,22 +83,22 @@ func NewEventBased(id string, opts ...Option) model.Node {
 }
 
 func init() {
-	model.RegisterKind(model.KindExclusiveGateway, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindExclusiveGateway, model.NodeSpec{
 		Name:     "exclusiveGateway",
 		FromWire: func(b model.Base, _ model.NodeWire) model.Node { return ExclusiveGateway{b} },
 		ToWire:   func(model.Node, *model.NodeWire) {},
 	})
-	model.RegisterKind(model.KindParallelGateway, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindParallelGateway, model.NodeSpec{
 		Name:     "parallelGateway",
 		FromWire: func(b model.Base, _ model.NodeWire) model.Node { return ParallelGateway{b} },
 		ToWire:   func(model.Node, *model.NodeWire) {},
 	})
-	model.RegisterKind(model.KindInclusiveGateway, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindInclusiveGateway, model.NodeSpec{
 		Name:     "inclusiveGateway",
 		FromWire: func(b model.Base, _ model.NodeWire) model.Node { return InclusiveGateway{b} },
 		ToWire:   func(model.Node, *model.NodeWire) {},
 	})
-	model.RegisterKind(model.KindEventBasedGateway, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindEventBasedGateway, model.NodeSpec{
 		Name:     "eventBasedGateway",
 		FromWire: func(b model.Base, _ model.NodeWire) model.Node { return EventBasedGateway{b} },
 		ToWire:   func(model.Node, *model.NodeWire) {},

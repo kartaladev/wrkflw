@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 
+	"github.com/kartaladev/wrkflw/definition/internal/kindreg"
 	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
 
@@ -42,7 +43,12 @@ var nodeRegistry = map[NodeKind]NodeSpec{}
 // RegisterKind registers the serialization spec for a node kind. It is called
 // from leaf-package init functions; calling it twice for the same kind, or with
 // an empty name, is a programmer error and panics.
-func RegisterKind(k NodeKind, s NodeSpec) {
+//
+// The [kindreg.Token] first parameter closes registration to consumers: Node is
+// a closed set (see the Node doc comment), and kindreg lives under
+// definition/internal, so only definition/{model,activity,event,gateway} can
+// name the token type and call this function at all. Pass kindreg.Grant().
+func RegisterKind(_ kindreg.Token, k NodeKind, s NodeSpec) {
 	if s.Name == "" {
 		panic("workflow-definition: RegisterKind with empty Name")
 	}

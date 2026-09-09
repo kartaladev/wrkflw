@@ -6,6 +6,7 @@
 package activity
 
 import (
+	"github.com/kartaladev/wrkflw/definition/internal/kindreg"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
@@ -221,7 +222,7 @@ func parseOrZero(s string) model.Qualifier {
 // --- serialization registration ---
 
 func init() {
-	model.RegisterKind(model.KindServiceTask, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindServiceTask, model.NodeSpec{
 		Name: "serviceTask",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return ServiceTask{Base: b, ActivityFields: w.Activity(), TaskAction: model.TaskAction{Action: w.Action}}
@@ -232,7 +233,7 @@ func init() {
 			w.PutActivity(v.ActivityFields)
 		},
 	})
-	model.RegisterKind(model.KindUserTask, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindUserTask, model.NodeSpec{
 		Name: "userTask",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			n := UserTask{
@@ -262,7 +263,7 @@ func init() {
 			return v
 		},
 	})
-	model.RegisterKind(model.KindReceiveTask, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindReceiveTask, model.NodeSpec{
 		Name: "receiveTask",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			n := ReceiveTask{Base: b, ActivityFields: w.Activity(), MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}
@@ -284,7 +285,7 @@ func init() {
 			return v
 		},
 	})
-	model.RegisterKind(model.KindSendTask, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindSendTask, model.NodeSpec{
 		Name: "sendTask",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return SendTask{Base: b, ActivityFields: w.Activity(), MessageName: w.MessageName, CorrelationKey: w.CorrelationKey}
@@ -295,7 +296,7 @@ func init() {
 			w.PutActivity(v.ActivityFields)
 		},
 	})
-	model.RegisterKind(model.KindBusinessRuleTask, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindBusinessRuleTask, model.NodeSpec{
 		Name: "businessRuleTask",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return BusinessRuleTask{Base: b, ActivityFields: w.Activity(), TaskAction: model.TaskAction{Action: w.Action}}
@@ -306,7 +307,7 @@ func init() {
 			w.PutActivity(v.ActivityFields)
 		},
 	})
-	model.RegisterKind(model.KindSubProcess, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindSubProcess, model.NodeSpec{
 		Name: "subProcess",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return SubProcess{Base: b, ActivityFields: w.Activity(), Subprocess: w.Subprocess}
@@ -317,7 +318,7 @@ func init() {
 			w.PutActivity(v.ActivityFields)
 		},
 	})
-	model.RegisterKind(model.KindCallActivity, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindCallActivity, model.NodeSpec{
 		Name: "callActivity",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return CallActivity{Base: b, ActivityFields: w.Activity(), DefRef: parseOrZero(w.DefRef)}

@@ -7,6 +7,7 @@
 package event
 
 import (
+	"github.com/kartaladev/wrkflw/definition/internal/kindreg"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/definition/model/validate"
 	"github.com/kartaladev/wrkflw/definition/schedule"
@@ -277,7 +278,7 @@ func NewBoundary(id, attachedTo string, opts ...BoundaryOption) model.Node {
 // --- serialization registration ---
 
 func init() {
-	model.RegisterKind(model.KindStartEvent, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindStartEvent, model.NodeSpec{
 		Name: "startEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			n := StartEvent{Base: b, SignalName: w.SignalName, MessageName: w.MessageName, CorrelationKey: w.CorrelationKey,
@@ -304,7 +305,7 @@ func init() {
 			return v
 		},
 	})
-	model.RegisterKind(model.KindEndEvent, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindEndEvent, model.NodeSpec{
 		Name: "endEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			e := EndEvent{Base: b}
@@ -336,7 +337,7 @@ func init() {
 			}
 		},
 	})
-	model.RegisterKind(model.KindIntermediateCatchEvent, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindIntermediateCatchEvent, model.NodeSpec{
 		Name: "intermediateCatchEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			n := IntermediateCatchEvent{Base: b, WaitFields: w.Wait(),
@@ -360,7 +361,7 @@ func init() {
 			return v
 		},
 	})
-	model.RegisterKind(model.KindIntermediateThrowEvent, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindIntermediateThrowEvent, model.NodeSpec{
 		Name: "intermediateThrowEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return IntermediateThrowEvent{Base: b, SignalName: w.SignalName}
@@ -369,7 +370,7 @@ func init() {
 			w.SignalName = n.(IntermediateThrowEvent).SignalName
 		},
 	})
-	model.RegisterKind(model.KindCompensationThrowEvent, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindCompensationThrowEvent, model.NodeSpec{
 		Name: "compensationThrowEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return CompensationThrowEvent{Base: b, CompensateRef: w.CompensateRef, ScopeLocal: w.CompensateScopeLocal}
@@ -379,7 +380,7 @@ func init() {
 			w.CompensateRef, w.CompensateScopeLocal = v.CompensateRef, v.ScopeLocal
 		},
 	})
-	model.RegisterKind(model.KindBoundaryEvent, model.NodeSpec{
+	model.RegisterKind(kindreg.Grant(), model.KindBoundaryEvent, model.NodeSpec{
 		Name: "boundaryEvent",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
 			return BoundaryEvent{Base: b, AttachedTo: w.AttachedTo, NonInterrupting: w.NonInterrupting, ErrorCode: w.ErrorCode,
