@@ -86,6 +86,51 @@ func strictCycleEcho(_ context.Context, in strictCycleIn) (strictOut, error) {
 	return strictOut{Untagged: in.Label}, nil
 }
 
+// nestedOrder is a nested object inside nestedIn. rejectUnknownKeys walks only
+// the TOP-LEVEL map, so keys inside this object are the backstop's territory.
+type nestedOrder struct {
+	OrderID string `json:"orderId"`
+}
+
+type nestedIn struct {
+	Order nestedOrder `json:"order"`
+}
+
+type nestedOut struct {
+	Saw string `json:"saw"`
+}
+
+func nestedEcho(_ context.Context, in nestedIn) (nestedOut, error) {
+	return nestedOut{Saw: in.Order.OrderID}, nil
+}
+
+// dupA and dupB both declare the JSON name "Dup" — untagged, so the name comes
+// from the Go field name. Embedded together at the same depth, encoding/json drops
+// BOTH conflicting fields, so "Dup" is unknown to the decoder even though
+// collectJSONNames adds it to the name set.
+//
+// The names are untagged deliberately: spelling the conflict with two identical
+// `json:"dup"` tags is the same test, but go vet's structtag check rejects it, and
+// suppressing a vet finding costs more than using the field-name fallback here.
+type dupA struct {
+	Dup string
+}
+
+type dupB struct {
+	Dup string
+}
+
+type conflictIn struct {
+	dupA
+	dupB
+	Label string `json:"label"`
+}
+
+func conflictEcho(_ context.Context, in conflictIn) (strictOut, error) {
+	_, _ = in.dupA.Dup, in.dupB.Dup // ambiguous when promoted; selected explicitly
+	return strictOut{Untagged: in.Label}, nil
+}
+
 // idemIn is the escape hatch the WithStrictInput godoc recommends: declare the
 // engine's stamp yourself so a primary service task can use strict mode.
 type idemIn struct {
@@ -401,6 +446,73 @@ func TestTypedDo(t *testing.T) {
 				require.ErrorIs(t, err, action.ErrDecodeInput)
 				assert.Contains(t, err.Error(), `unknown keys "alpha", "zeta"`,
 					"several unknown keys are reported together and sorted for a deterministic message")
+				assert.Nil(t, out)
+			},
+		},
+		{
+			// Pins that the DisallowUnknownFields backstop is real: rejectUnknownKeys
+			// never descends into "order", so this rejection can only come from it.
+			name: "strict rejects a genuinely unknown key inside a NESTED object",
+			act:  action.Typed(nestedEcho, action.WithStrictInput()),
+			in: map[string]any{
+				"order": map[string]any{"orderId": "ORD-1", "bogus": 1},
+			},
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.ErrorIs(t, err, action.ErrDecodeInput)
+				assert.Contains(t, err.Error(), "bogus")
+				assert.Contains(t, err.Error(), "json: unknown field",
+					"the nested rejection comes from the DisallowUnknownFields backstop, "+
+						"not from the top-level exact-key check")
+				assert.Nil(t, out)
+			},
+		},
+		{
+			// DELIBERATE: this pins a DOCUMENTED LIMIT, not desired behaviour.
+			// A nested case-variant is caught by neither guard — the exact-key check
+			// does not descend, and DisallowUnknownFields folds case. Recursive
+			// exact-key checking is tracked as a follow-up issue. If this test starts
+			// failing, the limit was closed: update the docs and this row, do NOT
+			// "fix" the test to hide it.
+			name: "strict does NOT reject a nested case-variant (documented limit)",
+			act:  action.Typed(nestedEcho, action.WithStrictInput()),
+			in: map[string]any{
+				"order": map[string]any{"orderId": "ORD-TRUSTED", "orderid": "ORD-ATTACKER"},
+			},
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.NoError(t, err, "the nested limit: no guard rejects this today")
+				assert.Equal(t, map[string]any{"saw": "ORD-ATTACKER"}, out,
+					"byte-sorted keys mean the lowercase twin is applied last and wins")
+			},
+		},
+		{
+			// Pins the corrected LENIENT doc claim: lenient ignores keys that match
+			// nothing, but a case-variant of a declared name binds and wins.
+			name: "lenient binds a case-variant onto the declared field and it wins",
+			act:  action.Typed(idemEcho),
+			in: map[string]any{
+				"ref":             "req-1",
+				"_idempotencyKey": "inst-42:task",
+				"_idempotencykey": "SPOOFED-BY-ATTACKER",
+			},
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.NoError(t, err, "lenient rejects nothing")
+				assert.Equal(t, map[string]any{"idem": "SPOOFED-BY-ATTACKER"}, out,
+					"lenient does not ignore a case-variant; it folds it on, and it wins")
+			},
+		},
+		{
+			// The one input where the name set OVER-accepts: collectJSONNames adds
+			// "Dup", but encoding/json drops both conflicting embedded fields, so the
+			// decoder considers it unknown. The composite still fails closed, and only
+			// because the backstop is retained.
+			name: "strict rejects an embedded-name conflict via the backstop",
+			act:  action.Typed(conflictEcho, action.WithStrictInput()),
+			in:   map[string]any{"label": "L", "Dup": "ambiguous"},
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.ErrorIs(t, err, action.ErrDecodeInput)
+				assert.Contains(t, err.Error(), "Dup")
+				assert.Contains(t, err.Error(), "json: unknown field",
+					"the exact-key gate accepts \"Dup\"; only the backstop rejects it")
 				assert.Nil(t, out)
 			},
 		},

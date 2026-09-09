@@ -32,8 +32,10 @@ func ExampleTyped() {
 	}
 
 	// A service task is invoked with the whole variables map plus the engine's
-	// own _idempotencyKey stamp. Lenient decoding (the default) ignores every key
-	// approveOrderIn does not declare.
+	// own _idempotencyKey stamp. Lenient decoding (the default) ignores keys that
+	// match nothing — "region" and "_idempotencyKey" here. It does NOT ignore a
+	// case-variant of a declared name: encoding/json folds case, so "orderid"
+	// would bind to OrderID. Only WithStrictInput rejects that.
 	out, err := a.Do(context.Background(), map[string]any{
 		"ref":             "ord-42",
 		"amount":          250,
