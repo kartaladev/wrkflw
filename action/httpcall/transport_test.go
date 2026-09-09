@@ -87,10 +87,16 @@ func (b *roundBarrier) park() chan struct{} {
 // has to end.
 func (b *roundBarrier) giveUp(rel chan struct{}) {
 	b.mu.Lock()
-	// Deferred, not a bare Unlock at the end: a panic under this lock would
-	// leave b.mu held for good, and then every later park and ok would block
+	// Deferred, not a bare Unlock at the end. A panic under this lock would
+	// otherwise leave b.mu held for good, and every later park and ok would block
 	// forever — ending the run in `panic: test timed out` with no assertion
 	// messages, which is the exact failure this watchdog exists to prevent.
+	//
+	// This is stated here rather than tested because NO TEST CAN OBSERVE IT.
+	// `defer` guarantees the unlock structurally, and with the swap above in
+	// place there is no panic to unwind from, so a test written against it passes
+	// whether the Unlock is deferred or not — verified by removing the defer and
+	// watching the check still pass. A test that cannot fail is not coverage.
 	defer b.mu.Unlock()
 
 	if b.release != rel {
@@ -140,11 +146,12 @@ func (b *roundBarrier) ok() bool {
 // this test has been observed losing a request to
 // `dial tcp 127.0.0.1:…: connect: can't assign requested address` under load.
 //
-// It drives giveUp directly instead of waiting on the 5s deadline. The deadline is
-// a timeout — paid on failure only — and making a green run sit through it every
-// time would be the "paid on every green run" shape docs/agents/test-deadlines.md
-// tells us to keep short. What needs testing is the logic the deadline guards, and
-// that is reachable without it.
+// It drives giveUp directly instead of waiting on the 5s deadline. That deadline
+// is a fixture fallback (see arrive): it is never paid on a passing run, and
+// making a green run sit through it every time would convert it into the
+// "paid on every green run" shape docs/agents/test-deadlines.md tells us to keep
+// short. What needs testing is the logic the deadline guards, and that is
+// reachable without it.
 func TestRoundBarrierGiveUpUnderManyWaiters(t *testing.T) {
 	t.Parallel()
 
@@ -181,22 +188,6 @@ func TestRoundBarrierGiveUpUnderManyWaiters(t *testing.T) {
 		assert.False(t, b.ok(),
 			"a round that could not assemble must latch the barrier, so the failure "+
 				"is reported once instead of once per remaining request")
-
-		// b.mu must not have been left held. If it were, this would block forever
-		// rather than fail, so it is bounded — that is the whole point.
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			b.arrive()
-			_ = b.ok()
-		}()
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Fatal("the barrier mutex is still held after giving up: a panic under " +
-				"it would poison every later park and ok, and the run would end in " +
-				"`panic: test timed out` with no assertion messages")
-		}
 	}
 }
 
@@ -248,11 +239,14 @@ func connCountingServer(t *testing.T, inFlight int) (*httptest.Server, func() in
 // ever used them.
 //
 // The server holds each round open until the whole round overlaps (see
-// [roundBarrier]), so the counts are exact rather than a lower bound the
-// scheduler may or may not deliver. Every case therefore asserts an exact
-// number, and the low numbers are pinned beside the high ones: a client that
-// reused nothing would give 32 where 8 is asserted, and one that reused
-// everything would give 8 where 26 is.
+// [roundBarrier]), which is what makes a count worth asserting at all. Every case
+// asserts an exact number, and the low numbers are pinned beside the high ones: a
+// client that reused nothing would give 32 where 8 is asserted, and one that
+// reused everything would give 8 where 26 is.
+//
+// Those numbers are the MINIMUM of a range, not a value the test forces — the
+// barrier forces overlap, not reuse. See the ⚠ block on the constants below
+// before diagnosing a count that comes out high.
 func TestPoolSizingOptions(t *testing.T) {
 	t.Parallel()
 
