@@ -23,6 +23,14 @@ type ServiceTask struct {
 // Kind returns model.KindServiceTask.
 func (ServiceTask) Kind() model.NodeKind { return model.KindServiceTask }
 
+// Compile-time proof that ServiceTask still satisfies model.Node. Node is a closed
+// set — one concrete type per kind, recorded at registration and enforced at
+// the Validate gate by model.ErrForeignNodeType — so a type that silently
+// stopped implementing Node would take its kind out of the set with no build
+// error at all: nothing here assigns these values to a model.Node anywhere the
+// compiler would notice. These assignments are that missing signal.
+var _ model.Node = ServiceTask{}
+
 // UserTask waits for a human to complete a work item.
 type UserTask struct {
 	model.Base
@@ -77,6 +85,8 @@ type UserTask struct {
 // Kind returns model.KindUserTask.
 func (UserTask) Kind() model.NodeKind { return model.KindUserTask }
 
+var _ model.Node = UserTask{}
+
 // ReceiveTask waits for an inbound message (signal or message correlation).
 type ReceiveTask struct {
 	model.Base
@@ -94,6 +104,8 @@ type ReceiveTask struct {
 // Kind returns model.KindReceiveTask.
 func (ReceiveTask) Kind() model.NodeKind { return model.KindReceiveTask }
 
+var _ model.Node = ReceiveTask{}
+
 // SendTask sends an outbound message.
 type SendTask struct {
 	model.Base
@@ -108,6 +120,8 @@ type SendTask struct {
 // Kind returns model.KindSendTask.
 func (SendTask) Kind() model.NodeKind { return model.KindSendTask }
 
+var _ model.Node = SendTask{}
+
 // BusinessRuleTask executes a named business rule action.
 type BusinessRuleTask struct {
 	model.Base
@@ -117,6 +131,8 @@ type BusinessRuleTask struct {
 
 // Kind returns model.KindBusinessRuleTask.
 func (BusinessRuleTask) Kind() model.NodeKind { return model.KindBusinessRuleTask }
+
+var _ model.Node = BusinessRuleTask{}
 
 // SubProcess embeds a nested process definition executed as a scope.
 type SubProcess struct {
@@ -128,6 +144,8 @@ type SubProcess struct {
 
 // Kind returns model.KindSubProcess.
 func (SubProcess) Kind() model.NodeKind { return model.KindSubProcess }
+
+var _ model.Node = SubProcess{}
 
 // CallActivity delegates to a top-level process definition resolved by
 // reference (id, or id:version).
@@ -141,6 +159,8 @@ type CallActivity struct {
 
 // Kind returns model.KindCallActivity.
 func (CallActivity) Kind() model.NodeKind { return model.KindCallActivity }
+
+var _ model.Node = CallActivity{}
 
 // --- constructors ---
 

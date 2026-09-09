@@ -46,6 +46,14 @@ type StartEvent struct {
 // Kind returns model.KindStartEvent.
 func (StartEvent) Kind() model.NodeKind { return model.KindStartEvent }
 
+// Compile-time proof that StartEvent still satisfies model.Node. Node is a closed
+// set — one concrete type per kind, recorded at registration and enforced at
+// the Validate gate by model.ErrForeignNodeType — so a type that silently
+// stopped implementing Node would take its kind out of the set with no build
+// error at all: nothing here assigns these values to a model.Node anywhere the
+// compiler would notice. These assignments are that missing signal.
+var _ model.Node = StartEvent{}
+
 // TerminationOutcome selects the terminal status a force-termination end event
 // drives the instance to.
 type TerminationOutcome int
@@ -123,6 +131,8 @@ type EndEvent struct {
 // Kind returns model.KindEndEvent.
 func (EndEvent) Kind() model.NodeKind { return model.KindEndEvent }
 
+var _ model.Node = EndEvent{}
+
 // IntermediateCatchEvent waits for a timer, signal, or message. It can wait, so
 // it embeds model.WaitFields (deadline escalation + reminders).
 type IntermediateCatchEvent struct {
@@ -141,6 +151,8 @@ type IntermediateCatchEvent struct {
 
 // Kind returns model.KindIntermediateCatchEvent.
 func (IntermediateCatchEvent) Kind() model.NodeKind {
+
+	var _ model.Node = IntermediateCatchEvent{}
 	return model.KindIntermediateCatchEvent
 }
 
@@ -153,6 +165,8 @@ type IntermediateThrowEvent struct {
 
 // Kind returns model.KindIntermediateThrowEvent.
 func (IntermediateThrowEvent) Kind() model.NodeKind {
+
+	var _ model.Node = IntermediateThrowEvent{}
 	return model.KindIntermediateThrowEvent
 }
 
@@ -186,6 +200,8 @@ type BoundaryEvent struct {
 // Kind returns model.KindBoundaryEvent.
 func (BoundaryEvent) Kind() model.NodeKind { return model.KindBoundaryEvent }
 
+var _ model.Node = BoundaryEvent{}
+
 // CompensationThrowEvent triggers intra-process compensation when reached. It
 // runs completed compensable activities' compensation actions in reverse order,
 // then continues past the throw (it does NOT terminate). With CompensateRef set
@@ -207,6 +223,8 @@ type CompensationThrowEvent struct {
 
 // Kind returns model.KindCompensationThrowEvent.
 func (CompensationThrowEvent) Kind() model.NodeKind { return model.KindCompensationThrowEvent }
+
+var _ model.Node = CompensationThrowEvent{}
 
 // --- constructors ---
 

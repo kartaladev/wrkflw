@@ -21,11 +21,21 @@ type ExclusiveGateway struct{ model.Base }
 // Kind returns model.KindExclusiveGateway.
 func (ExclusiveGateway) Kind() model.NodeKind { return model.KindExclusiveGateway }
 
+// Compile-time proof that ExclusiveGateway still satisfies model.Node. Node is a closed
+// set — one concrete type per kind, recorded at registration and enforced at
+// the Validate gate by model.ErrForeignNodeType — so a type that silently
+// stopped implementing Node would take its kind out of the set with no build
+// error at all: nothing here assigns these values to a model.Node anywhere the
+// compiler would notice. These assignments are that missing signal.
+var _ model.Node = ExclusiveGateway{}
+
 // ParallelGateway splits into all outgoing flows (AND split) or waits for all (AND join).
 type ParallelGateway struct{ model.Base }
 
 // Kind returns model.KindParallelGateway.
 func (ParallelGateway) Kind() model.NodeKind { return model.KindParallelGateway }
+
+var _ model.Node = ParallelGateway{}
 
 // InclusiveGateway routes to one or more outgoing flows (OR split / join).
 type InclusiveGateway struct{ model.Base }
@@ -33,11 +43,15 @@ type InclusiveGateway struct{ model.Base }
 // Kind returns model.KindInclusiveGateway.
 func (InclusiveGateway) Kind() model.NodeKind { return model.KindInclusiveGateway }
 
+var _ model.Node = InclusiveGateway{}
+
 // EventBasedGateway routes based on which event arrives first (race).
 type EventBasedGateway struct{ model.Base }
 
 // Kind returns model.KindEventBasedGateway.
 func (EventBasedGateway) Kind() model.NodeKind { return model.KindEventBasedGateway }
+
+var _ model.Node = EventBasedGateway{}
 
 // Option configures a gateway at construction.
 type Option func(*model.Base)
