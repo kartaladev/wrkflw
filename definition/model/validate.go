@@ -379,19 +379,35 @@ var (
 	//
 	// SCOPE, stated precisely because the 29 bare type assertions in the leaf
 	// ToWire/ValidationGet/ValidationSet specs and in engine/step_nodes.go rest
-	// on it. This check makes Validate total: it runs over the whole definition
-	// tree, nested subprocesses included, before any structural check
-	// dereferences a node. It does NOT make every entry point in this package
-	// total. ProcessDefinition.MarshalJSON calls toWire directly with no Validate
-	// in front of it (node_wire.go), and engine.Step does not call Validate
-	// either — the escape hatch #53 documented. Both still panic on a foreign
-	// node reached without validating first.
+	// on it, and because two earlier versions of this comment claimed more than
+	// the code delivered.
 	//
-	// What that leaves is a control against in-process Go construction and
-	// third-party Go extension, not against hostile JSON or YAML: fromWire and
-	// fromNodeYAML build nodes only through the registered FromWire specs, so
-	// they can emit a leaf type or ErrKindNotRegistered and nothing else. A
-	// foreign type cannot be deserialized into existence in the first place.
+	// GATED — a foreign node is reported here, never panics:
+	//   - Validate, over the whole definition tree including nested subprocesses,
+	//     before any structural check dereferences a node.
+	//   - Builder.Build, before it reconciles validation strategies (that
+	//     reconciliation dispatches ValidationGet, a bare assertion, so gating
+	//     only Validate left the ordinary authoring path panicking).
+	// Both call the same checkNodeTypes. Those are the two ingresses through
+	// which a definition legitimately enters the module.
+	//
+	// NOT GATED — still panics on a foreign node, by design or by deferral:
+	//   - engine.Step, which does not call Validate: the escape hatch #53
+	//     documented and deliberately left open.
+	//   - ProcessDefinition.MarshalJSON, which calls toWire with no Validate in
+	//     front of it (node_wire.go). Tracked as a follow-up; serializing an
+	//     unvalidated definition is the more likely of the two to be reached.
+	//   - ValidationStrategyFor, exported here, which dispatches ValidationGet on
+	//     whatever node it is handed. It returns no error, so it has no way to
+	//     report a counterfeit; returning nil would fail open and hide one, which
+	//     is worse than the panic. Callers pass nodes from a validated
+	//     definition.
+	//
+	// And what the control is FOR: it hardens against in-process Go construction
+	// and third-party Go extension, not against hostile JSON or YAML. fromWire
+	// and fromNodeYAML build nodes only through the registered FromWire specs, so
+	// they emit a leaf type or ErrKindNotRegistered and nothing else — a foreign
+	// type cannot be deserialized into existence in the first place.
 	ErrForeignNodeType = errors.New("workflow-definition: foreign node type for kind")
 )
 
@@ -423,6 +439,34 @@ func Validate(d *ProcessDefinition) error {
 	return errors.Join(errs...)
 }
 
+// checkNodeTypes refuses any node in nodes whose dynamic type is not the one its
+// kind registered. It is the single implementation of the rule; every ingress
+// that can reach a caller-supplied node calls this, directly or through
+// [validateNodeTypes].
+//
+// One function called at the few doors is not the "comma-ok at 29 sites" that
+// #26 rejected. The 29 bare assertions stay bare precisely because the check
+// lives here instead: the invariant is stated once, and the doors are counted.
+//
+// It is flat by design — no descent. Callers holding a whole definition tree
+// want [validateNodeTypes]; callers holding one level's nodes want this.
+func checkNodeTypes(nodes []Node) error {
+	var errs []error
+	for _, n := range nodes {
+		want, recorded := nodeTypeFor(n.Kind())
+		if !recorded {
+			continue
+		}
+		if got := reflect.TypeOf(n); got != want {
+			errs = append(errs, fmt.Errorf(
+				"%w: node %q declares kind %s (%s) but is %s",
+				ErrForeignNodeType, n.ID(), n.Kind(), want, got,
+			))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // validateNodeTypes refuses any node whose dynamic type is not the one its kind
 // registered, over the entire definition tree, and is the reason every later
 // check may assert a node's concrete type bare.
@@ -446,25 +490,13 @@ func validateNodeTypes(d *ProcessDefinition, visited map[*ProcessDefinition]bool
 	}
 	visited[d] = true
 
-	var errs []error
-	for _, n := range d.Nodes {
-		want, recorded := nodeTypeFor(n.Kind())
-		if !recorded {
-			continue
-		}
-		if got := reflect.TypeOf(n); got != want {
-			errs = append(errs, fmt.Errorf(
-				"%w: node %q declares kind %s (%s) but is %s",
-				ErrForeignNodeType, n.ID(), n.Kind(), want, got,
-			))
-		}
-	}
-	if len(errs) > 0 {
+	if err := checkNodeTypes(d.Nodes); err != nil {
 		// This level is not type-clean, so its nodes must not be dereferenced —
 		// descending now is the panic this whole pass exists to prevent.
-		return errors.Join(errs...)
+		return err
 	}
 
+	var errs []error
 	for _, n := range d.Nodes {
 		if n.Kind() != KindSubProcess {
 			continue
