@@ -283,14 +283,20 @@ flows:
 	}
 }
 
-// TestYAMLNodeLabel covers the YAML authoring `label` key: a node with an
-// explicit label decodes it into Label(), while a node without one falls back
-// to its name (the Base.Label() fallback).
-func TestYAMLNodeLabel(t *testing.T) {
+// TestParseYAMLRetiredLabelKey pins the retirement of the YAML authoring key
+// `label`, the YAML half of TestNodeWireRetiredLabelKey. `name` is the display
+// string now, so a node carrying `label` must be refused with a message naming
+// the replacement key — yaml.v3's KnownFields(true) would otherwise report
+// "field label not found", which names the wrong key and helps no migrator.
+//
+// Paired with an at-limit ACCEPT (a node with `name` and no `label` still
+// parses) and a non-label unknown key (which must keep naming ITSELF), so the
+// check cannot pass by refusing every node.
+func TestParseYAMLRetiredLabelKey(t *testing.T) {
 	t.Parallel()
 
-	// tmpl is a minimal start->userTask->end definition; %s injects the
-	// userTask node's label field (4-space indented to align under "- id: n").
+	// tmpl is a minimal start->userTask->end definition; %s injects extra
+	// fields on the userTask node (4-space indented to align under "- id: n").
 	const tmpl = `id: p
 version: 1
 nodes:
@@ -310,22 +316,52 @@ flows:
 	type testCase struct {
 		name   string
 		fields string
-		assert func(t *testing.T, node model.Node)
+		assert func(t *testing.T, ld model.DefinitionLoader, err error)
+	}
+
+	refusesNamingBothKeys := func(t *testing.T, _ model.DefinitionLoader, err error) {
+		assertRetiredLabelKey(t, err)
 	}
 
 	cases := []testCase{
 		{
-			name:   "explicit label decodes",
+			name:   "explicit label is refused, naming name",
 			fields: "    label: Human Caption",
-			assert: func(t *testing.T, node model.Node) {
-				assert.Equal(t, "Human Caption", node.Label())
+			assert: refusesNamingBothKeys,
+		},
+		{
+			name:   "an empty label value is still the retired key",
+			fields: `    label: ""`,
+			assert: refusesNamingBothKeys,
+		},
+		{
+			name:   "a null label value is still the retired key",
+			fields: "    label:",
+			assert: refusesNamingBothKeys,
+		},
+		{
+			// The at-limit ACCEPT. A parser that refused every node would satisfy
+			// the rows above just as well as a correct one.
+			name:   "name with no label parses, and Name is the display string",
+			fields: "",
+			assert: func(t *testing.T, ld model.DefinitionLoader, err error) {
+				require.NoError(t, err)
+				def, err := ld.Build()
+				require.NoError(t, err)
+				node, ok := def.Node("n")
+				require.True(t, ok, "node n not found")
+				assert.Equal(t, "semantic-name", node.Name())
 			},
 		},
 		{
-			name:   "no label falls back to name",
-			fields: "",
-			assert: func(t *testing.T, node model.Node) {
-				assert.Equal(t, "semantic-name", node.Label())
+			// Discriminates the retirement from KnownFields' pre-existing
+			// strictness: an unrelated unknown key must keep naming ITSELF.
+			name:   "an unrelated unknown key still names that key, not label",
+			fields: "    caption: Human Caption",
+			assert: func(t *testing.T, _ model.DefinitionLoader, err error) {
+				require.Error(t, err)
+				assert.NotErrorIs(t, err, model.ErrRetiredLabelKey)
+				assert.ErrorContains(t, err, "caption")
 			},
 		},
 	}
@@ -335,13 +371,7 @@ flows:
 			t.Parallel()
 
 			ld, err := model.ParseYAML(strings.NewReader(fmt.Sprintf(tmpl, tc.fields)))
-			require.NoError(t, err)
-			def, err := ld.Build()
-			require.NoError(t, err)
-
-			node, ok := def.Node("n")
-			require.True(t, ok, "node n not found")
-			tc.assert(t, node)
+			tc.assert(t, ld, err)
 		})
 	}
 }

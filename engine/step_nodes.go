@@ -70,17 +70,6 @@ func (serviceTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Com
 	return cmds, false, err
 }
 
-// businessRuleTaskStrategy handles KindBusinessRuleTask node entry. It mirrors
-// serviceTaskStrategy: emit the primary InvokeAction (default-by-id name plus
-// the scope-resolved inline action and scoped catalog), park the token, and arm
-// boundary events.
-type businessRuleTaskStrategy struct{}
-
-func (businessRuleTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	cmds, err := emitActionInvoke(c, tok, node)
-	return cmds, false, err
-}
-
 // receiveTaskStrategy handles KindReceiveTask node entry: park the token
 // awaiting the task's message (with resolved correlation key) and arm any
 // boundary events attached to the ReceiveTask host.

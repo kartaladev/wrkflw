@@ -46,15 +46,13 @@ type Node interface {
 	Kind() NodeKind
 	ID() string
 	Name() string
-	Label() string
 }
 
 // Base supplies the identity common to every node kind. Every concrete node type
 // in the leaf packages embeds it.
 type Base struct {
-	id    string
-	name  string
-	label string
+	id   string
+	name string
 }
 
 // NewBase constructs the identity embed for a node. Leaf-package constructors
@@ -64,27 +62,9 @@ func NewBase(id, name string) Base { return Base{id: id, name: name} }
 func (b Base) ID() string   { return b.id }
 func (b Base) Name() string { return b.name }
 
-// SetName sets the semantic/reference name (code-facing; e.g. used by gateway
-// conditions and expressions). Used by the WithName options in the leaf
-// packages, which mutate the embedded Base. For the human-facing display
-// string, see Label/SetLabel.
+// SetName sets the display name. Used by the WithName options in the leaf
+// packages, which mutate the embedded Base.
 func (b *Base) SetName(name string) { b.name = name }
-
-// Label returns the human display label: the explicitly-set label, or the
-// semantic Name when none was set.
-func (b Base) Label() string {
-	if b.label != "" {
-		return b.label
-	}
-	return b.name
-}
-
-// SetLabel sets the raw human label (used by the WithLabel leaf options).
-func (b *Base) SetLabel(label string) { b.label = label }
-
-// rawLabel returns the explicitly-set label without the Name fallback; used only
-// by toWire so an unset label is omitted from the wire.
-func (b Base) rawLabel() string { return b.label }
 
 // WaitFields holds the deadline + in-wait fields shared by activity kinds and by
 // IntermediateCatchEvent (all of which can wait and so can carry a deadline
@@ -163,3 +143,17 @@ type TaskAction struct {
 }
 
 func (t TaskAction) taskAction() string { return t.Action }
+
+// RuleReference holds the reserved rule-engine reference carried by
+// BusinessRuleTask. It is a model-side field group, embedded by the leaf type, so
+// that the kind-agnostic RuleOf accessor dispatches on its carrier method exactly
+// as ActionOf does on TaskAction's — an unexported carrier declared in a leaf
+// package would not satisfy an interface written here.
+type RuleReference struct {
+	// Rule is the reserved rule-engine reference: a catalog name or an inline rule
+	// document (see RuleSpec). nil means unset, which is the only state Validate
+	// accepts until the rule-engine adapter ships (ErrRuleNotSupported).
+	Rule *RuleSpec
+}
+
+func (r RuleReference) rule() *RuleSpec { return r.Rule }

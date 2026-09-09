@@ -1,6 +1,7 @@
 package model_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -2767,11 +2768,11 @@ func TestValidate_RejectsThrowEventWithoutTrigger(t *testing.T) {
 			},
 		},
 		{
-			name: "a label does not rescue a throw that emits nothing",
-			def:  throwDef(event.NewIntermediateThrow("throw", event.WithThrowLabel("notify"))),
+			name: "a display name does not rescue a throw that emits nothing",
+			def:  throwDef(event.NewIntermediateThrow("throw", event.WithThrowName("notify"))),
 			assert: func(t *testing.T, err error) {
 				require.ErrorIs(t, err, model.ErrThrowEventMissingTrigger,
-					"a display label is not a trigger family")
+					"a display name is not a trigger family")
 			},
 		},
 		{
@@ -2796,4 +2797,197 @@ func TestValidate_RejectsThrowEventWithoutTrigger(t *testing.T) {
 			tc.assert(t, model.Validate(tc.def))
 		})
 	}
+}
+
+// ruleTaskDef wraps a businessRuleTask in the smallest valid definition, so a
+// failure names the rule rule rather than a structural one.
+func ruleTaskDef(task model.Node) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			task,
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "score"},
+			{ID: "f2", Source: "score", Target: "end"},
+		},
+	}
+}
+
+// TestValidate_RejectsReservedRule pins the two refusals that make the reserved
+// `rule` key safe to ship before the rule engine exists. It asserts through
+// model.Validate rather than Builder.Build deliberately — see
+// model.ErrRuleNotSupported for why Validate is the placement that matters.
+//
+// The last three rows are the at-limit ACCEPTS. A check that rejected every
+// businessRuleTask — or every node — would satisfy the refusal rows exactly as
+// well as a correct one.
+func TestValidate_RejectsReservedRule(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "a rule-catalog name is refused until the adapter ships",
+			def:  ruleTaskDef(activity.NewBusinessRuleTask("score", activity.WithRule("pricing.v3"))),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrRuleNotSupported)
+				assert.NotErrorIs(t, err, model.ErrRuleAndAction)
+			},
+		},
+		{
+			name: "an inline rule document is refused too",
+			def: ruleTaskDef(activity.NewBusinessRuleTask("score",
+				activity.WithInlineRule(json.RawMessage(`{"stages":[]}`)))),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrRuleNotSupported)
+			},
+		},
+		{
+			name: "rule and action together names the exclusivity defect",
+			def: ruleTaskDef(activity.NewBusinessRuleTask("score",
+				activity.WithRule("pricing.v3"), activity.WithTaskAction("risk-score"))),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrRuleAndAction,
+					"the exclusivity defect is the more specific one and must be reported")
+			},
+		},
+		{
+			// The at-limit accept: today's businessRuleTask, unchanged.
+			name: "a businessRuleTask with an action and no rule stays valid",
+			def:  ruleTaskDef(activity.NewBusinessRuleTask("score", activity.WithTaskAction("risk-score"))),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			// The other at-limit accept: no rule AND no action, where the action
+			// name defaults to the node id.
+			name: "a bare businessRuleTask stays valid, action defaulting to the id",
+			def:  ruleTaskDef(activity.NewBusinessRuleTask("score")),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			// Discriminates the rule check from a blanket refusal of activities:
+			// a serviceTask cannot carry a rule at all and must be untouched.
+			name: "a serviceTask is unaffected",
+			def:  ruleTaskDef(activity.NewServiceTask("score", activity.WithTaskAction("risk-score"))),
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}
+
+// TestValidate_RuleShapeIsTheCodecDomain asserts the invariant RuleSpec's doc
+// comment states, rather than leaving it as prose: **if Validate does not report
+// ErrInvalidRule, the definition marshals AND the marshalled bytes decode back.**
+// Every row below checks that generically, so the claim cannot rot into a
+// falsehood the way it already did once.
+//
+// It did: Validate originally discriminated on IsZero() alone, which says nothing
+// about whether Inline is a JSON object. Both reviews measured the consequence
+// independently — WithInlineRule([]byte("not json")) validated and then failed in
+// MarshalJSON ("valid but unstorable"), and WithInlineRule([]byte("[1,2]")) and
+// WithRule("   ") validated, marshalled, and produced bytes the decoder refuses
+// ("valid but unreadable"). Validate and both codecs now share one domain,
+// RuleSpec.shapeErr.
+//
+// Masked at this head by ErrRuleNotSupported refusing every rule; the precondition
+// for it going live is the adapter deleting that error, which validate.go's own
+// doc comment promises. Which sentinel fires therefore matters even while both
+// refuse: ErrInvalidRule means "this shape is wrong", ErrRuleNotSupported means
+// "this shape is fine, the feature is not here yet". The at-limit ACCEPT rows are
+// the ones that must report the SECOND — without them, a shape gate that rejected
+// every rule would satisfy every refusal row just as well.
+func TestValidate_RuleShapeIsTheCodecDomain(t *testing.T) {
+	t.Parallel()
+
+	// shapeOK marks a row whose rule is a well-formed shape: Validate must refuse
+	// it for the RESERVATION, not for its shape, and it must survive the wire.
+	type testCase struct {
+		name    string
+		rule    *model.RuleSpec
+		shapeOK bool
+	}
+
+	cases := []testCase{
+		{name: "a catalog name is a valid shape", rule: &model.RuleSpec{Name: "pricing.v3"}, shapeOK: true},
+		{name: "an inline object is a valid shape", rule: &model.RuleSpec{Inline: json.RawMessage(`{"ok":1}`)}, shapeOK: true},
+		{name: "an empty inline object is a valid shape", rule: &model.RuleSpec{Inline: json.RawMessage(`{}`)}, shapeOK: true},
+
+		{name: "inline bytes that are not JSON", rule: &model.RuleSpec{Inline: json.RawMessage(`not json`)}},
+		{name: "an inline array is not an object", rule: &model.RuleSpec{Inline: json.RawMessage(`[1,2]`)}},
+		{name: "an inline number is not an object", rule: &model.RuleSpec{Inline: json.RawMessage(`42`)}},
+		{name: "a truncated inline object", rule: &model.RuleSpec{Inline: json.RawMessage(`{"a":`)}},
+		{name: "a blank catalog name", rule: &model.RuleSpec{Name: "   "}},
+		{name: "a non-nil but empty spec", rule: &model.RuleSpec{}},
+		{
+			name: "a name and a document together are exclusive",
+			rule: &model.RuleSpec{Name: "pricing.v3", Inline: json.RawMessage(`{"ok":1}`)},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			def := ruleTaskDef(activity.BusinessRuleTask{
+				Base:          model.NewBase("score", "Score"),
+				RuleReference: model.RuleReference{Rule: tc.rule},
+			})
+			err := model.Validate(def)
+			require.Error(t, err, "every rule is refused at this head, for one reason or the other")
+
+			if !tc.shapeOK {
+				require.ErrorIs(t, err, model.ErrInvalidRule,
+					"a malformed shape must be named as such, not passed to the reservation check")
+				return
+			}
+
+			// The at-limit accept: the shape gate lets it through to the
+			// reservation, which is the only thing refusing it.
+			require.ErrorIs(t, err, model.ErrRuleNotSupported)
+			require.NotErrorIs(t, err, model.ErrInvalidRule,
+				"a well-formed rule must not be reported as malformed")
+
+			// The invariant: anything Validate does not call malformed must survive
+			// a full marshal -> decode round-trip.
+			data, marshalErr := json.Marshal(def)
+			require.NoError(t, marshalErr, "validates as well-formed, so it must marshal")
+
+			var back model.ProcessDefinition
+			require.NoError(t, json.Unmarshal(data, &back),
+				"validates as well-formed and marshalled, so the bytes must decode back")
+			reloaded, ok := back.Node("score")
+			require.True(t, ok)
+			assert.Equal(t, tc.rule, model.RuleOf(reloaded), "the rule must survive unchanged")
+		})
+	}
+}
+
+// TestValidate_BareBusinessRuleTaskStaysValid is the outer at-limit accept for the
+// whole rule mechanism: a businessRuleTask with NO rule must still validate green.
+// A shape gate or reservation that refused every businessRuleTask would satisfy
+// every refusal row above; this is what makes those rows mean something.
+func TestValidate_BareBusinessRuleTaskStaysValid(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, model.Validate(ruleTaskDef(activity.BusinessRuleTask{
+		Base: model.NewBase("score", "Score"),
+	})), "a businessRuleTask carrying no rule is today's shape and must stay valid")
 }

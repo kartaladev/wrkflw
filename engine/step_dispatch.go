@@ -34,8 +34,14 @@ type nodeStrategy interface {
 // Kinds NOT in this map (KindBoundaryEvent, KindUnspecified) fall through to the
 // post-dispatch logic in drive() unchanged.
 var nodeStrategies = map[model.NodeKind]nodeStrategy{
-	model.KindServiceTask:            serviceTaskStrategy{},
-	model.KindBusinessRuleTask:       businessRuleTaskStrategy{},
+	model.KindServiceTask: serviceTaskStrategy{},
+	// businessRuleTask shares serviceTask's strategy verbatim: until the
+	// rule-engine adapter ships it invokes a catalog action exactly as a
+	// serviceTask does (NodeWire.Rule is reserved and refused at validation, see
+	// model.ErrRuleNotSupported). The adapter grows a rule branch here, and the
+	// duplicate businessRuleTaskStrategy that used to sit beside
+	// serviceTaskStrategy is gone rather than left to drift.
+	model.KindBusinessRuleTask:       serviceTaskStrategy{},
 	model.KindReceiveTask:            receiveTaskStrategy{},
 	model.KindSendTask:               sendTaskStrategy{},
 	model.KindStartEvent:             startEventStrategy{},

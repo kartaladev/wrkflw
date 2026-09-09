@@ -938,44 +938,34 @@ func sampleDefinition(t *testing.T) *model.ProcessDefinition {
 		RegisterActionFunc("charge-card", noopAction).
 		CancelActions("refund").
 		Add(event.NewStart("start",
-			event.WithName("Start"),
-			event.WithLabel("Order received"))).
+			event.WithName("Start"))).
 		Add(activity.NewServiceTask("charge",
 			activity.WithName("Charge Card"),
-			activity.WithLabel("Charge the customer's card"),
 			activity.WithTaskAction("charge-card"))).
 		Add(activity.NewUserTask("manager_review",
 			activity.WithName("Manager Review"),
-			activity.WithLabel("Manager sign-off on order"),
 			activity.WithEligibleRoles("manager"),
 			activity.WithOutcomes("approve", "reject", "revise"),
 			activity.WithOutcomeVariable("manager_approved"))).
 		Add(gateway.NewExclusive("manager_decision",
-			gateway.WithName("Manager Approved?"),
-			gateway.WithLabel("Did the manager approve?"))).
+			gateway.WithName("Manager Approved?"))).
 		Add(activity.NewUserTask("finance_approval",
 			activity.WithName("Finance Approval"),
-			activity.WithLabel("Finance approval of spend"),
 			activity.WithEligibleRoles("finance"),
 			activity.WithOutcomes("approve", "reject"),
 			activity.WithOutcomeVariable("finance_approved"))).
 		Add(gateway.NewExclusive("finance_decision",
-			gateway.WithName("Finance Approved?"),
-			gateway.WithLabel("Did finance approve?"))).
+			gateway.WithName("Finance Approved?"))).
 		Add(activity.NewServiceTask("fulfill",
 			activity.WithName("Fulfill Order"),
-			activity.WithLabel("Ship the order to the customer"),
 			activity.WithTaskAction("ship-order"))).
 		Add(activity.NewServiceTask("notify_rejection",
 			activity.WithName("Notify Rejection"),
-			activity.WithLabel("Email the customer about the rejection"),
 			activity.WithTaskAction("send-rejection-email"))).
 		Add(event.NewEnd("approved_end",
-			event.WithName("Approved End"),
-			event.WithLabel("Order completed"))).
+			event.WithName("Approved End"))).
 		Add(event.NewEnd("rejected_end",
-			event.WithName("Rejected End"),
-			event.WithLabel("Order rejected"))).
+			event.WithName("Rejected End"))).
 		Connect("start", "charge").
 		Connect("charge", "manager_review").
 		Connect("manager_review", "manager_decision").

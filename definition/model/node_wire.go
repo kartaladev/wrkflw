@@ -14,21 +14,27 @@ import (
 // NodeWire is the flat JSON/JSONB representation of any node. It is the single
 // serialization shape through which every node kind decodes and encodes.
 type NodeWire struct {
-	ID   string   `json:"id"`
-	Kind NodeKind `json:"kind"`
-	Name string   `json:"name,omitempty"`
-	// Label is the raw (not-baked) human display label, written only when
-	// explicitly set (Base.SetLabel). An unset label stays omitted here — the
-	// Name fallback (Base.Label()) is resolved in-memory, never baked into the
-	// wire, so a definition authored without a label keeps tracking Name across
-	// renames after a reload.
-	Label              string   `json:"label,omitempty"`
-	Action             string   `json:"action,omitempty"`
-	EligibleRoles      []string `json:"eligible_roles,omitempty"`
-	EligiblePrivileges []string `json:"eligible_privileges,omitempty"`
-	EligibleExpr       string   `json:"eligible_expr,omitempty"`
-	Manual             bool     `json:"manual,omitempty"`
-	ManualImmediate    bool     `json:"manual_immediate,omitempty"`
+	ID     string   `json:"id"`
+	Kind   NodeKind `json:"kind"`
+	Name   string   `json:"name,omitempty"`
+	Action string   `json:"action,omitempty"`
+	// Rule is the reserved rule-engine reference on a businessRuleTask: a catalog
+	// name or an inline rule document (see RuleSpec). It is a POINTER so an
+	// absent rule is dropped by omitempty — omitempty has no effect on a struct
+	// field, so a value field would emit "rule":{} on every businessRuleTask and
+	// break the byte-identical golden file.
+	//
+	// A literal "rule":null therefore means ABSENT (encoding/json nils the
+	// pointer without consulting RuleSpec.UnmarshalJSON), which loses nothing:
+	// there is no rule in it to lose. Every other malformed shape is refused with
+	// ErrInvalidRule, and any non-nil rule is refused by Validate with
+	// ErrRuleNotSupported until the adapter ships.
+	Rule               *RuleSpec `json:"rule,omitempty"`
+	EligibleRoles      []string  `json:"eligible_roles,omitempty"`
+	EligiblePrivileges []string  `json:"eligible_privileges,omitempty"`
+	EligibleExpr       string    `json:"eligible_expr,omitempty"`
+	Manual             bool      `json:"manual,omitempty"`
+	ManualImmediate    bool      `json:"manual_immediate,omitempty"`
 	// Outcomes/ExposeOutcome/OutcomeVariable carry a UserTask's completion-outcome
 	// declaration and its variable-exposure opt-in.
 	Outcomes        []string `json:"outcomes,omitempty"`
@@ -83,12 +89,49 @@ type NodeWire struct {
 	Validation *validate.ValidationDescriptor `json:"validation,omitempty"`
 }
 
+// nodeWireIn is the DECODE shape for a node: NodeWire plus the retired keys that
+// have to be refused rather than ignored.
+//
+// The retired key lives here rather than on NodeWire so that nothing outside
+// this file can set it. NodeWire is cross-package API — registry.go hands a
+// *NodeWire to all ~20 leaf ToWire specs — so a publicly-settable field whose
+// only meaning is "never write this" would leave the never-emitted invariant as
+// a promise kept by a test. Kept here it is a property of the type instead: no
+// ToWire can reach the field, so no marshalled definition can carry the key.
+//
+// MarshalJSON encodes through this type too, with Label always nil. Promoted
+// fields inline at the same level and index order places every NodeWire field
+// before Label, so the output is byte-identical to encoding a bare NodeWire —
+// which the byte-identical golden round-trip is the standing proof of.
+type nodeWireIn struct {
+	NodeWire
+	// Label is detection-only. The "label" node key is retired and "name" is the
+	// display string, so a label has nowhere to go. It is json.RawMessage rather
+	// than string so that PRESENCE is what is detected, not a non-empty value:
+	// "label":"", "label":null and "label":{"any":"shape"} are all the retired
+	// key and all refused.
+	//
+	// Dropping the field would not make the key silently accepted — the decoder
+	// sets DisallowUnknownFields — but it would report
+	// `json: unknown field "label"`, naming the RETIRED key and never the
+	// replacement, which tells a migrating consumer nothing about where the
+	// string now goes. See ErrRetiredLabelKey.
+	Label json.RawMessage `json:"label,omitempty"`
+}
+
+// node reconstructs the concrete Node for one decoded node, refusing any retired
+// key it carries first. This is the JSON half of the retirement; fromNodeYAML is
+// the YAML half, and both report through retiredLabelKeyErr.
+func (w nodeWireIn) node() (Node, error) {
+	if len(w.Label) > 0 {
+		return nil, retiredLabelKeyErr(w.ID)
+	}
+	return fromWire(w.NodeWire)
+}
+
 // toWire flattens a Node into its wire form via the kind's registered spec.
 func toWire(n Node) NodeWire {
 	w := NodeWire{ID: n.ID(), Kind: n.Kind(), Name: n.Name()}
-	if lc, ok := n.(interface{ rawLabel() string }); ok {
-		w.Label = lc.rawLabel()
-	}
 	if s, ok := specFor(n.Kind()); ok && s.ToWire != nil {
 		s.ToWire(n, &w)
 	}
@@ -138,7 +181,15 @@ func fromWire(w NodeWire) (Node, error) {
 	if !ok || s.FromWire == nil {
 		return nil, fmt.Errorf("%w: %q", ErrKindNotRegistered, w.Kind)
 	}
-	return s.FromWire(Base{id: w.ID, name: w.Name, label: w.Label}, w), nil
+	return s.FromWire(Base{id: w.ID, name: w.Name}, w), nil
+}
+
+// retiredLabelKeyErr builds the ErrRetiredLabelKey diagnostic for node id. It is
+// the single message shared by both decoders: the JSON path detects the retired
+// key as a present nodeWireIn.Label, the YAML path as a present nodeYAML.Label,
+// and each reports it through here.
+func retiredLabelKeyErr(id string) error {
+	return fmt.Errorf("%w: node %q", ErrRetiredLabelKey, id)
 }
 
 // definitionWire mirrors ProcessDefinition with Nodes as wire forms.
@@ -151,7 +202,7 @@ type definitionWire struct {
 	// serializable form, so UnmarshalJSON accepts the key and drops it — a
 	// reloaded definition falls back to the global catalog for those names.
 	ScopedActions []string            `json:"scoped_actions,omitempty"`
-	Nodes         []NodeWire          `json:"nodes"`
+	Nodes         []nodeWireIn        `json:"nodes"`
 	Flows         []flow.SequenceFlow `json:"flows"`
 	CancelActions []string            `json:"cancel_actions,omitempty"`
 }
@@ -166,14 +217,14 @@ func (d ProcessDefinition) MarshalJSON() ([]byte, error) {
 		Flows:         d.Flows,
 		CancelActions: d.CancelActions,
 	}
-	dw.Nodes = make([]NodeWire, len(d.Nodes))
+	dw.Nodes = make([]nodeWireIn, len(d.Nodes))
 	for i, n := range d.Nodes {
 		if strat := ValidationStrategyFor(n); strat != nil {
 			if _, ok := strat.(validate.DescribableStrategy); !ok {
 				return nil, fmt.Errorf("%w: node %q", ErrUnserializableValidation, n.ID())
 			}
 		}
-		dw.Nodes[i] = toWire(n)
+		dw.Nodes[i] = nodeWireIn{NodeWire: toWire(n)}
 	}
 	return json.Marshal(dw)
 }
@@ -222,7 +273,7 @@ func (d *ProcessDefinition) UnmarshalJSON(data []byte) error {
 	d.CancelActions = dw.CancelActions
 	d.Nodes = make([]Node, len(dw.Nodes))
 	for i, w := range dw.Nodes {
-		n, err := fromWire(w)
+		n, err := w.node()
 		if err != nil {
 			return err
 		}

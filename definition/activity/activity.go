@@ -123,10 +123,21 @@ func (SendTask) Kind() model.NodeKind { return model.KindSendTask }
 var _ model.Node = SendTask{}
 
 // BusinessRuleTask executes a named business rule action.
+//
+// Until the rule-engine adapter ships it behaves EXACTLY as a ServiceTask: it
+// invokes a catalog action, and the engine dispatches both kinds through the one
+// serviceTaskStrategy. The kind is kept, rather than folded into serviceTask, so
+// that definitions authored now do not have to be renamed when the adapter
+// arrives.
 type BusinessRuleTask struct {
 	model.Base
 	model.ActivityFields
 	model.TaskAction
+	// RuleReference carries the reserved rule field, set by WithRule /
+	// WithInlineRule. A non-nil Rule is refused by model.Validate with
+	// model.ErrRuleNotSupported until the rule-engine adapter exists, and is
+	// exclusive with Action (model.ErrRuleAndAction).
+	model.RuleReference
 }
 
 // Kind returns model.KindBusinessRuleTask.
@@ -206,7 +217,9 @@ func NewSendTask(id, messageName string, opts ...SendTaskOption) model.Node {
 }
 
 // NewBusinessRuleTask constructs a BusinessRuleTask. Action configuration mirrors
-// NewServiceTask (WithTaskAction / default-by-id).
+// NewServiceTask (WithTaskAction / default-by-id). WithRule and WithInlineRule
+// set the reserved rule-engine reference, which Build refuses until the adapter
+// ships (model.ErrRuleNotSupported).
 func NewBusinessRuleTask(id string, opts ...BusinessRuleOption) model.Node {
 	b := BusinessRuleTask{Base: model.NewBase(id, "")}
 	for _, o := range opts {
@@ -319,11 +332,11 @@ func init() {
 	model.RegisterKind(kindreg.Grant(), model.KindBusinessRuleTask, model.NodeSpec{
 		Name: "businessRuleTask",
 		FromWire: func(b model.Base, w model.NodeWire) model.Node {
-			return BusinessRuleTask{Base: b, ActivityFields: w.Activity(), TaskAction: model.TaskAction{Action: w.Action}}
+			return BusinessRuleTask{Base: b, ActivityFields: w.Activity(), TaskAction: model.TaskAction{Action: w.Action}, RuleReference: model.RuleReference{Rule: w.Rule}}
 		},
 		ToWire: func(n model.Node, w *model.NodeWire) {
 			v := n.(BusinessRuleTask)
-			w.Action = v.Action
+			w.Action, w.Rule = v.Action, v.Rule
 			w.PutActivity(v.ActivityFields)
 		},
 	})

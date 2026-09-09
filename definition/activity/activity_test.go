@@ -263,3 +263,115 @@ func TestUserTaskOutcomeWireRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+// TestBusinessRuleTaskRuleOptions owns the option -> field seam: each reserved rule
+// option must land the shape it names on BusinessRuleTask.Rule, and the field must
+// survive a round-trip through the kind's NodeSpec unchanged. The exact wire
+// STRINGS are pinned by model's TestBusinessRuleTaskRuleRoundTrip, which owns the
+// persisted-blob seam; they are not re-asserted here.
+//
+// The no-option row is the at-limit accept: an option set that always allocated a
+// RuleSpec would satisfy the two positive rows just as well, and would put a rule
+// on every businessRuleTask.
+func TestBusinessRuleTaskRuleOptions(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		opts   []activity.BusinessRuleOption
+		assert func(t *testing.T, task activity.BusinessRuleTask, encoded string)
+	}
+
+	cases := []testCase{
+		{
+			name: "WithRule sets the catalog name",
+			opts: []activity.BusinessRuleOption{activity.WithRule("pricing.v3")},
+			assert: func(t *testing.T, task activity.BusinessRuleTask, encoded string) {
+				require.NotNil(t, task.Rule)
+				assert.Equal(t, "pricing.v3", task.Rule.Name)
+				assert.Empty(t, task.Rule.Inline)
+			},
+		},
+		{
+			name: "WithInlineRule sets the inline document",
+			opts: []activity.BusinessRuleOption{
+				activity.WithInlineRule(json.RawMessage(`{"stages":[]}`)),
+			},
+			assert: func(t *testing.T, task activity.BusinessRuleTask, encoded string) {
+				require.NotNil(t, task.Rule)
+				assert.Empty(t, task.Rule.Name)
+				assert.JSONEq(t, `{"stages":[]}`, string(task.Rule.Inline))
+			},
+		},
+		{
+			name: "the last rule option wins",
+			opts: []activity.BusinessRuleOption{
+				activity.WithRule("pricing.v2"), activity.WithRule("pricing.v3"),
+			},
+			assert: func(t *testing.T, task activity.BusinessRuleTask, encoded string) {
+				require.NotNil(t, task.Rule)
+				assert.Equal(t, "pricing.v3", task.Rule.Name)
+			},
+		},
+		{
+			name: "no rule option leaves Rule nil and emits no key",
+			opts: []activity.BusinessRuleOption{activity.WithTaskAction("risk-score")},
+			assert: func(t *testing.T, task activity.BusinessRuleTask, encoded string) {
+				assert.Nil(t, task.Rule)
+				assert.NotContains(t, encoded, `"rule"`, "an unset rule must not reach the wire at all")
+				assert.Contains(t, encoded, `"action":"risk-score"`)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			node := activity.NewBusinessRuleTask("score", tc.opts...)
+			task, ok := node.(activity.BusinessRuleTask)
+			require.True(t, ok)
+
+			def := &model.ProcessDefinition{ID: "d", Version: 1, Nodes: []model.Node{node}}
+			data, err := json.Marshal(def)
+			require.NoError(t, err)
+
+			// Round-trip back so the assertions cover FromWire as well as ToWire.
+			var back model.ProcessDefinition
+			require.NoError(t, json.Unmarshal(data, &back))
+			require.Len(t, back.Nodes, 1)
+			reloaded, ok := back.Nodes[0].(activity.BusinessRuleTask)
+			require.True(t, ok)
+			assert.Equal(t, task.Rule, reloaded.Rule, "Rule must survive the wire round-trip")
+
+			tc.assert(t, task, string(data))
+		})
+	}
+}
+
+// TestWithInlineRuleDoesNotAliasCallerBuffer pins that the option COPIES the
+// caller's bytes. Without the copy the node's rule aliases the caller's slice, so
+// reusing or mutating that buffer afterwards silently rewrites a rule on an
+// already-built node — measured before the fix as `{"a":1}` becoming `{za":1}`.
+//
+// model.RuleSpec.UnmarshalJSON clones at its own door, so this is also what keeps
+// one type from having two aliasing contracts depending on which door it came
+// through.
+func TestWithInlineRuleDoesNotAliasCallerBuffer(t *testing.T) {
+	t.Parallel()
+
+	buf := []byte(`{"a":1}`)
+	node := activity.NewBusinessRuleTask("score", activity.WithInlineRule(buf))
+	task, ok := node.(activity.BusinessRuleTask)
+	require.True(t, ok)
+	require.NotNil(t, task.Rule)
+
+	buf[1] = 'z' // the caller reuses its buffer
+
+	// assert.Equal, not assert.JSONEq: the property is BYTE non-aliasing, and
+	// JSONEq compares parsed semantics — normalising exactly the whitespace and key
+	// order an aliasing test must not normalise. A same-length whitespace-only
+	// rewrite by the caller would leave the alias live and JSONEq green.
+	assert.Equal(t, `{"a":1}`, string(task.Rule.Inline),
+		"the node's rule must not follow the caller's mutation")
+}

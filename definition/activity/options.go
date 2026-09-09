@@ -1,6 +1,9 @@
 package activity
 
 import (
+	"bytes"
+	"encoding/json"
+
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/definition/model/validate"
 	"github.com/kartaladev/wrkflw/definition/schedule"
@@ -59,23 +62,8 @@ func (o nameOpt) applyReceiveTask(r *ReceiveTask)       { r.SetName(o.name) }
 func (o nameOpt) applySendTask(s *SendTask)             { s.SetName(o.name) }
 func (o nameOpt) applyBusinessRule(b *BusinessRuleTask) { b.SetName(o.name) }
 
-// WithName sets the display name on any activity node.
+// WithName sets the display name.
 func WithName(name string) nameOpt { return nameOpt{name} }
-
-// --- WithLabel (accepted by every activity constructor) ---
-
-type labelOpt struct{ label string }
-
-func (o labelOpt) applyActivity(_ *model.ActivityFields) {}
-func (o labelOpt) applyName(b *model.Base)               { b.SetLabel(o.label) }
-func (o labelOpt) applyServiceTask(s *ServiceTask)       { s.SetLabel(o.label) }
-func (o labelOpt) applyUserTask(u *UserTask)             { u.SetLabel(o.label) }
-func (o labelOpt) applyReceiveTask(r *ReceiveTask)       { r.SetLabel(o.label) }
-func (o labelOpt) applySendTask(s *SendTask)             { s.SetLabel(o.label) }
-func (o labelOpt) applyBusinessRule(b *BusinessRuleTask) { b.SetLabel(o.label) }
-
-// WithLabel sets the human display label on any activity node.
-func WithLabel(label string) labelOpt { return labelOpt{label} }
 
 // --- action options (ServiceTask + BusinessRuleTask) ---
 
@@ -90,6 +78,43 @@ func WithTaskAction(name string) interface {
 	BusinessRuleOption
 } {
 	return actionNameOpt{name}
+}
+
+// --- rule options (BusinessRuleTask only) ---
+
+type ruleOpt struct{ rule model.RuleSpec }
+
+func (o ruleOpt) applyBusinessRule(b *BusinessRuleTask) {
+	spec := o.rule
+	b.Rule = &spec
+}
+
+// WithRule sets the reserved rule-catalog name on a BusinessRuleTask — the same
+// shape WithTaskAction has, one name resolved through one catalog.
+//
+// The rule engine does not exist yet: model.Validate refuses any non-empty rule
+// with model.ErrRuleNotSupported, so a definition using this option cannot be
+// built or published until the adapter ships. The option exists now so the
+// persisted format does not have to change then.
+func WithRule(name string) BusinessRuleOption { return ruleOpt{model.RuleSpec{Name: name}} }
+
+// WithInlineRule sets an inline rule document on a BusinessRuleTask, carried
+// verbatim for the rule engine to compile and interpreted by nothing in wrkflw.
+// Prefer WithRule: a name keeps the definition small and lets the rule set be
+// versioned independently.
+//
+// Like WithRule, it is refused by model.Validate (model.ErrRuleNotSupported)
+// until the adapter ships.
+func WithInlineRule(doc json.RawMessage) BusinessRuleOption {
+	// bytes.Clone, because the node must not alias the caller's buffer: a caller
+	// that reuses or mutates doc afterwards would silently rewrite the rule on an
+	// already-built node. Measured before the fix: buf := []byte(`{"a":1}`), build,
+	// then buf[1] = 'z' and the node reads {za":1}.
+	//
+	// model.RuleSpec.UnmarshalJSON clones at its own door for the same reason, so
+	// without this the same type had two aliasing contracts depending on which door
+	// the value arrived through.
+	return ruleOpt{model.RuleSpec{Inline: bytes.Clone(doc)}}
 }
 
 // --- shared activity-field options (work on all activity constructors) ---

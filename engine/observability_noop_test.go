@@ -749,5 +749,4 @@ type unspecifiedKindNode struct{}
 
 func (unspecifiedKindNode) ID() string           { return "mystery" }
 func (unspecifiedKindNode) Name() string         { return "" }
-func (unspecifiedKindNode) Label() string        { return "" }
 func (unspecifiedKindNode) Kind() model.NodeKind { return model.KindUnspecified }
