@@ -34,10 +34,10 @@ func TestGatewayConstructors(t *testing.T) {
 }
 
 // TestGatewayOptions covers the functional-options constructors: WithName sets
-// the semantic name, WithLabel sets the human display label (overriding the
-// Name fallback), and a bare id with no options remains valid with empty
-// name/label — preserving source compatibility for the 100+ id-only call
-// sites across the repo.
+// the display name — the only naming option a gateway has, now that label is
+// retired — and a bare id with no options remains valid with an empty name,
+// preserving source compatibility for the 100+ id-only call sites across the
+// repo.
 func TestGatewayOptions(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -45,20 +45,21 @@ func TestGatewayOptions(t *testing.T) {
 		assert func(t *testing.T, n model.Node)
 	}{
 		{
-			name: "name and label both set",
+			name: "WithName sets the display name",
 			node: func() model.Node {
-				return gateway.NewExclusive("x", gateway.WithName("Decision"), gateway.WithLabel("Approve?"))
+				return gateway.NewExclusive("x", gateway.WithName("Approve?"))
 			},
 			assert: func(t *testing.T, n model.Node) {
-				require.Equal(t, "Decision", n.Name())
-				require.Equal(t, "Approve?", n.Label())
+				require.Equal(t, "Approve?", n.Name())
 			},
 		},
 		{
-			name: "unset label falls back to name",
-			node: func() model.Node { return gateway.NewParallel("fork", gateway.WithName("Fork")) },
+			name: "last WithName wins",
+			node: func() model.Node {
+				return gateway.NewParallel("fork", gateway.WithName("Split"), gateway.WithName("Fork"))
+			},
 			assert: func(t *testing.T, n model.Node) {
-				require.Equal(t, "Fork", n.Label())
+				require.Equal(t, "Fork", n.Name())
 			},
 		},
 		{

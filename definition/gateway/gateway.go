@@ -3,11 +3,10 @@
 // construct gateways (gateway.NewExclusive, …) and, via its init, to register
 // their (de)serialization with the definition package.
 //
-// Gateways are configured with functional options: WithName sets the
-// semantic/reference name, WithLabel sets the human display label (falling
-// back to Name when unset). Their routing behaviour emerges entirely from the
-// number and conditions of their incoming/outgoing flows (see model.Validate
-// and the runtime), not from any option here.
+// Gateways are configured with functional options: WithName sets the display
+// name. Their routing behaviour emerges entirely from the number and conditions
+// of their incoming/outgoing flows (see model.Validate and the runtime), not
+// from any option here.
 package gateway
 
 import (
@@ -56,11 +55,8 @@ var _ model.Node = EventBasedGateway{}
 // Option configures a gateway at construction.
 type Option func(*model.Base)
 
-// WithName sets the semantic/reference name on a gateway.
+// WithName sets the display name.
 func WithName(name string) Option { return func(b *model.Base) { b.SetName(name) } }
-
-// WithLabel sets the human display label on a gateway.
-func WithLabel(label string) Option { return func(b *model.Base) { b.SetLabel(label) } }
 
 // newGateway builds the shared identity embed for a gateway, applying opts in
 // order.
@@ -72,26 +68,22 @@ func newGateway(id string, opts ...Option) model.Base {
 	return b
 }
 
-// NewExclusive constructs an ExclusiveGateway. Configure it with WithName
-// and/or WithLabel.
+// NewExclusive constructs an ExclusiveGateway. Configure it with WithName.
 func NewExclusive(id string, opts ...Option) model.Node {
 	return ExclusiveGateway{newGateway(id, opts...)}
 }
 
-// NewParallel constructs a ParallelGateway. Configure it with WithName and/or
-// WithLabel.
+// NewParallel constructs a ParallelGateway. Configure it with WithName.
 func NewParallel(id string, opts ...Option) model.Node {
 	return ParallelGateway{newGateway(id, opts...)}
 }
 
-// NewInclusive constructs an InclusiveGateway. Configure it with WithName
-// and/or WithLabel.
+// NewInclusive constructs an InclusiveGateway. Configure it with WithName.
 func NewInclusive(id string, opts ...Option) model.Node {
 	return InclusiveGateway{newGateway(id, opts...)}
 }
 
-// NewEventBased constructs an EventBasedGateway. Configure it with WithName
-// and/or WithLabel.
+// NewEventBased constructs an EventBasedGateway. Configure it with WithName.
 func NewEventBased(id string, opts ...Option) model.Node {
 	return EventBasedGateway{newGateway(id, opts...)}
 }

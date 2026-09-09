@@ -17,16 +17,24 @@ import (
 // but uses a plain string for Kind so that yaml.v3 decodes the lowerCamelCase
 // discriminator without invoking NodeKind's JSON un/marshalers.
 type nodeYAML struct {
-	ID                 string   `yaml:"id"`
-	Kind               string   `yaml:"kind"`
-	Name               string   `yaml:"name,omitempty"`
-	Label              string   `yaml:"label,omitempty"`
-	Action             string   `yaml:"action,omitempty"`
-	EligibleRoles      []string `yaml:"eligible_roles,omitempty"`
-	EligiblePrivileges []string `yaml:"eligible_privileges,omitempty"`
-	EligibleExpr       string   `yaml:"eligible_expr,omitempty"`
-	Manual             bool     `yaml:"manual,omitempty"`
-	ManualImmediate    bool     `yaml:"manual_immediate,omitempty"`
+	ID   string `yaml:"id"`
+	Kind string `yaml:"kind"`
+	Name string `yaml:"name,omitempty"`
+	// Label mirrors NodeWire.Label: it exists ONLY to refuse the retired `label`
+	// node key with a message naming its replacement, `name`. It is a yaml.Node
+	// rather than a string so that PRESENCE is detected (an explicit empty or
+	// null value is still the retired key), and because KnownFields(true) would
+	// otherwise report "field label not found" — an error naming the wrong key.
+	// nodeYAML is decode-only; nothing ever writes this field.
+	Label  yaml.Node `yaml:"label,omitempty"`
+	Action string    `yaml:"action,omitempty"`
+	// Rule mirrors NodeWire.Rule — the reserved rule-engine reference.
+	Rule               *RuleSpec `yaml:"rule,omitempty"`
+	EligibleRoles      []string  `yaml:"eligible_roles,omitempty"`
+	EligiblePrivileges []string  `yaml:"eligible_privileges,omitempty"`
+	EligibleExpr       string    `yaml:"eligible_expr,omitempty"`
+	Manual             bool      `yaml:"manual,omitempty"`
+	ManualImmediate    bool      `yaml:"manual_immediate,omitempty"`
 	// Outcomes/ExposeOutcome/OutcomeVariable mirror the like-named NodeWire
 	// fields — a UserTask's completion-outcome declaration.
 	Outcomes         []string     `yaml:"outcomes,omitempty"`
@@ -89,6 +97,13 @@ type definitionYAML struct {
 // fromNodeYAML converts a nodeYAML into a concrete Node via the kind
 // discriminator, reusing the fromWire path for consistency.
 func fromNodeYAML(ny nodeYAML) (Node, error) {
+	// A zero yaml.Node has Kind 0, which no decoded node ever has, so this tests
+	// the retired key's PRESENCE — `label: x`, `label: ""` and a bare `label:`
+	// alike. Checked before the kind lookup so the migration hint wins over an
+	// unrelated complaint about the same node.
+	if ny.Label.Kind != 0 {
+		return nil, retiredLabelKeyErr(ny.ID)
+	}
 	kind, ok := nodeKindByName[ny.Kind]
 	if !ok {
 		return nil, fmt.Errorf("workflow-definition: unknown node kind %q", ny.Kind)
@@ -113,7 +128,7 @@ func fromNodeYAML(ny nodeYAML) (Node, error) {
 		ID:                    ny.ID,
 		Kind:                  kind,
 		Name:                  ny.Name,
-		Label:                 ny.Label,
+		Rule:                  ny.Rule,
 		Action:                ny.Action,
 		EligibleRoles:         ny.EligibleRoles,
 		EligiblePrivileges:    ny.EligiblePrivileges,

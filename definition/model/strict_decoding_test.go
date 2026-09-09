@@ -343,7 +343,6 @@ nodes:
   - id: start
     kind: startEvent
     name: Start
-    label: Kick off
     message_name: order-received
     correlation_key: orderId
     message_start_singleton: true
@@ -518,6 +517,101 @@ func declaredYAMLTags(t *testing.T, file string, structs ...string) []string {
 	return out
 }
 
+// refusedYAMLTags are the yaml tags nodeYAML declares in order to REFUSE a key
+// rather than to accept one. Both are authorable — yaml.v3 sees them as known
+// fields, which is the whole point: deleting them would make KnownFields(true)
+// report "field label not found" and name the wrong key — but no definition
+// carrying either one ever loads. They therefore CANNOT appear in
+// allFieldsYAML, which must parse and Build cleanly.
+//
+// This is not an exemption list. TestRefusedYAMLTagsAreActuallyRefused
+// exercises each entry from the other side, asserting the refusal actually
+// fires with the sentinel that documents it, and asserting the tag is really
+// declared. A tag parked here to dodge the fixture requirement fails that test,
+// so the exhaustiveness this file provides for every other tag is not weakened
+// — the domain stays total, split into accepted and refused halves.
+var refusedYAMLTags = map[string]struct {
+	// fields is the node-level YAML that authors the key (4-space indented).
+	fields string
+	// err is the sentinel a definition carrying it must fail with. It also fixes
+	// WHERE the refusal happens, so no separate field records that: a retired key
+	// dies in the decoder (ErrRetiredLabelKey), a reserved one in Validate
+	// (ErrRuleNotSupported). The assertion below runs both stages and requires the
+	// sentinel from whichever one reports.
+	err error
+}{
+	"label": {fields: "    label: Kick off", err: model.ErrRetiredLabelKey},
+	"rule":  {fields: "    rule: pricing.v3", err: model.ErrRuleNotSupported},
+}
+
+// Note on what excluding `rule` from allFieldsYAML costs. The reserved key's whole
+// justification is that it round-trips through the persisted format, so the
+// adapter needs no format change — and allFieldsYAML is the fixture that guards
+// exactly that (TestPersistedDefinitionRoundTripsThroughStrictJSON). It cannot
+// carry `rule`, because that fixture must Build cleanly and a rule is refused. The
+// round-trip coverage lives in TestBusinessRuleTaskRuleRoundTrip instead, which
+// exercises the same persisted-blob seam (raw JSON into ProcessDefinition and back
+// out) for both authored shapes. Named here so the gap is a recorded hand-off
+// rather than an invisible one.
+
+// refusedTagYAML is the smallest definition that can carry an arbitrary node
+// key, so a failure names the key under test rather than a structural defect.
+// The node is a businessRuleTask because `rule` is only meaningful there.
+const refusedTagYAML = `
+id: refused
+version: 1
+nodes:
+  - id: s
+    kind: startEvent
+  - id: n
+    kind: businessRuleTask
+    name: Score
+%s
+  - id: e
+    kind: endEvent
+flows:
+  - { id: f1, source: s, target: n }
+  - { id: f2, source: n, target: e }
+`
+
+// TestRefusedYAMLTagsAreActuallyRefused is the second half of the
+// declared-tag domain: every tag in refusedYAMLTags must really be refused, and
+// really be a declared tag. The control row — the same fixture with no extra
+// key — is the at-limit ACCEPT: without it, a definition that refused every
+// businessRuleTask would satisfy both refusal rows just as well.
+func TestRefusedYAMLTagsAreActuallyRefused(t *testing.T) {
+	t.Parallel()
+
+	declared := make(map[string]bool)
+	for _, tag := range declaredYAMLTags(t, "yaml.go", "nodeYAML", "definitionYAML") {
+		declared[tag] = true
+	}
+
+	// The control: nothing added, so the fixture itself must be valid.
+	t.Run("control: the bare fixture is valid", func(t *testing.T) {
+		t.Parallel()
+		ld, err := model.ParseYAML(strings.NewReader(fmt.Sprintf(refusedTagYAML, "")))
+		require.NoError(t, err)
+		_, err = ld.Build()
+		require.NoError(t, err)
+	})
+
+	for tag, refusal := range refusedYAMLTags {
+		t.Run(tag, func(t *testing.T) {
+			t.Parallel()
+
+			require.True(t, declared[tag],
+				"refusedYAMLTags names %q, which nodeYAML/definitionYAML do not declare — a stale entry excuses nothing", tag)
+
+			ld, err := model.ParseYAML(strings.NewReader(fmt.Sprintf(refusedTagYAML, refusal.fields)))
+			if err == nil {
+				_, err = ld.Build()
+			}
+			require.ErrorIs(t, err, refusal.err)
+		})
+	}
+}
+
 func TestAllDeclaredYAMLTagsParseUnderStrictDecoding(t *testing.T) {
 	t.Parallel()
 
@@ -534,6 +628,13 @@ func TestAllDeclaredYAMLTagsParseUnderStrictDecoding(t *testing.T) {
 			continue
 		}
 		seen[tag] = true
+		if _, refused := refusedYAMLTags[tag]; refused {
+			// Exercised by TestRefusedYAMLTagsAreActuallyRefused instead: this
+			// fixture must parse AND Build, which a refused key by definition
+			// prevents. That test also proves the refusal fires, so the tag is
+			// not merely skipped here.
+			continue
+		}
 		assert.Regexp(t, `(?m)^\s*-?\s*`+tag+`:`, allFieldsYAML,
 			"declared yaml tag %q is not exercised by allFieldsYAML — strictness makes it load-bearing", tag)
 	}

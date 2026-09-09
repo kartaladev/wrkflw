@@ -36,8 +36,8 @@ func (o nameOpt) applyCatch(n *IntermediateCatchEvent) { n.SetName(o.name) }
 func (o nameOpt) applyEnd(n *EndEvent)                 { n.SetName(o.name) }
 func (o nameOpt) applyBoundary(n *BoundaryEvent)       { n.SetName(o.name) }
 
-// WithName sets the display name on a start, end, catch, or boundary node.
-// IntermediateThrowEvent uses WithThrowName instead.
+// WithName sets the display name. IntermediateThrowEvent uses WithThrowName and
+// CompensationThrowEvent uses WithCompensateThrowName instead.
 func WithName(name string) interface {
 	StartOption
 	EndOption
@@ -45,27 +45,6 @@ func WithName(name string) interface {
 	BoundaryOption
 } {
 	return nameOpt{name}
-}
-
-// --- WithLabel (Start, Catch, End, Boundary) ---
-
-type labelOpt struct{ label string }
-
-func (o labelOpt) applyStart(n *StartEvent)             { n.SetLabel(o.label) }
-func (o labelOpt) applyCatch(n *IntermediateCatchEvent) { n.SetLabel(o.label) }
-func (o labelOpt) applyEnd(n *EndEvent)                 { n.SetLabel(o.label) }
-func (o labelOpt) applyBoundary(n *BoundaryEvent)       { n.SetLabel(o.label) }
-
-// WithLabel sets the human display label on a start, end, catch, or boundary
-// node. IntermediateThrowEvent uses WithThrowLabel and CompensationThrowEvent
-// uses WithCompensateThrowLabel instead.
-func WithLabel(label string) interface {
-	StartOption
-	EndOption
-	CatchOption
-	BoundaryOption
-} {
-	return labelOpt{label}
 }
 
 // --- WithMessageCorrelator (Start, Catch, Boundary) ---
@@ -210,11 +189,6 @@ func WithThrowName(name string) ThrowOption {
 	return func(n *IntermediateThrowEvent) { n.SetName(name) }
 }
 
-// WithThrowLabel sets the human display label on an IntermediateThrowEvent.
-func WithThrowLabel(label string) ThrowOption {
-	return func(n *IntermediateThrowEvent) { n.SetLabel(label) }
-}
-
 // --- CompensationThrowEvent options ---
 
 // WithCompensateRef targets the compensation throw at a specific completed
@@ -232,11 +206,6 @@ func WithScopeLocalCompensation() CompensateThrowOption {
 // WithCompensateThrowName sets the display name on a compensation throw.
 func WithCompensateThrowName(name string) CompensateThrowOption {
 	return func(n *CompensationThrowEvent) { n.SetName(name) }
-}
-
-// WithCompensateThrowLabel sets the human display label on a compensation throw.
-func WithCompensateThrowLabel(label string) CompensateThrowOption {
-	return func(n *CompensationThrowEvent) { n.SetLabel(label) }
 }
 
 // --- BoundaryEvent options ---

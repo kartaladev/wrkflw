@@ -94,6 +94,16 @@ func RecoveryFlowOf(n Node) string {
 	return ""
 }
 
+// RuleOf returns the reserved rule-engine reference of a node that has one
+// (BusinessRuleTask), or nil for every other kind. nil means "no rule", so a kind
+// that never gains the field reads as absent rather than as an error.
+func RuleOf(n Node) *RuleSpec {
+	if t, ok := n.(interface{ rule() *RuleSpec }); ok {
+		return t.rule()
+	}
+	return nil
+}
+
 // ActionOf returns the Action field of a node that has one (ServiceTask or
 // BusinessRuleTask), or "" for all other kinds.
 func ActionOf(n Node) string {

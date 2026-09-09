@@ -36,10 +36,11 @@ var (
 		KindCallActivity: true,
 	}
 	// triggerBoundaryHostKinds mirrors the engine's arming sites one-for-one:
-	// serviceTaskStrategy and businessRuleTaskStrategy (both through
-	// emitActionInvoke), receiveTaskStrategy, and userTaskStrategy are the only
-	// node-entry strategies that call armBoundaries. A boundary attached to any
-	// other host is never armed, so it can never fire — see ErrBoundaryTriggerHost.
+	// serviceTaskStrategy — which KindServiceTask and KindBusinessRuleTask now
+	// SHARE, both reaching armBoundaries through emitActionInvoke —
+	// receiveTaskStrategy, and userTaskStrategy are the only node-entry
+	// strategies that call armBoundaries. A boundary attached to any other host
+	// is never armed, so it can never fire — see ErrBoundaryTriggerHost.
 	triggerBoundaryHostKinds = map[NodeKind]bool{
 		KindServiceTask:      true,
 		KindBusinessRuleTask: true,
@@ -409,6 +410,38 @@ var (
 	// they emit a leaf type or ErrKindNotRegistered and nothing else — a foreign
 	// type cannot be deserialized into existence in the first place.
 	ErrForeignNodeType = errors.New("workflow-definition: foreign node type for kind")
+	// ErrRetiredLabelKey is returned by both decoders when a node carries the
+	// retired "label" key. Name is the display string now, so a label has nowhere
+	// to go; the key is refused rather than dropped because silently discarding a
+	// caption the author wrote would lose it without a word.
+	//
+	// The message names "name" deliberately. Both decoders are already strict
+	// (DisallowUnknownFields, KnownFields(true)), so deleting the wire field
+	// would already produce an error — but one naming only "label", which tells a
+	// migrating consumer nothing about where the string now goes. That is why
+	// NodeWire.Label and nodeYAML.Label survive as detection-only fields.
+	ErrRetiredLabelKey = errors.New(`workflow-definition: the "label" node key is retired; use "name" (the display string)`)
+	// ErrInvalidRule is returned by RuleSpec's codecs when a businessRuleTask's
+	// reserved "rule" key is neither a catalog name (a non-blank string) nor an
+	// inline rule document (an object). It is a SHAPE error, raised at decode;
+	// ErrRuleNotSupported below is the separate refusal of a well-shaped rule.
+	ErrInvalidRule = errors.New("workflow-definition: businessRuleTask rule must be a catalog name (string) or an inline rule document (object)")
+	// ErrRuleNotSupported is returned by Validate for any node carrying a
+	// non-empty rule. The key is reserved so the rule-engine adapter can land
+	// after the first release without a persisted-format change: it round-trips
+	// through JSON, YAML and the golden file, and this refusal is what makes
+	// "no definition can be PUBLISHED with it" true.
+	//
+	// It lives in Validate, not in definitionCore.build: build ends by calling
+	// Validate, and Validate is also the DB publish path, so a definition that
+	// reached the store through ProcessDefinition.UnmarshalJSON would bypass a
+	// build-only check entirely. The adapter deletes this error.
+	ErrRuleNotSupported = errors.New("workflow-definition: businessRuleTask rule is reserved for the rule-engine adapter; cannot be published in this release")
+	// ErrRuleAndAction is returned when a node sets both rule and action. One
+	// thing per node: a rule whose output feeds an action is a pipeline that
+	// belongs inside the action or in two nodes. A businessRuleTask WITHOUT a
+	// rule keeps today's behaviour, action defaulting to the node id.
+	ErrRuleAndAction = errors.New("workflow-definition: businessRuleTask sets both rule and action; they are exclusive")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -1018,6 +1051,43 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		}
 		if n.Kind() != KindUserTask && n.Kind() != KindReceiveTask {
 			errs = append(errs, fmt.Errorf("%w: node %q (kind %d)", ErrCompletionActionUnsupportedKind, n.ID(), n.Kind()))
+		}
+	}
+
+	// Reserved `rule`: the key round-trips through JSON, YAML and the golden file
+	// so the rule-engine adapter can land after the first release without a
+	// persisted-format change, but no definition may be built or PUBLISHED
+	// carrying one until that adapter exists. Deleting ErrRuleNotSupported is what
+	// switches the feature on.
+	//
+	// Kind-agnostic on purpose: only BusinessRuleTask carries a rule today, so
+	// filtering on KindBusinessRuleTask would add nothing and would fail OPEN if
+	// another kind ever gained the field. ErrRuleAndAction is checked first, so a
+	// node setting both is told about the exclusivity rather than the reservation.
+	//
+	// Read through RuleOf/ActionOf rather than toWire(n): toWire's local escapes
+	// to the heap, so a whole-nodes toWire loop costs one 640-byte allocation per
+	// node. Measured on a 52-node definition, doing it that way added 33 KB and 53
+	// allocations to every Validate; the carrier-method accessors are free. That
+	// is also how the file's kind-agnostic field reads are meant to work — the
+	// remaining toWire loops here read fields that have no carrier method.
+	for _, n := range d.Nodes {
+		rule := RuleOf(n)
+		if rule == nil {
+			continue
+		}
+		switch {
+		case rule.IsZero():
+			// Not reachable from either decoder — both refuse a zero RuleSpec — but
+			// a Go caller can assign &RuleSpec{} directly. Refusing it here keeps
+			// "validates" and "can be marshalled" the SAME set: RuleSpec.MarshalJSON
+			// fails closed on a zero spec, so skipping this case would let a
+			// definition validate green and then be unstorable.
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrInvalidRule, n.ID()))
+		case ActionOf(n) != "":
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrRuleAndAction, n.ID()))
+		default:
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrRuleNotSupported, n.ID()))
 		}
 	}
 
