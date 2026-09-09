@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"strings"
 	"time"
 
 	"github.com/kartaladev/wrkflw/definition/activity"
@@ -356,8 +357,113 @@ func serviceActionInput(s *InstanceState, node model.Node) map[string]any {
 	if in == nil {
 		in = map[string]any{}
 	}
+	for k := range in {
+		if foldsOntoReservedName(k) {
+			delete(in, k)
+		}
+	}
 	in["_idempotencyKey"] = s.InstanceID + ":" + node.ID()
 	return in
+}
+
+// reservedEngineVarNames are the keys the ENGINE writes into a service action's
+// input. Deriving the set matters: serviceActionInput copies s.Variables
+// wholesale, and step_triggers.go writes "_errorMessage" and "_errorAttempts"
+// into those variables on the catch-flow branch, so all three reach a Typed
+// action's input by the same route. A fix covering only the idempotency stamp
+// would pass its own reproduction and still be wrong.
+//
+// "_error" is deliberately NOT here: step_errors.go injects it into a clone for
+// an ErrorExpr and never persists it, so it is not a key the engine hands to an
+// action.
+var reservedEngineVarNames = [...]string{
+	"_idempotencyKey",
+	"_errorMessage",
+	"_errorAttempts",
+}
+
+// foldsOntoReservedName reports whether k is a key that encoding/json would bind
+// to one of the reserved engine names WITHOUT being that name (#150).
+//
+// # What this closes, and what it does NOT
+//
+// It closes the ACTION-INPUT PATH AND ONLY THAT: the copy this function builds.
+// It is not "the class at the source" and it does not hold "for every In shape"
+// — the source was never s.Variables. A reserved name a caller sets is still in
+// the instance variables afterwards, deliberately (the record must survive), and
+// anything else reading s.Variables still sees it. Gateway conditions do exactly
+// that — engine/step_gateways.go evaluates f.Condition against s.Variables
+// directly — so routing that reads "_errorMessage" is untouched by this filter,
+// in either spelling. That path is #141's subject: measured, by design, and
+// documented on the code it governs rather than patched here.
+//
+// It also covers only THIS input. serviceActionInput is one of six engine sites
+// that build an action input from s.Variables, and the other five are unfiltered:
+// InvokeCancelAction (step_triggers.go:180 and :204), the completion action in
+// parkOnCompletionAction (step_triggers.go:852), the cancel action in
+// step_cancel.go:127, and the compensation invoke in step_compensation.go:671
+// (whose Input was itself snapshotted from s.Variables at step_triggers.go:157).
+// So an action author must not read this as "the engine reserves these names":
+// it reserves them for a primary service or business-rule task's action, and for
+// nothing else.
+//
+// A reservation at the mergeVars INGRESS would cover both this and the predicate
+// path, and is the follow-up. If it lands, decide deliberately whether this
+// filter stays as defence in depth or goes, rather than leaving it as
+// unexplained residue.
+//
+// # Why this exists
+//
+// A service action's input is the instance variables plus the engine's stamp.
+// encoding/json matches object keys to struct fields by FOLDING, so a process
+// variable named "_idempotencykey" binds to a field tagged "_idempotencyKey"
+// rather than being ignored — and because [json.Marshal] emits map keys
+// byte-sorted, the lowercase twin is applied last and WINS. A caller who can
+// name a process variable could therefore choose the idempotency key an action
+// hands to an external system.
+//
+// # Why the predicate is "folds onto but is not"
+//
+// The exact names are ENGINE-WRITTEN and must still arrive at the action: on the
+// catch-flow branch step_triggers.go writes "_errorMessage" and "_errorAttempts"
+// for the recovery action to read, and stripping them would take that away.
+// Only the variant is reserved. For "_idempotencyKey" an exact caller key is
+// harmless anyway — it is overwritten by the stamp below — which is why a
+// fold-variant is the only attack on that one.
+//
+// ⚠ Nothing outside this package's own tests pins that. An earlier version of
+// this comment said engine/retry_test.go's catch-flow case depends on it; it does
+// NOT — that case asserts r.State.Variables, the INSTANCE map, which this
+// function never touches. Measured by mutation: drop the `k != reserved` half so
+// the exact names are stripped too, and the ONLY failure in the whole module is
+// TestServiceActionInputReservesEngineStampedKeys' own "ACCEPT: the EXACT
+// engine-written keys" case. That makes that case LOAD-BEARING rather than a
+// belt-and-braces accept: delete it and nothing anywhere would notice the exact
+// names being stripped.
+//
+// # Why strings.EqualFold is the right test
+//
+// encoding/json does not call it: decode.go matches through
+// fields.byFoldedName[string(foldName(key))]. But fold.go states the invariant
+// on foldName itself — "foldName returns a folded string such that
+// foldName(x) == foldName(y) is identical to bytes.EqualFold(x, y)" — and
+// implements it by folding each rune to the smallest member of its
+// unicode.SimpleFold set, which is what EqualFold does. So the two agree by the
+// standard library's own contract, and folding is WIDER than case: U+017F folds
+// onto "s" and U+212A onto "k".
+//
+// ⚠ That invariant is stated in a file carrying //go:build !goexperiment.jsonv2,
+// so this predicate's equivalence holds for the path that actually ships and is
+// conditional on that build tag. TestReservedNameFoldMatchesEncodingJSON is the
+// differential guard: it fails if the two ever disagree, rather than leaving the
+// fix with a silent hole in exactly the direction it exists to close.
+func foldsOntoReservedName(k string) bool {
+	for _, reserved := range reservedEngineVarNames {
+		if k != reserved && strings.EqualFold(k, reserved) {
+			return true
+		}
+	}
+	return false
 }
 
 // cloneCompensationRecords returns an independently allocated copy of recs with

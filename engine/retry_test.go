@@ -594,7 +594,7 @@ func TestErrorMessageIsCallerWritable(t *testing.T) {
 
 	cases := []testCase{
 		{
-			name: "FABRICATION: a caller invents _errorMessage and takes the escalation branch with no error anywhere",
+			name: "FABRICATION: a caller invents _errorMessage and takes the branch that routes on it, with no error anywhere",
 			drive: func(t *testing.T) engine.StepResult {
 				def := gatewayOnlyDef(cond)
 				r, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "p"},
@@ -628,7 +628,7 @@ func TestErrorMessageIsCallerWritable(t *testing.T) {
 			},
 		},
 		{
-			name: "SUPPRESSION: a caller overwrites a genuine engine-written _errorMessage and silences the escalation",
+			name: "SUPPRESSION: a caller overwrites a genuine engine-written _errorMessage and silences the branch that routes on it",
 			drive: func(t *testing.T) engine.StepResult {
 				def := recoverySanitiseDef(cond)
 				r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "p"},
@@ -644,7 +644,7 @@ func TestErrorMessageIsCallerWritable(t *testing.T) {
 				require.NoError(t, err)
 				msg, _ := r2.State.Variables["_errorMessage"].(string)
 				require.Contains(t, msg, `"fatal-boundary"`,
-					"precondition: the engine must really have written the escalating value")
+					"precondition: the engine must really have written the value the branch matches on")
 
 				// An ordinary action output — one of the seven wholesale mergeVars
 				// sites — lands on top of it.
@@ -659,7 +659,7 @@ func TestErrorMessageIsCallerWritable(t *testing.T) {
 				assert.Equal(t, "all good", r.State.Variables["_errorMessage"],
 					"the action's output overwrote the engine's own error message")
 				assert.True(t, hasInvokeActionForName(r.Commands, "log-action"),
-					"so the escalation branch a definition author wrote is silenced")
+					"so the _errorMessage branch a definition author wrote is silenced")
 				assert.False(t, hasInvokeActionForName(r.Commands, "escalate-action"))
 			},
 		},

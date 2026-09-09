@@ -32,12 +32,19 @@ type typedConfig struct {
 //
 // Matching is EXACT, byte for byte, against the JSON names In declares, so a key
 // that only FOLDS onto a declared name — "_idempotencykey" against
-// IdempotencyKey — is rejected rather than bound to it. That exact-key check is
-// the guard that actually holds: [json.Decoder.DisallowUnknownFields] matches
-// object keys to struct fields through encoding/json's foldName and so never
-// fires on such a key, and because [json.Marshal] sorts map keys byte-wise, a
-// lowercase twin would otherwise be applied after — and therefore win over — the
-// value it shadows.
+// IdempotencyKey — is rejected rather than bound to it. Within this decoder that
+// exact-key check is the only guard that fires: [json.Decoder.DisallowUnknownFields]
+// matches object keys to struct fields through encoding/json's foldName and so
+// never fires on such a key, and because [json.Marshal] sorts map keys byte-wise,
+// a lowercase twin would otherwise be applied after — and therefore win over —
+// the value it shadows.
+//
+// ⚠ Do NOT read that as making strict the defence against spoofing an ENGINE
+// stamp. Since #150 the engine reserves its own stamped names before a primary
+// service task's action decodes, in either mode, so strict buys nothing there —
+// and it costs an unbounded failure mode, because under strict ANY caller-supplied
+// key the In does not declare fails the invocation. Use strict for envelopes
+// whose every key is known, which is what the rest of this doc says.
 //
 // Read "folds" wider than "differs only in case". foldName also folds a few
 // non-ASCII runes onto ASCII — U+017F LATIN SMALL LETTER LONG S onto "s" and
@@ -131,9 +138,19 @@ func (a typedAction[In, Out]) Do(ctx context.Context, in map[string]any) (map[st
 // emits map keys byte-sorted, a lowercase twin of a camelCase name is applied
 // last and WINS. Folding is wider than case: U+017F folds onto "s" and U+212A
 // onto "k".
-// A workflow variable named "_idempotencykey" therefore overrides the engine's
-// "_idempotencyKey" stamp for an In that declares it. [WithStrictInput] is the
-// only mode that rejects such a key, and only at the top level.
+// ⚠ That is a property of THIS decoder, not a live exposure through the engine.
+// A workflow variable named "_idempotencykey" would override the engine's
+// "_idempotencyKey" stamp for an In that declares it — but as of #150 the engine
+// never hands one over: serviceActionInput drops any key that folds onto an
+// engine-stamped name without being it, before any action decodes, in EITHER
+// mode. So do NOT reach for [WithStrictInput] to defend a primary service task
+// against stamp spoofing; that defence is now free, and strict costs an
+// unbounded failure mode in exchange (see its own doc).
+//
+// The reservation covers the PRIMARY service task's input only. Cancel,
+// completion and compensation actions build their input from the instance
+// variables unfiltered, so an In of theirs declaring an engine-stamped name is
+// still exposed to a folding twin.
 //
 // A failure to decode the input into In is reported as [ErrDecodeInput] and is
 // non-retryable. An error returned by fn itself is passed through unchanged, so fn
