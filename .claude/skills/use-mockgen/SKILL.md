@@ -70,10 +70,16 @@ own tests, which is the condition it is chosen by.
 
 ### Consumers outside the package → a test-double package
 
-As soon as every consumer is a different package, co-location buys nothing —
-each consumer adds an import either way — while the exported `Mock*` surface
-costs something real: it ships to consumers of the **production** package, who
-never asked for test doubles.
+As soon as every consumer is a different package, the branch above is not
+merely worse, it is **unavailable**: a `_test.go` mock is invisible outside its
+own package's tests, so a consumer elsewhere cannot compile against it at all.
+That is the same measurement as above, read from the other side, and it is what
+makes this a structural boundary rather than a preference.
+
+A production file would compile, which is exactly the trap: co-location then
+buys nothing — each consumer adds an import either way — while the exported
+`Mock*` surface costs something real, shipping to consumers of the
+**production** package who never asked for test doubles.
 
 `service/servicetest` is the worked example: the `service` admin ports are
 mocked into a sibling test-double package because every consumer of those mocks
