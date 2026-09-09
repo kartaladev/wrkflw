@@ -368,6 +368,10 @@ func TestWithInlineRuleDoesNotAliasCallerBuffer(t *testing.T) {
 
 	buf[1] = 'z' // the caller reuses its buffer
 
-	assert.JSONEq(t, `{"a":1}`, string(task.Rule.Inline),
+	// assert.Equal, not assert.JSONEq: the property is BYTE non-aliasing, and
+	// JSONEq compares parsed semantics — normalising exactly the whitespace and key
+	// order an aliasing test must not normalise. A same-length whitespace-only
+	// rewrite by the caller would leave the alias live and JSONEq green.
+	assert.Equal(t, `{"a":1}`, string(task.Rule.Inline),
 		"the node's rule must not follow the caller's mutation")
 }

@@ -394,8 +394,7 @@ func TestRuleSpecCodecRejectsMalformedInput(t *testing.T) {
 		{
 			// S4: the null arm matches the 4-byte token, not every n-initial byte.
 			// It used to name `not`, `nan`, `nil`, `none` and `no` all "null", which
-			// is confidently wrong and made the default arm unreachable, contradicting
-			// that arm's own rationale.
+			// is confidently wrong.
 			name:   "JSON: an n-initial token is not called null",
 			decode: func(rule *model.RuleSpec) error { return rule.UnmarshalJSON([]byte(`not`)) },
 			reason: "an unrecognised value",

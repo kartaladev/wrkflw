@@ -39,13 +39,15 @@ type RuleSpec struct {
 	//     MarshalJSON returns and HTML-escapes < > &. Nothing is added or dropped.
 	//   - YAML: CONVERTED, not copied. The mapping is decoded into map[string]any
 	//     and re-encoded as JSON, so yaml.v3's scalar resolution is applied on the
-	//     way through. Measured consequences: keys are reordered (JSON canonical
-	//     order); a null key (`~: v`) is DROPPED ENTIRELY; an integer too wide for
-	//     float64 loses precision (a 30-digit literal becomes 1.23e+29); a date
-	//     becomes an RFC3339 string; !!binary is base64-decoded to raw bytes;
-	//     `0o17` becomes 15; a merge key (`<<:`) is expanded; a custom tag on the
-	//     mapping is dropped; a non-UTF-8 key gains U+FFFD; and a non-string key is
-	//     stringified (`1:` becomes "1").
+	//     way through. Every consequence listed here has a row in
+	//     TestRuleSpecYAMLInlineConversionIsLossy, and only those do: keys are
+	//     reordered (JSON canonical order); a null key (`~: v`) is DROPPED
+	//     ENTIRELY; an integer too wide for float64 loses precision (a 30-digit
+	//     literal becomes 1.23e+29); a date becomes an RFC3339 string; !!binary is
+	//     base64-decoded to raw bytes; `0o17` becomes 15; and a non-string key is
+	//     stringified (`1:` becomes "1"). The list is not exhaustive — it is the
+	//     part that is pinned, which is the part that cannot silently stop being
+	//     true.
 	//
 	// So a YAML-authored rule is NOT byte-recoverable, and for the dropped-null-key
 	// and wide-integer cases not information-preserving either. wrkflw cannot warn
@@ -120,11 +122,8 @@ func (r RuleSpec) shapeErr() error {
 // MarshalJSON re-emits the spec in the shape it was authored in: a string for a
 // catalog name, the document itself for an inline rule.
 //
-// A zero RuleSpec is an error rather than `{}` or `null`, because a marshalled
-// definition claiming an empty rule would be a lie about what was authored. It is
-// unreachable through a node — see NodeWire.Rule for why that field is a pointer —
-// and Validate refuses a non-nil zero spec (ErrInvalidRule) so that "validates"
-// and "can be marshalled" stay the same set.
+// An ill-formed spec is an error rather than a lie about what was authored: the
+// accept/refuse decision is shapeErr's, not this method's.
 func (r RuleSpec) MarshalJSON() ([]byte, error) {
 	if err := r.shapeErr(); err != nil {
 		return nil, err
@@ -215,9 +214,8 @@ func describeJSONShape(data []byte) string {
 	case c == '[':
 		return "an array"
 	case c == 'n':
-		// The 4-byte token only. Matching every n-initial byte named `not`, `nan`,
-		// `nil`, `none` and `no` "null", which is confidently wrong and also made
-		// the default arm below unreachable, contradicting its own rationale.
+		// The 4-byte token only. Naming every n-initial byte "null" reported `not`,
+		// `nan`, `nil`, `none` and `no` as null, which is confidently wrong.
 		if string(data) == "null" {
 			return "null"
 		}
