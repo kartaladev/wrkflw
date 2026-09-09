@@ -484,6 +484,27 @@ var (
 	// belongs inside the action or in two nodes. A businessRuleTask WITHOUT a
 	// rule keeps today's behaviour, action defaulting to the node id.
 	ErrRuleAndAction = errors.New("workflow-definition: businessRuleTask sets both rule and action; they are exclusive")
+	// ErrKeyNotOnKind is returned by BOTH decoders when a node carries a wire key
+	// that its kind never reads. NodeWire is a flat union over every kind, so
+	// such a key is a KNOWN field and strict decoding cannot see it: it decoded,
+	// the kind's FromWire ignored it, and it vanished without a word.
+	//
+	// It is raised in fromWire, not in Validate, because Validate structurally
+	// cannot see it — by the time Validate receives []Node the key is already
+	// gone. The decoder is the only place the wire form and the reconstructed
+	// node coexist.
+	//
+	// The refusal is KIND-level: the key is one this kind never reads under any
+	// combination. A key that is legal on the kind but inert in the combination
+	// authored (error_code without end_behavior:"error"), and an unrecognised
+	// value inside a closed vocabulary (end_behavior:"probeval"), are separate
+	// intra-kind checks that Validate CAN see, and are tracked separately.
+	//
+	// node_wire_keys.go holds the gate, how each kind's read set is derived from
+	// its own registered spec rather than from a hand-written table, and the one
+	// documented limit: a key present with its zero value is indistinguishable
+	// from an absent key and stays accepted.
+	ErrKeyNotOnKind = errors.New("workflow-definition: node kind does not carry key")
 )
 
 // Validate checks structural well-formedness of a process definition. It
@@ -1108,14 +1129,21 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	//
 	// Be exact about what it does NOT cover, because an earlier version of this
 	// comment claimed the kind-agnostic form is what avoids a fail-open, and that
-	// was wrong. The open door is one layer UP, at DECODE: NodeWire.Rule sits on the
-	// flat all-kinds wire union, so `rule` on an exclusiveGateway decodes with no
-	// error, RuleOf returns nil because that kind embeds no RuleReference, and the
-	// key is silently discarded before this loop can see it. Nothing here can close
-	// that — a rule this loop never sees is not a rule it can refuse — and the fix
-	// belongs at the decode boundary, filed as a follow-up. Measured on the way:
-	// `"action"` on that same kind behaves identically, so the silent drop is the
-	// flat wire's pre-existing convention rather than something `rule` introduced.
+	// was wrong. The open door was one layer UP, at DECODE: NodeWire.Rule sits on
+	// the flat all-kinds wire union, so `rule` on an exclusiveGateway decoded with
+	// no error, RuleOf returned nil because that kind embeds no RuleReference, and
+	// the key was silently discarded before this loop could see it. Nothing here
+	// could close that — a rule this loop never sees is not a rule it can refuse.
+	// Measured on the way: `"action"` on that same kind behaved identically, so
+	// the silent drop was the flat wire's convention rather than something `rule`
+	// introduced.
+	//
+	// CLOSED at the decode boundary by #183, which is where it belonged:
+	// ErrKeyNotOnKind now refuses any key the node's kind never reads, so `rule`
+	// on a non-rule kind fails in fromWire and never reaches here. This loop's
+	// scope is unchanged — it still refuses the rules it CAN see — but the
+	// reservation's promise ("no definition can be PUBLISHED with one") is now
+	// true for every kind rather than only for the ones that carry a rule.
 	//
 	// ErrRuleAndAction is checked before the reservation so a node setting both is
 	// told about the exclusivity rather than about the reservation.

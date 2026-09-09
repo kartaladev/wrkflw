@@ -176,10 +176,21 @@ func (w *NodeWire) PutWait(a WaitFields) {
 }
 
 // fromWire reconstructs the concrete Node for w.Kind via the registered spec.
+//
+// It is the single seam both decoders funnel through — nodeWireIn.node for JSON
+// and fromNodeYAML for YAML — which is why the kind-key gate lives here and not
+// in either decoder, and emphatically not inside a spec's own FromWire:
+// RegisterKind calls FromWire(Base{}, NodeWire{}) at init to record the kind's
+// concrete type, so a FromWire that refused anything would abort package
+// initialisation for every binary importing the leaf. See node_wire_keys.go for
+// what the gate refuses and the limit it documents.
 func fromWire(w NodeWire) (Node, error) {
 	s, ok := specFor(w.Kind)
 	if !ok || s.FromWire == nil {
 		return nil, fmt.Errorf("%w: %q", ErrKindNotRegistered, w.Kind)
+	}
+	if err := checkNodeKeys(w, s); err != nil {
+		return nil, err
 	}
 	return s.FromWire(Base{id: w.ID, name: w.Name}, w), nil
 }
