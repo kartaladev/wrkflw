@@ -42,8 +42,17 @@ type typedIdemIn struct {
 	IdempotencyKey string `json:"_idempotencyKey"`
 }
 
-func typedIdemEcho(_ context.Context, in typedIdemIn) (typedApproveOut, error) {
-	return typedApproveOut{Approved: in.IdempotencyKey != ""}, nil
+// typedIdemValueOut surfaces the idempotency key the action actually RECEIVED as
+// an output variable, so a test can assert on the value rather than on its mere
+// presence. Asserting "not the attacker's value" would be satisfied by a decoder
+// that dropped every underscore-prefixed key; asserting the engine's exact
+// instanceID:nodeID is not.
+type typedIdemValueOut struct {
+	Idem string `json:"idem"`
+}
+
+func typedIdemValueEcho(_ context.Context, in typedIdemIn) (typedIdemValueOut, error) {
+	return typedIdemValueOut{Idem: in.IdempotencyKey}, nil
 }
 
 // typedTaskDef builds start → task("t") → end.
@@ -75,11 +84,15 @@ func typedTaskDef() *model.ProcessDefinition {
 func TestTypedActionDecodeFailureIsNonRetryable(t *testing.T) {
 	t.Parallel()
 
+	// Shared with the case closures so the expected engine stamp is derived from
+	// the same identifier the driver is given, not written out twice.
+	const instanceID = "typed-1"
+
 	type testCase struct {
 		name   string
 		act    action.Action
 		vars   map[string]any
-		assert func(t *testing.T, st engine.InstanceState, af engine.ActionFailed, armed bool)
+		assert func(t *testing.T, st engine.InstanceState, af engine.ActionFailed, failed, armed bool)
 	}
 
 	cases := []testCase{
@@ -87,7 +100,7 @@ func TestTypedActionDecodeFailureIsNonRetryable(t *testing.T) {
 			name: "fractional variable into an int field is non-retryable",
 			act:  action.Typed(typedApprove),
 			vars: map[string]any{"ref": "ana-3", "count": 2.5},
-			assert: func(t *testing.T, st engine.InstanceState, af engine.ActionFailed, armed bool) {
+			assert: func(t *testing.T, st engine.InstanceState, af engine.ActionFailed, failed, armed bool) {
 				assert.False(t, af.Retryable,
 					"a decode failure is deterministic for a snapshot, so the runtime must not retry it")
 				require.ErrorIs(t, af.Cause, action.ErrDecodeInput,
@@ -106,11 +119,43 @@ func TestTypedActionDecodeFailureIsNonRetryable(t *testing.T) {
 			name: "strict input rejects the engine's _idempotencyKey stamp",
 			act:  action.Typed(typedApprove, action.WithStrictInput()),
 			vars: map[string]any{"ref": "ana-3", "count": 2},
-			assert: func(t *testing.T, st engine.InstanceState, af engine.ActionFailed, armed bool) {
+			assert: func(t *testing.T, st engine.InstanceState, af engine.ActionFailed, failed, armed bool) {
+				require.True(t, failed, "this case must produce an ActionFailed")
 				assert.False(t, af.Retryable)
 				require.ErrorIs(t, af.Cause, action.ErrDecodeInput)
 				assert.Contains(t, af.Err, "_idempotencyKey",
 					"the engine stamps _idempotencyKey, so strict input must name it as the offender")
+				assert.False(t, armed)
+				assert.Equal(t, engine.StatusRunning, st.Status)
+				assert.Len(t, st.Incidents, 1)
+			},
+		},
+		{
+			// THE POSITIVE CONTROL for the case below, and the measurement that
+			// keeps its framing honest. Reserving the engine names removes ONE
+			// input from an unbounded set: under strict, ANY caller-supplied key
+			// the In does not declare still fails exactly as it did before. So
+			// the alarm the next case retires is one instance of an alarm anybody
+			// can re-trigger with a different key name — which is what makes
+			// losing that particular one acceptable, and why "the fix removes an
+			// attacker-triggerable failure" would be too strong a claim.
+			//
+			// It is also what proves the next case can observe a failure at all.
+			// Both run through the same table and the same runner: this one
+			// asserts failed == true, the next asserts failed == false. Without
+			// it, "no ActionFailed" there would be indistinguishable from a
+			// harness that cannot see one.
+			name: "an ordinary undeclared key still fails a strict action — the reservation removes one input, not the vector",
+			act:  action.Typed(typedIdemValueEcho, action.WithStrictInput()),
+			vars: map[string]any{"ref": "req-1", "attackerJunk": "SPOOFED-BY-ATTACKER"},
+			assert: func(t *testing.T, st engine.InstanceState, af engine.ActionFailed, failed, armed bool) {
+				require.True(t, failed, "this case must produce an ActionFailed")
+				assert.False(t, af.Retryable)
+				require.ErrorIs(t, af.Cause, action.ErrDecodeInput)
+				assert.Contains(t, af.Err, "attackerJunk",
+					"the offending key is named in the durable failure message")
+				assert.NotContains(t, af.Err, "SPOOFED-BY-ATTACKER",
+					"the rejection names the offending KEY, never the attacker's value")
 				assert.False(t, armed)
 				assert.Equal(t, engine.StatusRunning, st.Status)
 				assert.Len(t, st.Incidents, 1)
@@ -124,19 +169,52 @@ func TestTypedActionDecodeFailureIsNonRetryable(t *testing.T) {
 			// folds case, and because json.Marshal sorts keys byte-wise
 			// ('K' 0x4b < 'k' 0x6b) the attacker's twin is applied LAST and would
 			// win. Strict must reject it by exact byte match instead.
-			name: "strict rejects an attacker's case-variant of the idempotency stamp",
-			act:  action.Typed(typedIdemEcho, action.WithStrictInput()),
+			// #150 CHANGED THIS CASE'S OUTCOME, and the replacement pins what the
+			// fix now guarantees rather than deleting what it retired.
+			//
+			// Before: the engine copied the caller's "_idempotencykey" into the
+			// action input alongside its own stamp, strict decoding found an
+			// unknown key, and the invocation failed loudly — ActionFailed,
+			// ErrDecodeInput, one Incident. That was the STRICT-mode defence, and
+			// it never covered lenient, which is the mode a service task actually
+			// uses.
+			//
+			// After: serviceActionInput reserves the engine-stamped names, so the
+			// variant never reaches ANY action, in either mode. The invocation
+			// succeeds and the action receives the ENGINE's key.
+			//
+			// The trade, stated because it is real: an operator-visible alarm is
+			// gone. What replaces it is (iii) below — the caller's key is still
+			// durably in the instance variables, so the RECORD survives even
+			// though the ALARM does not. Measured alongside it: a strict action
+			// remains failable by any OTHER undeclared key, so this removes one
+			// input from an unbounded set rather than closing a vector.
+			name: "the engine's reserved stamp survives an attacker's case-variant, and the action runs",
+			act:  action.Typed(typedIdemValueEcho, action.WithStrictInput()),
 			vars: map[string]any{"ref": "req-1", "_idempotencykey": "SPOOFED-BY-ATTACKER"},
-			assert: func(t *testing.T, st engine.InstanceState, af engine.ActionFailed, armed bool) {
-				assert.False(t, af.Retryable)
-				require.ErrorIs(t, af.Cause, action.ErrDecodeInput)
-				assert.Contains(t, af.Err, "_idempotencykey",
-					"the spoofing key must be named in the durable failure message")
-				assert.NotContains(t, af.Err, "SPOOFED-BY-ATTACKER",
-					"the rejection names the offending KEY, never the attacker's value")
+			assert: func(t *testing.T, st engine.InstanceState, af engine.ActionFailed, failed, armed bool) {
+				// (i) the action succeeds — the variant never reaches it.
+				assert.False(t, failed,
+					"the reserved-name filter removes the variant before the action "+
+						"decodes, so strict input finds nothing unknown")
 				assert.False(t, armed)
-				assert.Equal(t, engine.StatusRunning, st.Status)
-				assert.Len(t, st.Incidents, 1)
+				assert.Equal(t, engine.StatusCompleted, st.Status)
+				assert.Empty(t, st.Incidents)
+
+				// (ii) the action received THE ENGINE'S key, by value. "not
+				// SPOOFED-BY-ATTACKER" would also be satisfied by a filter that
+				// dropped every underscore-prefixed key; instanceID:nodeID is not.
+				assert.Equal(t, instanceID+":task", st.Variables["idem"],
+					"the action must receive the engine's stamp, not merely be denied "+
+						"the attacker's value")
+
+				// (iii) THE RECORD SURVIVES EVEN THOUGH THE ALARM DOES NOT. The
+				// filter applies to the action-input COPY, never to the instance
+				// variables, so the caller's key is still durably present and an
+				// operator or an audit can still see it was supplied.
+				assert.Equal(t, "SPOOFED-BY-ATTACKER", st.Variables["_idempotencykey"],
+					"reserving must not erase the caller's variable from the instance; "+
+						"losing the alarm is the accepted cost, losing the evidence is not")
 			},
 		},
 		{
@@ -147,7 +225,7 @@ func TestTypedActionDecodeFailureIsNonRetryable(t *testing.T) {
 				return nil, errors.New("transient upstream failure")
 			}),
 			vars: map[string]any{"ref": "ana-3", "count": 2},
-			assert: func(t *testing.T, st engine.InstanceState, af engine.ActionFailed, armed bool) {
+			assert: func(t *testing.T, st engine.InstanceState, af engine.ActionFailed, failed, armed bool) {
 				assert.True(t, af.Retryable, "a plain error keeps the retry-by-default contract")
 				assert.NotErrorIs(t, af.Cause, action.ErrDecodeInput)
 				assert.True(t, armed, "a retryable failure under MaxAttempts=3 must arm a retry timer")
@@ -177,7 +255,6 @@ func TestTypedActionDecodeFailureIsNonRetryable(t *testing.T) {
 				}),
 			)
 
-			const instanceID = "typed-1"
 			st, err := driver.Drive(t.Context(), typedTaskDef(), instanceID, tc.vars)
 			require.NoError(t, err, "an action failure must not surface as a Go error from Drive")
 
@@ -193,9 +270,12 @@ func TestTypedActionDecodeFailureIsNonRetryable(t *testing.T) {
 					break
 				}
 			}
-			require.True(t, found, "journal must contain an ActionFailed trigger; entries: %v", entries)
 
-			tc.assert(t, st, af, sched.Armed)
+			// Whether an ActionFailed exists is now a per-case OUTCOME, not a
+			// precondition: reserving the engine-stamped keys (#150) means one of
+			// these inputs no longer fails at all, and a runner that required a
+			// failure could not express that.
+			tc.assert(t, st, af, found, sched.Armed)
 		})
 	}
 }

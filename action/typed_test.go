@@ -409,6 +409,38 @@ func TestTypedDo(t *testing.T) {
 			},
 		},
 		{
+			// The BOUND on #150's impact, pinned here rather than left in prose.
+			// The override needs a STRUCT In declaring the field: that is where
+			// encoding/json's case folding happens. A map In has no fields to fold
+			// onto, so both keys survive as distinct entries and the engine's stamp
+			// is intact — an action reading in["_idempotencyKey"] is unaffected.
+			//
+			// This is why #150's fix belongs in the engine and not here: the engine
+			// is the one place that covers every In shape at once.
+			name: "lenient with a map In keeps a case-variant SEPARATE, so the engine's stamp survives",
+			act: action.Typed(func(_ context.Context, in map[string]any) (map[string]any, error) {
+				return map[string]any{
+					"stamp":   in["_idempotencyKey"],
+					"variant": in["_idempotencykey"],
+					"keys":    len(in),
+				}, nil
+			}),
+			in: map[string]any{
+				"ref":             "req-1",
+				"_idempotencyKey": "inst-42:task",
+				"_idempotencykey": "SPOOFED-BY-ATTACKER",
+			},
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, "inst-42:task", out["stamp"],
+					"with no field to fold onto, the engine's stamp is not overwritten")
+				assert.Equal(t, "SPOOFED-BY-ATTACKER", out["variant"],
+					"and the caller's key is still present as its own distinct entry — the "+
+						"bound is that it does not WIN, not that it disappears")
+				assert.Equal(t, float64(3), out["keys"])
+			},
+		},
+		{
 			name: "strict accepts fields flattened from an embedded POINTER struct",
 			act:  action.Typed(strictPtrEcho, action.WithStrictInput()),
 			in:   map[string]any{"nested": "from the embedded pointer", "label": "L"},

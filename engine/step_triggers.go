@@ -514,8 +514,6 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 			// that. "Influenced" understates it in two directions, both
 			// reproduced for #141:
 			//
-			// Both are pinned by TestErrorMessageIsCallerWritable.
-			//
 			//   - FABRICATION. mergeVars is an unconditional maps.Copy. Seven of
 			//     its eight sites in this file pass a caller-supplied map
 			//     straight through, keys and all — StartInstance vars, action and
@@ -527,7 +525,9 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 			//     and not the key.)
 			//   - SUPPRESSION. The same copy can OVERWRITE a genuine
 			//     engine-written value after the fact, silencing a
-			//     definition-authored escalation branch.
+			//     definition-authored branch that routes on "_errorMessage".
+			//
+			// Both are pinned by TestErrorMessageIsCallerWritable.
 			//
 			// Where the engine does write it, the content is caller-influenced
 			// too: when the failing action is a strict action.Typed, t.Err names
