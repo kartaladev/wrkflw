@@ -2,6 +2,7 @@ package kernel_test
 
 import (
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -177,6 +178,73 @@ func TestMemDefinitionRegistryLatestIsHighestVersion(t *testing.T) {
 	p1, err := reg.Lookup(t.Context(), model.Version("order", 1))
 	require.NoError(t, err)
 	assert.Equal(t, v1, p1, "Pinned Version(order,1) should still resolve to v1")
+}
+
+// TestValidateDefinitionBoundsTheID pins the definition-ID length bound.
+//
+// The bound exists because MySQL's def_id is VARCHAR(255) and the publish path
+// uses INSERT IGNORE, which TRUNCATES an over-long value and reports success —
+// storing the row under a key the caller never chose. Refusing the input here
+// closes that on every backend at once, so the set of publishable definitions
+// no longer depends on which database is behind the store.
+//
+// The multibyte case is the reason this counts runes and not bytes: 255
+// multibyte runes is well over 255 BYTES, but MySQL's utf8mb4 VARCHAR(255)
+// holds 255 CHARACTERS, so a len() bound would reject IDs the storage accepts
+// happily.
+func TestValidateDefinitionBoundsTheID(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		id     string
+		assert func(t *testing.T, err error)
+	}
+
+	accepted := func(t *testing.T, err error) {
+		t.Helper()
+		require.NoError(t, err)
+	}
+	refusedAsTooLong := func(t *testing.T, err error) {
+		t.Helper()
+		require.Error(t, err)
+		require.ErrorIs(t, err, kernel.ErrInvalidDefinition,
+			"must wrap ErrInvalidDefinition so the gate's callers match it uniformly; got %v", err)
+		assert.ErrorIs(t, err, kernel.ErrDefinitionIDTooLong,
+			"must also wrap the specific rule; got %v", err)
+	}
+
+	cases := []testCase{
+		{
+			name:   "an ID at the limit is accepted",
+			id:     strings.Repeat("a", kernel.MaxDefinitionIDRunes),
+			assert: accepted,
+		},
+		{
+			name:   "an ID one rune over the limit is refused",
+			id:     strings.Repeat("a", kernel.MaxDefinitionIDRunes+1),
+			assert: refusedAsTooLong,
+		},
+		{
+			// 255 runes, 510 bytes — measured. A byte bound would refuse
+			// this, and MySQL would have stored it without complaint.
+			name:   "a multibyte ID at the rune limit is accepted",
+			id:     strings.Repeat("\u00e9\u00e9\u00e9", kernel.MaxDefinitionIDRunes/3),
+			assert: accepted,
+		},
+		{
+			name:   "a multibyte ID one rune over the limit is refused",
+			id:     strings.Repeat("\u00e9", kernel.MaxDefinitionIDRunes+1),
+			assert: refusedAsTooLong,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, kernel.ValidateDefinition(minimalValidDef(tc.id, 1)))
+		})
+	}
 }
 
 // ── Authoring gate ───────────────────────────────────────────────────────

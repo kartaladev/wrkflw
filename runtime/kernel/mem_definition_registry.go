@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/kartaladev/wrkflw/definition/model"
 )
@@ -31,6 +32,36 @@ var ErrDefinitionExists = errors.New("workflow-runtime: definition already regis
 // errors.Is.
 var ErrInvalidDefinition = errors.New("workflow-runtime: invalid definition")
 
+// MaxDefinitionIDRunes is the longest definition ID that is publishable on
+// every supported backend, measured in RUNES rather than bytes.
+//
+// It is the narrowest of the three durable schemas. MySQL declares
+// def_id VARCHAR(255) and the migration sets no explicit CHARSET, so the column
+// takes the server default (utf8mb4) and VARCHAR(255) bounds it at 255
+// CHARACTERS. Postgres and SQLite both use unbounded TEXT. Taking the smallest
+// limit is what makes the gate's promise dialect-independent: an ID that
+// validates here is storable on all three, so the same definition is
+// publishable everywhere.
+//
+// Runes, not bytes, for the same reason. A byte bound would reject multibyte
+// IDs that MySQL accepts perfectly well — utf8mb4 VARCHAR(255) holds 255
+// characters regardless of how many bytes they occupy — so len() would make the
+// gate stricter than the storage it is protecting.
+const MaxDefinitionIDRunes = 255
+
+// ErrDefinitionIDTooLong is returned by [ValidateDefinition] when def.ID is
+// longer than [MaxDefinitionIDRunes]. It is always wrapped together with
+// [ErrInvalidDefinition], so callers may match either.
+//
+// This is a prevention gate, not a cosmetic limit. MySQL's insert-if-absent
+// form is INSERT IGNORE, which downgrades a too-long value to a warning and
+// TRUNCATES it: without this check a publish of an over-long ID would return
+// nil having stored the row under a key the caller never chose, and the
+// caller's next lookup by the ID it published would miss. Rejecting the input
+// up front is cheaper and more honest than trying to detect the truncation
+// afterwards, and it fails closed on every backend rather than only on MySQL.
+var ErrDefinitionIDTooLong = errors.New("workflow-runtime: definition ID too long")
+
 // ── The shared authoring gate ─────────────────────────────────────────────
 
 // ValidateDefinition is the authoring gate every definition passes through
@@ -38,6 +69,8 @@ var ErrInvalidDefinition = errors.New("workflow-runtime: invalid definition")
 // returns:
 //   - [ErrNilDefinition] if def is nil.
 //   - [ErrEmptyDefinitionID] if def.ID is empty.
+//   - [ErrDefinitionIDTooLong], wrapped with [ErrInvalidDefinition], if def.ID
+//     exceeds [MaxDefinitionIDRunes] runes.
 //   - [ErrInvalidDefinition], wrapped together with the qualifier and every
 //     rule def broke, if def fails [model.Validate]. Callers may match either
 //     this sentinel or a specific rule (e.g. [model.ErrNoStartEvent],
@@ -67,6 +100,14 @@ func ValidateDefinition(def *model.ProcessDefinition) error {
 	}
 	if def.ID == "" {
 		return ErrEmptyDefinitionID
+	}
+	// Bound the ID before anything else looks at the definition: this is what
+	// keeps the set of publishable definitions the same on all three backends.
+	// See [MaxDefinitionIDRunes] for why the limit is 255 and why it counts
+	// runes rather than bytes.
+	if n := utf8.RuneCountInString(def.ID); n > MaxDefinitionIDRunes {
+		return fmt.Errorf("%w: %w: %d runes exceeds the %d-rune limit",
+			ErrInvalidDefinition, ErrDefinitionIDTooLong, n, MaxDefinitionIDRunes)
 	}
 	if err := model.Validate(def); err != nil {
 		return fmt.Errorf("%w: %q: %w", ErrInvalidDefinition, def.Qualifier(), err)
@@ -145,8 +186,12 @@ func (r *MemDefinitionRegistry) Register(def *model.ProcessDefinition) error {
 
 	r.m[pinned] = def
 	// Highest-version-wins for the latest key, mirroring MapDefinitionRegistry.
-	// ">=" rather than ">" so re-registering the current latest version under a
-	// fresh pointer still refreshes the key.
+	//
+	// ">=" and ">" are behaviourally identical here: equality would require the
+	// same ID and the same version, i.e. the same pinned qualifier, and the
+	// duplicate check above has already returned ErrDefinitionExists for that.
+	// The form is kept only to match MapDefinitionRegistry's line, which has no
+	// such preceding check and where the equality case IS reachable.
 	if cur, ok := r.m[latest]; !ok || def.Version >= cur.Version {
 		r.m[latest] = def
 	}

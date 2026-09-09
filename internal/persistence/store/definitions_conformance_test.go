@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +17,9 @@ import (
 	"github.com/kartaladev/wrkflw/definition/gateway"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/definition/schedule"
+	"github.com/kartaladev/wrkflw/internal/database/transaction"
+	"github.com/kartaladev/wrkflw/internal/dbtest"
+	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 	"github.com/kartaladev/wrkflw/internal/persistence/store"
 	"github.com/kartaladev/wrkflw/persistence"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
@@ -376,6 +380,32 @@ func TestDefinitionStorePublishImmutable(t *testing.T) {
 
 	cases := []testCase{
 		{
+			// CODE-F6: sameDefinitionContent rests entirely on
+			// marshal(unmarshal(x)) == marshal(x) holding over the polymorphic
+			// model.Node surface, and that identity is exactly where round-trip
+			// drift would appear. Proving it on a two-node definition proves
+			// almost nothing; the rich fixture is where it can actually break,
+			// and if it ever does, EVERY republish of a real definition starts
+			// returning ErrDefinitionExists.
+			name: "identical RICH content twice is an idempotent no-op leaving one row",
+			seed: func(t *testing.T, b backend, ds *store.DefinitionStore) {
+				require.NoError(t, ds.PublishDefinition(t.Context(), richConformanceDefinition()),
+					"%s: first publish of the rich fixture", b.name)
+			},
+			def: richConformanceDefinition(),
+			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
+				require.NoError(t, err,
+					"%s: republishing the rich fixture unchanged must be a no-op", b.name)
+				assert.Equal(t, 1, countDefinitionRows(t, b, richConformanceDefinition().ID),
+					"%s: idempotent republish must leave exactly one row", b.name)
+
+				got, err := ds.GetDefinition(t.Context(), richConformanceDefinition().ID, richConformanceDefinition().Version)
+				require.NoError(t, err)
+				assert.Equal(t, richConformanceDefinition(), got,
+					"%s: stored rich definition must be unchanged", b.name)
+			},
+		},
+		{
 			name: "identical content twice is an idempotent no-op leaving one row",
 			seed: func(t *testing.T, b backend, ds *store.DefinitionStore) {
 				require.NoError(t, ds.PublishDefinition(t.Context(), minimalValidDef("pub-same", 1)),
@@ -472,6 +502,49 @@ func TestDefinitionStorePublishImmutable(t *testing.T) {
 			},
 		},
 		{
+			// SEC-F1. 255 is the narrowest backend limit (MySQL
+			// def_id VARCHAR(255)); at exactly the limit a publish must
+			// succeed on every dialect, or the bound is wrong.
+			name: "a definition ID at the length limit is accepted",
+			def:  minimalValidDef(strings.Repeat("a", kernel.MaxDefinitionIDRunes), 1),
+			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
+				require.NoError(t, err,
+					"%s: an ID of exactly %d runes must publish", b.name, kernel.MaxDefinitionIDRunes)
+
+				id := strings.Repeat("a", kernel.MaxDefinitionIDRunes)
+				got, err := ds.GetDefinition(t.Context(), id, 1)
+				require.NoError(t, err, "%s: and must be readable back under the FULL id", b.name)
+				assert.Equal(t, id, got.ID,
+					"%s: the stored ID must be the one published, not a truncation", b.name)
+			},
+		},
+		{
+			// SEC-F1, the fail-open this closes. One rune over the limit,
+			// MySQL's INSERT IGNORE would truncate to 255 and report success,
+			// storing the row under a key the caller never chose. The gate
+			// refuses it on every dialect instead, before any I/O.
+			name: "a definition ID one rune over the limit is refused and writes no row",
+			// A distinct rune from the at-the-limit case above: that case
+			// legitimately publishes 255 "a"s, and this case has to be able to
+			// assert that NOTHING exists under its own truncated prefix.
+			def: minimalValidDef(strings.Repeat("b", kernel.MaxDefinitionIDRunes+1), 1),
+			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
+				require.Error(t, err, "%s: an over-long ID must be refused", b.name)
+				require.ErrorIs(t, err, kernel.ErrInvalidDefinition,
+					"%s: must wrap ErrInvalidDefinition; got %v", b.name, err)
+				assert.ErrorIs(t, err, kernel.ErrDefinitionIDTooLong,
+					"%s: must also wrap ErrDefinitionIDTooLong; got %v", b.name, err)
+
+				assert.Equal(t, 0, countDefinitionRows(t, b, strings.Repeat("b", kernel.MaxDefinitionIDRunes+1)),
+					"%s: the over-long ID must write no row", b.name)
+				// The fail-open this closes: on MySQL an unguarded INSERT
+				// IGNORE would have stored the row under the 255-rune
+				// TRUNCATION of this ID. Nothing may appear there either.
+				assert.Equal(t, 0, countDefinitionRows(t, b, strings.Repeat("b", kernel.MaxDefinitionIDRunes)),
+					"%s: and nothing may be stored under the truncated prefix", b.name)
+			},
+		},
+		{
 			name: "version 0 is refused before any I/O",
 			def:  minimalValidDef("pub-zero", 0),
 			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
@@ -500,6 +573,120 @@ func TestDefinitionStorePublishImmutable(t *testing.T) {
 			})
 		}
 	})
+}
+
+// TestDefinitionStorePublishConflictPreservesAmbientUnit pins that a REFUSED
+// publish does not destroy the caller's transaction.
+//
+// A joined participant's Rollback does not roll back a nested unit — there is
+// no such thing — it marks the caller's ENTIRE transaction rollback-only. So a
+// participant that rolled back on an expected conflict would silently discard
+// the caller's unrelated writes in the same unit. Republishing an already
+// published version is an expected, recoverable outcome, so it must not do
+// that.
+//
+// Both directions are asserted deliberately. Checking only that the unrelated
+// write survived would also pass if the conflict error had simply been
+// swallowed, which would be a worse bug than the one being fixed.
+func TestDefinitionStorePublishConflictPreservesAmbientUnit(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, b backend) {
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
+		require.NoError(t, err)
+
+		first := minimalValidDef("tx-conflict", 1)
+		first.CancelActions = []string{"action-first"}
+		require.NoError(t, ds.PublishDefinition(t.Context(), first), "%s: seed publish", b.name)
+
+		conflicting := minimalValidDef("tx-conflict", 1)
+		conflicting.CancelActions = []string{"action-second"}
+
+		// Inside one unit: hit the conflict, handle it, and do an unrelated
+		// write that must survive.
+		var conflictErr error
+		require.NoError(t, s.RunInTx(t.Context(), func(txCtx context.Context) error {
+			conflictErr = ds.PublishDefinition(txCtx, conflicting)
+			return ds.PublishDefinition(txCtx, minimalValidDef("tx-conflict-survivor", 1))
+		}), "%s: the unit must commit despite the refused publish", b.name)
+
+		// Direction 1: the caller was actually told about the conflict.
+		require.Error(t, conflictErr, "%s: the conflicting publish must still be refused", b.name)
+		require.ErrorIs(t, conflictErr, kernel.ErrDefinitionExists,
+			"%s: and must wrap ErrDefinitionExists; got %v", b.name, conflictErr)
+
+		// Direction 2: the unrelated write in the same unit survived.
+		_, err = ds.GetDefinition(t.Context(), "tx-conflict-survivor", 1)
+		require.NoError(t, err,
+			"%s: an unrelated write in the same unit must survive a refused publish", b.name)
+
+		// And immutability still held.
+		got, err := ds.GetDefinition(t.Context(), "tx-conflict", 1)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"action-first"}, got.CancelActions,
+			"%s: the first published content must survive", b.name)
+	})
+}
+
+// TestDefinitionStorePublishUnderContention pins the outcome when two
+// transactions publish the same version at once, on Postgres.
+//
+// It also records a measurement that corrects a premise this work started from.
+// "INSERT ... ON CONFLICT DO NOTHING" is often described as returning zero rows
+// immediately rather than waiting on an in-flight conflicting insert. Measured
+// on Postgres 16, it does the opposite: it BLOCKS until the other transaction
+// resolves. That is why the contending publish below cannot observe a
+// half-finished state, and why store.ErrConcurrentPublish is a defensive branch
+// rather than the routine outcome of a race.
+//
+// The assertion does not depend on any interleaving: the holder inserts before
+// the contender starts, so the contender either waits for the commit or sees
+// the committed row, and both routes give the same answer. There is no sleep
+// and no deadline here.
+func TestDefinitionStorePublishUnderContention(t *testing.T) {
+	pool := dbtest.RunTestDatabase(t)
+	require.NoError(t, persistence.Migrate(t.Context(), pool), "migrate postgres")
+	d := dialect.NewPostgres()
+
+	ds, err := store.NewDefinitionStore(pool, d)
+	require.NoError(t, err)
+
+	// Holder: insert (contended:1) with content A and keep the unit open.
+	holder, holderCtx, err := transaction.Begin(t.Context(), pool)
+	require.NoError(t, err)
+
+	holderDef := minimalValidDef("contended", 1)
+	holderDef.CancelActions = []string{"holder-content"}
+	holderJSON, err := json.Marshal(holderDef)
+	require.NoError(t, err)
+
+	_, err = holder.Exec(holderCtx, d.Rebind(
+		`INSERT INTO wrkflw_definitions (def_id, version, definition, created_at) VALUES (?,?,?,?)`),
+		"contended", 1, holderJSON, time.Now().UTC(),
+	)
+	require.NoError(t, err, "holder insert")
+
+	// Contender: publish DIFFERENT content for the same version.
+	contender := minimalValidDef("contended", 1)
+	contender.CancelActions = []string{"contender-content"}
+
+	result := make(chan error, 1)
+	go func() { result <- ds.PublishDefinition(t.Context(), contender) }()
+
+	// Let the holder win. Whether the contender is already blocked on the
+	// insert or has not yet reached it, the outcome after this commit is the
+	// same, so no synchronisation is needed to make the assertion stable.
+	require.NoError(t, holder.Commit(t.Context()), "holder commit")
+
+	err = <-result
+	require.Error(t, err, "the contending publish must be refused")
+	require.ErrorIs(t, err, kernel.ErrDefinitionExists,
+		"contention with different content resolves to ErrDefinitionExists, got %v", err)
+
+	got, err := ds.GetDefinition(t.Context(), "contended", 1)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"holder-content"}, got.CancelActions,
+		"the holder's content must survive: a published version is immutable")
 }
 
 // errPublishBoom is the sentinel a RunInTx unit returns to force a rollback.

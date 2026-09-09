@@ -54,14 +54,31 @@ type InstanceStore interface {
 // implementation; consumers interact with it only through this interface.
 type DefinitionStore interface {
 	// PublishDefinition publishes a process definition as the immutable
-	// content of (ID, Version). Republishing identical content is a
-	// successful no-op; republishing DIFFERENT content under an already
-	// published version is refused with kernel.ErrDefinitionExists. The
-	// definition is validated with model.Validate first and refused with
-	// kernel.ErrInvalidDefinition, which also covers Version == 0.
+	// content of (ID, Version). There are exactly four outcomes:
 	//
-	// It joins the caller's ambient transaction when there is one, so a
-	// publish can be made atomic with the caller's own writes.
+	//   - nil — the version was inserted, OR it was already published with
+	//     IDENTICAL content. Republishing is an idempotent no-op, so a retry
+	//     that cannot tell whether its predecessor succeeded is safe.
+	//   - ErrDefinitionExists — already published with DIFFERENT content.
+	//     Published versions are immutable; publish a new version instead of
+	//     editing one. Retrying will not help.
+	//   - ErrInvalidDefinition — the definition failed validation. Wrapped
+	//     together with the rule it broke, so errors.Is also matches e.g.
+	//     model.ErrInvalidVersion (which covers Version == 0) or
+	//     kernel.ErrDefinitionIDTooLong. Retrying will not help.
+	//   - ErrConcurrentPublish — a concurrent publish of the same version is
+	//     in flight and uncommitted, so the outcome is not yet decidable.
+	//     Retry, with a bounded budget; a budget that expires is a bug report.
+	//
+	// Definition IDs are limited to kernel.MaxDefinitionIDRunes runes. The
+	// limit is the narrowest of the three backend schemas, so a definition that
+	// publishes on one backend publishes on all of them.
+	//
+	// It joins the caller's ambient transaction when there is one, so a publish
+	// can be made atomic with the caller's own writes. A REFUSED publish does
+	// not poison that transaction: ErrDefinitionExists and ErrConcurrentPublish
+	// both mean nothing was written, so the caller may handle the error and
+	// carry on with its other writes in the same unit.
 	PublishDefinition(ctx context.Context, def *model.ProcessDefinition) error
 	// Lookup resolves a Qualifier to a definition.
 	// model.Latest(id) returns the highest-version definition for id;
@@ -148,6 +165,25 @@ var (
 
 	// ErrConcurrentUpdate is returned by Store.Commit when the expected token is stale.
 	ErrConcurrentUpdate = kernel.ErrConcurrentUpdate
+
+	// ErrDefinitionExists is returned by DefinitionStore.PublishDefinition when
+	// the version is already published with DIFFERENT content. Published
+	// versions are immutable: publish a new version rather than editing one.
+	ErrDefinitionExists = kernel.ErrDefinitionExists
+
+	// ErrInvalidDefinition is returned by DefinitionStore.PublishDefinition
+	// when the definition fails validation. The returned error also wraps the
+	// specific rule that was broken, so errors.Is matches either this or, for
+	// example, model.ErrInvalidVersion.
+	ErrInvalidDefinition = kernel.ErrInvalidDefinition
+
+	// ErrConcurrentPublish is returned by DefinitionStore.PublishDefinition
+	// when the insert was declined but no stored row is visible, which means a
+	// concurrent publish of the same version is in flight and uncommitted.
+	// Retry on it, with a bounded budget. Use errors.Is(err,
+	// persistence.ErrConcurrentPublish) to test for it — consumers cannot
+	// import the internal store package directly.
+	ErrConcurrentPublish = store.ErrConcurrentPublish
 )
 
 // Compile-time checks: the neutral store concrete types must satisfy the public
