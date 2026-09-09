@@ -62,13 +62,19 @@ var classification = map[string]map[string]disposition{
 		// carries no business data.
 		//
 		// It is NOT a strict subset of what NodeID already discloses, and the
-		// disposition does not rest on that. Flow IDs are unique but (Source,
-		// Target) pairs are not, so two flows may share both endpoints and differ
-		// only by ID and Condition; History records an identical hop either way,
-		// and this field is then the only public value revealing WHICH condition
-		// matched. The increment is real and narrow, and the distinguishing value
-		// is still an author-written structural identifier — same class as a node
-		// id, which is already public in Token.NodeID and in every NodeVisit.
+		// disposition does not rest on that. (Source, Target) pairs are not unique,
+		// so two flows may share both endpoints and differ only by ID and
+		// Condition; History records an identical hop either way, and this field is
+		// then the only public value revealing WHICH condition matched. The
+		// increment is real and narrow, and the distinguishing value is still an
+		// author-written structural identifier — same class as a node id, which is
+		// already public in Token.NodeID and in every NodeVisit.
+		//
+		// Note the value here is the ENGINE-MINTED identity, not the authored ID.
+		// Only NON-BLANK flow IDs are unique (ErrDuplicateFlowID); blank ones may
+		// repeat freely, which is the whole reason Token.ArrivalFlow does not key on
+		// them. So what this field can disclose is at most the authored ID of the
+		// edge, and for a blank-ID edge only its position.
 		"ArrivalFlow": public,
 
 		"Payload": gatedVariables,

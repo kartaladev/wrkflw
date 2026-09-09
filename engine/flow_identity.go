@@ -78,11 +78,21 @@ func incomingFlows(def *model.ProcessDefinition, nodeID string) []flowRef {
 
 // flowRefByID returns the flow with the given ID, paired with its index.
 //
-// It serves the three sites that hold a flow ID rather than a flow — a boundary
+// It serves the three sites that hold a flow ID rather than a flow: a boundary
 // arm's recorded outgoing flow, a node's DeadlineFlow, and a retry policy's
-// RecoveryFlow — all of which are authored references that already resolve by ID
-// and are unaffected by the ID not being a key: a blank one names no flow and is
-// rejected upstream, and a duplicate non-blank one is refused by ErrDuplicateFlowID.
+// RecoveryFlow. All three are authored references that have always resolved by
+// ID, and a duplicate NON-BLANK ID is refused by ErrDuplicateFlowID, so for any
+// id this rule reaches the lookup is unambiguous.
+//
+// ⚠ A BLANK id is a different matter, and the guarantee is per caller rather than
+// universal. DeadlineFlow and RecoveryFlow are both rejected before they get
+// here — handleDeadlineFired errors on an empty DeadlineFlow, and the retry
+// branch is entered only when recoveryFlowOf(node) != "". A boundary arm's Flow
+// is NOT, so a blank one resolves to whichever flow happens to carry a blank ID
+// first. That is PRE-EXISTING, not introduced here: origin/main resolves ba.Flow
+// with the identical first-match loop this function replaced, and this is a
+// faithful refactor of it. It is recorded rather than fixed because the fix
+// belongs at the arm, and it is tracked as a follow-up.
 func flowRefByID(def *model.ProcessDefinition, id string) (flowRef, bool) {
 	for i, f := range def.Flows {
 		if f.ID == id {
