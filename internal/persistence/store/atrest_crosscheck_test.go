@@ -152,12 +152,11 @@ func TestCrossCheckColumns_CatchesTableIdentityAndPKDrift(t *testing.T) {
 }
 
 // TestEveryParsedTableIsCrossChecked is the closing guard for the
-// uncross-checked-table hole (A19): every table the parser discovers and
-// classifies must appear in SOME live cross-check above. Without this, a
-// fifth migration set creating non-wrkflw_ tables would be discovered, parsed
-// and classified while being silently absent from every live comparison — the
-// guard that fails on an unclassified COLUMN has no counterpart that fails on
-// an uncross-checked TABLE.
+// uncross-checked-table hole (A19): every table the parser discovers must
+// appear in SOME live cross-check above. Without this, a fifth migration set
+// creating non-wrkflw_ tables would be discovered and parsed while being
+// silently absent from every live comparison, and nothing in this file would
+// say so — the per-column guards above only check tables a leg already names.
 func TestEveryParsedTableIsCrossChecked(t *testing.T) {
 	root, err := atrest.ModuleRoot()
 	require.NoError(t, err)
@@ -165,7 +164,7 @@ func TestEveryParsedTableIsCrossChecked(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Empty(t, uncrossCheckedTables(parsed),
-		"every table the parser discovers and classifies, across ALL THREE dialects, must be "+
+		"every table the parser discovers, across ALL THREE dialects, must be "+
 			"compared against a live database by some test in this file")
 }
 
@@ -173,8 +172,8 @@ func TestEveryParsedTableIsCrossChecked(t *testing.T) {
 // dialects in schemas that is neither casbin_rule (covered by
 // TestAtRestParseMatchesLiveIntrospection_CasbinRule) nor "wrkflw_"-
 // prefixed (covered by the wrkflw_* legs above) — i.e. every table the
-// parser discovers and classifies that no test in this file compares
-// against a live database.
+// parser discovers that no test in this file compares against a live
+// database.
 //
 // TestEveryParsedTableIsCrossChecked used to range only
 // parsed["postgres"].Tables() — a table that exists ONLY in mysql or
@@ -638,9 +637,9 @@ func TestAtRestKeysMatchLiveIntrospection_PostgresAndMySQL(t *testing.T) {
 
 // TestAtRestKeysMatchLiveIntrospection_CasbinRule closes the second half of the
 // P3-b finding: the casbin leg compared BARE COLUMN NAMES, so casbin_rule — the
-// only `policy`-classed table, and the one whose ptype index the withdrawn
-// round-1 safety claim turned on — had neither its primary key nor its ptype
-// index verified against a live database.
+// one table outside the wrkflw_ prefix, and the one whose ptype index the
+// withdrawn round-1 safety claim turned on — had neither its primary key nor
+// its ptype index verified against a live database.
 func TestAtRestKeysMatchLiveIntrospection_CasbinRule(t *testing.T) {
 	pool := dbtest.RunTestDatabase(t)
 	require.NoError(t, casbinauthz.MigrateCasbin(t.Context(), pool))

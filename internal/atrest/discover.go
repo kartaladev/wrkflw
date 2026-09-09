@@ -50,8 +50,9 @@ func ModuleRoot() (string, error) {
 // It fails closed on a directory that carries *.sql files but sits deeper
 // under a "migrations" ancestor than the two rules above reach — e.g.
 // migrations/postgres/v2/*.sql. Silently discovering nothing there would
-// make those migrations invisible to every downstream at-rest
-// classification while the generated security document stays green.
+// leave those migrations out of the Schema LoadSchemas returns, and out of
+// every consumer built on it, with nothing to signal that anything is
+// missing.
 func DiscoverMigrationDirs(root string) ([]string, error) {
 	var dirs []string
 
@@ -157,16 +158,6 @@ type MigrationSet struct {
 	// Dialects lists the dialect names (as passed to ParseSQL) this
 	// directory's migrations should be parsed as and merged into.
 	Dialects []string
-	// Note documents anything about the set that is not obvious from its
-	// path alone (e.g. that it is conditionally present). Render publishes
-	// this field VERBATIM into the generated "Data at rest" section
-	// (sourced, not retyped, so there is one copy of the fact). Treat it as
-	// consumer-facing prose: never write an internal evidence-record id
-	// here (e.g. "(E3)", pointing at an internal measurement record) — a
-	// reader of a public security document cannot resolve it. State the
-	// fact plainly instead.
-	// TestMigrationSetNotesCarryNoInternalEvidenceLabel guards this.
-	Note string
 }
 
 // MigrationSets declares what each discovered migration directory IS.
@@ -183,17 +174,27 @@ var MigrationSets = map[string]MigrationSet{
 	"internal/persistence/store/migrations/postgres": {Dialects: []string{"postgres"}},
 	"internal/persistence/store/migrations/mysql":    {Dialects: []string{"mysql"}},
 	"internal/persistence/store/migrations/sqlite":   {Dialects: []string{"sqlite"}},
+	// casbin_rule is the one CONDITIONALLY PRESENT table in this map, and it
+	// is present in a Postgres deployment that has called
+	// casbinauthz.MigrateCasbin — an explicit standalone call that is never
+	// run automatically (internal/authz/casbin/migrate.go documents exactly
+	// that). Presence therefore depends on the MIGRATION having been applied,
+	// NOT on which policy source is wired.
+	//
+	// State it that way round. The earlier wording, "present only under the
+	// FromDB casbin policy source; Postgres only", reads as an if-and-only-if
+	// and is false in BOTH directions:
+	//
+	//   - a deployment that runs MigrateCasbin and then wires FromStrings or
+	//     FromEnforcer HAS the table, though it never uses the FromDB source;
+	//   - a deployment that wires FromDB without ever running MigrateCasbin
+	//     does NOT have it — the authorizer fails against a missing relation.
+	//
+	// Parsing it unconditionally is the deliberate choice: the census this
+	// package reports is what the migration corpus DECLARES, not what any one
+	// deployment happens to have run.
 	"internal/authz/casbin/migrations": {
 		Dialects: []string{"postgres"},
-		// Presence is conditional on the MIGRATION having been applied, not on
-		// which policy source is wired: casbinauthz.MigrateCasbin is an explicit
-		// standalone call that is never auto-run, so a deployment that runs it and
-		// then wires FromStrings/FromEnforcer still carries the table, while one
-		// that wires FromDB without running it does not.
-		Note: "it exists only in a Postgres deployment that has called " +
-			"`casbinauthz.MigrateCasbin`, which is never run automatically — the `FromDB` " +
-			"policy source requires that call, and any deployment that has made it keeps " +
-			"the table whatever policy source it later wires",
 	},
 }
 
@@ -246,10 +247,14 @@ func LoadSchemas(root string) (map[string]Schema, error) {
 }
 
 // reconcileMigrationSets checks discovered against MigrationSets in both
-// directions: a discovered directory absent from MigrationSets fails
-// (its columns would otherwise never be classified), and a MigrationSets
-// entry matching no discovered directory fails (a stale entry hides the
-// next undeclared migration set beneath it).
+// directions: a discovered directory absent from MigrationSets fails (its
+// columns would otherwise be silently missing from every Schema LoadSchemas
+// returns), and a MigrationSets entry matching no discovered directory fails
+// (a stale entry hides the next undeclared migration set beneath it).
+//
+// Both halves fail CLOSED on purpose. If you arrived here because this went
+// red after moving or deleting a migration directory, update MigrationSets —
+// do not relax the check.
 func reconcileMigrationSets(discovered []string) error {
 	for _, dir := range discovered {
 		if _, ok := MigrationSets[dir]; !ok {
@@ -323,11 +328,23 @@ func mergeSQLFilesInto(schema Schema, dialectName string, sqlFiles []string) err
 //
 // ⚠ Only the map KEY is canonicalized; Column.Name deliberately keeps the name
 // MySQL's migration actually DECLARES. The canonical key is what cross-dialect
-// set operations (the key-set identity guard, the classification's coverage
-// guard, Render's per-dialect row lookup) need; the declared name is what a DBA
-// writing a MySQL migration needs, and Render publishes it. Overwriting Name
-// with the canonical value is how the generated table came to publish "trigger"
-// under a "mysql type" heading for a column MySQL rejects under that name.
+// set operations need — TestNormalizedKeySetAgreesAcrossDialects compares the
+// wrkflw_* key set of all three dialects by exactly this key; the declared name
+// is what a DBA writing a MySQL migration needs, and it is what Column.Name
+// reports, pinned by TestLoadSchemas_KeepsTheMySQLDeclaredColumnName.
+// Overwriting Name with the canonical value is how "trigger" came to be
+// reported for a column MySQL declares as "trigger_" and rejects under the
+// canonical spelling.
+//
+// Measured, not assumed: stubbing this function out reddens exactly
+// TestNormalizedKeySetAgreesAcrossDialects, TestLoadSchemas_ColumnCensus,
+// TestLoadSchemas_KeepsTheMySQLDeclaredColumnName and
+// internal/persistence/store's
+// TestAtRestParseMatchesLiveIntrospection_PostgresAndMySQL. Its key-comparing
+// sibling TestAtRestKeysMatchLiveIntrospection_PostgresAndMySQL stays GREEN —
+// it compares parsed against live WITHIN each dialect, never postgres against
+// mysql, and wrkflw_journal.trigger is unkeyed so it never sees this column.
+// Do not cite it as the cross-dialect guard.
 //
 // It is an EXACT (table, column) key match, sourced from
 // dialect.NewMySQL().JournalTriggerColumn() and

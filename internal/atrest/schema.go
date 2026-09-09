@@ -1,8 +1,33 @@
 // Package atrest reads the repository's SQL migration files into a
 // per-dialect Schema: which tables and columns exist, their declared
-// types, and which are keyed (primary key, unique constraint, or
-// indexed). Downstream tooling (discovery, classification, the security
-// document generator) consumes the Schema this package produces.
+// types, and which are keyed (primary key, unique constraint, index, or
+// index predicate). DiscoverMigrationDirs finds the migration
+// directories; LoadSchemas parses and merges them; ParseSQL does the
+// per-file DDL reading.
+//
+// Scope, since #52: this package discovers and parses migration DDL, and
+// nothing more. It once ALSO published a per-column sensitivity
+// classification into a generated "Data at rest" section of the
+// repository's security-policy document. That document was deleted, and
+// under #52 the publishing half went with it — Render, ReplaceBlock, the
+// Classification map, the Class vocabulary and the regeneration script
+// are all retired. Nothing regenerates such a document today and nothing
+// assigns sensitivity to a column any more; do not reintroduce a class
+// field on Column or Schema expecting a reader to exist for it.
+//
+// The live consumer is internal/persistence/store, whose
+// atrest_crosscheck_test.go checks what LoadSchemas parses out of the
+// DDL text against introspection of real SQLite, Postgres and MySQL
+// databases — so this parser is pinned against the actual engines rather
+// than against itself. That cross-check runs in CI.
+//
+// LoadSchemas FAILS CLOSED and that is deliberate: reconcileMigrationSets
+// compares MigrationSets against the directories DiscoverMigrationDirs
+// actually found, in BOTH directions, so a declared directory that has
+// disappeared is an error rather than a silently smaller schema. If you
+// are reading this because that check went red after you moved or deleted
+// a migration directory, update MigrationSets — do not relax the check. A
+// hardcoded directory walk is exactly what previously lost casbin_rule.
 package atrest
 
 import (
@@ -11,17 +36,17 @@ import (
 	"strings"
 )
 
-// Class names the sensitivity classification assigned to a column by
-// downstream tooling. It is declared here because Column and Schema are
-// the shared vocabulary the rest of the at-rest posture pipeline builds
-// on; ParseSQL itself never assigns a Class.
-type Class string
-
-// ColumnKey identifies a single column within a Schema. A bare column
-// name is not enough: exactly one column name in the schema carries two
-// different classes — wrkflw_human_task.claimed_by is a human principal
-// while wrkflw_call_links.claimed_by is a worker lease owner — so a
-// map[string]Column would merge them into one entry.
+// ColumnKey identifies a single column within a Schema. A bare column name
+// is not enough: 11 column names in the postgres schema appear in more than
+// one table, so a map[string]Column would collapse each of those groups into
+// a single entry. instance_id and created_at span five tables each; id would
+// merge wrkflw_outbox.id with casbin_rule.id.
+//
+// Collision is not only a counting problem — some of these names mean
+// different things per table. wrkflw_human_task.claimed_by is a human
+// principal while wrkflw_call_links.claimed_by is a worker lease owner, so
+// merging them would silently mis-state what the column holds, not merely
+// lose one of them.
 type ColumnKey struct {
 	Table  string
 	Column string
@@ -127,10 +152,9 @@ func ParseSQL(dialect, sqlText string) (Schema, error) {
 		default:
 			// Fail closed: a migration statement this parser does not
 			// recognise (e.g. a future ALTER TABLE) must never be silently
-			// skipped — a skip means its columns are invisible to every
-			// downstream at-rest classification and the generated security
-			// document stays green while the schema actually changed
-			// underneath it.
+			// skipped — a skip means its columns are silently missing from
+			// every Schema this package returns, and every consumer of it
+			// stays green while the schema actually changed underneath it.
 			return Schema{}, fmt.Errorf("workflow-atrest: unrecognised statement: %s", statementSummary(stmt))
 		}
 	}
@@ -157,7 +181,7 @@ func truncateAtGooseDown(sqlText string) string {
 // anywhere in the line: a column declared as `a TEXT DEFAULT '--x', b TEXT,`
 // lost everything after the literal's first dash, so `b` — and every further
 // column sharing that line — vanished from the schema with no error. In a
-// document whose whole purpose is enumerating stored columns, a silently
+// package whose whole purpose is enumerating stored columns, a silently
 // dropped column is the worst possible failure.
 //
 // The scan is over the whole text, not per line, so a literal spanning a
@@ -388,8 +412,8 @@ var columnTypeStopWords = map[string]bool{
 // alone truncates a multi-word type at its first space: "DOUBLE
 // PRECISION" -> "DOUBLE", "CHARACTER VARYING(255)" -> "CHARACTER",
 // "TIMESTAMP WITH TIME ZONE" -> "TIMESTAMP", "BIGINT UNSIGNED" ->
-// "BIGINT" — all different, real storage types, and publishing the wrong
-// one in a security document is a false statement.
+// "BIGINT" — all different, real storage types, and returning the wrong
+// one misreports the column to every reader of Column.Type.
 func columnType(fields []string) string {
 	if len(fields) < 2 {
 		return ""
@@ -423,7 +447,7 @@ func parseCreateTable(stmt string, columns map[ColumnKey]Column) error {
 	// The body ends at the paren MATCHING the opening one, never at the last
 	// ")" in the statement: with a trailing table option such as
 	// "WITH (fillfactor=70)", LastIndex swallowed the option into the body and
-	// published "TEXT) WITH (fillfactor=70" as a column's storage type.
+	// returned "TEXT) WITH (fillfactor=70" as a column's storage type.
 	closeIdx := matchingParen(stmt, open)
 	if closeIdx == -1 {
 		return fmt.Errorf("unbalanced column list in CREATE TABLE %s", table)
@@ -431,8 +455,8 @@ func parseCreateTable(stmt string, columns map[ColumnKey]Column) error {
 
 	// Fail closed on anything after the column list. Postgres's
 	// INHERITS (parent) is a trailing clause that ADDS COLUMNS, so silently
-	// ignoring the remainder could under-report the census of a security
-	// document. No migration in this module carries a trailing clause today
+	// ignoring the remainder could under-report the column census this
+	// package returns. No migration in this module carries a trailing clause today
 	// (verified: all four files parse), so the strictness costs nothing now and
 	// turns the next one from silent into loud.
 	if remainder := strings.TrimSpace(stmt[closeIdx+1:]); remainder != "" {
@@ -514,8 +538,8 @@ func parseCreateTable(stmt string, columns map[ColumnKey]Column) error {
 //
 // It fails closed when a clause that can only be a table-level
 // constraint names a column this table has not declared: silently deriving no
-// key there is how an index-shaped fact disappears from a document whose whole
-// subject is which columns are keyed.
+// key there is how an index-shaped fact disappears from the Schema this
+// package returns, whose whole subject is which columns are keyed.
 func applyTableLevelKeyClause(clause, table string, columns map[ColumnKey]Column) (handled bool, err error) {
 	keyword := clauseLeadKeyword(clause)
 	if !tableLevelClauseKeywords[keyword] {
@@ -684,8 +708,8 @@ func applyCreateIndex(stmt string, columns map[ColumnKey]Column, unique bool) er
 // "ON t USING gin (col)" resolved to the table "t USING gin", matched nothing,
 // and dropped the index with no diagnostic. GIN and GiST are the normal way to
 // index this schema's JSONB columns, so that silence sat directly on the path
-// this document publishes. A schema qualifier ("public.t") is stripped: the
-// parsed schema keys tables by bare name.
+// every consumer of this package's Schema depends on. A schema qualifier
+// ("public.t") is stripped: the parsed schema keys tables by bare name.
 func indexTargetTable(span string) (string, error) {
 	fields := strings.Fields(span)
 	if len(fields) == 0 {
