@@ -126,12 +126,10 @@ func fireBoundaryArm(ctx context.Context, def *model.ProcessDefinition, s *Insta
 	}
 
 	// Resolve the boundary's outgoing flow target.
-	var flowTarget string
-	for _, f := range tdef.Flows {
-		if f.ID == ba.Flow {
-			flowTarget = f.Target
-			break
-		}
+	var flowTarget, flowIdentity string
+	if ref, ok := flowRefByID(tdef, ba.Flow); ok {
+		flowTarget = ref.Flow.Target
+		flowIdentity = ref.Identity()
 	}
 	if flowTarget == "" {
 		// No target: unreachable if model.Validate passes (boundary must have outgoing flow).
@@ -161,7 +159,7 @@ func fireBoundaryArm(ctx context.Context, def *model.ProcessDefinition, s *Insta
 
 		// Place a new Active token at the boundary's outgoing flow target, keeping
 		// the host token's scope so boundary-routed tokens stay in the same scope.
-		s.placeTokenInScope(flowTarget, hostScopeID, at)
+		s.placeTokenInScope(flowTarget, hostScopeID, flowIdentity, at)
 	} else {
 		// Non-interrupting: leave host parked, spawn an additional token. The arm
 		// STAYS armed so it can fire again on the next delivery — BPMN
@@ -173,7 +171,7 @@ func fireBoundaryArm(ctx context.Context, def *model.ProcessDefinition, s *Insta
 
 		// Spawn a new Active token at the boundary's outgoing flow target, keeping
 		// the host token's scope.
-		s.placeTokenInScope(flowTarget, hostScopeID, at)
+		s.placeTokenInScope(flowTarget, hostScopeID, flowIdentity, at)
 	}
 
 	// Drive forward (the newly placed token(s)).

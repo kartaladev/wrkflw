@@ -110,6 +110,26 @@ type compensationCursor struct {
 	// placed at ResumeNode after the throw walk finishes. Empty = root scope.
 	// Populated by the compensation throw producer from the throw token's ScopeID.
 	ResumeScope string
+	// ResumeFlow is the engine-minted identity ([flowRef.Identity]) of the throw
+	// event's outgoing sequence flow — the edge the resuming token traverses to
+	// reach ResumeNode. It is stamped on that token's [Token.ArrivalFlow].
+	//
+	// It is carried on the cursor rather than re-derived at the finish because the
+	// finish does not hold the throw node: only ResumeNode survives, and a node id
+	// cannot name the edge that reached it when several do.
+	//
+	// ⚠ WITHOUT IT THE THROW RESUME IS INVISIBLE TO A CONVERGING PARALLEL GATEWAY.
+	// ResumeNode is the throw's single successor and may BE such a gateway, so the
+	// resume places a token directly on the join, bypassing every stamping path. An
+	// unstamped token there is spent by the empty-provenance fallback on whichever
+	// incoming flow is still unsatisfied — one the token never crossed — and the
+	// join fires with a branch outstanding. Measured: two tokens reaching one throw
+	// resume over one edge satisfied BOTH incoming flows of their join.
+	//
+	// Empty on a cursor written by an older version, and on every non-throw walk.
+	// The partial-rollback and full-reverse finishes leave it empty deliberately:
+	// those are operator-directed relocations to a named node, not traversals.
+	ResumeFlow string
 	// ToNode is the rollback target node ID (exclusive). Empty = full rollback.
 	ToNode string
 	// ReverseNode, when non-empty, makes the FULL-rollback finish resume at this

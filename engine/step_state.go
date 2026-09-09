@@ -46,19 +46,29 @@ func defForScope(top *model.ProcessDefinition, s *InstanceState, scopeID string)
 	}
 }
 
+// placeToken creates a new active token at nodeID in the root scope, arriving
+// over no sequence flow. Its only caller is the instance start, which is exactly
+// that case: nothing was traversed to reach the start node.
 func (s *InstanceState) placeToken(nodeID string, at time.Time) {
-	id := s.nextID("t", &s.TokenSeq)
-	s.Tokens = append(s.Tokens, Token{ID: id, NodeID: nodeID, State: TokenActive, EnteredAt: at})
-	s.openVisit(id, nodeID, at)
+	s.placeTokenInScope(nodeID, "", "", at)
 }
 
 // placeTokenInScope creates a new active token at nodeID tagged with the given
 // scopeID. It is the scoped variant of placeToken, used when entering a
 // sub-process scope so that inner tokens carry the correct ScopeID for
 // defForScope resolution.
-func (s *InstanceState) placeTokenInScope(nodeID, scopeID string, at time.Time) {
+//
+// arrivalFlow is the engine-minted identity ([flowRef.Identity]) of the sequence
+// flow the token traversed to reach nodeID, stamped on [Token.ArrivalFlow] so a
+// converging parallel gateway can account per incoming flow. Pass "" — and say
+// why at the call site — only when the token traversed no flow at all; the
+// enumerated population is on [Token.ArrivalFlow].
+func (s *InstanceState) placeTokenInScope(nodeID, scopeID, arrivalFlow string, at time.Time) {
 	id := s.nextID("t", &s.TokenSeq)
-	s.Tokens = append(s.Tokens, Token{ID: id, NodeID: nodeID, ScopeID: scopeID, State: TokenActive, EnteredAt: at})
+	s.Tokens = append(s.Tokens, Token{
+		ID: id, NodeID: nodeID, ScopeID: scopeID, State: TokenActive,
+		EnteredAt: at, ArrivalFlow: arrivalFlow,
+	})
 	s.openVisit(id, nodeID, at)
 }
 
@@ -211,15 +221,16 @@ func (s *InstanceState) openVisitFor(tokenID, nodeID string) *NodeVisit {
 // incident is not a behaviour change for any valid definition, since no valid
 // definition can reach the branch.
 func (s *InstanceState) moveAlongSingleFlow(ctx context.Context, def *model.ProcessDefinition, tok *Token, at time.Time) {
-	out := def.Outgoing(tok.NodeID)
+	out := outgoingFlows(def, tok.NodeID)
 	s.closeVisit(tok.ID, tok.NodeID, at)
 	if len(out) == 0 {
 		recordDefinitionDefect(ctx, s, tok, tok.NodeID,
 			"node has no outgoing flow, so the token can never advance", at)
 		return
 	}
-	tok.NodeID = out[0].Target
+	tok.NodeID = out[0].Flow.Target
 	tok.EnteredAt = at
+	tok.ArrivalFlow = out[0].Identity()
 	s.openVisit(tok.ID, tok.NodeID, at)
 }
 
@@ -279,17 +290,21 @@ func (s *InstanceState) closeVisit(tokenID, nodeID string, at time.Time) {
 
 // moveTokenToTarget moves a token to targetID, closing the old visit as a
 // NORMAL close and opening a new one, leaving the token Active.
-func (s *InstanceState) moveTokenToTarget(tok *Token, target string, at time.Time) {
-	s.moveTokenToTargetAs(tok, target, at, "")
+//
+// arrivalFlow is the engine-minted identity of the sequence flow traversed to
+// reach target; see [Token.ArrivalFlow] for what "" means.
+func (s *InstanceState) moveTokenToTarget(tok *Token, target, arrivalFlow string, at time.Time) {
+	s.moveTokenToTargetAs(tok, target, arrivalFlow, at, "")
 }
 
 // moveTokenToTargetAs is moveTokenToTarget with an abnormal close reason
 // stamped on the visit being left.
-func (s *InstanceState) moveTokenToTargetAs(tok *Token, target string, at time.Time, closeKind CloseKind) {
+func (s *InstanceState) moveTokenToTargetAs(tok *Token, target, arrivalFlow string, at time.Time, closeKind CloseKind) {
 	s.closeVisitAs(tok.ID, tok.NodeID, at, closeKind)
 	tok.NodeID = target
 	tok.EnteredAt = at
 	tok.State = TokenActive
+	tok.ArrivalFlow = arrivalFlow
 	s.openVisit(tok.ID, target, at)
 }
 

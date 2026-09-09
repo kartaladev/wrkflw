@@ -316,6 +316,14 @@ func drive(ctx context.Context, def *model.ProcessDefinition, s *InstanceState, 
 	for {
 		tok := s.firstActive()
 		if tok == nil {
+			// The token set has settled. Before concluding the instance has
+			// nothing to do, re-test every parked join: a join wait can be
+			// discharged by an event that carries no token entry with it — a child
+			// scope closing, or a token set that already covers every incoming
+			// flow. See [InstanceState.retryParkedJoins].
+			if s.retryParkedJoins(def, at) {
+				continue
+			}
 			break
 		}
 

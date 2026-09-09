@@ -555,12 +555,10 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 			// _error variable injection is skipped (no ErrorCode field on activities).
 			// Resolve the RecoveryFlow target (mirror the DeadlineFlow routing in
 			// handleDeadlineFired: scan the scope def's flows for the flow ID).
-			var target string
-			for _, f := range tdef.Flows {
-				if f.ID == rf {
-					target = f.Target
-					break
-				}
+			var target, recoveryIdentity string
+			if ref, ok := flowRefByID(tdef, rf); ok {
+				target = ref.Flow.Target
+				recoveryIdentity = ref.Identity()
 			}
 			if target == "" {
 				return StepResult{}, fmt.Errorf("workflow-engine: retry exhaustion: RecoveryFlow %q not found for node %q", rf, node.ID())
@@ -569,7 +567,7 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 			tok.RetryStartedAt = time.Time{}
 			tok.clearAwait()
 			tok.State = TokenActive
-			s.moveTokenToTarget(tok, target, t.OccurredAt())
+			s.moveTokenToTarget(tok, target, recoveryIdentity, t.OccurredAt())
 			driveCmds, err := drive(ctx, def, s, t.OccurredAt(), resolvePolicy(opt))
 			if err != nil {
 				return StepResult{}, err

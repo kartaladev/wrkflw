@@ -57,6 +57,26 @@ var classification = map[string]map[string]disposition{
 		"ID": public, "NodeID": public, "ScopeID": public, "State": public,
 		"EnteredAt": public, "RetryAttempts": public, "RetryStartedAt": public,
 
+		// An edge identity is definition structure, the same class as NodeID and
+		// ScopeID: it names a sequence flow the definition's author wrote and
+		// carries no business data.
+		//
+		// It is NOT a strict subset of what NodeID already discloses, and the
+		// disposition does not rest on that. (Source, Target) pairs are not unique,
+		// so two flows may share both endpoints and differ only by ID and
+		// Condition; History records an identical hop either way, and this field is
+		// then the only public value revealing WHICH condition matched. The
+		// increment is real and narrow, and the distinguishing value is still an
+		// author-written structural identifier — same class as a node id, which is
+		// already public in Token.NodeID and in every NodeVisit.
+		//
+		// Note the value here is the ENGINE-MINTED identity, not the authored ID.
+		// Only NON-BLANK flow IDs are unique (ErrDuplicateFlowID); blank ones may
+		// repeat freely, which is the whole reason Token.ArrivalFlow does not key on
+		// them. So what this field can disclose is at most the authored ID of the
+		// edge, and for a blank-ID edge only its position.
+		"ArrivalFlow": public,
+
 		"Payload": gatedVariables,
 
 		// A correlation key or signal name is a business identifier, not a variable,
@@ -98,7 +118,11 @@ var classification = map[string]map[string]disposition{
 		// Operator-facing execution position: what makes a wedged instance recoverable.
 		"ScopeID": gatedOperations, "ArchiveKey": gatedOperations,
 		"ResumeNode": gatedOperations, "ResumeScope": gatedOperations,
-		"ToNode": gatedOperations, "ReverseNode": gatedOperations,
+		// ResumeFlow sits with ResumeNode: it is the edge half of the same resume
+		// point, definition structure rather than business data, and useless to an
+		// operator without the node it accompanies.
+		"ResumeFlow": gatedOperations,
+		"ToNode":     gatedOperations, "ReverseNode": gatedOperations,
 		"ReverseResetVars": gatedOperations, "RestoreTargetVars": gatedOperations,
 		"StartRecordCount": gatedOperations, "TeardownArchiveKey": gatedOperations,
 		"TeardownArchiveOffset": gatedOperations, "TeardownArchiveCount": gatedOperations,
