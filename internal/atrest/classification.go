@@ -49,7 +49,7 @@ type PolicyLocation struct {
 //     engine.InstanceState.Tasks carries every in-flight human task whose
 //     Eligibility is a full authz.AuthzSpec.
 //   - wrkflw_definitions.definition holds the marshalled process definition
-//     (internal/persistence/store/definitions.go PutDefinition json.Marshals the
+//     (internal/persistence/store/definitions.go PublishDefinition json.Marshals the
 //     whole ProcessDefinition into it), and
 //
 // definition/model/node_wire.go declares eligible_roles / eligible_privileges /

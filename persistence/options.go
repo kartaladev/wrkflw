@@ -153,7 +153,7 @@ func buildDefinitionOptions(opts []DefinitionOption) []store.DefinitionOption {
 }
 
 // WithDefinitionClock sets the time source for the created_at stamp
-// [DefinitionStore.PutDefinition] writes. Default:
+// [DefinitionStore.PublishDefinition] writes. Default:
 // [clockwork.NewRealClock]. A nil clock is ignored. See the
 // [clockwork.NewFakeClockAt] warning on [WithStoreClock].
 func WithDefinitionClock(clk clockwork.Clock) DefinitionOption {

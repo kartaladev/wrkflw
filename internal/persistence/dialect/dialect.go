@@ -41,31 +41,58 @@ type Dialect interface {
 	// INSERT for the timer upsert site.
 	UpsertTimer() string
 
-	// UpsertDefinition returns the conflict clause appended to the shared
-	// base INSERT for the process-definition upsert site.
-	UpsertDefinition() string
-
 	// UpsertTask returns the dialect-specific conflict clause appended to an
 	// INSERT INTO wrkflw_human_task ... VALUES(...) so the write is an
 	// idempotent insert-or-replace keyed on (task_id).
 	UpsertTask() string
 
-	// InsertIgnorePrefix returns the INSERT keyword prefix used for the
-	// dedup idempotency check. The full statement is assembled as:
+	// InsertIgnorePrefix returns the INSERT keyword prefix for an
+	// insert-if-absent write. The full statement is assembled as:
 	//
-	//	<prefix> INTO wrkflw_processed_message (...) VALUES (...) <suffix>
+	//	<prefix> INTO <table> (...) VALUES (...) <suffix>
 	//
 	// Postgres and SQLite use a plain "INSERT" prefix with an
 	// "ON CONFLICT DO NOTHING" suffix ([InsertIgnoreDedup]). MySQL uses an
 	// "INSERT IGNORE" prefix with an empty suffix.
+	//
+	// Its callers are the dedup idempotency check
+	// (wrkflw_processed_message) and the chain-link insert. The definition
+	// publish does NOT use this pair — it has its own clause,
+	// [InsertIgnoreDefinition], for the reasons given there. Do not unify the
+	// two: MySQL's INSERT IGNORE suppresses far more than the duplicate key,
+	// which is exactly what makes it unusable for definitions.
 	InsertIgnorePrefix() string
 
-	// InsertIgnoreDedup returns the conflict clause (suffix) appended to
-	// the dedup INSERT. Use together with [InsertIgnorePrefix]:
+	// InsertIgnoreDefinition returns the conflict clause appended to the
+	// process-definition insert, making it an insert-if-absent keyed on
+	// (def_id, version): the statement inserts when the version is new and
+	// affects ZERO rows when it already exists.
+	//
+	// It is deliberately NOT [InsertIgnorePrefix]/[InsertIgnoreDedup], even
+	// though the dedup site wants the same "insert if absent" shape. MySQL
+	// implements that shape as INSERT IGNORE, which suppresses EVERY error, not
+	// just the duplicate key: an over-long def_id is silently truncated and an
+	// out-of-range version silently clamped, both reported as a successful
+	// insert of one row. For definitions that is unacceptable — the row lands
+	// under a key the caller never chose — so MySQL uses
+	// ON DUPLICATE KEY UPDATE def_id = def_id here instead, which suppresses
+	// only the duplicate-key error and leaves truncation and range errors loud.
+	// Postgres and SQLite express it as ON CONFLICT DO NOTHING either way.
+	//
+	// The dedup site keeps INSERT IGNORE: its columns are a subscriber and a
+	// message id, with no numeric range or truncation hazard of this kind.
+	InsertIgnoreDefinition() string
+
+	// InsertIgnoreDedup returns the conflict clause (suffix) appended to an
+	// insert-if-absent write. Use together with [InsertIgnorePrefix]:
 	//
 	//	<InsertIgnorePrefix()> INTO ... VALUES ... <InsertIgnoreDedup()>
 	//
 	// Postgres/SQLite: " ON CONFLICT DO NOTHING". MySQL: "".
+	//
+	// The name is historical — the dedup site was the first caller — and the
+	// clause is table-agnostic. The definition publish does NOT use it; see
+	// [InsertIgnoreDefinition].
 	InsertIgnoreDedup() string
 
 	// JournalTriggerColumn returns the journal payload column name:

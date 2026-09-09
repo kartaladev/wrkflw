@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
 	"github.com/kartaladev/wrkflw/internal/dbtest"
 	"github.com/kartaladev/wrkflw/persistence"
@@ -85,9 +84,8 @@ func TestFacadeClockOptionsReachPersistedTimestamps(t *testing.T) {
 			write: func(t *testing.T, db *sql.DB, clk *clockwork.FakeClock) {
 				ds, err := persistence.NewSQLiteDefinitionStore(db, persistence.WithDefinitionClock(clk))
 				require.NoError(t, err, "NewSQLiteDefinitionStore")
-				require.NoError(t, ds.PutDefinition(t.Context(), &model.ProcessDefinition{
-					ID: "facade-clk-def", Version: 1,
-				}), "PutDefinition")
+				require.NoError(t, ds.PublishDefinition(t.Context(), minimalValidDef("facade-clk-def", 1)),
+					"PublishDefinition")
 			},
 			query:  `SELECT created_at FROM wrkflw_definitions WHERE def_id = ?`,
 			key:    "facade-clk-def",

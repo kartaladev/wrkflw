@@ -33,8 +33,22 @@ type cacheEntry struct {
 //   - TTL is measured using the injected [clockwork.Clock]; callers
 //     may pass a fake clock in tests to advance time deterministically.
 //
-// Definitions are immutable per (defID, version), so caching them without
-// invalidation is safe. The only eviction mechanism is TTL expiry.
+// # What TTL expiry is and is not sufficient for
+//
+// The cache is keyed on q.String(), and model.Latest(id) is a Qualifier like
+// any other — so "latest" is itself a cache key. That splits the safety
+// argument in two:
+//
+//   - A PINNED key (defID, version) is safe to cache without invalidation. A
+//     published version is immutable: the durable store refuses to overwrite
+//     one, so a pinned entry can never go stale.
+//   - A LATEST key is NOT. Publishing a new highest version does not touch this
+//     cache, so Lookup(Latest(id)) keeps serving the previous version until the
+//     entry expires. The staleness is bounded by the TTL and nothing shorter;
+//     choose a TTL a consumer can tolerate lagging a publish by, or look the
+//     version up pinned.
+//
+// TTL expiry is the only eviction mechanism; there is no invalidation hook.
 type CachingDefinitionRegistry struct {
 	backing DefinitionRegistry
 	ttl     time.Duration

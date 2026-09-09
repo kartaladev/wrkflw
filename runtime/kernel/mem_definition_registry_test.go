@@ -2,6 +2,8 @@ package kernel_test
 
 import (
 	"errors"
+	"math"
+	"strings"
 	"sync"
 	"testing"
 
@@ -75,10 +77,13 @@ func TestMemDefinitionRegistry_BareIDResolvesLatest(t *testing.T) {
 	require.NoError(t, reg.Register(defV1))
 	require.NoError(t, reg.Register(defV2))
 
-	// Latest Qualifier should resolve to the most-recently-registered version (v2).
+	// Latest Qualifier should resolve to the highest version (v2). Here v2 is
+	// both the highest and the last registered, so this case does not on its
+	// own separate the two rules — TestMemDefinitionRegistryLatestIsHighestVersion
+	// is the one that does, by registering them in the opposite order.
 	got, err := reg.Lookup(t.Context(), model.Latest("sub"))
 	require.NoError(t, err)
-	assert.Equal(t, defV2, got, "Latest Qualifier should return the most-recently-registered version")
+	assert.Equal(t, defV2, got, "Latest Qualifier should return the highest registered version")
 
 	// Pinned Version(sub,1) must still resolve to v1.
 	got1, err := reg.Lookup(t.Context(), model.Version("sub", 1))
@@ -141,7 +146,15 @@ func TestMemDefinitionRegistry_MustRegisterPanicsOnError(t *testing.T) {
 	}, "MustRegister should panic on duplicate Qualifier")
 }
 
-func TestMemDefinitionRegistryLatestIsLastRegistered(t *testing.T) {
+// TestMemDefinitionRegistryLatestIsHighestVersion pins the latest key to the
+// HIGHEST registered version, not the most recently registered one. Registering
+// the higher version first and the lower one second is the case that separates
+// the two rules: last-registered-wins would resolve v1 here.
+//
+// This aligns MemDefinitionRegistry with MapDefinitionRegistry and with
+// DefinitionStore.Lookup, both of which already resolve Latest by highest
+// version — "latest" now means the same thing on every registry.
+func TestMemDefinitionRegistryLatestIsHighestVersion(t *testing.T) {
 	t.Parallel()
 
 	reg := kernel.NewMemDefinitionRegistry()
@@ -152,11 +165,11 @@ func TestMemDefinitionRegistryLatestIsLastRegistered(t *testing.T) {
 	require.NoError(t, reg.Register(v2))
 	require.NoError(t, reg.Register(v1))
 
-	// Latest resolves to the LAST-registered def (v1), not the highest version.
-	// This is intentional and differs from MapDefinitionRegistry behavior.
+	// Latest resolves to the highest version (v2), even though v1 was
+	// registered last.
 	got, err := reg.Lookup(t.Context(), model.Latest("order"))
 	require.NoError(t, err)
-	assert.Equal(t, v1, got, "Latest should resolve to the last-registered definition (v1), not the highest version (v2)")
+	assert.Equal(t, v2, got, "Latest should resolve to the highest registered version (v2), not the last-registered one (v1)")
 
 	// Pinned lookups still resolve each exact version.
 	p2, err := reg.Lookup(t.Context(), model.Version("order", 2))
@@ -167,6 +180,150 @@ func TestMemDefinitionRegistryLatestIsLastRegistered(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, v1, p1, "Pinned Version(order,1) should still resolve to v1")
 }
+
+// TestValidateDefinitionEnforcesTheStorableDomain pins the gate to the domain
+// every supported backend stores faithfully.
+//
+// Each rejected property is one where the three backends were MEASURED to
+// disagree about what they will store, through the CURRENT definitions
+// statement:
+//
+//	property              SQLite        Postgres          MySQL
+//	>255 runes            stores        stores            rejects (1406)
+//	invalid UTF-8         stores raw    rejects (22021)   rejects (1366)
+//	NUL byte              stores        rejects (22021)   stores
+//	Version > MaxInt32    stores        rejects (int4)    rejects (1264)
+//
+// SQLite accepts three of the four the others refuse, which is why a
+// store-side error alone would not give parity. Under the earlier INSERT
+// IGNORE statement MySQL silently truncated or clamped instead of rejecting,
+// and reported success — the history these bounds were introduced for.
+//
+// Every rejection is paired with the accepting case just inside it. A bound
+// that rejected everything would satisfy the refusals on their own, so the
+// at-limit accepts are what stop this test passing for the wrong reason.
+func TestValidateDefinitionEnforcesTheStorableDomain(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}
+
+	accepted := func(t *testing.T, err error) {
+		t.Helper()
+		require.NoError(t, err)
+	}
+	refusedAs := func(sentinel error) func(*testing.T, error) {
+		return func(t *testing.T, err error) {
+			t.Helper()
+			require.Error(t, err)
+			require.ErrorIs(t, err, kernel.ErrInvalidDefinition,
+				"must wrap ErrInvalidDefinition so callers match the gate uniformly; got %v", err)
+			assert.ErrorIs(t, err, sentinel,
+				"must also wrap the specific rule; got %v", err)
+		}
+	}
+
+	cases := []testCase{
+		// ── length, in runes ──
+		{
+			name:   "an ID at the rune limit is accepted",
+			def:    minimalValidDef(strings.Repeat("a", kernel.MaxDefinitionIDRunes), 1),
+			assert: accepted,
+		},
+		{
+			name:   "an ID one rune over the limit is refused",
+			def:    minimalValidDef(strings.Repeat("b", kernel.MaxDefinitionIDRunes+1), 1),
+			assert: refusedAs(kernel.ErrDefinitionIDTooLong),
+		},
+		{
+			// 255 runes, 510 bytes — measured. A byte bound would refuse
+			// this, and MySQL would have stored it without complaint.
+			name:   "a multibyte ID at the rune limit is accepted",
+			def:    minimalValidDef(strings.Repeat("\u00e9\u00e9\u00e9", kernel.MaxDefinitionIDRunes/3), 1),
+			assert: accepted,
+		},
+		{
+			name:   "a multibyte ID one rune over the limit is refused",
+			def:    minimalValidDef(strings.Repeat("\u00e9", kernel.MaxDefinitionIDRunes+1), 1),
+			assert: refusedAs(kernel.ErrDefinitionIDTooLong),
+		},
+
+		// ── encoding ──
+		{
+			// Short, so the length bound cannot be what refuses it:
+			// RuneCountInString counts each bad byte as one RuneError, which is
+			// exactly why length alone let this through.
+			name:   "an ID that is not valid UTF-8 is refused",
+			def:    minimalValidDef("short-\xff\xfe-id", 1),
+			assert: refusedAs(kernel.ErrDefinitionIDNotUTF8),
+		},
+		{
+			name:   "an ID of valid multibyte UTF-8 is accepted",
+			def:    minimalValidDef("h\u00e9llo-w\u00f6rld-\u65e5\u672c\u8a9e", 1),
+			assert: accepted,
+		},
+
+		// ── NUL, which is valid UTF-8 and so needs its own check ──
+		{
+			name:   "an ID containing a NUL byte is refused",
+			def:    minimalValidDef("nul\x00inside", 1),
+			assert: refusedAs(kernel.ErrDefinitionIDContainsNUL),
+		},
+		{
+			name: "a NUL-containing ID is refused as NUL, not as bad encoding",
+			def:  minimalValidDef("nul\x00inside", 1),
+			assert: func(t *testing.T, err error) {
+				t.Helper()
+				require.Error(t, err)
+				assert.NotErrorIs(t, err, kernel.ErrDefinitionIDNotUTF8,
+					"NUL is valid UTF-8; refusing it as an encoding fault would be the right answer for the wrong reason")
+			},
+		},
+
+		// ── version range ──
+		{
+			name:   "a version at the backend maximum is accepted",
+			def:    minimalValidDef("ver-ok", kernel.MaxDefinitionVersion),
+			assert: accepted,
+		},
+		{
+			name: "a version one over the backend maximum is refused",
+			def:  minimalValidDef("ver-big", int(overMaxDefinitionVersion)),
+			assert: func(t *testing.T, err error) {
+				t.Helper()
+				if !intCanExceedMaxDefinitionVersion {
+					t.Skip("int is 32-bit here, so a version above MaxDefinitionVersion is unrepresentable")
+				}
+				refusedAs(kernel.ErrDefinitionVersionTooLarge)(t, err)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, kernel.ValidateDefinition(tc.def))
+		})
+	}
+}
+
+// overMaxDefinitionVersion is one past the largest publishable version.
+//
+// It is a VARIABLE of type int64 on purpose. Written as the constant expression
+// kernel.MaxDefinitionVersion+1 it does not compile where int is 32 bits — the
+// untyped constant 2147483648 overflows int — so the file would fail to build
+// under GOARCH=386 rather than fail a test. Go through int64 and convert at run
+// time instead.
+var overMaxDefinitionVersion int64 = int64(kernel.MaxDefinitionVersion) + 1
+
+// intCanExceedMaxDefinitionVersion reports whether this platform's int can even
+// represent a version above the bound. Where it cannot — a 32-bit int, whose
+// maximum IS kernel.MaxDefinitionVersion — an over-limit version is
+// unrepresentable, so there is nothing to test and the cases below skip.
+const intCanExceedMaxDefinitionVersion = math.MaxInt > math.MaxInt32
 
 // ── Authoring gate ───────────────────────────────────────────────────────
 

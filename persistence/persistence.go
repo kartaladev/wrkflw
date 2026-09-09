@@ -53,8 +53,77 @@ type InstanceStore interface {
 // process-definition store. It is satisfied by the internal DefinitionStore
 // implementation; consumers interact with it only through this interface.
 type DefinitionStore interface {
-	// PutDefinition upserts a process definition (idempotent on (ID, Version)).
-	PutDefinition(ctx context.Context, def *model.ProcessDefinition) error
+	// PublishDefinition publishes a process definition as the immutable
+	// content of (ID, Version).
+	//
+	// The outcomes a caller will normally match on:
+	//
+	//   - nil — the version was inserted, OR it was already published with
+	//     IDENTICAL content. Republishing is an idempotent no-op, so a retry
+	//     that cannot tell whether its predecessor succeeded is safe.
+	//   - ErrDefinitionExists — already published with DIFFERENT content.
+	//     Published versions are immutable; publish a new version instead of
+	//     editing one. Retrying will not help.
+	//   - ErrInvalidDefinition — the definition failed validation. Wrapped
+	//     together with the rule it broke, so errors.Is also matches e.g.
+	//     model.ErrInvalidVersion (which covers Version == 0) or
+	//     kernel.ErrDefinitionIDTooLong. Retrying will not help.
+	//   - ErrConcurrentPublish — a concurrent publish of the same version is
+	//     in flight and uncommitted, so the outcome is not yet decidable.
+	//     Retry, with a bounded budget; a budget that expires is a bug report.
+	//
+	// Three further errors are possible and are NOT matchable through a
+	// sentinel re-exported here, because they indicate a programming error or
+	// an operational fault rather than a decision the caller can act on:
+	// kernel.ErrNilDefinition (nil def) and kernel.ErrEmptyDefinitionID (empty
+	// def.ID), both returned bare rather than wrapped in ErrInvalidDefinition,
+	// and a sentinel-free error when a stored row cannot be decoded at all.
+	//
+	// The two KEY columns are bounded by kernel.ValidateDefinition to what
+	// every supported backend stores faithfully: def.ID at most
+	// kernel.MaxDefinitionIDRunes runes, valid UTF-8 and free of NUL bytes, and
+	// def.Version no greater than kernel.MaxDefinitionVersion. Each bound is
+	// the narrowest of the three backend schemas, so an ID and version accepted
+	// by the gate are stored faithfully on all of them.
+	//
+	// That guarantee covers the key columns only, not the whole definition. The
+	// definition BODY is stored as JSON and has its own narrower domain that is
+	// not gated: a NUL byte inside a node name, for example, stores on MySQL
+	// and SQLite and is refused by Postgres with SQLSTATE 22P05. That fails
+	// closed — the publish errors rather than storing something altered — so it
+	// is stated here rather than enforced.
+	//
+	// One divergence the gate cannot close, stated because it is a real
+	// difference in behaviour between backends. On MySQL the def_id column
+	// collates as utf8mb4_0900_ai_ci, which folds FOUR distinctions: case,
+	// accent, width and normalisation form. All of these are one key on MySQL
+	// and distinct keys on Postgres and SQLite — measured:
+	//
+	//	"Order"  / "order"                 collide on MySQL
+	//	"resume" / "résumé"                collide on MySQL
+	//	"A"      / fullwidth "Ａ"          collide on MySQL
+	//	NFC "é"  / NFD "e" + U+0301        collide on MySQL
+	//
+	// (Trailing whitespace does NOT collide: MySQL 8 default collations are
+	// NO PAD, so "a" and "a " stay distinct on every backend.)
+	//
+	// Publishing two such IDs succeeds on Postgres and SQLite and refuses the
+	// second on MySQL with ErrDefinitionExists naming a key the caller never
+	// published. This is a property of a PAIR of IDs, not of any single one, so
+	// no per-definition check can detect it.
+	//
+	// Mitigation: case-folding your IDs is NOT sufficient — it leaves the
+	// width and normalisation collisions untouched. To be safe on MySQL,
+	// restrict definition IDs to a single normalisation form and a single
+	// width (in practice: NFC, halfwidth ASCII), or change the column to a
+	// binary collation such as utf8mb4_bin, which closes all four at once and
+	// is tracked as a follow-up.
+	//
+	// PublishDefinition runs on the connection pool and does NOT join a
+	// caller's ambient transaction, so a publish cannot currently be made
+	// atomic with the caller's own writes. That composition is tracked
+	// separately as issue #151.
+	PublishDefinition(ctx context.Context, def *model.ProcessDefinition) error
 	// Lookup resolves a Qualifier to a definition.
 	// model.Latest(id) returns the highest-version definition for id;
 	// model.Version(id, v) returns the exact (id, version) match.
@@ -140,6 +209,25 @@ var (
 
 	// ErrConcurrentUpdate is returned by Store.Commit when the expected token is stale.
 	ErrConcurrentUpdate = kernel.ErrConcurrentUpdate
+
+	// ErrDefinitionExists is returned by DefinitionStore.PublishDefinition when
+	// the version is already published with DIFFERENT content. Published
+	// versions are immutable: publish a new version rather than editing one.
+	ErrDefinitionExists = kernel.ErrDefinitionExists
+
+	// ErrInvalidDefinition is returned by DefinitionStore.PublishDefinition
+	// when the definition fails validation. The returned error also wraps the
+	// specific rule that was broken, so errors.Is matches either this or, for
+	// example, model.ErrInvalidVersion.
+	ErrInvalidDefinition = kernel.ErrInvalidDefinition
+
+	// ErrConcurrentPublish is returned by DefinitionStore.PublishDefinition
+	// when the insert was declined but no stored row is visible, which means a
+	// concurrent publish of the same version is in flight and uncommitted.
+	// Retry on it, with a bounded budget. Use errors.Is(err,
+	// persistence.ErrConcurrentPublish) to test for it — consumers cannot
+	// import the internal store package directly.
+	ErrConcurrentPublish = store.ErrConcurrentPublish
 )
 
 // Compile-time checks: the neutral store concrete types must satisfy the public
@@ -211,7 +299,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 //
 // Use this together with NewCachingDefinitionRegistry to cache hot definitions.
 //
-// Pass [WithDefinitionClock] to control the created_at stamp PutDefinition
+// Pass [WithDefinitionClock] to control the created_at stamp PublishDefinition
 // writes. Zero-option call sites compile unchanged.
 func NewDefinitionStore(pool *pgxpool.Pool, opts ...DefinitionOption) (DefinitionStore, error) {
 	return store.NewDefinitionStore(pool, dialect.NewPostgres(), buildDefinitionOptions(opts)...)

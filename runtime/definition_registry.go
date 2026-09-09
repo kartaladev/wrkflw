@@ -60,7 +60,8 @@ func DefaultDefinitionRegistry() *kernel.MemDefinitionRegistry {
 //
 // The definition is indexed under both "<ID>" and "<ID>:<Version>" so a
 // [engine.StartSubInstance] DefRef in either form resolves correctly. The bare
-// "<ID>" key always points to the most-recently-registered version.
+// "<ID>" key always points to the HIGHEST registered version, so registering an
+// older version after a newer one does not demote it.
 //
 // Registration is the authoring gate: def is passed through [model.Validate]
 // before it is indexed, so a hand-constructed *model.ProcessDefinition literal
@@ -71,6 +72,12 @@ func DefaultDefinitionRegistry() *kernel.MemDefinitionRegistry {
 // Returns:
 //   - [kernel.ErrNilDefinition] if def is nil.
 //   - [kernel.ErrEmptyDefinitionID] if def.ID is empty.
+//   - [kernel.ErrInvalidDefinition] wrapping [kernel.ErrDefinitionIDTooLong],
+//     [kernel.ErrDefinitionIDNotUTF8], [kernel.ErrDefinitionIDContainsNUL] or
+//     [kernel.ErrDefinitionVersionTooLarge] if def.ID or def.Version falls
+//     outside the domain every supported backend stores faithfully. These apply
+//     even here, where nothing touches a database, so that an in-memory
+//     registration and a durable publish accept exactly the same definitions.
 //   - [kernel.ErrInvalidDefinition] (wrapped together with every rule def broke)
 //     if def fails [model.Validate].
 //   - [kernel.ErrDefinitionExists] (wrapped with the versioned key) if

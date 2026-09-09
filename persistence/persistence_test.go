@@ -139,10 +139,8 @@ func TestNewDefinitionStoreAndCachingRegistry(t *testing.T) {
 	require.NotNil(t, ds)
 
 	// Round-trip a definition through the store.
-	def := &model.ProcessDefinition{ID: "d1", Version: 1,
-		Nodes: []model.Node{event.NewStart("start")},
-	}
-	require.NoError(t, ds.PutDefinition(t.Context(), def))
+	def := minimalValidDef("d1", 1)
+	require.NoError(t, ds.PublishDefinition(t.Context(), def))
 
 	got, err := ds.Lookup(t.Context(), model.Latest("d1"))
 	require.NoError(t, err)
@@ -247,4 +245,19 @@ func TestRelayTelemetryOptions(t *testing.T) {
 		}
 	}
 	assert.True(t, saw, "expected a wrkflw.relay.batch span from the injected TracerProvider")
+}
+
+// minimalValidDef returns the smallest definition that passes model.Validate:
+// one manual start wired straight to one end event. PublishDefinition validates
+// before it writes, so every definition a test publishes has to be a real one.
+// It mirrors the helpers of the same name in internal/persistence/store's and
+// runtime/kernel's tests; all three live in different packages and cannot be
+// shared.
+func minimalValidDef(id string, version int) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      id,
+		Version: version,
+		Nodes:   []model.Node{event.NewStart("s"), event.NewEnd("e")},
+		Flows:   []flow.SequenceFlow{{ID: "f1", Source: "s", Target: "e"}},
+	}
 }

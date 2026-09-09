@@ -36,7 +36,7 @@ func TestOpenPostgresReturnsInterface(t *testing.T) {
 
 // TestNewDefinitionStoreReturnsInterface verifies that NewDefinitionStore returns a
 // persistence.DefinitionStore interface value, not a *postgres.DefinitionStore.
-// Callers must only use the interface methods (Lookup, PutDefinition).
+// Callers must only use the interface methods (Lookup, PublishDefinition).
 func TestNewDefinitionStoreReturnsInterface(t *testing.T) {
 	t.Parallel()
 	pool := dbtest.RunTestDatabase(t)

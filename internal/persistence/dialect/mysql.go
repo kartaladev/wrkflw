@@ -13,8 +13,10 @@ type mysql struct{}
 // [Dialect] and is stateless and safe for concurrent use.
 //
 // MySQL uses ? as its native placeholder style (no rebind required), does not
-// support UPDATE … RETURNING, uses INSERT IGNORE for idempotent inserts, and
-// names the journal payload column trigger_ (reserved word in MySQL).
+// support UPDATE … RETURNING, uses INSERT IGNORE for the dedup and chain-link
+// idempotent inserts (but NOT for the definition publish — see
+// [mysql.InsertIgnoreDefinition]), and names the journal payload column
+// trigger_ (reserved word in MySQL).
 func NewMySQL() Dialect { return mysql{} }
 
 // Name returns the stable lowercase identifier for this dialect.
@@ -32,12 +34,6 @@ func (mysql) UpsertTimer() string {
 		"\n\t\t\t                        trigger_kind=VALUES(trigger_kind), trigger_payload=VALUES(trigger_payload)"
 }
 
-// UpsertDefinition returns the ON DUPLICATE KEY UPDATE clause for the
-// process-definition upsert site.
-func (mysql) UpsertDefinition() string {
-	return "\n\t\t\t ON DUPLICATE KEY UPDATE definition = VALUES(definition)"
-}
-
 // UpsertTask returns the ON DUPLICATE KEY UPDATE clause for the human-task
 // upsert site.
 func (mysql) UpsertTask() string {
@@ -52,10 +48,36 @@ func (mysql) UpsertTask() string {
 		" vars=VALUES(vars), created_at=VALUES(created_at), due_at=VALUES(due_at)"
 }
 
-// InsertIgnorePrefix returns the INSERT keyword prefix for the dedup
-// idempotency check. MySQL uses INSERT IGNORE as a prefix; the suffix
-// ([InsertIgnoreDedup]) is empty.
+// InsertIgnorePrefix returns the INSERT keyword prefix for an insert-if-absent
+// write (the dedup and chain-link sites; NOT the definition publish, which
+// uses [InsertIgnoreDefinition]). MySQL uses INSERT IGNORE
+// as a prefix; the suffix ([InsertIgnoreDedup]) is empty.
+//
+// Caution for callers: INSERT IGNORE downgrades EVERY error to a warning, not
+// just duplicate-key — truncation, a bad value, an over-long key. A genuinely
+// broken write is therefore accepted silently and reported as if it had
+// succeeded, so a caller must not treat this statement's outcome as proof of
+// what was stored. Read it back.
+//
+// That hazard is why the definitions site does not use this prefix; see
+// [mysql.InsertIgnoreDefinition]. The remaining callers write a subscriber and
+// a message id, or a chain link, with no numeric range or length hazard of this
+// kind.
 func (mysql) InsertIgnorePrefix() string { return "INSERT IGNORE" }
+
+// InsertIgnoreDefinition returns MySQL's insert-if-absent clause for the
+// process-definition insert.
+//
+// "ON DUPLICATE KEY UPDATE def_id = def_id" is a deliberate no-op assignment.
+// It suppresses ONLY the duplicate-key error and reports zero affected rows on
+// a duplicate (MySQL counts an update to a column's existing value as 0), which
+// is exactly the insert-if-absent contract the caller needs — while leaving
+// every other error loud. INSERT IGNORE would suppress those too, silently
+// truncating an over-long def_id and clamping an out-of-range version, and
+// reporting both as a successful insert.
+func (mysql) InsertIgnoreDefinition() string {
+	return "\n\t\t\t ON DUPLICATE KEY UPDATE def_id = def_id"
+}
 
 // InsertIgnoreDedup returns an empty string. MySQL uses the INSERT IGNORE
 // prefix form ([InsertIgnorePrefix]) rather than a trailing conflict clause.
