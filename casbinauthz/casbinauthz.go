@@ -158,9 +158,13 @@ type Authorizer struct {
 
 var _ authz.Authorizer = (*Authorizer)(nil)
 
-// Authorize delegates to the internal casbin evaluator.
-func (a *Authorizer) Authorize(ctx context.Context, spec authz.AuthzSpec, actor authz.Actor, vars map[string]any) error {
-	return a.inner.Authorize(ctx, spec, actor, vars)
+// Authorize delegates to the internal casbin evaluator, which predates the
+// [authz.Request] port and still takes the spec, actor and vars unpacked. The
+// unpacking is deliberate and temporary: this adapter is deleted along with the
+// rest of the casbin integration, and the internal evaluator has no use for the
+// operation or the task projection.
+func (a *Authorizer) Authorize(ctx context.Context, r authz.Request) error {
+	return a.inner.Authorize(ctx, r.Spec, r.Actor, r.Vars)
 }
 
 // ReloadPolicy reloads the enforcer's policy from its backing adapter. Useful

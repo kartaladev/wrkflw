@@ -108,7 +108,12 @@ func TestRoleAuthorizer_PredicateFailureIsNotADenial(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := authz.RoleAuthorizer{}.Authorize(t.Context(), tc.spec, tc.actor, map[string]any{})
+			err := authz.RoleAuthorizer{}.Authorize(t.Context(), authz.Request{
+				Operation: authz.OpClaim,
+				Spec:      tc.spec,
+				Actor:     tc.actor,
+				Vars:      map[string]any{},
+			})
 			tc.assert(t, err)
 
 			// ⚠ Applies to EVERY row, including the ones expected to deny: no

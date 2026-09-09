@@ -1,7 +1,6 @@
 package processtest_test
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -32,8 +31,12 @@ func TestSpyAuthorizer(t *testing.T) {
 			assert: func(t *testing.T, err error, calls []processtest.AuthzCall) {
 				require.NoError(t, err)
 				require.Len(t, calls, 1)
-				assert.Equal(t, "alice", calls[0].Actor.ID)
-				assert.Equal(t, spec, calls[0].Spec)
+				assert.Equal(t, "alice", calls[0].Request.Actor.ID)
+				assert.Equal(t, spec, calls[0].Request.Spec)
+				assert.Equal(t, authz.OpClaim, calls[0].Request.Operation,
+					"the spy records the whole Request, so a test can tell a claim "+
+						"from a completion")
+				assert.Equal(t, map[string]any{"amount": 10}, calls[0].Request.Vars)
 				assert.NoError(t, calls[0].Err)
 			},
 		},
@@ -72,7 +75,12 @@ func TestSpyAuthorizer(t *testing.T) {
 			spy := processtest.NewSpyAuthorizer()
 			tc.program(spy)
 
-			err := spy.Authorize(context.Background(), spec, actor, map[string]any{"amount": 10})
+			err := spy.Authorize(t.Context(), authz.Request{
+				Operation: authz.OpClaim,
+				Spec:      spec,
+				Actor:     actor,
+				Vars:      map[string]any{"amount": 10},
+			})
 			tc.assert(t, err, spy.Calls())
 		})
 	}

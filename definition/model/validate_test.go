@@ -2991,3 +2991,99 @@ func TestValidate_BareBusinessRuleTaskStaysValid(t *testing.T) {
 		Base: model.NewBase("score", "Score"),
 	})), "a businessRuleTask carrying no rule is today's shape and must stay valid")
 }
+
+// TestValidateRejectsRolesAndPrivilegesTogether pins an authoring rule created
+// by the composed-decider authorizer.
+//
+// [authz.Composite] resolves identity FIRST-APPLICABLE over
+// [PrivilegeDecider, RoleDecider]: the first decider with an opinion decides and
+// the rest are never consulted. So a UserTask declaring both eligible roles and
+// eligible privileges has one of the two silently ignored at runtime — the
+// author almost certainly meant "either", got "privileges only", and nothing
+// would have told them. Validation refuses it instead.
+//
+// The table pairs the reject case with THREE accept cases — roles alone,
+// privileges alone, and neither. Without them, a guard that rejected every
+// UserTask would satisfy the reject row exactly as well as a correct one, and a
+// guard flipped from && to || would go unnoticed.
+func TestValidateRejectsRolesAndPrivilegesTogether(t *testing.T) {
+	t.Parallel()
+
+	def := func(opts ...activity.UserTaskOption) *model.ProcessDefinition {
+		return &model.ProcessDefinition{
+			ID: "p", Version: 1,
+			Nodes: []model.Node{
+				event.NewStart("start"),
+				activity.NewUserTask("approve", opts...),
+				event.NewEnd("end"),
+			},
+			Flows: []flow.SequenceFlow{
+				{ID: "f1", Source: "start", Target: "approve"},
+				{ID: "f2", Source: "approve", Target: "end"},
+			},
+		}
+	}
+
+	cases := []struct {
+		name   string
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, err error)
+	}{
+		{
+			name: "both eligible roles and eligible privileges is rejected",
+			def: def(
+				activity.WithEligibleRoles("approver"),
+				activity.WithEligiblePrivileges("finance-task claim"),
+			),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrRolesAndPrivileges)
+				require.ErrorContains(t, err, "approve",
+					"the message must name the offending node")
+			},
+		},
+		{
+			name: "eligible roles alone is accepted",
+			def:  def(activity.WithEligibleRoles("approver")),
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrRolesAndPrivileges)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "eligible privileges alone is accepted",
+			def:  def(activity.WithEligiblePrivileges("finance-task claim")),
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrRolesAndPrivileges)
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "an attribute predicate alongside either one is accepted",
+			def: def(
+				activity.WithEligiblePrivileges("finance-task claim"),
+				activity.WithEligibleExpr(`vars["region"] == "EU"`),
+			),
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrRolesAndPrivileges,
+					"the attribute predicate is a CONSTRAINT, not an identity field: "+
+						"it composes with either identity rule and is always evaluated")
+				require.NoError(t, err)
+			},
+		},
+		{
+			name: "neither is accepted",
+			def:  def(),
+			assert: func(t *testing.T, err error) {
+				require.NotErrorIs(t, err, model.ErrRolesAndPrivileges)
+				require.NoError(t, err)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, model.Validate(tc.def))
+		})
+	}
+}

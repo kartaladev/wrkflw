@@ -23,7 +23,10 @@ type Authorizer struct {
 	attrEval *expreval.Evaluator
 }
 
-var _ authz.Authorizer = (*Authorizer)(nil)
+// This type predates the [authz.Request] port and deliberately does NOT satisfy
+// [authz.Authorizer] any more: the module-root casbinauthz facade adapts it, and
+// both are deleted together with the casbin integration. Keeping the assertion
+// would have forced a signature churn on a package with a scheduled removal.
 
 // New constructs an Authorizer over the given synced enforcer.
 func New(e *casbinv2.SyncedEnforcer) *Authorizer {

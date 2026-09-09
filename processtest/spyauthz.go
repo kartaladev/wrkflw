@@ -8,10 +8,12 @@ import (
 )
 
 // AuthzCall is one recorded call to a [SpyAuthorizer].
+//
+// It carries the WHOLE [authz.Request] rather than the unpacked spec/actor/vars
+// triple, so a test can assert on the operation and the task projection too — a
+// spy that dropped them could not tell a claim from a completion.
 type AuthzCall struct {
-	Spec  authz.AuthzSpec
-	Actor authz.Actor
-	Vars  map[string]any
+	Request authz.Request
 	// Err is the decision returned for this call (nil = allowed).
 	Err error
 }
@@ -19,7 +21,7 @@ type AuthzCall struct {
 // DecideFunc is a programmable authorization decision. Returning nil allows the
 // actor; returning a non-nil error denies (use [authz.ErrNotAuthorized] or wrap
 // it so callers can use errors.Is).
-type DecideFunc func(ctx context.Context, spec authz.AuthzSpec, actor authz.Actor, vars map[string]any) error
+type DecideFunc func(ctx context.Context, r authz.Request) error
 
 // SpyAuthorizer is a programmable [authz.Authorizer] that records every call. By
 // default it allows all actors; program it with [SpyAuthorizer.Deny],
@@ -41,18 +43,18 @@ func NewSpyAuthorizer() *SpyAuthorizer {
 
 // Authorize applies the current decision, records the call, and returns the
 // decision.
-func (s *SpyAuthorizer) Authorize(ctx context.Context, spec authz.AuthzSpec, actor authz.Actor, vars map[string]any) error {
+func (s *SpyAuthorizer) Authorize(ctx context.Context, r authz.Request) error {
 	s.mu.Lock()
 	decide := s.decide
 	s.mu.Unlock()
 
 	var err error
 	if decide != nil {
-		err = decide(ctx, spec, actor, vars)
+		err = decide(ctx, r)
 	}
 
 	s.mu.Lock()
-	s.calls = append(s.calls, AuthzCall{Spec: spec, Actor: actor, Vars: vars, Err: err})
+	s.calls = append(s.calls, AuthzCall{Request: r, Err: err})
 	s.mu.Unlock()
 	return err
 }
@@ -70,7 +72,7 @@ func (s *SpyAuthorizer) Deny(err error) {
 	if err == nil {
 		err = authz.ErrNotAuthorized
 	}
-	s.SetDecision(func(context.Context, authz.AuthzSpec, authz.Actor, map[string]any) error {
+	s.SetDecision(func(context.Context, authz.Request) error {
 		return err
 	})
 }

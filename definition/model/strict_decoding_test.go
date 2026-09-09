@@ -368,7 +368,6 @@ nodes:
   - id: approve
     kind: userTask
     eligible_roles: ["manager"]
-    eligible_privileges: ["approve-invoice"]
     eligible_expr: "true"
     outcomes: ["approved", "rejected"]
     expose_outcome: true
@@ -381,6 +380,13 @@ nodes:
     wait_action: send-reminder
   - id: sign
     kind: userTask
+    # eligible_privileges lives here rather than on "approve" because
+    # model.Validate refuses a node declaring BOTH eligible_roles and
+    # eligible_privileges (ErrRolesAndPrivileges): the authorizer resolves
+    # identity first-applicable, so a node setting both would have one silently
+    # ignored. This fixture must still exercise every declared tag AND Build, so
+    # the two identity tags are split across the two userTask nodes.
+    eligible_privileges: ["approve-invoice"]
     manual: true
     manual_immediate: true
   - id: route

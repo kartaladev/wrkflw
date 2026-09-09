@@ -1,6 +1,7 @@
 package casbin_test
 
 import (
+	"context"
 	"testing"
 
 	casbinv2 "github.com/casbin/casbin/v2"
@@ -169,7 +170,12 @@ func TestAuthorizer_Authorize(t *testing.T) {
 }
 
 func TestAuthorizer_ImplementsPort(t *testing.T) {
-	var _ authz.Authorizer = casbinauthz.New(newEnforcer(t))
+	// The internal evaluator no longer satisfies authz.Authorizer directly; the
+	// module-root casbinauthz facade adapts it to the authz.Request port. Assert
+	// the method this package actually offers instead.
+	var _ interface {
+		Authorize(ctx context.Context, spec authz.AuthzSpec, actor authz.Actor, vars map[string]any) error
+	} = casbinauthz.New(newEnforcer(t))
 	// Real denial case: verify that a denial from Authorize returns ErrNotAuthorized.
 	a := casbinauthz.New(newEnforcer(t))
 	bob := authz.Actor{ID: "bob", Roles: []string{"employee"}}
