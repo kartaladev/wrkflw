@@ -38,6 +38,47 @@
 //     this package directly only when writing deterministic unit tests of
 //     process logic or building a custom execution layer.
 //
+// # BPMN 2.0
+//
+// wrkflw is inspired by BPMN 2.0 and does not aim to comply with it. A node kind
+// keeps BPMN's name wherever the behaviour matches; where it does not, the
+// divergence is stated here rather than left for a reader to infer from the name.
+//
+//	businessRuleTask  Invokes a catalog action exactly as serviceTask does. There is
+//	                  no DMN and no decision table: the kind is reserved for a
+//	                  rule-engine adapter, and until that adapter exists a non-empty
+//	                  rule is refused when the definition is built
+//	                  (ErrRuleNotSupported). A rule and an action together are
+//	                  refused as ErrRuleAndAction.
+//	sendTask          Never waits, as in BPMN. What diverges: a delivery failure is
+//	                  an outbox concern the instance never observes, and no timer,
+//	                  signal, or message boundary may attach.
+//	endEvent          On a force-termination end, termination_outcome selects the
+//	                  terminal status — "complete" ends the instance at
+//	                  StatusCompleted, "abort" at StatusTerminated. A BPMN terminate
+//	                  end event always completes the process.
+//	deadline          A waiting node whose deadline is breached reroutes its token to
+//	                  DeadlineFlow. There is no BPMN escalation event, and no
+//	                  escalation boundary to catch one.
+//	cancel            CancelRequested is an administrative cancel of an entire
+//	                  instance. There are no BPMN transactions and no cancel events;
+//	                  the cancelled task state and the cancel actions on a
+//	                  definition are unrelated to either.
+//	compensation      A handler is a catalog action name (compensate_action), not an
+//	                  activity linked by association, and there is no compensation
+//	                  boundary. A compensation throw unwinds the whole instance by
+//	                  default; ScopeLocal opts a single scope out.
+//	boundary hosts    A timer, signal, or message boundary attaches only to
+//	                  serviceTask, businessRuleTask, receiveTask, or userTask, the
+//	                  four kinds whose entry arms boundaries. Any other host is
+//	                  refused when the definition is built (ErrBoundaryTriggerHost),
+//	                  because such a boundary could never fire.
+//
+// Matches BPMN, subject to the rows above: startEvent, serviceTask, userTask,
+// receiveTask, subProcess, callActivity, intermediateCatchEvent,
+// intermediateThrowEvent, boundaryEvent, exclusiveGateway, parallelGateway,
+// inclusiveGateway, eventBasedGateway, compensationThrowEvent.
+//
 // # Activities and people
 //
 //   - action       The service-action catalog: named, interface-based actions

@@ -134,7 +134,7 @@ func (EndEvent) Kind() model.NodeKind { return model.KindEndEvent }
 var _ model.Node = EndEvent{}
 
 // IntermediateCatchEvent waits for a timer, signal, or message. It can wait, so
-// it embeds model.WaitFields (deadline escalation + reminders).
+// it embeds model.WaitFields (deadline + reminders).
 type IntermediateCatchEvent struct {
 	model.Base
 	model.WaitFields
