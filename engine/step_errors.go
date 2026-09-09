@@ -48,6 +48,62 @@ func boundaryErrorMatches(n event.BoundaryEvent, vars map[string]any, cause erro
 		for k, v := range vars {
 			env[k] = v
 		}
+		// errorCode is the failing action's error STRING, and for a strict
+		// action.Typed it names the input keys the decode rejected — key names
+		// supplied by whoever supplied the process variables. So a boundary
+		// predicate like `_error contains "fatal"` branches on partly
+		// caller-chosen content, and this path needs no RecoveryFlow and no retry
+		// policy, which makes it wider than the "_errorMessage" write in
+		// step_triggers.go. Measured for #141 in
+		// TestBoundaryRoutingUnderCallerChosenKeyNames.
+		//
+		// The limit that holds: this is DATA, never expr SOURCE. Two barriers,
+		// both verified, neither of them the escaping:
+		//
+		//  1. BINDING. n.ErrorExpr comes from the process definition and
+		//     errorCode arrives as one entry of this environment map, so a key
+		//     name shaped like expr source is never parsed as source. Every
+		//     expr.Compile site in the tree takes definition- or config-authored
+		//     text; none compiles a runtime value.
+		//  2. NO SHADOWING IN CALL POSITION — but read the scope, because this
+		//     one is a property of the COMPILE CONFIGURATION and not of expr.
+		//     The attacker supplies NAMES, so the sharp attack is whether a
+		//     caller-chosen key can change what a definition's program MEANS. In
+		//     call and operator position it cannot: expr resolves a name to a
+		//     builtin from the source token alone, and its only override
+		//     (conf.Config.IsOverridden) consults the map handed to expr.Env,
+		//     which internal/expreval never passes. Swept over all 71 builtins in
+		//     TestBuiltinsAreNotShadowableByEnvKeys; 0 shadowable.
+		//
+		//     ⚠ ONE OPTION DELETES IT, and nothing else would fail:
+		//     expr.Compile(`len(xs)`, AllowUndefinedVariables()) gives 2, while
+		//     adding expr.Env(vars) gives "PWNED" for the same env. expr.Env is
+		//     the idiomatic way to get type checking, so that is a plausible
+		//     future improvement; it would also make expreval's program cache
+		//     unsound, since programs are keyed by the code string alone. The
+		//     sweep above exists to fail when it happens.
+		//
+		//     BARE-IDENTIFIER POSITION IS NOT COVERED. Most names resolve from
+		//     the environment when used as a bare value, so a predicate like
+		//     `count > 5` reads an ordinary caller-writable variable. That is the
+		//     data-influence half above, not a barrier against it.
+		//
+		// ⚠ strconv.Quote is NOT one of them, and this comment used to say it
+		// was. It escapes quotes inside a key but wraps them in two unescaped "
+		// delimiters, and expr accepts single-quoted literals Quote never
+		// touches, so a key named `== 'x' or true or` defeats it. The earlier
+		// claim generalised one payload that happened to contain a ". Recorded
+		// because a future reader adding an interpolating consumer would
+		// otherwise be told a barrier protects them.
+		//
+		// Note the asymmetry with "_errorMessage", which IS caller-writable: the
+		// assignment below happens AFTER the copy loop, so a process variable
+		// literally named "_error" is overwritten here and cannot spoof this
+		// predicate. That holds only here. A plain gateway condition
+		// (engine/step_gateways.go) evaluates s.Variables with no injection at
+		// all, so "_error" is an ordinary caller-writable variable there; and the
+		// tier-1 ErrorCheck closure above receives the cloned vars with no
+		// injection either.
 		env["_error"] = errorCode
 		return eval.EvalBool(n.ErrorExpr, env)
 	}

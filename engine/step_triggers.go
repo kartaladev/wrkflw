@@ -509,6 +509,45 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 			if s.Variables == nil {
 				s.Variables = map[string]any{}
 			}
+			// _errorMessage carries CALLER-WRITABLE content into a durable
+			// instance variable, and a definition author reading it should know
+			// that. "Influenced" understates it in two directions, both
+			// reproduced for #141:
+			//
+			// Both are pinned by TestErrorMessageIsCallerWritable.
+			//
+			//   - FABRICATION. mergeVars is an unconditional maps.Copy. Seven of
+			//     its eight sites in this file pass a caller-supplied map
+			//     straight through, keys and all — StartInstance vars, action and
+			//     task output, message and signal payloads — so a caller can set
+			//     "_errorMessage" to anything with no action having failed and no
+			//     error anywhere in the instance. (The eighth, in
+			//     applyOutcomeExposure, synthesises its own map under a
+			//     definition-derived name, so a caller controls the value there
+			//     and not the key.)
+			//   - SUPPRESSION. The same copy can OVERWRITE a genuine
+			//     engine-written value after the fact, silencing a
+			//     definition-authored escalation branch.
+			//
+			// Where the engine does write it, the content is caller-influenced
+			// too: when the failing action is a strict action.Typed, t.Err names
+			// the input keys it rejected, and those key names came from the same
+			// caller-supplied maps. A gateway condition written as
+			// `_errorMessage contains "fatal"` therefore branches on a string an
+			// outside party chose. It is not an injection: the condition is
+			// definition-authored and the variable reaches expreval as
+			// environment data — see the barriers on env["_error"] in
+			// step_errors.go.
+			//
+			// ⚠ Read the precondition below as bounding THIS WRITE, not the
+			// variable. This write needs an effective retry policy AND a
+			// RecoveryFlow. But "effective" resolves StepOptions.DefaultRetryPolicy
+			// (see effectiveRetryPolicy), so a deployment-wide default satisfies
+			// the retry half for EVERY node at once — the real per-node narrowing
+			// is the RecoveryFlow alone. And nothing about it bounds the variable,
+			// which the two cases above reach without any of it. The wider path
+			// for the engine's own error string, needing neither, is env["_error"]
+			// in step_errors.go.
 			s.Variables["_errorMessage"] = t.Err
 			// Total executions: initial attempt plus all retries.
 			s.Variables["_errorAttempts"] = tok.RetryAttempts + 1

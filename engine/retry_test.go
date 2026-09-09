@@ -13,6 +13,7 @@ import (
 	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/definition/gateway"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
 )
@@ -455,6 +456,360 @@ func TestStepExhaustion(t *testing.T) {
 			r2, err := engine.Step(t.Context(), tc.def, r1.State,
 				engine.NewActionFailed(time.Unix(1, 0), cmdID, "boom", true),
 				engine.StepOptions{})
+			require.NoError(t, err)
+			tc.assert(t, r2)
+		})
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #141 — _errorMessage, its reachability precondition, and gateway routing
+// ─────────────────────────────────────────────────────────────────────────────
+
+// recoveryGatewayDef builds the full chain #141 predicts: a service task whose
+// terminal retry exhaustion routes down RecoveryFlow "rf" into an exclusive
+// gateway that branches on a definition-authored condition over _errorMessage.
+//
+//	start → task ─rf→ xor ─{cond}→ escalate → end-escalate
+//	                      └default→ log      → end-log
+func recoveryGatewayDef(cond string) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("task",
+				activity.WithTaskAction("a"),
+				activity.WithRecoveryFlow("rf"),
+				activity.WithRetryPolicy(&model.RetryPolicy{MaxAttempts: 1})),
+			gateway.NewExclusive("xor"),
+			activity.NewServiceTask("escalate", activity.WithTaskAction("escalate-action")),
+			activity.NewServiceTask("log", activity.WithTaskAction("log-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end-escalate"),
+			event.NewEnd("end-log"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "task"},
+			{ID: "f2", Source: "task", Target: "end"},
+			{ID: "rf", Source: "task", Target: "xor"},
+			{ID: "f-esc", Source: "xor", Target: "escalate", Condition: cond},
+			{ID: "f-log", Source: "xor", Target: "log", IsDefault: true},
+			{ID: "f-esc-end", Source: "escalate", Target: "end-escalate"},
+			{ID: "f-log-end", Source: "log", Target: "end-log"},
+		},
+	}
+}
+
+// noPolicyRecoveryGatewayDef is recoveryGatewayDef with NO node-level retry
+// policy, so the catch-flow branch is reached only when StepOptions supplies a
+// deployment-wide one.
+func noPolicyRecoveryGatewayDef(cond string) *model.ProcessDefinition {
+	def := recoveryGatewayDef(cond)
+	def.Nodes[1] = activity.NewServiceTask("task",
+		activity.WithTaskAction("a"),
+		activity.WithRecoveryFlow("rf"))
+	return def
+}
+
+// recoverySanitiseDef routes the catch-flow through a service task BEFORE the
+// gateway, so a test can deliver that task's output — an ordinary mergeVars site
+// — between the engine writing _errorMessage and the condition reading it.
+//
+//	start → task ─rf→ sanitise → xor ─{cond}→ escalate → end-escalate
+//	                                  └default→ log     → end-log
+func recoverySanitiseDef(cond string) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("task",
+				activity.WithTaskAction("a"),
+				activity.WithRecoveryFlow("rf"),
+				activity.WithRetryPolicy(&model.RetryPolicy{MaxAttempts: 1})),
+			activity.NewServiceTask("sanitise", activity.WithTaskAction("sanitise-action")),
+			gateway.NewExclusive("xor"),
+			activity.NewServiceTask("escalate", activity.WithTaskAction("escalate-action")),
+			activity.NewServiceTask("log", activity.WithTaskAction("log-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end-escalate"),
+			event.NewEnd("end-log"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "task"},
+			{ID: "f2", Source: "task", Target: "end"},
+			{ID: "rf", Source: "task", Target: "sanitise"},
+			{ID: "f-san", Source: "sanitise", Target: "xor"},
+			{ID: "f-esc", Source: "xor", Target: "escalate", Condition: cond},
+			{ID: "f-log", Source: "xor", Target: "log", IsDefault: true},
+			{ID: "f-esc-end", Source: "escalate", Target: "end-escalate"},
+			{ID: "f-log-end", Source: "log", Target: "end-log"},
+		},
+	}
+}
+
+// gatewayOnlyDef is start → xor, with no activity and therefore no way for any
+// error to occur.
+func gatewayOnlyDef(cond string) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			gateway.NewExclusive("xor"),
+			activity.NewServiceTask("escalate", activity.WithTaskAction("escalate-action")),
+			activity.NewServiceTask("log", activity.WithTaskAction("log-action")),
+			event.NewEnd("end-escalate"),
+			event.NewEnd("end-log"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "xor"},
+			{ID: "f-esc", Source: "xor", Target: "escalate", Condition: cond},
+			{ID: "f-log", Source: "xor", Target: "log", IsDefault: true},
+			{ID: "f-esc-end", Source: "escalate", Target: "end-escalate"},
+			{ID: "f-log-end", Source: "log", Target: "end-log"},
+		},
+	}
+}
+
+// TestErrorMessageIsCallerWritable pins the two things that make "_errorMessage
+// carries caller-INFLUENCED content" an understatement. Both change a
+// definition-authored routing decision, and neither needs an action to fail.
+//
+// mergeVars is an unconditional maps.Copy over the instance variables, reached
+// from eight sites in this file. Seven of them pass a caller-supplied map
+// straight through, keys and all. Nothing filters "_errorMessage" on the way in
+// and nothing re-stamps it afterwards, so a caller can both invent it and erase
+// it. The cases drive different node shapes — one needs no activity at all, the
+// other needs a task on the catch-flow — so the table varies the driving as well
+// as the assertion.
+func TestErrorMessageIsCallerWritable(t *testing.T) {
+	t.Parallel()
+
+	const cond = `_errorMessage contains "fatal"`
+
+	type testCase struct {
+		name   string
+		drive  func(t *testing.T) engine.StepResult
+		assert func(t *testing.T, r engine.StepResult)
+	}
+
+	cases := []testCase{
+		{
+			name: "FABRICATION: a caller invents _errorMessage and takes the escalation branch with no error anywhere",
+			drive: func(t *testing.T) engine.StepResult {
+				def := gatewayOnlyDef(cond)
+				r, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "p"},
+					engine.NewStartInstance(time.Unix(0, 0),
+						map[string]any{"_errorMessage": "fatal: invented by the caller"}),
+					engine.StepOptions{})
+				require.NoError(t, err)
+				return r
+			},
+			assert: func(t *testing.T, r engine.StepResult) {
+				assert.True(t, hasInvokeActionForName(r.Commands, "escalate-action"),
+					"StartInstance variables reach the condition unfiltered, so an "+
+						"engine-owned name can be set by whoever starts the instance")
+				assert.Empty(t, r.State.Incidents, "and no error occurred at all")
+			},
+		},
+		{
+			name: "at-limit accept: without the caller's variable the same definition takes the default branch",
+			drive: func(t *testing.T) engine.StepResult {
+				def := gatewayOnlyDef(cond)
+				r, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "p"},
+					engine.NewStartInstance(time.Unix(0, 0), nil), engine.StepOptions{})
+				require.NoError(t, err)
+				return r
+			},
+			assert: func(t *testing.T, r engine.StepResult) {
+				assert.True(t, hasInvokeActionForName(r.Commands, "log-action"),
+					"otherwise the fabrication case would be satisfied by a condition "+
+						"that matches everything")
+				assert.False(t, hasInvokeActionForName(r.Commands, "escalate-action"))
+			},
+		},
+		{
+			name: "SUPPRESSION: a caller overwrites a genuine engine-written _errorMessage and silences the escalation",
+			drive: func(t *testing.T) engine.StepResult {
+				def := recoverySanitiseDef(cond)
+				r1, err := engine.Step(t.Context(), def, engine.InstanceState{InstanceID: "p"},
+					engine.NewStartInstance(time.Unix(0, 0), nil), engine.StepOptions{})
+				require.NoError(t, err)
+
+				// The engine writes the real message here: it names the caller's
+				// key and it does contain "fatal".
+				r2, err := engine.Step(t.Context(), def, r1.State,
+					engine.NewActionFailed(time.Unix(1, 0), findInvokeActionCmdID(t, r1.Commands),
+						strictDecodeErrorFor(t, "fatal-boundary"), true),
+					engine.StepOptions{})
+				require.NoError(t, err)
+				msg, _ := r2.State.Variables["_errorMessage"].(string)
+				require.Contains(t, msg, `"fatal-boundary"`,
+					"precondition: the engine must really have written the escalating value")
+
+				// An ordinary action output — one of the seven wholesale mergeVars
+				// sites — lands on top of it.
+				r3, err := engine.Step(t.Context(), def, r2.State,
+					engine.NewActionCompleted(time.Unix(2, 0), findInvokeActionCmdID(t, r2.Commands),
+						map[string]any{"_errorMessage": "all good"}),
+					engine.StepOptions{})
+				require.NoError(t, err)
+				return r3
+			},
+			assert: func(t *testing.T, r engine.StepResult) {
+				assert.Equal(t, "all good", r.State.Variables["_errorMessage"],
+					"the action's output overwrote the engine's own error message")
+				assert.True(t, hasInvokeActionForName(r.Commands, "log-action"),
+					"so the escalation branch a definition author wrote is silenced")
+				assert.False(t, hasInvokeActionForName(r.Commands, "escalate-action"))
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, tc.drive(t))
+		})
+	}
+}
+
+// TestErrorMessageReachabilityAndGatewayRouting is the second half of #141's
+// measurement — the durable path, as distinct from the ephemeral _error the
+// boundary tests in boundary_error_matching_test.go cover.
+//
+// Two things are being measured, and the issue states neither:
+//
+//  1. THE PRECONDITION. _errorMessage is NOT written whenever an action fails.
+//     engine/step_triggers.go writes it only inside the terminal
+//     retry-exhaustion → catch-flow branch, so the node needs BOTH an effective
+//     retry policy AND a RecoveryFlow. The "no RecoveryFlow" case pins that; it
+//     is a narrower reachability than the issue assumes.
+//
+//  2. THE PREDICTION ITSELF, on gateway conditions. Where the precondition does
+//     hold, a caller-chosen key name inside the strict-decode message lands in
+//     durable instance variables and a definition-authored gateway condition
+//     reading _errorMessage branches on it. That reproduces.
+//
+// The injection case is the same measured NEGATIVE the boundary table records,
+// re-attempted on the durable path because the two use different evaluator call
+// sites: the condition string comes from the process definition, and the variable
+// reaches expreval as one entry of an environment map. It is data on both paths.
+func TestErrorMessageReachabilityAndGatewayRouting(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name string
+		def  *model.ProcessDefinition
+		keys []string
+		// opts is the StepOptions both steps run under. The zero value carries no
+		// deployment-wide retry policy.
+		opts   engine.StepOptions
+		assert func(t *testing.T, r engine.StepResult)
+	}
+
+	cases := []testCase{
+		{
+			name: "PRECONDITION: without a RecoveryFlow no _errorMessage is written at all",
+			def:  retryDef(&model.RetryPolicy{MaxAttempts: 1}),
+			keys: []string{"fatal-boundary"},
+			assert: func(t *testing.T, r engine.StepResult) {
+				_, ok := r.State.Variables["_errorMessage"]
+				assert.False(t, ok,
+					"_errorMessage is written only on the catch-flow branch, so an action "+
+						"failure on a node without a RecoveryFlow must leave no trace of the "+
+						"caller-chosen key name in instance variables")
+			},
+		},
+		{
+			name: "REPRODUCES: a caller-chosen key name lands verbatim in a durable instance variable",
+			def:  recoveryGatewayDef(`_errorMessage contains "fatal"`),
+			keys: []string{"fatal-boundary"},
+			assert: func(t *testing.T, r engine.StepResult) {
+				msg, ok := r.State.Variables["_errorMessage"].(string)
+				require.True(t, ok, "_errorMessage must be present and a string")
+				assert.Contains(t, msg, `"fatal-boundary"`,
+					"the caller's key name is carried into durable instance variables verbatim, "+
+						"quoted by strconv.Quote but not otherwise transformed")
+			},
+		},
+		{
+			name: "REPRODUCES: it flips a definition-authored gateway condition",
+			def:  recoveryGatewayDef(`_errorMessage contains "fatal"`),
+			keys: []string{"fatal-boundary"},
+			assert: func(t *testing.T, r engine.StepResult) {
+				assert.True(t, hasInvokeActionForName(r.Commands, "escalate-action"),
+					"the caller-chosen key name must route the token down the conditional branch")
+				assert.False(t, hasInvokeActionForName(r.Commands, "log-action"),
+					"and not down the default branch")
+			},
+		},
+		{
+			name: "at-limit accept: a key name the condition does not ask for takes the default branch",
+			def:  recoveryGatewayDef(`_errorMessage contains "fatal"`),
+			keys: []string{"harmless-variable"},
+			assert: func(t *testing.T, r engine.StepResult) {
+				assert.True(t, hasInvokeActionForName(r.Commands, "log-action"),
+					"an unrelated key name must leave the routing on the default branch")
+				assert.False(t, hasInvokeActionForName(r.Commands, "escalate-action"),
+					"otherwise the assertion above would be satisfied by a condition matching everything")
+			},
+		},
+		{
+			// The other half of the AND, and the reason the comment says
+			// "effective". With a RecoveryFlow but NO node retry policy and no
+			// deployment default, the retry branch is never entered and the write
+			// is never reached.
+			name: "PRECONDITION: a RecoveryFlow alone is not enough without an effective retry policy",
+			def:  noPolicyRecoveryGatewayDef(`_errorMessage contains "fatal"`),
+			keys: []string{"fatal-boundary"},
+			assert: func(t *testing.T, r engine.StepResult) {
+				_, ok := r.State.Variables["_errorMessage"]
+				assert.False(t, ok, "no effective retry policy means no catch-flow branch")
+			},
+		},
+		{
+			// ...but "effective" resolves StepOptions.DefaultRetryPolicy, so ONE
+			// deployment-wide setting satisfies the retry half for every node at
+			// once. The same definition, unchanged, now reaches the write. This is
+			// why the per-node narrowing is the RecoveryFlow alone.
+			name: "PRECONDITION: a deployment-wide DefaultRetryPolicy satisfies the retry half for every node",
+			def:  noPolicyRecoveryGatewayDef(`_errorMessage contains "fatal"`),
+			keys: []string{"fatal-boundary"},
+			opts: engine.StepOptions{DefaultRetryPolicy: &model.RetryPolicy{MaxAttempts: 1}},
+			assert: func(t *testing.T, r engine.StepResult) {
+				msg, ok := r.State.Variables["_errorMessage"].(string)
+				require.True(t, ok, "a deployment default is an effective policy")
+				assert.Contains(t, msg, `"fatal-boundary"`)
+				assert.True(t, hasInvokeActionForName(r.Commands, "escalate-action"),
+					"and the caller-chosen key name routes, with no per-node opt-in anywhere")
+			},
+		},
+		{
+			name: "DOES NOT REPRODUCE: a key name that is expr source is not evaluated as expr source",
+			def:  recoveryGatewayDef(`_errorMessage == "boom"`),
+			keys: []string{`" or true or "`},
+			assert: func(t *testing.T, r engine.StepResult) {
+				assert.True(t, hasInvokeActionForName(r.Commands, "log-action"),
+					"the condition string comes from the process definition; the variable reaches "+
+						"expreval as environment data and cannot become part of the predicate")
+				assert.False(t, hasInvokeActionForName(r.Commands, "escalate-action"))
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			at0 := time.Unix(0, 0)
+			r1, err := engine.Step(t.Context(), tc.def, engine.InstanceState{InstanceID: "p"},
+				engine.NewStartInstance(at0, nil), tc.opts)
+			require.NoError(t, err)
+			cmdID := findInvokeActionCmdID(t, r1.Commands)
+
+			r2, err := engine.Step(t.Context(), tc.def, r1.State,
+				engine.NewActionFailed(time.Unix(1, 0), cmdID, strictDecodeErrorFor(t, tc.keys...), true),
+				tc.opts)
 			require.NoError(t, err)
 			tc.assert(t, r2)
 		})
