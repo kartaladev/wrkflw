@@ -55,13 +55,13 @@ const MaxDefinitionIDRunes = 255
 // longer than [MaxDefinitionIDRunes]. It is always wrapped together with
 // [ErrInvalidDefinition], so callers may match either.
 //
-// This is a prevention gate, not a cosmetic limit. MySQL's insert-if-absent
-// form is INSERT IGNORE, which downgrades a too-long value to a warning and
-// TRUNCATES it: without this check a publish of an over-long ID would return
-// nil having stored the row under a key the caller never chose, and the
-// caller's next lookup by the ID it published would miss. Rejecting the input
-// up front is cheaper and more honest than trying to detect the truncation
-// afterwards, and it fails closed on every backend rather than only on MySQL.
+// This is a prevention gate, not a cosmetic limit. It is one of two defences:
+// the durable store's MySQL statement also refuses an over-long value loudly
+// (see dialect.Dialect.InsertIgnoreDefinition), so the row can no longer be
+// silently truncated there. What this gate adds is PARITY and timing — every
+// backend rejects the same IDs, before any I/O, with one matchable sentinel,
+// rather than one backend surfacing a dialect-specific SQL error and the others
+// accepting happily.
 var ErrDefinitionIDTooLong = errors.New("workflow-runtime: definition ID too long")
 
 // ErrDefinitionIDNotUTF8 is returned by [ValidateDefinition] when def.ID is not
@@ -70,11 +70,15 @@ var ErrDefinitionIDTooLong = errors.New("workflow-runtime: definition ID too lon
 // Go strings may hold arbitrary bytes, and an ID assembled from a file, a
 // network payload or a []byte conversion can carry invalid sequences. The three
 // backends then disagree completely — measured, see [ValidateDefinition]:
-// Postgres refuses the write outright (SQLSTATE 22021), MySQL truncates at the
-// first bad byte under INSERT IGNORE, and SQLite stores the raw bytes. The
-// MySQL case is the dangerous one: two distinct IDs sharing a prefix up to
-// their first bad byte become ONE row, so a lookup for one identity can return
-// another's definition with no error at all.
+// Postgres refuses the write outright (SQLSTATE 22021), MySQL rejects it with
+// Error 1366, and SQLite stores the raw bytes and accepts it. Refusing it here
+// is what makes that uniform.
+//
+// The MySQL half of this was worse before the store's statement stopped using
+// INSERT IGNORE, which downgraded the rejection to a warning and truncated at
+// the first bad byte: two distinct IDs sharing a prefix up to their first bad
+// byte became ONE row, so a lookup for one identity returned another's
+// definition with no error. Recorded because it is why the bound exists.
 var ErrDefinitionIDNotUTF8 = errors.New("workflow-runtime: definition ID is not valid UTF-8")
 
 // ErrDefinitionIDContainsNUL is returned by [ValidateDefinition] when def.ID
@@ -96,11 +100,14 @@ var ErrDefinitionIDContainsNUL = errors.New("workflow-runtime: definition ID con
 // the bound, exactly as it does for the ID length.
 //
 // Measured at 2147483648 (one over): SQLite stores it happily, Postgres refuses
-// to encode it for an int4 parameter, and MySQL reports it out of range — which
-// INSERT IGNORE downgrades to a warning while CLAMPING the value to 2147483647.
-// That last case is the reason this is a gate and not a comment: the publish
-// returns nil, and the row lands at a version the caller never asked for, so a
-// read at the requested version finds nothing.
+// to encode it for an int4 parameter, and MySQL reports it out of range
+// (Error 1264). Refusing it here is what makes the three agree.
+//
+// Before the store's statement stopped using INSERT IGNORE, MySQL's rejection
+// was downgraded to a warning and the value CLAMPED to 2147483647: the publish
+// returned nil and the row landed at a version the caller never asked for, so a
+// read at the requested version found nothing. Recorded because it is why the
+// bound exists.
 const MaxDefinitionVersion = math.MaxInt32
 
 // ErrDefinitionVersionTooLarge is returned by [ValidateDefinition] when
@@ -152,13 +159,19 @@ var ErrDefinitionVersionTooLarge = errors.New("workflow-runtime: definition vers
 //	NUL byte              stores        rejects (22021)     stores
 //	Version > MaxInt32    stores        rejects (int4)      CLAMPS silently
 //
-// The MySQL column is the narrowest in every row, and its insert-if-absent form
-// is INSERT IGNORE, which downgrades each of those failures to a warning: the
-// write reports success while storing something the caller did not ask for.
-// Rejecting the input here is what makes the two promises this gate carries
+// The MySQL column is the narrowest in every row. Each of those disagreements
+// is independently defended in the durable store, whose definitions statement
+// suppresses only the duplicate key and so lets MySQL reject a bad value loudly
+// (see dialect.Dialect.InsertIgnoreDefinition); before that change INSERT
+// IGNORE downgraded every one of them to a warning and the write reported
+// success while storing something the caller did not ask for.
+//
+// This gate is the other half, and it is the half that gives PARITY: rejecting
+// the input here, before any I/O, is what makes the two promises it carries
 // true — that an in-memory registration and a durable publish accept exactly
 // the same definitions, and that a definition publishable on one backend is
-// publishable on all of them.
+// publishable on all of them. A store-side error alone would satisfy neither,
+// because SQLite would still accept what MySQL refused.
 //
 // A known divergence this gate CANNOT close: MySQL's def_id collation is
 // utf8mb4_0900_ai_ci, which is case- and accent-INSENSITIVE, so "a" and "A"
