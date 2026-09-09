@@ -90,7 +90,7 @@ type Subscriber interface {
 // the subscription is live re-creates the very false guarantee it exists to
 // remove.
 //
-// CONTRACT: on a non-nil error, return a NIL stop. A implementation that
+// CONTRACT: on a non-nil error, return a NIL stop. An implementation that
 // returned both would leave a live subscription its caller has no handle for —
 // the caller has an error and is entitled to discard everything else, so a live
 // stop it never sees is a leak by construction. [Chainer.Start] relies on this

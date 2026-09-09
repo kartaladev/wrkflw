@@ -825,10 +825,20 @@ func TestChainerStartLeaksNoGoroutinesOverARealBus(t *testing.T) {
 	// (deferred first, therefore last of the defers) observes the process while
 	// the bus is still OPEN — i.e. with nothing but stop() having ended the loops.
 	//
-	// Closing the bus inline here instead would make this test unable to fail:
-	// Close ends every subscription itself, so a stop that never joined would be
-	// covered for by Close and goleak would see a clean process. Measured — that
-	// is exactly what the first version of this test did, and mutation S4 (stop
-	// returns without joining) survived it.
+	// Closing the bus inline here instead makes this test unable to fail for its
+	// stated reason: Close ends every subscription itself, so a stop that left the
+	// loops running is covered for by Close and goleak sees a clean process.
+	//
+	// MEASURED with the mutation that DISCRIMINATES the two designs — G1, a stop
+	// whose body is replaced by `_ = stops`, i.e. a stop that never stops:
+	//
+	//	shipped (t.Cleanup)          KILLED 5/5   "found unexpected goroutines"
+	//	first version (inline Close) KILLED 0/5   survives — Close covers for it
+	//
+	// Do NOT re-derive this with S4 (`go stops[i]()`). S4 survives BOTH designs,
+	// so it cannot tell them apart, and an earlier version of this comment cited
+	// it — which would have led a reader to find the claim unreproducible and
+	// "simplify" a correct design away. The test for a justification is not
+	// whether the evidence is relevant but whether it DISTINGUISHES the options.
 	t.Cleanup(func() { require.NoError(t, bus.Close()) })
 }
