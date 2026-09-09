@@ -1,6 +1,6 @@
 ---
 name: use-mockgen
-description: Generate, regenerate, and place uber-go/mock (`mockgen`) test doubles for Go interfaces in this repository. Use whenever a test needs to mock an interface, when a mocked interface is added, modified, or removed, or when a new dependency must be substituted in tests. Covers `//go:generate` directives, the `--typed` flag, where mocks should live (alongside the interface, in the producer package), and the source-vs-reflect mode decision. Overrides the mock-generation steps in `cc-skills-golang:golang-testing` and `cc-skills-golang:golang-stretchr-testify`; when the two conflict, prefer this one.
+description: Generate, regenerate, and place uber-go/mock (`mockgen`) test doubles for Go interfaces in this repository. Use whenever a test needs to mock an interface, when a mocked interface is added, modified, or removed, or when a new dependency must be substituted in tests. Covers `//go:generate` directives, the `--typed` flag, where mocks should live (decided by who consumes them, never in the production build), and the source-vs-reflect mode decision. Overrides the mock-generation steps in `cc-skills-golang:golang-testing` and `cc-skills-golang:golang-stretchr-testify`; when the two conflict, prefer this one.
 ---
 
 # Generating Go Mocks with `mockgen`
@@ -25,21 +25,85 @@ go install go.uber.org/mock/mockgen@latest
 
 ## Where mocks live
 
-Place generated mocks **next to the interface they mock, in the same package**:
+**The mock's consumers decide.** Answer one question before generating: whose
+tests will import this mock?
+
+| The consumers are… | Generate the mock… |
+|---|---|
+| the owning package's own black-box tests | in the same package, in a `_test.go` file |
+| another package's tests | in a dedicated test-double package |
+
+Either way the mock stays **out of the production build**. That is the whole
+point, and the two branches are only different means to it.
+
+### Consumers inside the package → same package, in a `_test.go` file
+
+The default, and it earns its keep here: our tests are black-box
+(`package <name>_test`), so they already import the producer by its real path
+and pick the mock up from an import they have.
 
 ```
-internal/contract/
-├── repository.go        // declares the interface
-└── repository_mock.go   // generated mock, package contract
+<pkg>/
+├── repository.go             // declares the interface
+└── repository_mock_test.go   // generated mock, package <pkg>
 ```
 
-**Why same-package, not a sibling `mocks/` directory:**
+**The `_test.go` suffix is load-bearing, not a convention.** A mock generated
+into a production file puts its exported `Mock*` types on the package's API and
+drags `go.uber.org/mock` into the import graph of everything that imports it —
+the exact cost the other branch exists to avoid, in a smaller package. A
+`_test.go` destination avoids it outright: `go/build` reports such a file under
+`TestGoFiles`, never `GoFiles`, so it reaches no consumer's binary.
+
+Measured, and it is also what separates the two branches:
+
+- from the owning package's own `package <pkg>_test` tests, the mock **is**
+  visible and the test passes;
+- from **any other package's** tests, it is not — that build fails.
+
+So this branch is available exactly when the consumers are the owning package's
+own tests, which is the condition it is chosen by.
 
 - The interface and its mock evolve together; co-located files surface drift in code review.
-- Our tests are black-box (`package <name>_test`) — they import the producer package by its real path and pick up the mock from the same import. A `mocks/` sub-package would force every test to add a second import for what is conceptually one symbol.
-- It keeps the rename refactor trivial: move the interface, the mock moves with it.
+- No second import for what is conceptually one symbol.
+- The rename refactor stays trivial: move the interface, the mock moves with it.
 
-If you genuinely need to share a mock across modules in the workspace, that is an exception worth discussing — call it out before generating.
+### Consumers outside the package → a test-double package
+
+As soon as every consumer is a different package, the branch above is not
+merely worse, it is **unavailable**: a `_test.go` mock is invisible outside its
+own package's tests, so a consumer elsewhere cannot compile against it at all.
+That is the same measurement as above, read from the other side, and it is what
+makes this a structural boundary rather than a preference.
+
+A production file would compile, which is exactly the trap: co-location then
+buys nothing — each consumer adds an import either way — while the exported
+`Mock*` surface costs something real, shipping to consumers of the
+**production** package who never asked for test doubles.
+
+`service/servicetest` is the worked example: the `service` admin ports are
+mocked into a sibling test-double package because every consumer of those mocks
+is a different package's tests. `service/servicetest/doc.go` carries the
+reasoning at the source.
+
+```
+service/
+├── opsadmin.go              // declares the interfaces + the //go:generate directive
+└── servicetest/
+    └── opsadmin_mock.go     // generated mock, package servicetest
+```
+
+`service/no_test_doubles_test.go` enforces the result in three subtests, and
+generating into `service` itself fails **all three**: it puts `go.uber.org/mock`
+in the production import graph, declares exported `Mock*` types in the
+production build, and leaves a directive whose destination is not `servicetest`.
+The third also checks `-package=servicetest`, so redirecting the file without
+the package name still fails.
+
+**When you cannot answer the question yet**, generate into a `_test.go` file in
+the same package. Nothing is published either way, so the choice stays
+reversible: moving the mock to a test-double package later is a file move, and
+until then no exported surface has been committed to.
 
 ## Invocation: prefer `//go:generate` directives
 
@@ -57,17 +121,22 @@ type Repository interface { /* ... */ }
 Then regenerate with:
 
 ```shell
-go generate ./...        # whole module
-go generate ./internal/contract/...   # one package
+go generate ./...            # whole module
+go generate ./service/...    # the service tree
 ```
 
 Use a direct CLI invocation only when you do not own the source file (e.g., generating a mock for a third-party interface), or when scripting a one-off.
 
+Because you do not own the file, this is the reflect-mode case (a positional
+package path and interface name, not `--source`), and the destination is still a
+`_test.go` file or a test-double package. Both the module path and the
+destination below are placeholders — this repo has no third-party mock today.
+
 ```shell
-mockgen --source internal/contract/repository.go \
-        --package contract \
-        --destination internal/contract/repository_mock.go \
-        --typed
+mockgen --destination internal/sdktest/client_mock.go \
+        --package sdktest \
+        --typed \
+        github.com/example/sdk Client
 ```
 
 ## Required flags
