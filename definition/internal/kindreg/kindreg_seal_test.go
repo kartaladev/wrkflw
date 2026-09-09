@@ -94,7 +94,10 @@ func init() {
 			assert: func(t *testing.T, out string, err error) {
 				require.Error(t, err, "forging the capability token must not compile")
 				assert.Contains(t, out, "cannot use",
-					"build must fail on assignability to kindreg.Token, not for some unrelated reason")
+					"build must fail on assignability, not for some unrelated reason")
+				assert.Contains(t, out, "kindreg.Token",
+					"the diagnostic must name the token type; 'cannot use' alone is a generic "+
+						"Go error that an unrelated compile failure would also satisfy")
 			},
 		},
 	}

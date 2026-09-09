@@ -150,11 +150,9 @@ type IntermediateCatchEvent struct {
 }
 
 // Kind returns model.KindIntermediateCatchEvent.
-func (IntermediateCatchEvent) Kind() model.NodeKind {
+func (IntermediateCatchEvent) Kind() model.NodeKind { return model.KindIntermediateCatchEvent }
 
-	var _ model.Node = IntermediateCatchEvent{}
-	return model.KindIntermediateCatchEvent
-}
+var _ model.Node = IntermediateCatchEvent{}
 
 // IntermediateThrowEvent throws a signal (broadcast to every waiting instance).
 // Compensation throws are a separate node kind — see CompensationThrowEvent.
@@ -164,11 +162,9 @@ type IntermediateThrowEvent struct {
 }
 
 // Kind returns model.KindIntermediateThrowEvent.
-func (IntermediateThrowEvent) Kind() model.NodeKind {
+func (IntermediateThrowEvent) Kind() model.NodeKind { return model.KindIntermediateThrowEvent }
 
-	var _ model.Node = IntermediateThrowEvent{}
-	return model.KindIntermediateThrowEvent
-}
+var _ model.Node = IntermediateThrowEvent{}
 
 // BoundaryEvent is attached to an activity and fires on timer, signal, message,
 // or error.

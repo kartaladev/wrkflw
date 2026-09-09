@@ -3,6 +3,7 @@ package kinds_test
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,6 +11,17 @@ import (
 
 	_ "github.com/kartaladev/wrkflw/definition/kinds"
 	"github.com/kartaladev/wrkflw/definition/model"
+)
+
+const (
+	// knownKindCount is the number of node kinds registered at the time of
+	// writing (7 activity + 6 event + 4 gateway). It is a floor, not an
+	// expectation: the walk covers whatever is registered, and this only catches
+	// coverage going backwards.
+	knownKindCount = 17
+	// kindScanLimit stops the walk from running away if every probed kind somehow
+	// resolves to a name.
+	kindScanLimit = 1000
 )
 
 // foreignNode is a counterfeit for an arbitrary kind: it satisfies model.Node by
@@ -61,9 +73,21 @@ func decodeNodeOfKind(t *testing.T, k model.NodeKind) model.Node {
 func TestRecordedNodeTypeMatchesFromWire(t *testing.T) {
 	t.Parallel()
 
-	// Bound to the last kind constant, matching TestAllKindsRegistered, so a
-	// newly-appended kind is covered without editing this test.
-	for k := model.KindStartEvent; k <= model.KindCompensationThrowEvent; k++ {
+	// Walk the kinds by REGISTRATION rather than up to a named last constant.
+	// `k <= model.KindCompensationThrowEvent` reads as if it tracks the end of the
+	// iota block, but a kind appended AFTER that constant is greater than it and
+	// is silently skipped — so the guard would fail open on exactly the kind it
+	// was added to protect. This repo has already made that mistake once, with an
+	// earlier KindEventBasedGateway bound (see kinds_test.go). NodeKind.String
+	// falls back to "NodeKind(n)" for a kind with no registered name, which marks
+	// the end of the contiguous registered run.
+	var covered int
+	for k := model.KindStartEvent; int(k) < kindScanLimit; k++ {
+		if strings.Contains(k.String(), "NodeKind(") {
+			break
+		}
+		covered++
+
 		t.Run(k.String(), func(t *testing.T) {
 			t.Parallel()
 
@@ -83,4 +107,11 @@ func TestRecordedNodeTypeMatchesFromWire(t *testing.T) {
 				"kind %s recorded no concrete type, so nothing guards it", k)
 		})
 	}
+
+	// The walk above extends itself to new kinds; this line is what makes a kind
+	// DISAPPEARING from coverage loud rather than silent.
+	assert.GreaterOrEqual(t, covered, knownKindCount,
+		"expected at least the %d known node kinds to be covered, walked %d — "+
+			"a kind stopped being registered, or the contiguous run was broken by a "+
+			"gap in the iota block", knownKindCount, covered)
 }

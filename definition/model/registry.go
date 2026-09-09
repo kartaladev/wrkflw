@@ -78,7 +78,16 @@ func RegisterKind(_ kindreg.Token, k NodeKind, s NodeSpec) {
 		// time; all 17 real kinds return their own type from a zero wire without
 		// panicking, and nodetype_guard_test.go in definition/kinds keeps that
 		// true for any kind added later.
-		nodeTypes[k] = reflect.TypeOf(s.FromWire(Base{}, NodeWire{}))
+		//
+		// A FromWire returning a nil Node would make reflect.TypeOf nil, and
+		// storing that would put a PRESENT key with a nil value in the map —
+		// which reads as "this kind recorded a type" while matching no node at
+		// all, rejecting every genuine node of the kind. No current kind does it;
+		// recording nothing keeps the failure in the same shape as a kind with no
+		// FromWire (silent gate) instead of inventing a third one.
+		if t := reflect.TypeOf(s.FromWire(Base{}, NodeWire{})); t != nil {
+			nodeTypes[k] = t
+		}
 	}
 }
 
