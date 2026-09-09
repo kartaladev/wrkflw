@@ -74,7 +74,6 @@ type options struct {
 	// every topic. Two fields rather than a nil-vs-empty slice convention,
 	// because "strict everywhere" and "strict nowhere" must not be the same
 	// zero value.
-	requireSubscription       bool
 	requireSubscriptionTopics []string
 }
 
@@ -167,8 +166,7 @@ func WithRedeliveryBackoff(d time.Duration) Option {
 
 // WithRequireSubscription escalates the named topics to strict: a publish to one
 // of them is refused with [ErrNoSubscription] whenever it has no live
-// subscription, INCLUDING before anything has ever subscribed it. With no
-// arguments it applies to every topic.
+// subscription, INCLUDING before anything has ever subscribed it.
 //
 // This is not the switch that enables [ErrNoSubscription] — that is on by
 // default. [NewInProcess] already refuses a publish to a topic that HAS been
@@ -179,13 +177,25 @@ func WithRedeliveryBackoff(d time.Duration) Option {
 // where the relay drains before the consumer subscribes would otherwise pass
 // unreported.
 //
+// At least one topic is required, and that is deliberate rather than
+// stylistic. An "every topic" mode is exactly the naive strict-by-default that
+// was measured breaking examples/scenarios/send_task_routing, which subscribes
+// message.OrderPlaced while still publishing instance.completed; having rejected
+// it as a default there is no case for reintroducing it as an option. Requiring
+// the first topic in the signature also makes the empty case impossible to
+// express, so a caller expanding a slice that happens to be empty escalates
+// NOTHING rather than everything — a fail-open the compiler now rejects.
+//
+// Calls accumulate: two calls escalate the union of their topics, and neither
+// narrows the other.
+//
 // Reach for it when a topic is load-bearing and you would rather have a retrying
 // outbox row than a silent success. Leave it alone for topics that legitimately
 // have no in-process consumer: naming those makes every publish to them an
 // error, which is how a deployment ends up dead-lettering rows nobody wanted.
-func WithRequireSubscription(topics ...string) Option {
+func WithRequireSubscription(topic string, more ...string) Option {
 	return func(o *options) {
-		o.requireSubscription = true
-		o.requireSubscriptionTopics = append(o.requireSubscriptionTopics, topics...)
+		o.requireSubscriptionTopics = append(o.requireSubscriptionTopics, topic)
+		o.requireSubscriptionTopics = append(o.requireSubscriptionTopics, more...)
 	}
 }

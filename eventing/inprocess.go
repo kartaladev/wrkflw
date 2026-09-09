@@ -50,11 +50,19 @@ const defaultRedeliveryBackoff = 10 * time.Millisecond
 //
 // # Non-persistent, at BOTH ends
 //
-// An envelope published to a topic with no live subscription IS DROPPED, and
-// Publish still returns nil. That is a deliberate choice, not an oversight — it
-// is the behaviour of the in-memory bus this replaced, and buffering instead
-// would mean an unbounded queue with no consumer to bound it — and it is the one
-// property that surprises people. It has TWO windows, not one:
+// An envelope published to a topic with no live subscription IS DROPPED. Not
+// buffering it is a deliberate choice, not an oversight — it is the behaviour of
+// the in-memory bus this replaced, and buffering instead would mean an unbounded
+// queue with no consumer to bound it — and it is the one property that surprises
+// people.
+//
+// WHETHER PUBLISH TELLS YOU depends on whether the topic has ever been
+// subscribed on this bus. A topic that HAS been, and now has no live
+// subscription, returns [ErrNoSubscription]. A topic that NEVER has returns nil
+// and drops silently: that is fire-and-forget, and policing it would turn every
+// legitimately unconsumed topic into a retrying outbox row.
+//
+// The drop has TWO windows, not one:
 //
 //   - STARTUP: a Publish that races a Subscribe delivers to no one. Sequence it
 //     with [InProcess.Start], which returns only once the subscription is live,
@@ -62,20 +70,15 @@ const defaultRedeliveryBackoff = 10 * time.Millisecond
 //     do, because Run starts its own subscriptions).
 //
 //   - SHUTDOWN: a Publish that races a stop function, or that lands after the
-//     last subscription on the topic has ended, is dropped just as silently.
-//     Stop publishing before you stop subscribing. This matters most behind
+//     last subscription on the topic has ended, still delivers to no one — but
+//     it is REPORTED rather than silent, because such a topic has by then been
+//     subscribed: Publish returns [ErrNoSubscription]. This matters most behind
 //     persistence.Relay, which treats a nil from Publish as delivered and marks
-//     the outbox row published — so an envelope lost in this window is lost for
-//     good. [InProcess.Close] is the safe order: it refuses later publishes with
-//     [ErrBusClosed] rather than accepting and dropping them.
-//
-//     BY DEFAULT the second half of that — a publish landing after the last
-//     subscription on the topic has ended — is now [ErrNoSubscription] rather
-//     than a silent nil, so the relay retries the row instead of marking it
-//     published. The rule is scoped to topics this bus has seen a subscription
-//     on: a topic nobody ever subscribed is fire-and-forget and still returns
-//     nil. [WithRequireSubscription] escalates named topics to strict from the
-//     first publish.
+//     the outbox row published; the error is what makes it retry the row instead,
+//     so the envelope is recoverable rather than lost for good. Stop publishing
+//     before you stop subscribing all the same — a retry helps only if something
+//     subscribes again. [InProcess.Close] is the safe order: it refuses later
+//     publishes with [ErrBusClosed] rather than accepting and dropping them.
 //
 //     TWO THINGS THAT REMAIN LOST, and neither is fixable here. An envelope
 //     accepted onto a live subscription's queue and then discarded because that
@@ -119,10 +122,10 @@ type InProcess struct {
 	propagator propagation.TextMapPropagator
 	backoff    time.Duration
 
-	// requireSub and requireSubTopics are [WithRequireSubscription]. Both are
-	// written once in NewInProcess and never again, so fanout reads them without
-	// the mutex. A nil requireSubTopics with requireSub set means every topic.
-	requireSub       bool
+	// requireSubTopics is [WithRequireSubscription]: the topics escalated to
+	// strict from the very first publish. Written once in NewInProcess and never
+	// again, so fanout reads it without the mutex. There is deliberately no
+	// "every topic" mode — see the option.
 	requireSubTopics map[string]struct{}
 
 	mu     sync.Mutex
@@ -200,7 +203,6 @@ func NewInProcess(opts ...Option) *InProcess {
 		subs:       make(map[string][]*subscription),
 		seen:       make(map[string]struct{}),
 		done:       make(chan struct{}),
-		requireSub: o.requireSubscription,
 	}
 	if len(o.requireSubscriptionTopics) > 0 {
 		b.requireSubTopics = make(map[string]struct{}, len(o.requireSubscriptionTopics))
@@ -230,11 +232,19 @@ func (b *InProcess) fanout(_ context.Context, env Envelope) error {
 		return ErrBusClosed
 	}
 	// MEASURED, and kept deliberately: this defensive copy is CURRENTLY
-	// unobservable — deleting it leaves the whole suite green, because
-	// unregister rebuilds with the capacity-limited append(list[:i:i], …) at
-	// :375, and a rebuilt slice that still aliases the original array therefore
-	// always has cap == len. Verified exhaustively over every (len, cap, removal
-	// index) shape for len 1..64: 567 aliasing cases, none with spare capacity.
+	// unobservable — deleting it leaves the whole suite green. The reason is
+	// unregister's capacity-limited rebuild, append(list[:i:i], …) at :414:
+	//
+	//   a rebuilt slice that STILL ALIASES the original backing array always has
+	//   cap == len.
+	//
+	// (Aliasing happens only when the removed element is the last one, where the
+	// append copies nothing; every other index appends into a len==cap slice and
+	// is forced to allocate. Re-derive by enumerating removal indices over a
+	// range of len/cap pairs and comparing unsafe.SliceData against the original
+	// — no count is quoted here because it is entirely a function of which cap
+	// set you enumerate, which would make it unreproducible as written.)
+	//
 	// So no later register append can write inside a range a fanout is reading,
 	// and the aliased loop would see exactly what this copy sees.
 	//
@@ -269,17 +279,11 @@ func (b *InProcess) fanout(_ context.Context, env Envelope) error {
 	return nil
 }
 
-// requiresSubscription reports whether [WithRequireSubscription] policies topic.
-// The option with no arguments policies every topic; with arguments it narrows
-// to exactly those, so a deployment can be strict about the terminal topics it
-// consumes while message.* legitimately has no in-process consumer.
+// requiresSubscription reports whether [WithRequireSubscription] escalated topic
+// to strict. Only the topics named across every call to the option qualify:
+// there is no "every topic" mode, so an empty configuration escalates nothing
+// rather than everything.
 func (b *InProcess) requiresSubscription(topic string) bool {
-	if !b.requireSub {
-		return false
-	}
-	if b.requireSubTopics == nil {
-		return true
-	}
 	_, ok := b.requireSubTopics[topic]
 	return ok
 }

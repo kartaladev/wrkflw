@@ -1037,17 +1037,50 @@ func TestPublishWithRequireSubscriptionReportsNoSubscription(t *testing.T) {
 				assert.Zero(t, delivered)
 			},
 		},
-		"escalated on every topic, never subscribed: refused": {
-			opts:      []eventing.Option{eventing.WithRequireSubscription()},
-			publishTo: eventing.TopicInstanceCompleted,
+		"two option calls accumulate rather than narrowing each other": {
+			// A caller escalating one topic and later another must end up with
+			// BOTH. An implementation where a second call replaced the first
+			// would silently drop strictness the caller asked for — the same
+			// fail-open shape this PR removes from Publish, one layer up.
+			opts: []eventing.Option{
+				eventing.WithRequireSubscription(eventing.TopicInstanceFailed),
+				eventing.WithRequireSubscription(eventing.TopicInstanceTerminated),
+			},
+			publishTo: eventing.TopicInstanceFailed,
 			assert: func(t *testing.T, err error, delivered int) {
 				require.ErrorIs(t, err, eventing.ErrNoSubscription,
-					"no arguments must mean every topic, not no topic")
+					"the FIRST call's topic must survive a second call")
+				assert.Zero(t, delivered)
+			},
+		},
+		"the second of two option calls is escalated too": {
+			opts: []eventing.Option{
+				eventing.WithRequireSubscription(eventing.TopicInstanceFailed),
+				eventing.WithRequireSubscription(eventing.TopicInstanceTerminated),
+			},
+			publishTo: eventing.TopicInstanceTerminated,
+			assert: func(t *testing.T, err error, delivered int) {
+				require.ErrorIs(t, err, eventing.ErrNoSubscription,
+					"and so must the second call's topic")
+				assert.Zero(t, delivered)
+			},
+		},
+		"a topic named by neither call stays silent": {
+			// The pair above would also pass if the option escalated everything,
+			// so this row is what makes them evidence.
+			opts: []eventing.Option{
+				eventing.WithRequireSubscription(eventing.TopicInstanceFailed),
+				eventing.WithRequireSubscription(eventing.TopicInstanceTerminated),
+			},
+			publishTo: eventing.TopicInstanceCompleted,
+			assert: func(t *testing.T, err error, delivered int) {
+				require.NoError(t, err,
+					"accumulating two calls must not widen to every topic")
 				assert.Zero(t, delivered)
 			},
 		},
 		"escalated, one live subscription: accepted and delivered": {
-			opts:      []eventing.Option{eventing.WithRequireSubscription()},
+			opts:      []eventing.Option{eventing.WithRequireSubscription(eventing.TopicInstanceCompleted)},
 			subscribe: eventing.TopicInstanceCompleted,
 			publishTo: eventing.TopicInstanceCompleted,
 			assert: func(t *testing.T, err error, delivered int) {
