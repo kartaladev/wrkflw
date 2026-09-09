@@ -2,6 +2,8 @@ package store_test
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -214,5 +216,307 @@ func TestDefinitionStoreRichRoundTrip(t *testing.T) {
 		got, err := ds.GetDefinition(t.Context(), orig.ID, orig.Version)
 		require.NoError(t, err, "%s: GetDefinition rich", b.name)
 		assert.Equal(t, orig, got, "%s: all fields must survive the JSON round-trip", b.name)
+	})
+}
+
+// ── Publish semantics: immutable, idempotent-if-identical ────────────────────
+
+// minimalValidDef returns the smallest definition that passes model.Validate:
+// one manual start wired straight to one end event. It mirrors the helper of
+// the same name in runtime/kernel's tests; the two cannot be shared because
+// they live in different test packages.
+func minimalValidDef(id string, version int) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID:      id,
+		Version: version,
+		Nodes:   []model.Node{event.NewStart("s"), event.NewEnd("e")},
+		Flows:   []flow.SequenceFlow{{ID: "f1", Source: "s", Target: "e"}},
+	}
+}
+
+// rawDefinition reads the definition column exactly as stored, bypassing the
+// JSON decode.
+//
+// The bytes it returns are the DATABASE's encoding, not the one that was
+// written: Postgres stores the column as JSONB and MySQL as JSON, and both
+// re-serialise on write (JSONB orders keys by length then bytes). Only SQLite,
+// whose column is TEXT, returns the bytes verbatim. So this is usable to show
+// that the stored encoding DIFFERS from Go's canonical marshal — which is the
+// precondition the normalisation case needs — and not to assert any particular
+// byte sequence.
+func rawDefinition(t *testing.T, b backend, defID string, version int) []byte {
+	t.Helper()
+
+	s, err := store.New(b.conn, b.dialect)
+	require.NoError(t, err)
+
+	var data []byte
+	require.NoError(t,
+		s.QuerierForTest(t.Context()).QueryRow(t.Context(), b.dialect.Rebind(
+			`SELECT definition FROM wrkflw_definitions WHERE def_id = ? AND version = ?`),
+			defID, version,
+		).Scan(&data),
+		"read raw definition %s:%d", defID, version,
+	)
+	return data
+}
+
+// countDefinitionRows reports how many rows exist for defID, so an idempotent
+// re-publish can be shown to leave exactly one.
+func countDefinitionRows(t *testing.T, b backend, defID string) int {
+	t.Helper()
+
+	s, err := store.New(b.conn, b.dialect)
+	require.NoError(t, err)
+
+	var n int
+	require.NoError(t,
+		s.QuerierForTest(t.Context()).QueryRow(t.Context(), b.dialect.Rebind(
+			`SELECT COUNT(*) FROM wrkflw_definitions WHERE def_id = ?`), defID,
+		).Scan(&n),
+		"count definition rows for %s", defID,
+	)
+	return n
+}
+
+// reorderedEncoding re-encodes def's canonical JSON through a
+// map[string]json.RawMessage, which emits the top-level keys in alphabetical
+// rather than struct-declaration order. The bytes differ; the meaning does not.
+// This is the "a library upgrade changed serialisation" case that normalised
+// comparison has to absorb without reporting a content conflict.
+func reorderedEncoding(t *testing.T, def *model.ProcessDefinition) []byte {
+	t.Helper()
+
+	canonical, err := json.Marshal(def)
+	require.NoError(t, err)
+
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(canonical, &fields))
+
+	reordered, err := json.Marshal(fields)
+	require.NoError(t, err)
+
+	// Guard against the test degenerating into a tautology: if the two
+	// encodings were byte-equal, the case would prove nothing.
+	require.NotEqual(t, canonical, reordered,
+		"reordered encoding must differ from the canonical one for this case to mean anything")
+	return reordered
+}
+
+// TestDefinitionStorePublishImmutable pins the publish contract on all three
+// dialects: a published (def_id, version) is immutable. Re-publishing identical
+// content is a successful no-op; re-publishing different content under the same
+// version is refused and the first content survives; a definition that fails
+// model.Validate — including one with Version == 0 — is refused before anything
+// is written.
+//
+// The cases run serially inside each dialect: they share one database (and, on
+// SQLite, one connection), and running them in parallel would trade a real
+// assertion for lock contention. Each case uses its own def_id, so they do not
+// interfere.
+func TestDefinitionStorePublishImmutable(t *testing.T) {
+	type testCase struct {
+		name   string
+		seed   func(t *testing.T, b backend, ds *store.DefinitionStore)
+		def    *model.ProcessDefinition
+		assert func(t *testing.T, b backend, ds *store.DefinitionStore, err error)
+	}
+
+	cases := []testCase{
+		{
+			name: "identical content twice is an idempotent no-op leaving one row",
+			seed: func(t *testing.T, b backend, ds *store.DefinitionStore) {
+				require.NoError(t, ds.PutDefinition(t.Context(), minimalValidDef("pub-same", 1)),
+					"%s: first publish", b.name)
+			},
+			def: minimalValidDef("pub-same", 1),
+			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
+				require.NoError(t, err, "%s: re-publishing identical content must succeed", b.name)
+				assert.Equal(t, 1, countDefinitionRows(t, b, "pub-same"),
+					"%s: idempotent publish must leave exactly one row", b.name)
+
+				got, err := ds.GetDefinition(t.Context(), "pub-same", 1)
+				require.NoError(t, err)
+				assert.Equal(t, minimalValidDef("pub-same", 1), got,
+					"%s: stored content must be unchanged", b.name)
+			},
+		},
+		{
+			name: "different content under the same version is refused and the first survives",
+			seed: func(t *testing.T, b backend, ds *store.DefinitionStore) {
+				first := minimalValidDef("pub-conflict", 1)
+				first.CancelActions = []string{"action-first"}
+				require.NoError(t, ds.PutDefinition(t.Context(), first), "%s: first publish", b.name)
+			},
+			def: func() *model.ProcessDefinition {
+				second := minimalValidDef("pub-conflict", 1)
+				second.CancelActions = []string{"action-second"}
+				return second
+			}(),
+			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
+				require.Error(t, err, "%s: republishing different content must be refused", b.name)
+				require.ErrorIs(t, err, kernel.ErrDefinitionExists,
+					"%s: must wrap ErrDefinitionExists; got %v", b.name, err)
+				assert.ErrorContains(t, err, "pub-conflict:1",
+					"%s: error must name the id:version key", b.name)
+				assert.ErrorContains(t, err, "differs from the published version",
+					"%s: error must say the content differs from the published version", b.name)
+
+				got, err := ds.GetDefinition(t.Context(), "pub-conflict", 1)
+				require.NoError(t, err)
+				assert.Equal(t, []string{"action-first"}, got.CancelActions,
+					"%s: the first published content must survive", b.name)
+			},
+		},
+		{
+			name: "stored bytes differing only in serialisation compare equal",
+			seed: func(t *testing.T, b backend, ds *store.DefinitionStore) {
+				def := minimalValidDef("pub-normalise", 1)
+				require.NoError(t, ds.PutDefinition(t.Context(), def), "%s: first publish", b.name)
+
+				// Rewrite the stored column with a byte-different but
+				// semantically identical encoding, standing in for a
+				// serialisation change introduced by a library upgrade.
+				s, err := store.New(b.conn, b.dialect)
+				require.NoError(t, err)
+				_, err = s.QuerierForTest(t.Context()).Exec(t.Context(), b.dialect.Rebind(
+					`UPDATE wrkflw_definitions SET definition = ? WHERE def_id = ? AND version = ?`),
+					reorderedEncoding(t, def), "pub-normalise", 1,
+				)
+				require.NoError(t, err, "%s: seed reordered encoding", b.name)
+			},
+			def: minimalValidDef("pub-normalise", 1),
+			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
+				// Precondition: the stored encoding must really differ from
+				// Go's canonical marshal, or this case proves nothing. It does
+				// on every dialect — on SQLite because the seed wrote the
+				// reordered form verbatim, on Postgres and MySQL because JSONB
+				// and JSON re-serialise the column on write.
+				canonical, mErr := json.Marshal(minimalValidDef("pub-normalise", 1))
+				require.NoError(t, mErr)
+				require.NotEqual(t, string(canonical), string(rawDefinition(t, b, "pub-normalise", 1)),
+					"%s: stored encoding must differ from the canonical marshal for this case to mean anything", b.name)
+
+				require.NoError(t, err,
+					"%s: a stored encoding that normalises to the incoming one is not a conflict", b.name)
+
+				got, err := ds.GetDefinition(t.Context(), "pub-normalise", 1)
+				require.NoError(t, err)
+				assert.Equal(t, minimalValidDef("pub-normalise", 1), got,
+					"%s: the stored definition must be unchanged", b.name)
+			},
+		},
+		{
+			name: "a definition failing model.Validate is refused and writes no row",
+			def:  &model.ProcessDefinition{ID: "pub-invalid", Version: 1},
+			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
+				require.Error(t, err, "%s: an invalid definition must be refused", b.name)
+				require.ErrorIs(t, err, kernel.ErrInvalidDefinition,
+					"%s: must wrap ErrInvalidDefinition; got %v", b.name, err)
+				assert.ErrorIs(t, err, model.ErrNoStartEvent,
+					"%s: must also wrap the broken rule; got %v", b.name, err)
+
+				assert.Equal(t, 0, countDefinitionRows(t, b, "pub-invalid"),
+					"%s: a refused definition must write no row", b.name)
+			},
+		},
+		{
+			name: "version 0 is refused before any I/O",
+			def:  minimalValidDef("pub-zero", 0),
+			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
+				require.Error(t, err, "%s: version 0 must be refused", b.name)
+				require.ErrorIs(t, err, kernel.ErrInvalidDefinition,
+					"%s: must wrap ErrInvalidDefinition; got %v", b.name, err)
+				assert.ErrorIs(t, err, model.ErrInvalidVersion,
+					"%s: must also wrap model.ErrInvalidVersion; got %v", b.name, err)
+
+				assert.Equal(t, 0, countDefinitionRows(t, b, "pub-zero"),
+					"%s: version 0 must not reach the database", b.name)
+			},
+		},
+	}
+
+	forEachDialect(t, func(t *testing.T, b backend) {
+		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
+		require.NoError(t, err)
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				if tc.seed != nil {
+					tc.seed(t, b, ds)
+				}
+				tc.assert(t, b, ds, ds.PutDefinition(t.Context(), tc.def))
+			})
+		}
+	})
+}
+
+// errPublishBoom is the sentinel a RunInTx unit returns to force a rollback.
+var errPublishBoom = errors.New("boom")
+
+// TestDefinitionStorePublishJoinsAmbientTransaction pins that a publish issued
+// inside a Store.RunInTx unit is part of that unit: it disappears when the unit
+// rolls back and survives when the unit commits.
+//
+// Both cases are required. The rollback case alone would also pass if
+// PublishDefinition simply never wrote anything, so the committing case is what
+// makes the rollback case mean "the write joined the ambient transaction"
+// rather than "there was no write".
+func TestDefinitionStorePublishJoinsAmbientTransaction(t *testing.T) {
+	type testCase struct {
+		name   string
+		defID  string
+		unit   func(txCtx context.Context, ds *store.DefinitionStore, def *model.ProcessDefinition) error
+		assert func(t *testing.T, b backend, ds *store.DefinitionStore, err error)
+	}
+
+	cases := []testCase{
+		{
+			name:  "a rolled-back unit leaves no row",
+			defID: "tx-rollback",
+			unit: func(txCtx context.Context, ds *store.DefinitionStore, def *model.ProcessDefinition) error {
+				if err := ds.PutDefinition(txCtx, def); err != nil {
+					return err
+				}
+				return errPublishBoom
+			},
+			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
+				require.ErrorIs(t, err, errPublishBoom, "%s: RunInTx must surface the unit's error", b.name)
+
+				_, err = ds.GetDefinition(t.Context(), "tx-rollback", 1)
+				require.ErrorIs(t, err, kernel.ErrDefinitionNotFound,
+					"%s: the publish must roll back with the unit; got %v", b.name, err)
+			},
+		},
+		{
+			name:  "a committed unit leaves the row",
+			defID: "tx-commit",
+			unit: func(txCtx context.Context, ds *store.DefinitionStore, def *model.ProcessDefinition) error {
+				return ds.PutDefinition(txCtx, def)
+			},
+			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
+				require.NoError(t, err, "%s: the committing unit must succeed", b.name)
+
+				got, err := ds.GetDefinition(t.Context(), "tx-commit", 1)
+				require.NoError(t, err, "%s: the publish must survive the commit", b.name)
+				assert.Equal(t, 1, got.Version, "%s: stored version", b.name)
+			},
+		},
+	}
+
+	forEachDialect(t, func(t *testing.T, b backend) {
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
+		require.NoError(t, err)
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				def := minimalValidDef(tc.defID, 1)
+				tc.assert(t, b, ds, s.RunInTx(t.Context(), func(txCtx context.Context) error {
+					return tc.unit(txCtx, ds, def)
+				}))
+			})
+		}
 	})
 }

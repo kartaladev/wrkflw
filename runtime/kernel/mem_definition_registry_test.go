@@ -141,7 +141,15 @@ func TestMemDefinitionRegistry_MustRegisterPanicsOnError(t *testing.T) {
 	}, "MustRegister should panic on duplicate Qualifier")
 }
 
-func TestMemDefinitionRegistryLatestIsLastRegistered(t *testing.T) {
+// TestMemDefinitionRegistryLatestIsHighestVersion pins the latest key to the
+// HIGHEST registered version, not the most recently registered one. Registering
+// the higher version first and the lower one second is the case that separates
+// the two rules: last-registered-wins would resolve v1 here.
+//
+// This aligns MemDefinitionRegistry with MapDefinitionRegistry and with
+// DefinitionStore.Lookup, both of which already resolve Latest by highest
+// version — "latest" now means the same thing on every registry.
+func TestMemDefinitionRegistryLatestIsHighestVersion(t *testing.T) {
 	t.Parallel()
 
 	reg := kernel.NewMemDefinitionRegistry()
@@ -152,11 +160,11 @@ func TestMemDefinitionRegistryLatestIsLastRegistered(t *testing.T) {
 	require.NoError(t, reg.Register(v2))
 	require.NoError(t, reg.Register(v1))
 
-	// Latest resolves to the LAST-registered def (v1), not the highest version.
-	// This is intentional and differs from MapDefinitionRegistry behavior.
+	// Latest resolves to the highest version (v2), even though v1 was
+	// registered last.
 	got, err := reg.Lookup(t.Context(), model.Latest("order"))
 	require.NoError(t, err)
-	assert.Equal(t, v1, got, "Latest should resolve to the last-registered definition (v1), not the highest version (v2)")
+	assert.Equal(t, v2, got, "Latest should resolve to the highest registered version (v2), not the last-registered one (v1)")
 
 	// Pinned lookups still resolve each exact version.
 	p2, err := reg.Lookup(t.Context(), model.Version("order", 2))
