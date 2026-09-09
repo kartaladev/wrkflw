@@ -154,7 +154,7 @@ func newHarness(t *testing.T, defs ...*model.ProcessDefinition) *harness {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"manager": {{ID: "alice", Roles: []string{"manager"}}},
 	})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 
 	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)

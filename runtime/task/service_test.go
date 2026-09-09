@@ -30,7 +30,7 @@ func TestTaskServiceRejectsIneligibleActor(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"manager": {manager},
 	})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 
 	r := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
@@ -67,7 +67,7 @@ func TestTaskServiceReassign(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"manager": {manager, admin},
 	})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 
 	r := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
@@ -125,7 +125,7 @@ func TestTaskServiceReassignRejectsUnauthorized(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"manager": {manager},
 	})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 
 	r := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
@@ -168,7 +168,7 @@ func TestTaskServiceCompleteRejectsUnauthorized(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"manager": {manager},
 	})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 
 	r := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
@@ -241,7 +241,7 @@ func TestTaskService_Claim_AttributeOverVars(t *testing.T) {
 				Vars:        tc.vars,
 				State:       humantask.Unclaimed,
 			}))
-			svc := runtimetest.MustTaskService(t, store, authz.RoleAuthorizer{})
+			svc := runtimetest.MustTaskService(t, store, authz.NewComposite())
 			_, err := svc.Claim(t.Context(), "tok-attr-1", authz.Actor{ID: "alice"})
 			tc.assert(t, err)
 		})
@@ -287,7 +287,7 @@ func TestNewTaskServiceWithClockOption(t *testing.T) {
 func TestNewTaskServiceFailsFast(t *testing.T) {
 	t.Parallel()
 	store := humantask.NewMemTaskStore()
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 	cases := []struct {
 		name   string
 		store  humantask.TaskStore
@@ -430,7 +430,7 @@ func TestTaskServiceRefreshCandidates(t *testing.T) {
 			name:     "an unauthorized caller is rejected",
 			task:     openTask,
 			resolver: humantask.NewStaticActorResolver(map[string][]authz.Actor{"manager": {mike}}),
-			az:       authz.RoleAuthorizer{},
+			az:       authz.NewComposite(),
 			taskID:   "tok-refresh",
 			by:       authz.Actor{ID: "outsider"},
 			assert: func(t *testing.T, _ engine.Trigger, err error) {
@@ -742,7 +742,7 @@ func TestTaskServiceReassignRejectsAnEmptyTarget(t *testing.T) {
 			ctx := t.Context()
 			store := humantask.NewMemTaskStore()
 			require.NoError(t, store.Upsert(ctx, openTask))
-			svc := runtimetest.MustTaskService(t, store, authz.RoleAuthorizer{})
+			svc := runtimetest.MustTaskService(t, store, authz.NewComposite())
 
 			trg, err := svc.Reassign(ctx, tc.taskID, manager.ID, tc.to, manager)
 			tc.assert(t, trg, err)

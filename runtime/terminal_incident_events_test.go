@@ -168,7 +168,7 @@ func TestUnhandledErrorKeepsIncidentOfSurvivingToken(t *testing.T) {
 	driver := runtimetest.MustProcessDriver(t, failingIncidentCatalog(), store,
 		runtime.WithClock(clk),
 		runtime.WithDefaultRetryPolicy(singleAttemptRetry()),
-		runtime.WithHumanTasks(humantask.NewStaticActorResolver(nil), humantask.NewMemTaskStore(), authz.RoleAuthorizer{}),
+		runtime.WithHumanTasks(humantask.NewStaticActorResolver(nil), humantask.NewMemTaskStore(), authz.NewComposite()),
 	)
 
 	// start → fork ⇒ { charge(ServiceTask, fails → incident) ;

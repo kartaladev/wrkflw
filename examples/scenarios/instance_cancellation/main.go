@@ -104,7 +104,7 @@ func main() {
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithClock(clk),
-		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}),
+		runtime.WithHumanTasks(resolver, taskStore, authz.NewComposite()),
 	)
 	if err != nil {
 		log.Fatal("runner:", err)

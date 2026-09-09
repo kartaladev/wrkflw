@@ -400,7 +400,7 @@ func TestTimerTxFlowRolledBackCancel(t *testing.T) {
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithTimerStore(fw),
-		runtime.WithHumanTasks(resolver, humantask.NewMemTaskStore(), authz.RoleAuthorizer{}))
+		runtime.WithHumanTasks(resolver, humantask.NewMemTaskStore(), authz.NewComposite()))
 
 	def := runtimetest.ApprovalWithReminderDef(waitEvery, "ping")
 	const instanceID = "txf-cancel-1"
@@ -613,7 +613,7 @@ func TestTimerTxFlowArmCancelInterleave(t *testing.T) {
 		runtime.WithClock(fc),
 		runtime.WithScheduler(sched),
 		runtime.WithTimerStore(fw),
-		runtime.WithHumanTasks(resolver, humantask.NewMemTaskStore(), authz.RoleAuthorizer{}))
+		runtime.WithHumanTasks(resolver, humantask.NewMemTaskStore(), authz.NewComposite()))
 
 	def := runtimetest.ApprovalWithReminderDef(waitEvery, "ping")
 

@@ -433,6 +433,6 @@ func humanTaskWiring() runtime.Option {
 			"manager": {{ID: "alice", Roles: []string{"manager"}}},
 		}),
 		humantask.NewMemTaskStore(),
-		authz.RoleAuthorizer{},
+		authz.NewComposite(),
 	)
 }

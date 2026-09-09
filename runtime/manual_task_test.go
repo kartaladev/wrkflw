@@ -38,7 +38,7 @@ func TestManualTaskCompletesOnBareTrigger(t *testing.T) {
 	}
 	driver, err := runtime.NewProcessDriver(
 		runtime.WithInstanceStore(memSt),
-		runtime.WithHumanTasks(humantask.NewStaticActorResolver(nil), taskStore, authz.RoleAuthorizer{}),
+		runtime.WithHumanTasks(humantask.NewStaticActorResolver(nil), taskStore, authz.NewComposite()),
 	)
 	if err != nil {
 		t.Fatalf("driver: %v", err)
@@ -65,7 +65,7 @@ func TestManualTaskCompletesOnBareTrigger(t *testing.T) {
 		t.Fatal("no open human task after driving to the manual node")
 	}
 
-	svc, err := task.NewTaskService(taskStore, authz.RoleAuthorizer{})
+	svc, err := task.NewTaskService(taskStore, authz.NewComposite())
 	if err != nil {
 		t.Fatalf("task service: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestManualWaitTaskRejectsPayload(t *testing.T) {
 	}
 	driver, err := runtime.NewProcessDriver(
 		runtime.WithInstanceStore(memSt),
-		runtime.WithHumanTasks(humantask.NewStaticActorResolver(nil), taskStore, authz.RoleAuthorizer{}),
+		runtime.WithHumanTasks(humantask.NewStaticActorResolver(nil), taskStore, authz.NewComposite()),
 	)
 	if err != nil {
 		t.Fatalf("driver: %v", err)
@@ -124,7 +124,7 @@ func TestManualWaitTaskRejectsPayload(t *testing.T) {
 	if token == "" {
 		t.Fatal("no open human task after driving to the manual node")
 	}
-	svc, err := task.NewTaskService(taskStore, authz.RoleAuthorizer{})
+	svc, err := task.NewTaskService(taskStore, authz.NewComposite())
 	if err != nil {
 		t.Fatalf("svc: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestImmediateManualTaskAutoCompletes(t *testing.T) {
 	}
 	driver, err := runtime.NewProcessDriver(
 		runtime.WithInstanceStore(memSt),
-		runtime.WithHumanTasks(humantask.NewStaticActorResolver(nil), taskStore, authz.RoleAuthorizer{}),
+		runtime.WithHumanTasks(humantask.NewStaticActorResolver(nil), taskStore, authz.NewComposite()),
 	)
 	if err != nil {
 		t.Fatalf("driver: %v", err)

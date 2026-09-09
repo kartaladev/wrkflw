@@ -91,7 +91,7 @@ func main() {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"reviewer": {reviewer},
 	})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 	sched, err := scheduler.NewScheduler(scheduler.WithClock(clk))
 	if err != nil {
 		log.Fatal("scheduler:", err)

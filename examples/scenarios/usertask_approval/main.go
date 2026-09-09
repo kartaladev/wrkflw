@@ -59,7 +59,7 @@ func main() {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"manager": {manager},
 	})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 	clk := clockwork.NewRealClock()
 
 	memSt, err := kernel.NewMemInstanceStore()

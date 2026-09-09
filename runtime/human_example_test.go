@@ -38,7 +38,7 @@ func TestHumanTaskEndToEnd(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"manager": {manager},
 	})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 	store := runtimetest.MustMemStore(t)
 
 	driver := runtimetest.MustProcessDriver(t, nil, store,
@@ -156,7 +156,7 @@ func TestProcessDriverSnapshotsVarsIntoHumanTask(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"manager": {manager},
 	})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 
 	driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),
 		runtime.WithHumanTasks(resolver, taskStore, az),
@@ -249,7 +249,7 @@ func TestProcessDriverAttributeOverVarsThroughRunner(t *testing.T) {
 
 			// Each sub-test gets its own isolated stores so they do not share state.
 			taskStore := humantask.NewMemTaskStore()
-			az := authz.RoleAuthorizer{}
+			az := authz.NewComposite()
 			store := runtimetest.MustMemStore(t)
 
 			driver := runtimetest.MustProcessDriver(t, nil, store,
@@ -306,7 +306,7 @@ func TestHumanTaskCandidatesSurviveReload(t *testing.T) {
 	}
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"manager": {manager}})
 	taskStore := humantask.NewMemTaskStore()
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 	store := runtimetest.MustMemStore(t)
 
 	driver := runtimetest.MustProcessDriver(t, nil, store,
@@ -405,7 +405,7 @@ func TestCandidateResolveTimeout(t *testing.T) {
 
 			resolver := &blockingResolver{entered: make(chan struct{}, 1)}
 			opts := append([]runtime.Option{
-				runtime.WithHumanTasks(resolver, humantask.NewMemTaskStore(), authz.RoleAuthorizer{}),
+				runtime.WithHumanTasks(resolver, humantask.NewMemTaskStore(), authz.NewComposite()),
 			}, tc.opts...)
 			driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t), opts...)
 

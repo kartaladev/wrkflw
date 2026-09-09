@@ -82,7 +82,7 @@ func TestBroadcastSignalFiresBoundary(t *testing.T) {
 		runtime.WithClock(fc),
 		runtime.WithDefinitions(reg),
 		runtime.WithSignalBus(bus),
-		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}))
+		runtime.WithHumanTasks(resolver, taskStore, authz.NewComposite()))
 
 	st, err := r.Drive(ctx, def, "i1", nil)
 	require.NoError(t, err)

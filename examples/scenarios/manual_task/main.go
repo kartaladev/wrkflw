@@ -60,7 +60,7 @@ func main() {
 	}
 	driver, err := runtime.NewProcessDriver(
 		runtime.WithInstanceStore(memSt),
-		runtime.WithHumanTasks(humantask.NewStaticActorResolver(nil), taskStore, authz.RoleAuthorizer{}),
+		runtime.WithHumanTasks(humantask.NewStaticActorResolver(nil), taskStore, authz.NewComposite()),
 	)
 	if err != nil {
 		log.Fatal("driver:", err)
@@ -87,7 +87,7 @@ func main() {
 		log.Fatal("expected an open manual task")
 	}
 
-	svc, err := task.NewTaskService(taskStore, authz.RoleAuthorizer{})
+	svc, err := task.NewTaskService(taskStore, authz.NewComposite())
 	if err != nil {
 		log.Fatal("task service:", err)
 	}

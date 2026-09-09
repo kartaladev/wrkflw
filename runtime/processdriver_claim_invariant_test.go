@@ -58,7 +58,7 @@ func TestPreCommitRejectionDoesNotCommitTheStep(t *testing.T) {
 
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"manager": {manager}})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 	store := runtimetest.MustMemStore(t)
 	driver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithHumanTasks(resolver, taskStore, az),
@@ -152,7 +152,7 @@ func TestTerminalSweepReconcilesEveryTaskDespiteACorruptOne(t *testing.T) {
 
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"manager": {manager}})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 	store := runtimetest.MustMemStore(t)
 	driver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithHumanTasks(resolver, taskStore, az),

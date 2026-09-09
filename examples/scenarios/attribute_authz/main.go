@@ -112,7 +112,7 @@ func demoAttributeAuthz(ctx context.Context) {
 
 	// RoleAuthorizer evaluates both spec.Roles and spec.Attribute (the
 	// EligibleExpr is mapped to AuthzSpec.Attribute by the engine).
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 
 	// --- EU instance: should be ALLOWED ---
 	{

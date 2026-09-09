@@ -70,7 +70,7 @@ func newIncidentFixture(t *testing.T, ctx context.Context, instanceID string) in
 		runtime.WithInstanceStore(store),
 		runtime.WithDefinitions(reg),
 		runtime.WithClock(clk),
-		runtime.WithHumanTasks(humantask.NewStaticActorResolver(nil), humantask.NewMemTaskStore(), authz.RoleAuthorizer{}),
+		runtime.WithHumanTasks(humantask.NewStaticActorResolver(nil), humantask.NewMemTaskStore(), authz.NewComposite()),
 		runtime.WithDefaultRetryPolicy(model.RetryPolicy{
 			MaxAttempts:     1,
 			InitialInterval: time.Second,
@@ -85,7 +85,7 @@ func newIncidentFixture(t *testing.T, ctx context.Context, instanceID string) in
 		service.WithInstanceStore(store),
 		service.WithDefinitions(reg),
 		service.WithLister(store),
-		service.WithHumanTasks(humantask.NewMemTaskStore(), authz.RoleAuthorizer{}),
+		service.WithHumanTasks(humantask.NewMemTaskStore(), authz.NewComposite()),
 		service.WithClock(clk),
 	)
 	require.NoError(t, err)
