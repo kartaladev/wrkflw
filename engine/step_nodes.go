@@ -87,6 +87,19 @@ func (businessRuleTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) (
 type receiveTaskStrategy struct{}
 
 func (receiveTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
+	// This assertion is bare on purpose, and so are the 28 others like it — 8 in
+	// this file, 21 in the leaf packages' NodeSpec functions. They are total, not
+	// optimistic: model.Validate refuses any node whose dynamic type is not the
+	// one its kind registered (model.ErrForeignNodeType), and Validate is
+	// mandatory at definition registration (#53) and at publish (#112), so a node
+	// reaching a strategy has already been proved to be the type its kind claims.
+	//
+	// Making them comma-ok would not add safety, it would spread one invariant
+	// across 29 sites and 29 error paths that can no longer be reached — and each
+	// of those dead branches would need a behaviour no one can specify, because
+	// there is no correct way for a strategy to proceed with a node that is not
+	// its own kind. The invariant is held once, at the gate, where it can be
+	// stated and tested. See definition/kinds/foreign_node_test.go.
 	rt := node.(activity.ReceiveTask)
 	resolvedKey, err := c.pol.eval.EvalString(rt.CorrelationKey, c.s.Variables)
 	if err != nil {
