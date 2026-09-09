@@ -22,11 +22,20 @@ import (
 //   - Registration is closed at compile time. RegisterKind takes a capability
 //     token from definition/internal/kindreg, which only definition/... can
 //     import, so a consumer cannot claim a kind.
-//   - Construction is closed at the Validate gate. Each kind records the
-//     concrete type its FromWire returns, and Validate rejects a node whose
-//     dynamic type differs with ErrForeignNodeType — which is what lets the
-//     engine and the leaf NodeSpec functions assert node.(activity.UserTask)
-//     bare rather than defensively.
+//   - Construction is closed at the two ingresses through which a definition
+//     legitimately enters the module: model.Validate and Builder.Build. Each
+//     kind records the concrete type its FromWire returns, and both ingresses
+//     run the same check, rejecting a node whose dynamic type differs with
+//     ErrForeignNodeType.
+//
+// That second half is what lets the leaf NodeSpec functions and
+// engine/step_nodes.go assert node.(activity.UserTask) bare rather than
+// defensively — but it holds only for a node that arrived through one of those
+// two doors. Three paths are deliberately not gated and still panic on a
+// counterfeit: engine.Step, which does not validate (#53's escape hatch);
+// ProcessDefinition.MarshalJSON; and ValidationStrategyFor, which returns no
+// error and so cannot report one. ErrForeignNodeType's doc comment carries the
+// authoritative list.
 //
 // Consumers extend workflows through actions and validation strategies, which
 // are registration seams built for it. Consumer-defined KINDS are a different
