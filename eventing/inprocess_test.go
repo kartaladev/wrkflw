@@ -85,6 +85,21 @@ func TestInProcessFansOutToEverySubscriber(t *testing.T) {
 
 // TestInProcessDeliversOnlyToTheMatchingTopic asserts an envelope never reaches a
 // subscription on a different topic.
+//
+// The shape here is deliberate and it is the point of the test as much as the
+// property is. An earlier version waited for `completed.len() == 1` and then
+// asserted `failed.len() == 0` — a NEGATIVE assertion gated on a merely
+// CORRELATED signal, the shape docs/agents/eventually-waits.md corollary 3
+// names. Nothing in the bus orders "the completed subscription has been
+// delivered to" before "the failed subscription has not been", so the wait was
+// satisfied while the asserted fact was still unwritten; it passed because
+// delivery happens to be fast, not because the wait established anything.
+//
+// Fixed by construction rather than by widening the budget: a sentinel is
+// published on TopicInstanceFailed too, the wait polls BOTH collectors, and the
+// assertions then read the CONTENT of what each subscription actually received
+// rather than a count that would need a quiescence argument to be a maximum.
+// Every fact the assertions read is a fact the wait polled.
 func TestInProcessDeliversOnlyToTheMatchingTopic(t *testing.T) {
 	t.Parallel()
 
@@ -102,10 +117,30 @@ func TestInProcessDeliversOnlyToTheMatchingTopic(t *testing.T) {
 	require.NoError(t, bus.Publish(t.Context(), kernel.OutboxEvent{
 		Topic: eventing.TopicInstanceCompleted, InstanceID: "p1", Payload: map[string]any{},
 	}))
+	// Published second, so a bus that ignored the topic would queue "p1" onto the
+	// failed subscription FIRST — which is what makes the content assertions
+	// below deterministic rather than a race against the sentinel.
+	require.NoError(t, bus.Publish(t.Context(), kernel.OutboxEvent{
+		Topic: eventing.TopicInstanceFailed, InstanceID: "sentinel", Payload: map[string]any{},
+	}))
 
-	require.Eventually(t, func() bool { return completed.len() == 1 },
-		3*time.Second, 10*time.Millisecond)
-	assert.Zero(t, failed.len(), "a subscription on another topic must receive nothing")
+	require.Eventually(t, func() bool {
+		return completed.len() >= 1 && failed.len() >= 1
+	}, 3*time.Second, 10*time.Millisecond,
+		"each subscription must receive the envelope published to ITS topic")
+
+	completedGot, failedGot := completed.snapshot(), failed.snapshot()
+	for _, env := range completedGot {
+		assert.Equal(t, eventing.TopicInstanceCompleted, env.Topic,
+			"a subscription must receive envelopes from its own topic and no other")
+	}
+	for _, env := range failedGot {
+		assert.Equal(t, eventing.TopicInstanceFailed, env.Topic,
+			"a subscription must receive envelopes from its own topic and no other")
+	}
+	assert.Equal(t, "p1", completedGot[0].Metadata[eventing.MetaInstanceID])
+	assert.Equal(t, "sentinel", failedGot[0].Metadata[eventing.MetaInstanceID],
+		"the first envelope the failed subscription sees must be its own sentinel")
 }
 
 // TestInProcessRedeliversNackedEnvelopesAfterBackoff asserts at-least-once
@@ -637,4 +672,238 @@ func TestInProcessGivesEachDeliveryAttemptItsOwnEnvelope(t *testing.T) {
 		"a redelivered envelope must be a fresh copy, not the one the last attempt scribbled on")
 	assert.Equal(t, "p1", attempts[1].instanceID,
 		"metadata too: the handler context of attempt 2 is extracted from this map")
+}
+
+// instanceIDs projects the delivery order out of a collector's snapshot, which
+// is the fact both order-sensitive tests below assert on.
+func instanceIDs(envs []eventing.Envelope) []string {
+	ids := make([]string, 0, len(envs))
+	for _, env := range envs {
+		ids = append(ids, env.Metadata[eventing.MetaInstanceID])
+	}
+	return ids
+}
+
+// The four tests below are deliberately separate TestXxx functions rather than
+// rows of one table (see .claude/skills/table-test): they assert four different
+// properties of the delivery contract, and each needs structurally different
+// setup — a release gate, a release gate plus a synchronous cancel and a join, a
+// second topic, and a fleet of racing stop callers. The two that DO carry two
+// cases of one call shape — the unregister paths and the stop contract — are
+// tables.
+
+// TestInProcessDeliversAQueuedBacklogInPublishOrder pins the FIFO half of the
+// delivery contract the InProcess doc states ("Each subscription has its own
+// FIFO queue", inprocess.go:60). Nothing else in the suite asserts ordering: the
+// only test that once depended on it was rewritten in #131 to sample for
+// quiescence precisely BECAUSE its sentinel assumed FIFO silently, and the
+// comment it left behind records that a LIFO mutation left that version green.
+//
+// Blocking the handler is what makes this a real probe rather than a vacuous
+// one (rule 16 — ask whether it COULD have failed). Without the gate the queue
+// never holds more than one envelope at a time, every order is trivially the
+// publish order, and the assertion could not fail whatever pop() did. With the
+// gate, all four later envelopes are provably queued together before the first
+// pop, so the delivered order is pop()'s answer and nothing else's.
+func TestInProcessDeliversAQueuedBacklogInPublishOrder(t *testing.T) {
+	t.Parallel()
+
+	bus := eventing.NewInProcess()
+	t.Cleanup(func() { require.NoError(t, bus.Close()) })
+
+	got := &collector{}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+
+	stop, err := bus.Start(t.Context(), eventing.TopicInstanceCompleted,
+		func(ctx context.Context, env eventing.Envelope) error {
+			_ = got.handle(ctx, env)
+			if got.len() == 1 {
+				close(entered)
+				<-release // hold the delivery loop so the rest of the batch queues up
+			}
+			return nil
+		})
+	require.NoError(t, err)
+	defer stop()
+
+	want := []string{"e1", "e2", "e3", "e4", "e5"}
+
+	require.NoError(t, bus.Publish(t.Context(), kernel.OutboxEvent{
+		Topic: eventing.TopicInstanceCompleted, InstanceID: want[0], Payload: map[string]any{},
+	}))
+	<-entered // the loop is now parked INSIDE the handler, so nothing can be popped
+
+	for _, id := range want[1:] {
+		require.NoError(t, bus.Publish(t.Context(), kernel.OutboxEvent{
+			Topic: eventing.TopicInstanceCompleted, InstanceID: id, Payload: map[string]any{},
+		}))
+	}
+
+	close(release)
+
+	require.Eventually(t, func() bool { return got.len() == len(want) },
+		3*time.Second, 5*time.Millisecond, "the whole queued backlog must be delivered")
+
+	assert.Equal(t, want, instanceIDs(got.snapshot()),
+		"a subscription's queue is FIFO: a backlog must be delivered in publish order")
+}
+
+// TestInProcessAbandonsItsBacklogWhenTheSubscriptionEnds pins the between-
+// envelopes stop check in deliver (inprocess.go:335): a cancelled subscription
+// stops at the next envelope boundary instead of draining whatever is already
+// queued behind the one in flight.
+//
+// It is fully deterministic — no rate, no sleep in the decisive path. The
+// handler is held inside the first envelope, the second is published onto a
+// subscription that is still LIVE and registered, the context is cancelled
+// SYNCHRONOUSLY while the loop is parked, and stop() joins the loop before the
+// assertion runs, so the collector is final by construction.
+//
+// The nil that Publish returns for the second envelope is the silent-drop
+// window issue #132 owns: the envelope was accepted, queued, and then never
+// delivered. This test asserts the bus's half of it — that the backlog IS
+// abandoned — and #132 cites it rather than restating it.
+func TestInProcessAbandonsItsBacklogWhenTheSubscriptionEnds(t *testing.T) {
+	t.Parallel()
+
+	bus := eventing.NewInProcess()
+	t.Cleanup(func() { require.NoError(t, bus.Close()) })
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	got := &collector{}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+
+	stop, err := bus.Start(ctx, eventing.TopicInstanceCompleted,
+		func(hctx context.Context, env eventing.Envelope) error {
+			_ = got.handle(hctx, env)
+			if got.len() == 1 {
+				close(entered)
+				<-release
+			}
+			return nil
+		})
+	require.NoError(t, err)
+
+	require.NoError(t, bus.Publish(t.Context(), kernel.OutboxEvent{
+		Topic: eventing.TopicInstanceCompleted, InstanceID: "delivered", Payload: map[string]any{},
+	}))
+	<-entered
+
+	// Accepted onto a live subscription's queue — Publish returns nil, and this
+	// nil is not a delivery.
+	require.NoError(t, bus.Publish(t.Context(), kernel.OutboxEvent{
+		Topic: eventing.TopicInstanceCompleted, InstanceID: "abandoned", Payload: map[string]any{},
+	}))
+
+	cancel()       // while the loop is still parked inside the handler
+	close(release) // let the handler return into a loop that must now stop
+	stop()         // joins the delivery loop: nothing can be appended after this
+
+	assert.Equal(t, []string{"delivered"}, instanceIDs(got.snapshot()),
+		"a cancelled subscription must stop at the next envelope boundary, "+
+			"not drain the backlog already queued behind the envelope in flight")
+}
+
+// TestInProcessStopIsSafeToCallTwiceAndConcurrently pins the contract Start
+// documents for its stop function (inprocess.go:203-206): "safe to call
+// concurrently and more than once, and later callers block until the first has
+// joined".
+//
+// MEASURED NEGATIVE, stated so nobody over-reads a green run. This test does NOT
+// kill the mutation that removes Start's sync.Once, and NO test can: that
+// mutation is EQUIVALENT. Without the Once every caller runs cancel() — which is
+// idempotent — and then receives from a channel that is CLOSED rather than sent
+// on, so every caller still blocks until the loop has joined and still returns
+// exactly once it has. The contract above is delivered by cancel's idempotence
+// and by close(done), not by the Once. See the comment at inprocess.go:229.
+// What this test pins is the CONTRACT, which a future implementation could break
+// for real; writing something that pretended to kill the Once mutation would be
+// a test that cannot fail for its stated reason.
+func TestInProcessStopIsSafeToCallTwiceAndConcurrently(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		// callers is how many goroutines race the same stop function at once.
+		// Every case then calls stop once MORE from the test goroutine, so both
+		// halves of "concurrently and more than once" are covered by one shape.
+		callers int
+	}
+	cases := map[string]testCase{
+		"one caller, then a second after it has returned": {callers: 1},
+		"four callers racing the same stop function":      {callers: 4},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			bus := eventing.NewInProcess()
+			t.Cleanup(func() { require.NoError(t, bus.Close()) })
+
+			entered := make(chan struct{})
+			release := make(chan struct{})
+			var loopFinishedTheHandler atomic.Bool
+
+			// The lifecycle variation this table needs is "when is the
+			// subscription torn down", which cannot be expressed as a ctx
+			// modifier: the cancel has to land while the loop is parked inside
+			// the handler, which is after t.Context() has already been passed in.
+			stop, err := bus.Start(t.Context(), eventing.TopicInstanceCompleted,
+				func(context.Context, eventing.Envelope) error {
+					close(entered)
+					<-release
+					loopFinishedTheHandler.Store(true)
+					return nil
+				})
+			require.NoError(t, err)
+
+			require.NoError(t, bus.Publish(t.Context(), kernel.OutboxEvent{
+				Topic: eventing.TopicInstanceCompleted, InstanceID: "p1", Payload: map[string]any{},
+			}))
+			<-entered
+
+			gate := make(chan struct{})
+			joined := make(chan bool, tc.callers)
+			var wg sync.WaitGroup
+			for range tc.callers {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					<-gate // every caller enters stop at the same time
+					stop()
+					joined <- loopFinishedTheHandler.Load()
+				}()
+			}
+			close(gate)
+
+			// A negative window: no caller may return while the handler is held.
+			// Paid in full on every green run, so it stays short
+			// (see docs/agents/test-deadlines.md).
+			select {
+			case <-joined:
+				t.Fatal("stop returned while the delivery loop was still inside the handler")
+			case <-time.After(100 * time.Millisecond):
+			}
+
+			close(release)
+			wg.Wait()
+			close(joined)
+
+			returned := 0
+			for sawLoopFinish := range joined {
+				assert.True(t, sawLoopFinish,
+					"stop must not return until the delivery loop it started has joined")
+				returned++
+			}
+			assert.Equal(t, tc.callers, returned,
+				"every concurrent caller of stop must return, not just the first")
+
+			assert.NotPanics(t, stop,
+				"stop must be safe to call again after it has already returned")
+		})
+	}
 }

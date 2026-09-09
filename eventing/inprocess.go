@@ -226,6 +226,18 @@ func (b *InProcess) Start(ctx context.Context, topic string, h Handler) (stop fu
 		_ = b.deliver(loopCtx, s, h)
 	}()
 
+	// MEASURED: removing this Once is an EQUIVALENT MUTATION, and it is recorded
+	// here so the next reader does not file it as a coverage gap. cancel is
+	// idempotent, and done is CLOSED rather than sent on, so without the Once a
+	// second or concurrent stop still runs cancel harmlessly and still blocks on
+	// <-done until the loop has joined. Every promise the doc comment above makes
+	// — safe twice, safe concurrently, later callers block until the first has
+	// joined — is delivered by those two facts, not by the Once. No test can
+	// distinguish the two versions, so none tries to:
+	// TestInProcessStopIsSafeToCallTwiceAndConcurrently pins the CONTRACT, which
+	// a future implementation could break for real. The Once is kept as a
+	// statement of intent — stop's body runs once — not as the guard the contract
+	// rests on.
 	var once sync.Once
 	return func() {
 		once.Do(func() {
