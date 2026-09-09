@@ -67,8 +67,8 @@ func (b Base) Name() string { return b.name }
 func (b *Base) SetName(name string) { b.name = name }
 
 // WaitFields holds the deadline + in-wait fields shared by activity kinds and by
-// IntermediateCatchEvent (all of which can wait and so can carry a deadline
-// escalation and periodic in-wait actions). It is embedded by ActivityFields and by
+// IntermediateCatchEvent (all of which can wait and so can carry a deadline and
+// periodic in-wait actions). It is embedded by ActivityFields and by
 // event.IntermediateCatchEvent; the kind-agnostic accessors DeadlineOf/WaitActionOf
 // dispatch on its (unexported) carrier methods.
 type WaitFields struct {
