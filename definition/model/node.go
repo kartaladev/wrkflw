@@ -31,11 +31,15 @@ import (
 // That second half is what lets the leaf NodeSpec functions and
 // engine/step_nodes.go assert node.(activity.UserTask) bare rather than
 // defensively — but it holds only for a node that arrived through one of those
-// two doors, plus ProcessDefinition.MarshalJSON, which runs the same check
-// (#147). Two paths are still deliberately not gated and panic on a
-// counterfeit: engine.Step, which does not validate (#53's escape hatch); and
-// the exported ValidationStrategyFor, which returns no error and so cannot
-// report one. ErrForeignNodeType's doc comment carries the authoritative list.
+// two doors. ProcessDefinition.MarshalJSON (#147) runs the same check before it
+// serializes a node back out, so the property holds on the way out too. Two
+// paths are still deliberately not gated: engine.Step, which does not validate
+// (#53's escape hatch) and panics unconditionally on a counterfeit; and the
+// exported ValidationStrategyFor, which panics on one only for a kind with a
+// ValidationGet slot — for any other kind it returns nil, same as it would for
+// a genuine node of that kind, because it has no error return and so no way to
+// report a counterfeit even where it could detect one. ErrForeignNodeType's
+// doc comment carries the authoritative list.
 //
 // Consumers extend workflows through actions and validation strategies, which
 // are registration seams built for it. Consumer-defined KINDS are a different

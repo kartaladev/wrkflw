@@ -13,11 +13,14 @@ import (
 )
 
 // TestMarshalJSONRejectsForeignNodeType covers the fourth ingress named in #147:
-// ProcessDefinition.MarshalJSON reaches ValidationStrategyFor (node_wire.go:222)
-// with no Validate in front of it, so a foreign node — one satisfying model.Node
-// and claiming a registered kind without being that kind's concrete type —
-// panicked instead of being refused. The fix runs the same checkNodeTypes gate
-// Validate already uses, at the top of MarshalJSON, before any node is touched.
+// ProcessDefinition.MarshalJSON reaches ValidationStrategyFor, inside its node
+// loop, with no Validate in front of it, so a foreign node — one satisfying
+// model.Node and claiming a registered kind without being that kind's concrete
+// type — panicked instead of being refused. The fix runs the same
+// checkNodeTypes gate Validate already uses, at the top of MarshalJSON, before
+// any node is touched. (A prior version of this comment cited a specific line
+// number for the ValidationStrategyFor call site; it went stale the moment
+// this file's own comments grew past it — described structurally instead.)
 //
 // foreignUserTask, linearDefWith and wrapInSubProcess are shared with
 // foreign_node_test.go's TestValidateRejectsForeignNodeType in this package.
@@ -56,6 +59,24 @@ func TestMarshalJSONRejectsForeignNodeType(t *testing.T) {
 			def: wrapInSubProcess("outer", wrapInSubProcess("mid", linearDefWith(
 				foreignUserTask{Base: model.NewBase("task", "task")},
 			))),
+			assert: func(t *testing.T, data []byte, err error) {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, model.ErrForeignNodeType)
+				assert.Nil(t, data)
+			},
+		},
+		{
+			// F2: the three cases above all use foreignUserTask, the most-
+			// asserting kind in the repo (it has a ValidationGet AND an
+			// asserting ToWire), so they cannot distinguish "the gate ran" from
+			// "the assertion happened to fire on its own". exclusiveGateway has
+			// neither: its ToWire is a no-op and it has no ValidationGet (see
+			// definition/gateway/gateway.go), so before this gate a foreign node
+			// under it marshalled CLEANLY — success, not panic. This row is the
+			// one that proves checkNodeTypes itself catches it, not a
+			// pre-existing assertion.
+			name: "a foreign node under a NON-ASSERTING kind is refused too (was success, not panic, before this gate)",
+			def:  linearDefWith(foreignNode{Base: model.NewBase("task", "task"), kind: model.KindExclusiveGateway}),
 			assert: func(t *testing.T, data []byte, err error) {
 				require.Error(t, err)
 				assert.ErrorIs(t, err, model.ErrForeignNodeType)
