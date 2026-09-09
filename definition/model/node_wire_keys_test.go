@@ -509,7 +509,14 @@ func TestZeroValuedMisplacedKeyIsAsymmetric(t *testing.T) {
 		{name: "non-zero string", wire: NodeWire{Action: "charge"}, assert: refused},
 		// The asymmetric half. Neither is a Go zero value, so both are refused
 		// even though an author would read them as "nothing here". It fails
-		// closed, and omitempty means ToWire can never emit either.
+		// closed, and MarshalJSON only writes keys the kind carries, so ToWire
+		// can only emit either on a kind that reads it.
+		//
+		// NOT "omitempty means ToWire can never emit either", which is what this
+		// comment said first. The very next line constructs the counterexample:
+		// a non-nil pointer to a zero struct IS emitted — see
+		// triggerEnvelope.Disposition in internal/persistence/store/trigger_codec.go,
+		// "a pointer to 0 is still emitted".
 		{name: "empty slice", wire: NodeWire{Outcomes: []string{}}, assert: refused},
 		{name: "pointer to zero struct", wire: NodeWire{RetryPolicy: &RetryPolicy{}}, assert: refused},
 	}

@@ -55,9 +55,23 @@ import (
 // The accepted half is the reasoning this package already carries for
 // `"rule":null` (see NodeWire.Rule: a literal null "loses nothing: there is no
 // rule in it to lose"). The refused half fails CLOSED, and costs nothing this
-// library writes: omitempty drops a nil slice and a nil pointer, so ToWire never
-// emits `[]` or `{}` in the first place. The exposure is hand-authored input and
-// templated emitters only.
+// library writes: MarshalJSON only ever writes keys the kind carries, so an
+// empty composite can only appear on a kind that reads it, where it is legal.
+// The exposure is hand-authored input and templated emitters only.
+//
+// Do not restate that as "omitempty drops them", as an earlier version of this
+// paragraph did. omitempty does not carry that weight, and this codebase
+// already says so in its own words: NodeWire.Rule, in the sibling file, records
+// that "omitempty has no effect on a struct field, so a value field would emit
+// "rule":{}", and triggerEnvelope.Disposition
+// (internal/persistence/store/trigger_codec.go) records the pointer half — "a
+// pointer to 0 is still emitted". Between them that is exactly the property
+// this paragraph needs, already written down and correct at both sites.
+//
+// Cite those rather than paraphrasing, because the fresh paraphrase is the part
+// that was wrong: the conclusion held while the stated reason did not, which is
+// the shape that survives review — a later reader reasoning FORWARD from the
+// premise reaches a wrong answer about something else.
 //
 // OUT OF SCOPE, deliberately, and tracked separately: a key that is legal on the
 // kind but dropped in the wrong COMBINATION (`error_code` without
