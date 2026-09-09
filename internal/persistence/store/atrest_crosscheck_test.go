@@ -156,32 +156,100 @@ func TestCrossCheckColumns_CatchesTableIdentityAndPKDrift(t *testing.T) {
 // appear in SOME live cross-check above. Without this, a fifth migration set
 // creating non-wrkflw_ tables would be discovered and parsed while being
 // silently absent from every live comparison, and nothing in this file would
-// say so — the per-column guards above only check tables a leg already names.
+// say so — the per-column guards above each pin the tables their own
+// assertions name, and none of them notices a table no assertion mentions.
 func TestEveryParsedTableIsCrossChecked(t *testing.T) {
 	root, err := atrest.ModuleRoot()
 	require.NoError(t, err)
 	parsed, err := atrest.LoadSchemas(root)
 	require.NoError(t, err)
 
-	assert.Empty(t, uncrossCheckedTables(parsed),
+	assert.Empty(t, uncrossCheckedTables(parsed, coveredTables),
 		"every table the parser discovers, across ALL THREE dialects, must be "+
 			"compared against a live database by some test in this file")
 }
 
-// uncrossCheckedTables returns, sorted, every table across ALL THREE
-// dialects in schemas that is neither casbin_rule (covered by
-// TestAtRestParseMatchesLiveIntrospection_CasbinRule) nor "wrkflw_"-
-// prefixed (covered by the wrkflw_* legs above) — i.e. every table the
-// parser discovers that no test in this file compares against a live
-// database.
+// tableCoverage pairs one exemption from TestEveryParsedTableIsCrossChecked
+// with the tests that actually cross-check the exempted tables against a live
+// database. Exactly one of table (an exact name) or prefix (a name prefix)
+// decides which tables the entry matches.
+//
+// by holds the test FUNCTIONS THEMSELVES, not their names, and that is the
+// whole point of the type: delete a leg and this file stops compiling, so an
+// exemption cannot outlive the justification for it.
+//
+// What this replaced was a pair of literal conditions —
+// `tbl == "casbin_rule" || strings.HasPrefix(tbl, "wrkflw_")` — under a comment
+// saying they were derived from the legs. They were not; they only described
+// them, and the description failed OPEN. Deleting both casbin legs (and the
+// casbinauthz import that goes unused with them) left casbin_rule cross-checked
+// against a live database by nothing, while TestEveryParsedTableIsCrossChecked
+// and the whole package stayed green against real Postgres, MySQL and SQLite
+// containers. A guard whose exemptions merely describe its legs cannot see a
+// leg go missing.
+type tableCoverage struct {
+	table  string
+	prefix string
+	by     []func(*testing.T)
+}
+
+// exempts reports whether tbl is one of the tables this entry's legs
+// cross-check. An entry naming no leg exempts nothing: no live cross-check, no
+// exemption. That keeps the failure direction closed — an entry stripped of its
+// legs stops hiding its tables rather than going on hiding them silently, which
+// is the same fail-open shape one layer down.
+func (c tableCoverage) exempts(tbl string) bool {
+	if len(c.by) == 0 {
+		return false
+	}
+	if c.prefix != "" {
+		return strings.HasPrefix(tbl, c.prefix)
+	}
+
+	return tbl == c.table
+}
+
+// coveredTables is the live exemption list for TestEveryParsedTableIsCrossChecked:
+// every table matched here is compared against a real database by the legs named
+// in its by field, so it is not reported as uncross-checked.
+//
+// Adding an entry means claiming a live cross-check exists, and the claim is
+// checked by the compiler rather than by a reader.
+var coveredTables = []tableCoverage{
+	{
+		// Postgres-only, applied by its own migrator, and invisible to the
+		// wrkflw_* prefix filters the parity helpers use (LIKE 'wrkflw_%').
+		table: "casbin_rule",
+		by: []func(*testing.T){
+			TestAtRestParseMatchesLiveIntrospection_CasbinRule,
+			TestAtRestKeysMatchLiveIntrospection_CasbinRule,
+		},
+	},
+	{
+		// The repo's own tables, cross-checked column-wise and key-wise on
+		// every dialect that has them.
+		prefix: "wrkflw_",
+		by: []func(*testing.T){
+			TestAtRestParseMatchesLiveIntrospection_SQLite,
+			TestAtRestParseMatchesLiveIntrospection_PostgresAndMySQL,
+			TestAtRestKeysMatchLiveIntrospection_SQLite,
+			TestAtRestKeysMatchLiveIntrospection_PostgresAndMySQL,
+		},
+	},
+}
+
+// uncrossCheckedTables returns, sorted, every table across ALL THREE dialects
+// in schemas that no entry of covered exempts — i.e. every table the parser
+// discovers that no test in this file compares against a live database.
 //
 // TestEveryParsedTableIsCrossChecked used to range only
 // parsed["postgres"].Tables() — a table that exists ONLY in mysql or
 // sqlite would never even be visited by the loop. Extracted as its own
 // function so a synthetic fixture can drive it directly
-// (TestUncrossCheckedTables_SeesEveryDialect), independent of what the
-// real repo schema happens to contain today.
-func uncrossCheckedTables(schemas map[string]atrest.Schema) []string {
+// (TestUncrossCheckedTables), independent of what the real repo schema
+// happens to contain today. covered is a parameter for the same reason: the
+// exemption logic itself has to be drivable by a fixture.
+func uncrossCheckedTables(schemas map[string]atrest.Schema, covered []tableCoverage) []string {
 	missing := map[string]bool{}
 	for _, dialectName := range []string{"postgres", "mysql", "sqlite"} {
 		schema, ok := schemas[dialectName]
@@ -189,7 +257,7 @@ func uncrossCheckedTables(schemas map[string]atrest.Schema) []string {
 			continue
 		}
 		for _, tbl := range schema.Tables() {
-			if tbl == "casbin_rule" || strings.HasPrefix(tbl, "wrkflw_") {
+			if slices.ContainsFunc(covered, func(c tableCoverage) bool { return c.exempts(tbl) }) {
 				continue
 			}
 			missing[tbl] = true
@@ -205,24 +273,119 @@ func uncrossCheckedTables(schemas map[string]atrest.Schema) []string {
 	return names
 }
 
-// TestUncrossCheckedTables_SeesEveryDialect is the regression guard: a table
-// that exists ONLY in mysql (not postgres, not sqlite) and is not
-// wrkflw_-prefixed must still be reported by uncrossCheckedTables — proving
-// the check considers all three dialects, not just postgres.
-func TestUncrossCheckedTables_SeesEveryDialect(t *testing.T) {
+// TestUncrossCheckedTables drives uncrossCheckedTables over synthetic fixtures.
+// It pins the check in BOTH directions, because a guard that refuses everything
+// satisfies a "reported" assertion as easily as a correct one: a genuinely
+// uncovered table must be reported, and a genuinely covered one must not be.
+//
+// TestEveryParsedTableIsCrossChecked calls the same helper but is deliberately
+// not folded in here: it loads the real repo schema off disk rather than taking
+// a fixture, so it has no shared call shape with these rows.
+func TestUncrossCheckedTables(t *testing.T) {
 	t.Parallel()
 
-	mysqlOnlyTable := atrest.ColumnKey{Table: "audit_log", Column: "id"}
-	schemas := map[string]atrest.Schema{
-		"postgres": {Dialect: "postgres", Columns: map[atrest.ColumnKey]atrest.Column{}},
-		"mysql": {Dialect: "mysql", Columns: map[atrest.ColumnKey]atrest.Column{
-			mysqlOnlyTable: {Table: "audit_log", Name: "id", Type: "BIGINT"},
-		}},
-		"sqlite": {Dialect: "sqlite", Columns: map[atrest.ColumnKey]atrest.Column{}},
+	// schemaOf builds a fixture whose named dialect holds exactly tables, one
+	// column each, and whose other two dialects are empty.
+	schemaOf := func(dialectName string, tables ...string) map[string]atrest.Schema {
+		schemas := map[string]atrest.Schema{
+			"postgres": {Dialect: "postgres", Columns: map[atrest.ColumnKey]atrest.Column{}},
+			"mysql":    {Dialect: "mysql", Columns: map[atrest.ColumnKey]atrest.Column{}},
+			"sqlite":   {Dialect: "sqlite", Columns: map[atrest.ColumnKey]atrest.Column{}},
+		}
+		cols := map[atrest.ColumnKey]atrest.Column{}
+		for _, tbl := range tables {
+			cols[atrest.ColumnKey{Table: tbl, Column: "id"}] = atrest.Column{
+				Table: tbl, Name: "id", Type: "BIGINT",
+			}
+		}
+		schemas[dialectName] = atrest.Schema{Dialect: dialectName, Columns: cols}
+
+		return schemas
 	}
 
-	assert.Equal(t, []string{"audit_log"}, uncrossCheckedTables(schemas),
-		"a mysql-only, non-wrkflw_-prefixed table must be reported as uncross-checked")
+	noopLeg := func(*testing.T) {}
+
+	type testCase struct {
+		name    string
+		schemas map[string]atrest.Schema
+		covered []tableCoverage
+		assert  func(t *testing.T, got []string)
+	}
+
+	cases := []testCase{
+		{
+			name:    "a mysql-only uncovered table is reported, so every dialect is seen",
+			schemas: schemaOf("mysql", "audit_log"),
+			covered: coveredTables,
+			assert: func(t *testing.T, got []string) {
+				assert.Equal(t, []string{"audit_log"}, got,
+					"a mysql-only, uncovered table must be reported as uncross-checked")
+			},
+		},
+		{
+			name:    "an exact-name entry exempts its table",
+			schemas: schemaOf("postgres", "casbin_rule"),
+			covered: coveredTables,
+			assert: func(t *testing.T, got []string) {
+				assert.Empty(t, got,
+					"casbin_rule is cross-checked by the casbin legs and must stay exempt")
+			},
+		},
+		{
+			name:    "a prefix entry exempts every table carrying the prefix",
+			schemas: schemaOf("sqlite", "wrkflw_timers", "wrkflw_outbox"),
+			covered: coveredTables,
+			assert: func(t *testing.T, got []string) {
+				assert.Empty(t, got,
+					"wrkflw_* tables are cross-checked by the wrkflw_* legs and must stay exempt")
+			},
+		},
+		{
+			name:    "covered and uncovered tables in one schema: only the uncovered one is reported",
+			schemas: schemaOf("postgres", "casbin_rule", "wrkflw_timers", "audit_log"),
+			covered: coveredTables,
+			assert: func(t *testing.T, got []string) {
+				assert.Equal(t, []string{"audit_log"}, got,
+					"the exemptions must hide exactly their own tables, not suppress the report")
+			},
+		},
+		{
+			name:    "an entry naming no leg exempts nothing",
+			schemas: schemaOf("postgres", "casbin_rule"),
+			covered: []tableCoverage{{table: "casbin_rule"}},
+			assert: func(t *testing.T, got []string) {
+				assert.Equal(t, []string{"casbin_rule"}, got,
+					"an exemption with no live cross-check behind it must not exempt anything")
+			},
+		},
+		{
+			name:    "an entry naming a leg exempts, so the previous row failed for the missing leg",
+			schemas: schemaOf("postgres", "casbin_rule"),
+			covered: []tableCoverage{{table: "casbin_rule", by: []func(*testing.T){noopLeg}}},
+			assert: func(t *testing.T, got []string) {
+				assert.Empty(t, got,
+					"the same fixture with a leg attached must be exempt — otherwise the row "+
+						"above proves nothing about the leg")
+			},
+		},
+		{
+			name:    "the same table in several dialects is reported once, sorted",
+			schemas: schemaOf("postgres", "zeta_log", "audit_log"),
+			covered: coveredTables,
+			assert: func(t *testing.T, got []string) {
+				assert.Equal(t, []string{"audit_log", "zeta_log"}, got,
+					"the report must be deduplicated and sorted for determinism")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tc.assert(t, uncrossCheckedTables(tc.schemas, tc.covered))
+		})
+	}
 }
 
 // parsedColumnNames returns the bare column names (no table qualifier) of
