@@ -810,8 +810,12 @@ func TestNormalizedKeySetAgreesAcrossDialects(t *testing.T) {
 	assert.Len(t, pg, 79)
 
 	// Sorted-order pin: ColumnKeysWithPrefix's doc
-	// contract promises keys sorted by (Table, Column); another package consumes
-	// that order. ElementsMatch above is order-independent
+	// contract promises keys sorted by (Table, Column). No caller depends on
+	// that order — every consumer rebuilds into a map or compares with
+	// ElementsMatch — which is why the contract needs a pin of its own:
+	// deterministic, diffable output is the point, and nothing else in the
+	// repo would go red if the sort call were dropped.
+	// ElementsMatch above is order-independent
 	// and cannot pin this, so compare pg against an independently-sorted
 	// copy of itself with assert.Equal — a dropped sort call almost never
 	// coincides with the sorted order across 79 map-iterated entries.
