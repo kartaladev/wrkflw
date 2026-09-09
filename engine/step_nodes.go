@@ -88,18 +88,27 @@ type receiveTaskStrategy struct{}
 
 func (receiveTaskStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
 	// This assertion is bare on purpose, and so are the 28 others like it — 8 in
-	// this file, 21 in the leaf packages' NodeSpec functions. They are total, not
-	// optimistic: model.Validate refuses any node whose dynamic type is not the
-	// one its kind registered (model.ErrForeignNodeType), and Validate is
-	// mandatory at definition registration (#53) and at publish (#112), so a node
-	// reaching a strategy has already been proved to be the type its kind claims.
+	// this file, 21 in the leaf packages' NodeSpec functions.
 	//
-	// Making them comma-ok would not add safety, it would spread one invariant
-	// across 29 sites and 29 error paths that can no longer be reached — and each
-	// of those dead branches would need a behaviour no one can specify, because
-	// there is no correct way for a strategy to proceed with a node that is not
-	// its own kind. The invariant is held once, at the gate, where it can be
-	// stated and tested. See definition/kinds/foreign_node_test.go.
+	// What holds them up: model.Validate rejects any node whose dynamic type is
+	// not the one its kind registered (model.ErrForeignNodeType), over the whole
+	// definition tree including nested subprocesses, and Validate is mandatory at
+	// definition registration (#53) and at publish (#112). So a node that arrived
+	// through a validated definition has already been proved to be the type its
+	// kind claims.
+	//
+	// What does NOT hold them up, stated because the difference is the whole
+	// risk: engine.Step does not itself call Validate. Stepping a definition that
+	// was never validated is the escape hatch #53 left open, and on that path
+	// these assertions panic rather than report. The guarantee is a property of
+	// the ingress, not of this line.
+	//
+	// Given that, comma-ok here would not add safety — it would spread one
+	// invariant across 29 sites and 29 error branches that a validated definition
+	// can never reach, each needing a behaviour no one can specify, because there
+	// is no correct way for a strategy to proceed with a node that is not its own
+	// kind. The invariant is held once, at the gate, where it can be stated and
+	// tested. See definition/kinds/foreign_node_test.go.
 	rt := node.(activity.ReceiveTask)
 	resolvedKey, err := c.pol.eval.EvalString(rt.CorrelationKey, c.s.Variables)
 	if err != nil {

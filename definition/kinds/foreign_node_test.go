@@ -25,6 +25,49 @@ type foreignUserTask struct {
 
 func (foreignUserTask) Kind() model.NodeKind { return model.KindUserTask }
 
+// foreignStartEvent is the counterfeit that matters most, and the one the first
+// round of this change missed. ProcessDefinition.StartNodes filters on
+// Kind() == KindStartEvent, and several checks reach a nested definition's start
+// nodes through toWire BEFORE that nested level has been gated — so a foreign
+// node is only exercised against those paths if it reports KindStartEvent. A
+// counterfeit reporting KindUserTask is never returned by StartNodes and cannot
+// reach them.
+type foreignStartEvent struct {
+	model.Base
+}
+
+func (foreignStartEvent) Kind() model.NodeKind { return model.KindStartEvent }
+
+// nestedDefWithForeignStart returns a well-formed definition whose START node is
+// the counterfeit.
+func nestedDefWithForeignStart(id string) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: id, Version: 1,
+		Nodes: []model.Node{
+			foreignStartEvent{Base: model.NewBase("start", "start")},
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{{ID: "nf1", Source: "start", Target: "end"}},
+	}
+}
+
+// wrapInSubProcess frames a definition as the nested body of a subprocess, so
+// tests can stack levels to any depth.
+func wrapInSubProcess(id string, sub *model.ProcessDefinition) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: id, Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewSubProcess("sp", sub),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "sp"},
+			{ID: "f2", Source: "sp", Target: "end"},
+		},
+	}
+}
+
 // unregisteredKindNode reports a kind no leaf package ever registered. It is the
 // P3 case: the type gate must stay silent here and leave the diagnosis to
 // ErrKindNotRegistered, because a kind with no registered spec has no recorded
@@ -97,6 +140,25 @@ func TestValidateRejectsForeignNodeType(t *testing.T) {
 			assert: func(t *testing.T, err error) {
 				require.ErrorIs(t, err, model.ErrForeignNodeType)
 				assert.Contains(t, err.Error(), `subprocess "sp"`, "error must locate the nested definition")
+			},
+		},
+		{
+			name: "foreign START EVENT one level down is rejected",
+			// The F1 shape: nested start nodes are read through toWire by
+			// isEventTriggeredSubprocess before the nested level is gated.
+			def: wrapInSubProcess("outer", nestedDefWithForeignStart("inner")),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrForeignNodeType)
+				assert.Contains(t, err.Error(), "event.StartEvent", "the registered type is named")
+				assert.Contains(t, err.Error(), "foreignStartEvent", "the actual type is named")
+			},
+		},
+		{
+			name: "foreign START EVENT at depth two is rejected",
+			// Exercises the recursion, not just the first hop.
+			def: wrapInSubProcess("outer", wrapInSubProcess("mid", nestedDefWithForeignStart("inner"))),
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, model.ErrForeignNodeType)
 			},
 		},
 		{
