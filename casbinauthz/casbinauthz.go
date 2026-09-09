@@ -159,10 +159,14 @@ type Authorizer struct {
 var _ authz.Authorizer = (*Authorizer)(nil)
 
 // Authorize delegates to the internal casbin evaluator, which predates the
-// [authz.Request] port and still takes the spec, actor and vars unpacked. The
-// unpacking is deliberate and temporary: this adapter is deleted along with the
-// rest of the casbin integration, and the internal evaluator has no use for the
-// operation or the task projection.
+// [authz.Request] port and still takes the spec, actor and vars unpacked.
+//
+// The unpacking is deliberate and lossless as things stand: the internal
+// evaluator reads only the spec, the actor and the variables, and no decider in
+// this repo is scoped by operation or reads the task projection. Should a rule
+// that IS operation-scoped ever sit behind this adapter, the dropped fields
+// would matter and the adapter must be widened first — it would satisfy the port
+// either way, so nothing would fail to compile.
 func (a *Authorizer) Authorize(ctx context.Context, r authz.Request) error {
 	return a.inner.Authorize(ctx, r.Spec, r.Actor, r.Vars)
 }

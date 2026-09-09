@@ -179,7 +179,23 @@ func TestRoleDecider(t *testing.T) {
 	type testCase struct {
 		name    string
 		request authz.Request
-		want    authz.Decision
+		assert  func(t *testing.T, d authz.Decision, err error)
+	}
+
+	allow := func(t *testing.T, d authz.Decision, err error) {
+		t.Helper()
+		require.NoError(t, err, "the role rule can never fail to evaluate")
+		assert.Equal(t, authz.Allow, d)
+	}
+	deny := func(t *testing.T, d authz.Decision, err error) {
+		t.Helper()
+		require.NoError(t, err, "the role rule can never fail to evaluate")
+		assert.Equal(t, authz.Deny, d)
+	}
+	abstain := func(t *testing.T, d authz.Decision, err error) {
+		t.Helper()
+		require.NoError(t, err, "the role rule can never fail to evaluate")
+		assert.Equal(t, authz.NotApplicable, d)
 	}
 
 	cases := []testCase{
@@ -191,7 +207,7 @@ func TestRoleDecider(t *testing.T) {
 				Spec:  authz.AuthzSpec{},
 				Actor: authz.Actor{ID: "u1", Roles: []string{"admin"}},
 			},
-			want: authz.NotApplicable,
+			assert: abstain,
 		},
 		{
 			name: "empty (non-nil) spec roles abstain even when the actor holds some",
@@ -199,7 +215,7 @@ func TestRoleDecider(t *testing.T) {
 				Spec:  authz.AuthzSpec{Roles: []string{}},
 				Actor: authz.Actor{ID: "u1", Roles: []string{"admin"}},
 			},
-			want: authz.NotApplicable,
+			assert: abstain,
 		},
 		{
 			name: "a spec expressing identity by privilege abstains here",
@@ -207,7 +223,7 @@ func TestRoleDecider(t *testing.T) {
 				Spec:  authz.AuthzSpec{Privileges: []string{"p"}},
 				Actor: authz.Actor{ID: "u1", Roles: []string{"admin"}},
 			},
-			want: authz.NotApplicable,
+			assert: abstain,
 		},
 		{
 			name: "exact match allows",
@@ -215,7 +231,7 @@ func TestRoleDecider(t *testing.T) {
 				Spec:  authz.AuthzSpec{Roles: []string{"admin", "editor"}},
 				Actor: authz.Actor{ID: "u1", Roles: []string{"editor"}},
 			},
-			want: authz.Allow,
+			assert: allow,
 		},
 		{
 			name: "actor holds no matching role denies",
@@ -223,7 +239,7 @@ func TestRoleDecider(t *testing.T) {
 				Spec:  authz.AuthzSpec{Roles: []string{"admin"}},
 				Actor: authz.Actor{ID: "u1", Roles: []string{"viewer"}},
 			},
-			want: authz.Deny,
+			assert: deny,
 		},
 		{
 			name: "actor with no roles at all denies",
@@ -231,7 +247,7 @@ func TestRoleDecider(t *testing.T) {
 				Spec:  authz.AuthzSpec{Roles: []string{"admin"}},
 				Actor: authz.Actor{ID: "u1"},
 			},
-			want: authz.Deny,
+			assert: deny,
 		},
 		{
 			name: "no role inheritance: a parent role does not imply a child",
@@ -239,7 +255,7 @@ func TestRoleDecider(t *testing.T) {
 				Spec:  authz.AuthzSpec{Roles: []string{"finance-clerk"}},
 				Actor: authz.Actor{ID: "u1", Roles: []string{"finance"}},
 			},
-			want: authz.Deny,
+			assert: deny,
 		},
 		{
 			name: "matching is exact: no prefix hierarchy",
@@ -247,7 +263,7 @@ func TestRoleDecider(t *testing.T) {
 				Spec:  authz.AuthzSpec{Roles: []string{"a b"}},
 				Actor: authz.Actor{ID: "u1", Roles: []string{"a"}},
 			},
-			want: authz.Deny,
+			assert: deny,
 		},
 		{
 			name: "a privilege is not a role",
@@ -255,7 +271,7 @@ func TestRoleDecider(t *testing.T) {
 				Spec:  authz.AuthzSpec{Roles: []string{"admin"}},
 				Actor: authz.Actor{ID: "u1", Privileges: []string{"admin"}},
 			},
-			want: authz.Deny,
+			assert: deny,
 		},
 	}
 
@@ -263,8 +279,7 @@ func TestRoleDecider(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			d, err := authz.RoleDecider{}.Decide(t.Context(), tc.request)
-			require.NoError(t, err, "the role rule can never fail to evaluate")
-			assert.Equal(t, tc.want, d)
+			tc.assert(t, d, err)
 		})
 	}
 }

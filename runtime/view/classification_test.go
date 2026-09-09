@@ -132,10 +132,11 @@ var classification = map[string]map[string]disposition{
 		// table describe a posture the projection does not implement.
 		//
 		// It is the principal's granted resource-privilege tokens — the same
-		// class of fact as Roles, at finer grain. Persisted actor copies are due
-		// to stop carrying privileges entirely (#115 item 7, a later PR in this
-		// series); when they do, this entry stays correct and the field is
-		// simply empty on this path.
+		// class of fact as Roles, at finer grain, and what crosses is not scoped
+		// to the task in hand. Whether persisted actor copies should carry
+		// privileges at all is #115 item 7, deferred to a follow-up issue; if
+		// they stop, this entry stays correct and the field is simply empty on
+		// this path.
 		"Privileges": gatedActors,
 	},
 }

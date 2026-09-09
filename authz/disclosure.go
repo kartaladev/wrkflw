@@ -23,6 +23,15 @@ const (
 	DiscloseVariables DisclosureCategory = "variables"
 	// DiscloseActors permits actor identity and attributes: task candidates, and the
 	// actor recorded on a claim or a completion.
+	//
+	// ⚠ That includes each actor's granted PRIVILEGES, which are restored with the
+	// rest of the [Actor] struct rather than gated separately. Privilege tokens
+	// enumerate the deployment's authorization vocabulary at finer grain than roles
+	// do, and what crosses is not scoped to the task in hand — a finance task's
+	// candidate list carries whatever else those principals were granted. The task's
+	// own eligibility SPEC stays behind [DisclosePolicy]; this category emits the
+	// grant tokens that spec is written in. Weigh it accordingly before enabling
+	// this category on an externally reachable mount.
 	DiscloseActors DisclosureCategory = "actors"
 	// DiscloseNotes permits the free-text completion note.
 	//

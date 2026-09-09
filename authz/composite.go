@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 )
 
 // ErrNoDeciders is returned by [Composite.Authorize] when the composite holds no
@@ -16,6 +18,29 @@ import (
 // set would reach the end of both stages with no opinion and allow everything —
 // exactly the shape that made a Privileges-only spec allow-all before this port.
 var ErrNoDeciders = errors.New("workflow-authz: composite has no deciders")
+
+// ErrSpecNotEvaluable is returned by [Composite.Authorize] when the spec sets a
+// field that no installed [Decider] reads. Like [ErrNoDeciders] it is a
+// configuration error and does NOT satisfy errors.Is(err, [ErrNotAuthorized]).
+//
+// This is #69's rule one level up. A spec field nobody evaluates has determined
+// NOTHING, so allowing the request claims a fact the authorizer does not have —
+// and denying it claims the opposite one. The honest answer is that the
+// authorizer is misconfigured, which classifies 500 rather than 403, so no
+// policy detail reaches the refused caller. It still fails CLOSED: every caller
+// treats a non-nil error as a refusal.
+//
+// ⚠ Without this, a Composite holding SOME deciders silently ignored every field
+// none of them read and fell through to "an empty spec allows" — a
+// Privileges-only spec against a privilege-less composite was ALLOWED. That is
+// the #107 defect reproduced inside the code written to close it.
+var ErrSpecNotEvaluable = errors.New("workflow-authz: no decider evaluates a field this spec sets")
+
+// ErrNilDecider is returned by [Composite.Authorize] when a decider slice holds
+// a nil element. Like the other two it is a configuration error and does not
+// satisfy errors.Is(err, [ErrNotAuthorized]). It turns a wiring typo into a
+// diagnosable refusal instead of a nil-pointer panic on the request path.
+var ErrNilDecider = errors.New("workflow-authz: composite holds a nil decider")
 
 // Composite combines single-purpose [Decider]s into an [Authorizer] in two
 // stages.
@@ -70,6 +95,9 @@ func (c Composite) Authorize(ctx context.Context, r Request) error {
 	if len(c.Identity) == 0 && len(c.Constraint) == 0 {
 		return ErrNoDeciders
 	}
+	if err := c.checkCoverage(r.Spec); err != nil {
+		return err
+	}
 
 	// Stage 1: identity, first-applicable.
 	for _, d := range c.Identity {
@@ -105,4 +133,61 @@ func (c Composite) Authorize(ctx context.Context, r Request) error {
 	}
 
 	return nil
+}
+
+// checkCoverage refuses a spec that sets a field no installed [Decider] reads.
+//
+// It runs BEFORE any decider is consulted, so a misconfigured composite is
+// reported as a misconfiguration rather than as whatever the reachable subset of
+// its rules happened to conclude.
+//
+// A decider that does not implement [SpecReader] declares no coverage and is
+// treated as covering nothing — see that interface for why that direction, and
+// not the permissive one, is the safe default.
+func (c Composite) checkCoverage(spec AuthzSpec) error {
+	required := requiredFields(spec)
+	if len(required) == 0 {
+		// An empty spec asks nothing of the authorizer, so no composite is
+		// under-equipped for it.
+		return nil
+	}
+
+	for _, d := range append(append([]Decider(nil), c.Identity...), c.Constraint...) {
+		if d == nil {
+			return fmt.Errorf("%w: a decider slice holds a nil element", ErrNilDecider)
+		}
+		reader, ok := d.(SpecReader)
+		if !ok {
+			continue
+		}
+		for _, f := range reader.ReadsSpecFields() {
+			delete(required, f)
+		}
+	}
+
+	if len(required) == 0 {
+		return nil
+	}
+	missing := make([]string, 0, len(required))
+	for f := range required {
+		missing = append(missing, string(f))
+	}
+	slices.Sort(missing) // deterministic message
+	return fmt.Errorf("%w: %s", ErrSpecNotEvaluable, strings.Join(missing, ", "))
+}
+
+// requiredFields is the set of spec fields that are SET and therefore have to be
+// evaluated by somebody.
+func requiredFields(spec AuthzSpec) map[SpecField]struct{} {
+	required := make(map[SpecField]struct{}, 3)
+	if len(spec.Roles) > 0 {
+		required[FieldRoles] = struct{}{}
+	}
+	if len(spec.Privileges) > 0 {
+		required[FieldPrivileges] = struct{}{}
+	}
+	if spec.Attribute != "" {
+		required[FieldAttribute] = struct{}{}
+	}
+	return required
 }

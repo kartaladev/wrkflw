@@ -38,7 +38,12 @@ type UserTask struct {
 	// EligibleRoles are the roles eligible to claim and complete this task.
 	EligibleRoles []string
 	// EligiblePrivileges is a list of resource-privilege tokens (e.g. "finance-task claim")
-	// evaluated by a casbin-backed Authorizer. Set via WithEligiblePrivileges.
+	// matched verbatim against the acting principal's authz.Actor.Privileges by the
+	// default authorizer. Set via WithEligiblePrivileges.
+	//
+	// ⚠ Mutually exclusive with EligibleRoles: setting both is refused at
+	// validation time with model.ErrRolesAndPrivileges, because identity is
+	// resolved first-applicable and one of the two would be silently ignored.
 	EligiblePrivileges []string
 	// EligibleExpr is an optional attribute predicate (expr) for fine-grained eligibility.
 	EligibleExpr string

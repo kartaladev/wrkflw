@@ -29,6 +29,9 @@ func (PrivilegeDecider) Decide(_ context.Context, r Request) (Decision, error) {
 	return Deny, nil
 }
 
+// ReadsSpecFields implements [SpecReader].
+func (PrivilegeDecider) ReadsSpecFields() []SpecField { return []SpecField{FieldPrivileges} }
+
 // RoleDecider authorizes on roles: the actor must hold, in [Actor].Roles, at
 // least one of the roles in [AuthzSpec].Roles. It is [NotApplicable] when the
 // spec declares no roles.
@@ -48,6 +51,9 @@ func (RoleDecider) Decide(_ context.Context, r Request) (Decision, error) {
 	}
 	return Deny, nil
 }
+
+// ReadsSpecFields implements [SpecReader].
+func (RoleDecider) ReadsSpecFields() []SpecField { return []SpecField{FieldRoles} }
 
 // AttributeDecider evaluates [AuthzSpec].Attribute, an expr predicate over
 // {"actor": Actor, "vars": map}. It is [NotApplicable] when the predicate is
@@ -102,3 +108,6 @@ func (AttributeDecider) Decide(_ context.Context, r Request) (Decision, error) {
 	}
 	return Allow, nil
 }
+
+// ReadsSpecFields implements [SpecReader].
+func (AttributeDecider) ReadsSpecFields() []SpecField { return []SpecField{FieldAttribute} }

@@ -241,10 +241,14 @@ func (o eligibleRolesOpt) applyUserTask(u *UserTask) {
 }
 
 // WithEligibleRoles sets the roles eligible to claim and complete a UserTask.
-// Roles are one of three co-equal, optional eligibility dimensions (with
-// WithEligiblePrivileges and WithEligibleExpr). With no eligibility set,
-// the engine gate is open and authorization defers to the consumer's transport
-// layer (e.g. HTTP security middleware).
+//
+// Roles and WithEligiblePrivileges are two mutually exclusive ways to express
+// IDENTITY: a task may use either, and declaring both is refused at validation
+// time with model.ErrRolesAndPrivileges. WithEligibleExpr is a separate
+// dimension — a constraint — and composes with either one.
+//
+// With no eligibility set, the engine gate is open and authorization defers to
+// the consumer's transport layer (e.g. HTTP security middleware).
 func WithEligibleRoles(roles ...string) UserTaskOption { return eligibleRolesOpt{roles} }
 
 type eligiblePrivilegesOpt struct{ privs []string }
@@ -253,9 +257,13 @@ func (o eligiblePrivilegesOpt) applyUserTask(u *UserTask) {
 	u.EligiblePrivileges = append(u.EligiblePrivileges, o.privs...)
 }
 
-// WithEligiblePrivileges sets resource-privilege tokens on a UserTask. Each
-// token is a space-separated "object action" pair. Multiple calls are additive.
-// It may only be passed to NewUserTask.
+// WithEligiblePrivileges sets resource-privilege tokens on a UserTask, matched
+// verbatim against the acting principal's authz.Actor.Privileges. Each token is
+// conventionally a space-separated "object action" pair, but no grammar is
+// parsed: matching is exact string equality, with no wildcards and no hierarchy.
+// Multiple calls are additive. It may only be passed to NewUserTask.
+//
+// ⚠ Mutually exclusive with WithEligibleRoles — see there.
 func WithEligiblePrivileges(privs ...string) UserTaskOption {
 	return eligiblePrivilegesOpt{privs: privs}
 }

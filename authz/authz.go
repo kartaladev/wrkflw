@@ -97,9 +97,9 @@ type AuthzSpec struct {
 // claim and reassign without every decider growing a switch.
 type Operation string
 
-// The operations the library authorizes today. OpProgress arrives with the
-// in-progress task state; deciders must therefore treat an unrecognised
-// Operation as one they have no opinion on rather than as an implicit allow.
+// The operations the library authorizes today. The set grows — an in-progress
+// task state is expected to add one — so see [Decider] for what an implementor
+// owes an Operation it does not recognise.
 const (
 	OpClaim             Operation = "claim"
 	OpComplete          Operation = "complete"
@@ -165,6 +165,33 @@ func (d Decision) String() string {
 	}
 }
 
+// SpecField names a field of [AuthzSpec] that a [Decider] may evaluate. It
+// exists so a [Composite] can tell whether the deciders it holds actually cover
+// the spec in front of it, rather than allowing a request because nobody looked.
+type SpecField string
+
+// The spec fields a decider can declare it reads.
+const (
+	FieldRoles      SpecField = "roles"
+	FieldPrivileges SpecField = "privileges"
+	FieldAttribute  SpecField = "attribute"
+)
+
+// SpecReader is an optional interface a [Decider] may implement to declare which
+// [AuthzSpec] fields it evaluates. All three deciders in this package implement
+// it, and [Composite] uses it to refuse a spec that sets a field nothing reads.
+//
+// ⚠ A decider that does NOT implement SpecReader is treated as covering
+// NOTHING. That direction is deliberate: the alternative — assuming an
+// undeclared decider might read anything — would let one custom decider switch
+// the whole coverage check off, which is the fail-open this interface exists to
+// prevent. If you write a Decider that evaluates a spec field, say so here. If
+// yours reads none of them (a time-of-day rule, say), return nil and it composes
+// alongside the standard deciders unchanged.
+type SpecReader interface {
+	ReadsSpecFields() []SpecField
+}
+
 // Decider evaluates one authorization rule and nothing else. Each decider in
 // this package is single-purpose and usable standalone; [Composite] is what
 // combines them.
@@ -175,6 +202,24 @@ func (d Decision) String() string {
 // authorized; an error asserts only that the rule could not be evaluated. See
 // [AttributeDecider] for why that distinction is a disclosure boundary and not
 // only a modelling nicety. Both paths fail closed: [Composite] refuses on either.
+//
+// ⚠ THAT ERROR MUST NOT WRAP [ErrNotAuthorized], and this is the half that makes
+// the rule a disclosure boundary rather than a modelling preference.
+// ErrNotAuthorized classifies 403, and that arm renders err.Error() — the whole
+// wrapped chain — into the client's response body. [Composite] propagates a
+// decider's error with %w, so an error wrapping ErrNotAuthorized carries whatever
+// your decider put in its message to the caller you just refused. Returning
+// fmt.Errorf("ldap group %q unreachable: %w", group, authz.ErrNotAuthorized)
+// hands that group name to an unauthorized client. Wrap a sentinel of your own,
+// or none. This is #69, which shipped twice before it was found.
+//
+// ⚠ An Operation you do not recognise is one you have no opinion on: return
+// [NotApplicable], never [Allow]. The operation set grows, and a decider that
+// allows on an operation added after it was written is a rule that silently
+// stops applying.
+//
+// Implement [SpecReader] as well if your decider evaluates an [AuthzSpec] field,
+// or [Composite] will treat that field as uncovered and refuse the request.
 type Decider interface {
 	Decide(ctx context.Context, r Request) (Decision, error)
 }
@@ -201,6 +246,10 @@ var (
 	_ Decider = PrivilegeDecider{}
 	_ Decider = RoleDecider{}
 	_ Decider = AttributeDecider{}
+
+	_ SpecReader = PrivilegeDecider{}
+	_ SpecReader = RoleDecider{}
+	_ SpecReader = AttributeDecider{}
 )
 
 // AllowAll is an [Authorizer] that unconditionally permits every actor.

@@ -232,6 +232,7 @@ func TestCompositeZeroValueFailsClosed(t *testing.T) {
 	type testCase struct {
 		name      string
 		composite authz.Composite
+		spec      authz.AuthzSpec
 		assert    func(t *testing.T, err error)
 	}
 
@@ -247,17 +248,25 @@ func TestCompositeZeroValueFailsClosed(t *testing.T) {
 			},
 		},
 		{
-			name:      "constraint-only is a legitimate composite and is honoured",
+			// ⚠ AT-LIMIT ACCEPT, and it carries a NON-EMPTY spec on purpose.
+			// This row previously authorized an EMPTY spec, which made it pass
+			// under both the correct implementation and the fail-open one that
+			// shipped in this PR's first round — a non-discriminating test in
+			// exactly the class this change exists to close. The spec must
+			// exercise the field the installed decider actually reads.
+			name:      "constraint-only is legitimate when the spec only needs a constraint",
 			composite: authz.Composite{Constraint: []authz.Decider{authz.AttributeDecider{}}},
+			spec:      authz.AuthzSpec{Attribute: `actor.ID == "u1"`},
 			assert: func(t *testing.T, err error) {
 				require.NoError(t, err,
-					"the at-limit accept: a composite with SOME deciders must not "+
-						"be swept up by the zero-value guard")
+					"a composite with SOME deciders must not be swept up by the "+
+						"zero-value guard when it covers every field the spec sets")
 			},
 		},
 		{
-			name:      "identity-only is a legitimate composite and is honoured",
+			name:      "identity-only is legitimate when the spec only needs an identity rule",
 			composite: authz.Composite{Identity: []authz.Decider{authz.PrivilegeDecider{}}},
+			spec:      authz.AuthzSpec{Privileges: []string{"p"}},
 			assert: func(t *testing.T, err error) {
 				require.NoError(t, err)
 			},
@@ -269,7 +278,157 @@ func TestCompositeZeroValueFailsClosed(t *testing.T) {
 			t.Parallel()
 			err := tc.composite.Authorize(t.Context(), authz.Request{
 				Operation: authz.OpClaim,
-				Actor:     authz.Actor{ID: "u1"},
+				Spec:      tc.spec,
+				Actor:     authz.Actor{ID: "u1", Privileges: []string{"p"}},
+			})
+			tc.assert(t, err)
+		})
+	}
+}
+
+// TestCompositeRefusesASpecItCannotEvaluate pins the invariant that a partially
+// populated Composite must not silently allow.
+//
+// ⚠ This is #107 one level up from where this PR closed it. A Composite holding
+// SOME deciders — which NewComposite's own godoc invites, since the fields are
+// exported — used to ignore every spec field none of its deciders reads, let
+// every decider abstain, and fall through to "an empty spec allows". A
+// Privileges-only spec against a composite with no privilege decider was
+// allowed: the original defect, reproduced verbatim in the code written to fix
+// it. Found independently by both round-1 reviewers.
+//
+// The outcome is an ERROR, not Deny, and that is #69's rule one level up: a spec
+// the authorizer cannot evaluate has determined NOTHING, so calling it a denial
+// claims a fact this code does not have. It classifies 500, not 403, so no
+// policy text reaches the refused caller. It still fails CLOSED — every caller
+// treats a non-nil error as a refusal.
+//
+// Every REFUSE row below is paired with an at-limit ACCEPT that differs only in
+// the composite covering the field. Without those, an implementation that
+// errored on every partial composite would satisfy the whole table.
+func TestCompositeRefusesASpecItCannotEvaluate(t *testing.T) {
+	t.Parallel()
+
+	identityOnly := authz.Composite{Identity: []authz.Decider{
+		authz.PrivilegeDecider{}, authz.RoleDecider{},
+	}}
+	privilegeOnly := authz.Composite{Identity: []authz.Decider{authz.PrivilegeDecider{}}}
+	constraintOnly := authz.Composite{Constraint: []authz.Decider{authz.AttributeDecider{}}}
+
+	type testCase struct {
+		name      string
+		composite authz.Composite
+		spec      authz.AuthzSpec
+		actor     authz.Actor
+		assert    func(t *testing.T, err error)
+	}
+
+	unevaluable := func(field string) func(t *testing.T, err error) {
+		return func(t *testing.T, err error) {
+			t.Helper()
+			require.Error(t, err, "a spec field nothing evaluates must not be allowed")
+			assert.ErrorIs(t, err, authz.ErrSpecNotEvaluable)
+			assert.NotErrorIs(t, err, authz.ErrNotAuthorized,
+				"a spec the authorizer cannot evaluate has decided nothing; "+
+					"reporting it as a denial routes it to the 403 arm, which "+
+					"renders the whole chain to the client")
+			assert.Contains(t, err.Error(), field,
+				"the operator-facing diagnostic must name the unevaluated field")
+		}
+	}
+	allowed := func(t *testing.T, err error) {
+		t.Helper()
+		require.NoError(t, err)
+	}
+
+	cases := []testCase{
+		{
+			// The original defect, verbatim: a Privileges-only spec allowed by a
+			// composite that installs no privilege decider.
+			name:      "REFUSE: privileges set, no decider reads them",
+			composite: constraintOnly,
+			spec:      authz.AuthzSpec{Privileges: []string{"finance-task claim"}},
+			actor:     authz.Actor{ID: "attacker"},
+			assert:    unevaluable("privileges"),
+		},
+		{
+			name:      "ACCEPT: privileges set, a decider reads them",
+			composite: privilegeOnly,
+			spec:      authz.AuthzSpec{Privileges: []string{"finance-task claim"}},
+			actor:     authz.Actor{ID: "u1", Privileges: []string{"finance-task claim"}},
+			assert:    allowed,
+		},
+		{
+			// The sharper one: the predicate would have evaluated to FALSE. Not
+			// abstained — evaluated-to-deny, had anyone evaluated it.
+			name:      "REFUSE: attribute set, no decider reads it",
+			composite: identityOnly,
+			spec:      authz.AuthzSpec{Roles: []string{"admin"}, Attribute: `1 == 2`},
+			actor:     authz.Actor{ID: "u1", Roles: []string{"admin"}},
+			assert:    unevaluable("attribute"),
+		},
+		{
+			name:      "ACCEPT: attribute set, a decider reads it",
+			composite: authz.NewComposite(),
+			spec:      authz.AuthzSpec{Roles: []string{"admin"}, Attribute: `1 == 1`},
+			actor:     authz.Actor{ID: "u1", Roles: []string{"admin"}},
+			assert:    allowed,
+		},
+		{
+			name:      "REFUSE: roles set, no decider reads them",
+			composite: privilegeOnly,
+			spec:      authz.AuthzSpec{Roles: []string{"admin"}},
+			actor:     authz.Actor{ID: "u1", Roles: []string{"admin"}},
+			assert:    unevaluable("roles"),
+		},
+		{
+			name:      "ACCEPT: roles set, a decider reads them",
+			composite: identityOnly,
+			spec:      authz.AuthzSpec{Roles: []string{"admin"}},
+			actor:     authz.Actor{ID: "u1", Roles: []string{"admin"}},
+			assert:    allowed,
+		},
+		{
+			// An empty spec asks nothing of the authorizer, so a partial
+			// composite is not a misconfiguration for it.
+			name:      "ACCEPT: an empty spec needs no coverage at all",
+			composite: privilegeOnly,
+			spec:      authz.AuthzSpec{},
+			actor:     authz.Actor{ID: "u1"},
+			assert:    allowed,
+		},
+		{
+			name:      "ACCEPT: the default composite covers every field at once",
+			composite: authz.NewComposite(),
+			spec: authz.AuthzSpec{
+				Privileges: []string{"p"},
+				Attribute:  `actor.ID == "u1"`,
+			},
+			actor:  authz.Actor{ID: "u1", Privileges: []string{"p"}},
+			assert: allowed,
+		},
+		{
+			// Coverage is not authorization: a covered field that DENIES must
+			// still deny, not turn into a configuration error.
+			name:      "a covered field that denies is still a denial, not a config error",
+			composite: authz.NewComposite(),
+			spec:      authz.AuthzSpec{Privileges: []string{"p"}},
+			actor:     authz.Actor{ID: "u1", Privileges: []string{"other"}},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, authz.ErrNotAuthorized)
+				assert.NotErrorIs(t, err, authz.ErrSpecNotEvaluable)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := tc.composite.Authorize(t.Context(), authz.Request{
+				Operation: authz.OpClaim,
+				Spec:      tc.spec,
+				Actor:     tc.actor,
+				Vars:      map[string]any{},
 			})
 			tc.assert(t, err)
 		})
@@ -428,21 +587,147 @@ func TestDecisionString(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name string
-		in   authz.Decision
-		want string
+		name   string
+		in     authz.Decision
+		assert func(t *testing.T, got string)
 	}{
-		{name: "the zero value is NotApplicable", in: authz.Decision(0), want: "NotApplicable"},
-		{name: "NotApplicable", in: authz.NotApplicable, want: "NotApplicable"},
-		{name: "Allow", in: authz.Allow, want: "Allow"},
-		{name: "Deny", in: authz.Deny, want: "Deny"},
-		{name: "an undefined value renders its number", in: authz.Decision(99), want: "Decision(99)"},
+		{
+			name: "the zero value is NotApplicable",
+			in:   authz.Decision(0),
+			assert: func(t *testing.T, got string) {
+				assert.Equal(t, "NotApplicable", got,
+					"a zero Decision that printed as Allow would make every "+
+						"diagnostic in this package misleading in the one "+
+						"direction that matters")
+			},
+		},
+		{
+			name:   "NotApplicable",
+			in:     authz.NotApplicable,
+			assert: func(t *testing.T, got string) { assert.Equal(t, "NotApplicable", got) },
+		},
+		{
+			name:   "Allow",
+			in:     authz.Allow,
+			assert: func(t *testing.T, got string) { assert.Equal(t, "Allow", got) },
+		},
+		{
+			name:   "Deny",
+			in:     authz.Deny,
+			assert: func(t *testing.T, got string) { assert.Equal(t, "Deny", got) },
+		},
+		{
+			name: "an undefined value renders its number",
+			in:   authz.Decision(99),
+			assert: func(t *testing.T, got string) {
+				assert.Equal(t, "Decision(99)", got)
+				assert.NotContains(t, got, "Allow")
+			},
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tc.want, tc.in.String())
+			tc.assert(t, tc.in.String())
+		})
+	}
+}
+
+// TestCompositeRejectsMisconfiguration covers the two remaining ways a Composite
+// can be built wrong, both of which must produce a diagnosable configuration
+// error rather than a panic or an allow.
+//
+// Both rows are paired with an at-limit accept so an implementation that refused
+// every composite could not satisfy them.
+func TestCompositeRejectsMisconfiguration(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name      string
+		composite authz.Composite
+		spec      authz.AuthzSpec
+		assert    func(t *testing.T, err error)
+	}
+
+	cases := []testCase{
+		{
+			name:      "a nil decider element is a configuration error, not a panic",
+			composite: authz.Composite{Identity: []authz.Decider{nil}},
+			spec:      authz.AuthzSpec{Roles: []string{"admin"}},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, authz.ErrNilDecider)
+				assert.NotErrorIs(t, err, authz.ErrNotAuthorized,
+					"a wiring typo is not an authorization decision")
+			},
+		},
+		{
+			// ⚠ The direction that matters. A decider that does not implement
+			// SpecReader declares no coverage and is treated as covering
+			// NOTHING. The permissive alternative would let a single custom
+			// decider switch the whole coverage check off — which is precisely
+			// the reported fail-open: Composite{Identity: {mine, Privilege,
+			// Role}} silently ignoring every Attribute in every definition.
+			name: "a decider that declares no coverage covers nothing",
+			composite: authz.Composite{Identity: []authz.Decider{
+				stubDecider{decision: authz.Allow},
+			}},
+			spec: authz.AuthzSpec{Roles: []string{"admin"}},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, authz.ErrSpecNotEvaluable)
+				assert.Contains(t, err.Error(), "roles")
+			},
+		},
+		{
+			name: "an undeclared decider alongside a declaring one still leaves the declared field covered",
+			composite: authz.Composite{Identity: []authz.Decider{
+				stubDecider{decision: authz.NotApplicable},
+				authz.RoleDecider{},
+			}},
+			spec: authz.AuthzSpec{Roles: []string{"admin"}},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err,
+					"the at-limit accept: an undeclared decider must not poison "+
+						"coverage another decider does provide")
+			},
+		},
+		{
+			name: "an undeclared decider is fine when the spec sets nothing",
+			composite: authz.Composite{Identity: []authz.Decider{
+				stubDecider{decision: authz.Allow},
+			}},
+			spec: authz.AuthzSpec{},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			name:      "the message names every uncovered field, sorted",
+			composite: authz.Composite{Constraint: []authz.Decider{authz.AttributeDecider{}}},
+			spec: authz.AuthzSpec{
+				Roles:      []string{"admin"},
+				Privileges: []string{"p"},
+				Attribute:  `1 == 1`,
+			},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, authz.ErrSpecNotEvaluable)
+				assert.Contains(t, err.Error(), "privileges, roles",
+					"a deterministic operator-facing diagnostic; attribute IS covered "+
+						"and must not be listed")
+				assert.NotContains(t, err.Error(), "attribute")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := tc.composite.Authorize(t.Context(), authz.Request{
+				Operation: authz.OpClaim,
+				Spec:      tc.spec,
+				Actor:     authz.Actor{ID: "u1", Roles: []string{"admin"}},
+			})
+			tc.assert(t, err)
 		})
 	}
 }
