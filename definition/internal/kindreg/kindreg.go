@@ -2,12 +2,19 @@
 //
 // model.RegisterKind takes a [Token], and a Token can only be obtained from
 // [Grant]. Because this package sits under definition/internal, the Go build
-// system refuses the import from anything outside definition/ — so the node
-// registry is writable by the node-family leaf packages (definition/activity,
-// definition/event, definition/gateway) and by nothing else. Node is a closed
-// set; this is the compile-time half of keeping it closed. The run-time half is
+// system refuses the import from anything outside definition/ — so no consumer
+// of this module can register a node kind. Node is a closed set; this is the
+// compile-time half of keeping it closed. The run-time half is
 // model.ErrForeignNodeType, which rejects a foreign concrete type presented
 // under a registered kind.
+//
+// Where the boundary actually sits: Go scopes the internal rule to the PARENT of
+// internal/, which here is definition/ — so every package under definition/ may
+// import this one, not only the three node-family leaf packages that do. In
+// practice definition/activity, definition/event and definition/gateway are the
+// only registrants. The line this seal draws is between the module's definition
+// subtree and everyone outside it, and that is the line that matters: a foreign
+// kind can only be introduced by editing this repository, not by importing it.
 //
 // The token is deliberately not the registry itself. Moving nodeRegistry into
 // this package is not buildable: NodeSpec is typed in terms of model.Node,

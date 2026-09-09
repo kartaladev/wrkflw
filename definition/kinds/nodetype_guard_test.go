@@ -70,6 +70,14 @@ func decodeNodeOfKind(t *testing.T, k model.NodeKind) model.Node {
 //
 // Neither half can be satisfied by accident: one requires the entry to exist,
 // the other requires it to hold the right type.
+//
+// What this guard does NOT cover, stated because the registry's comment once
+// claimed it did: it cannot protect against a future FromWire that panics on a
+// zero wire. RegisterKind calls FromWire during package init, and this test
+// lives in package kinds_test importing definition/kinds — so that init runs
+// while this very test binary is starting and kills it before any assertion
+// here executes. Such a kind announces itself by breaking every binary that
+// imports the leaf, which is loud, but it is not this test that reports it.
 func TestRecordedNodeTypeMatchesFromWire(t *testing.T) {
 	t.Parallel()
 

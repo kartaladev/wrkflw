@@ -60,8 +60,13 @@ var nodeTypes = map[NodeKind]reflect.Type{}
 //
 // The [kindreg.Token] first parameter closes registration to consumers: Node is
 // a closed set (see the Node doc comment), and kindreg lives under
-// definition/internal, so only definition/{model,activity,event,gateway} can
-// name the token type and call this function at all. Pass kindreg.Grant().
+// definition/internal, so nothing outside definition/ can name the token type or
+// call this function at all. Pass kindreg.Grant().
+//
+// Inside definition/ the token is obtainable by any package, since Go scopes the
+// internal rule to definition/ as a whole rather than to the four packages that
+// happen to use it. The seal is against consumers of this module, not against
+// this module's own subtree.
 func RegisterKind(_ kindreg.Token, k NodeKind, s NodeSpec) {
 	if s.Name == "" {
 		panic("workflow-definition: RegisterKind with empty Name")
@@ -75,9 +80,18 @@ func RegisterKind(_ kindreg.Token, k NodeKind, s NodeSpec) {
 	if s.FromWire != nil {
 		// FromWire on a zero Base and a zero NodeWire is the cheapest way to name
 		// the concrete type without every leaf having to declare it a second
-		// time; all 17 real kinds return their own type from a zero wire without
-		// panicking, and nodetype_guard_test.go in definition/kinds keeps that
-		// true for any kind added later.
+		// time. All 17 real kinds return their own type from a zero wire without
+		// panicking.
+		//
+		// Note what does NOT protect that, since an earlier version of this
+		// comment claimed it did: a future FromWire that panics on a zero wire
+		// takes down package initialization for every binary importing the leaf,
+		// and nodetype_guard_test.go cannot catch it — that guard lives in
+		// package kinds_test and imports definition/kinds, so the offending
+		// init() runs while the guard's own test binary is initializing and
+		// aborts it before any assertion executes. The failure is loud and
+		// immediate (nothing that imports the leaf will start), but it is caught
+		// by everything breaking at once, not by that test.
 		//
 		// A FromWire returning a nil Node would make reflect.TypeOf nil, and
 		// storing that would put a PRESENT key with a nil value in the map —
