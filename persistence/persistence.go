@@ -95,13 +95,29 @@ type DefinitionStore interface {
 	//
 	// One divergence the gate cannot close, stated because it is a real
 	// difference in behaviour between backends. On MySQL the def_id column
-	// collates as utf8mb4_0900_ai_ci, which is case- and accent-INSENSITIVE, so
-	// "Order" and "order" are the SAME key there and DISTINCT keys on Postgres
-	// and SQLite. Publishing both therefore succeeds on Postgres and SQLite and
-	// refuses the second on MySQL with ErrDefinitionExists naming a key the
-	// caller never published. This is a property of a PAIR of IDs, not of any
-	// single one, so no per-definition check can detect it. Treat definition
-	// IDs as case-insensitive if you need to run on MySQL.
+	// collates as utf8mb4_0900_ai_ci, which folds FOUR distinctions: case,
+	// accent, width and normalisation form. All of these are one key on MySQL
+	// and distinct keys on Postgres and SQLite — measured:
+	//
+	//	"Order"  / "order"                 collide on MySQL
+	//	"resume" / "résumé"                collide on MySQL
+	//	"A"      / fullwidth "Ａ"          collide on MySQL
+	//	NFC "é"  / NFD "e" + U+0301        collide on MySQL
+	//
+	// (Trailing whitespace does NOT collide: MySQL 8 default collations are
+	// NO PAD, so "a" and "a " stay distinct on every backend.)
+	//
+	// Publishing two such IDs succeeds on Postgres and SQLite and refuses the
+	// second on MySQL with ErrDefinitionExists naming a key the caller never
+	// published. This is a property of a PAIR of IDs, not of any single one, so
+	// no per-definition check can detect it.
+	//
+	// Mitigation: case-folding your IDs is NOT sufficient — it leaves the
+	// width and normalisation collisions untouched. To be safe on MySQL,
+	// restrict definition IDs to a single normalisation form and a single
+	// width (in practice: NFC, halfwidth ASCII), or change the column to a
+	// binary collation such as utf8mb4_bin, which closes all four at once and
+	// is tracked as a follow-up.
 	//
 	// PublishDefinition runs on the connection pool and does NOT join a
 	// caller's ambient transaction, so a publish cannot currently be made

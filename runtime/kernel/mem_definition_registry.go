@@ -191,10 +191,15 @@ var ErrDefinitionVersionTooLarge = errors.New("workflow-runtime: definition vers
 // enforced.
 //
 // A known divergence this gate CANNOT close: MySQL's def_id collation is
-// utf8mb4_0900_ai_ci, which is case- and accent-INSENSITIVE, so "a" and "A"
-// are the same primary key there and distinct keys on Postgres and SQLite.
+// utf8mb4_0900_ai_ci, which folds case, accent, WIDTH and NORMALISATION FORM.
+// So "a"/"A", "resume"/"résumé", halfwidth "A"/fullwidth "Ａ", and NFC "é"
+// versus NFD "e"+U+0301 are each ONE primary key on MySQL and two distinct
+// keys on Postgres and SQLite. (Trailing whitespace is not affected — MySQL 8
+// default collations are NO PAD.)
+//
 // That is a property of a PAIR of IDs, not of any single one, so no per-value
-// check can detect it. See the note on DefinitionStore.PublishDefinition.
+// check can detect it, and case-folding alone does not mitigate it. See the
+// note on DefinitionStore.PublishDefinition.
 //
 // It is exported so a consumer can run the same check itself — before a publish,
 // or in a test — instead of discovering the rejection at the write.
