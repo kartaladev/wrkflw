@@ -57,21 +57,37 @@ func boundaryErrorMatches(n event.BoundaryEvent, vars map[string]any, cause erro
 		// step_triggers.go. Measured for #141 in
 		// TestBoundaryRoutingUnderCallerChosenKeyNames.
 		//
-		// The limit that holds: this is DATA, never expr SOURCE. n.ErrorExpr comes
-		// from the process definition and errorCode arrives as one entry of this
-		// environment map, so a key name shaped like expr source cannot become
-		// part of the predicate. The same test attempts that and records it as a
-		// measured negative.
+		// The limit that holds: this is DATA, never expr SOURCE. Two barriers,
+		// both verified, neither of them the escaping:
 		//
-		// Two barriers, and they are independent — measured by mutating this
-		// line to interpolate errorCode into the predicate instead of binding
-		// it. With strconv.Quote still in place in rejectUnknownKeys the
-		// interpolated source does not compile at all (the escapes are not expr
-		// syntax); only with BOTH the binding and the quoting removed does a
-		// crafted key name flip the predicate. So the quoting is a real second
-		// barrier against expression injection. It is NOT a barrier against the
-		// data-influence half above: a `contains` predicate reads the quoted
-		// string as data just as happily.
+		//  1. BINDING. n.ErrorExpr comes from the process definition and
+		//     errorCode arrives as one entry of this environment map, so a key
+		//     name shaped like expr source is never parsed as source. Every
+		//     expr.Compile site in the tree takes definition- or config-authored
+		//     text; none compiles a runtime value.
+		//  2. NO SHADOWING. The attacker supplies NAMES, so the sharp attack is
+		//     whether a caller-chosen key can change what a definition's program
+		//     MEANS. It cannot: expr's builtins are not shadowable by env keys,
+		//     and `len(order) > 3`, `lower(name)`, `trim(x)` and `x == nil`
+		//     evaluate byte-identically with "len"/"lower"/"trim"/"nil" planted
+		//     in the environment as strings or as functions.
+		//
+		// ⚠ strconv.Quote is NOT one of them, and this comment used to say it
+		// was. It escapes quotes inside a key but wraps them in two unescaped "
+		// delimiters, and expr accepts single-quoted literals Quote never
+		// touches, so a key named `== 'x' or true or` defeats it. The earlier
+		// claim generalised one payload that happened to contain a ". Recorded
+		// because a future reader adding an interpolating consumer would
+		// otherwise be told a barrier protects them.
+		//
+		// Note the asymmetry with "_errorMessage", which IS caller-writable: the
+		// assignment below happens AFTER the copy loop, so a process variable
+		// literally named "_error" is overwritten here and cannot spoof this
+		// predicate. That holds only here. A plain gateway condition
+		// (engine/step_gateways.go) evaluates s.Variables with no injection at
+		// all, so "_error" is an ordinary caller-writable variable there; and the
+		// tier-1 ErrorCheck closure above receives the cloned vars with no
+		// injection either.
 		env["_error"] = errorCode
 		return eval.EvalBool(n.ErrorExpr, env)
 	}
