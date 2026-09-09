@@ -1,6 +1,8 @@
 package atrest_test
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -276,11 +278,11 @@ CREATE INDEX idx_bad ON t;
 		{
 			// fields[1] alone truncates a multi-word type at its first space.
 			// ⚠ This was filed as "latent, verified absent from the corpus" and
-			// that premise was FALSE. The already-published document carried
-			// `BIGINT` for wrkflw_outbox.id on MySQL, where the DDL declares
-			// `BIGINT AUTO_INCREMENT` — a live truncation in the shipped
-			// document, found by diffing the regenerated file against a backup.
-			// This is a fix, not only a regression guard.
+			// that premise was FALSE. The parser reported `BIGINT` for
+			// wrkflw_outbox.id on MySQL, where the DDL declares
+			// `BIGINT AUTO_INCREMENT` — a live truncation in what the package
+			// actually returned, found by diffing parsed output against a
+			// captured baseline. This is a fix, not only a regression guard.
 			name: "multi-word column types are captured in full, not truncated at the first space",
 			src: `-- +goose Up
 CREATE TABLE t (
@@ -350,16 +352,25 @@ func TestSchema_Tables(t *testing.T) {
 	}
 }
 
-// TestKeyedLowerBound_Postgres pins the postgres keyed census: 29 of the
-// 87 columns are keyed, casbin_rule INCLUDED.
-// The byClass map is the load-bearing assertion — a bare 29 would still
-// pass if the derivation keyed the wrong 29 columns. Earlier drafts of
-// this test skipped casbin_rule with `if k.Table == "casbin_rule" {
-// continue }` and called the result an assertion that "cannot rot"; it
-// could not rot because it skipped its own counterexample —
-// casbin_rule.ptype is class policy and carries casbin_rule_ptype_idx,
-// which falsifies a four-entry byClass map. Every table, every dialect.
-func TestKeyedLowerBound_Postgres(t *testing.T) {
+// TestKeyedColumnIdentity_Postgres pins the postgres keyed census by IDENTITY:
+// exactly WHICH 29 of the 87 columns are keyed, casbin_rule INCLUDED.
+//
+// The assertion is the full set of "table.column" strings, not a count and
+// not a summary of it. A bare 29 would still pass if the derivation keyed
+// the wrong 29 columns. This test previously asserted 29 alongside a
+// per-sensitivity-class histogram, which was a PROXY for identity; that
+// proxy was measured and found insufficient under #52 — re-attributing one
+// index inside markKey from wrkflw_instances.started_at to the adjacent
+// wrkflw_instances.updated_at left the count at 29 and every histogram
+// bucket unchanged, and the whole package stayed green. ElementsMatch kills
+// that mutation. Do not weaken this back into a count or a summary.
+//
+// casbin_rule stays in the set. An earlier draft skipped it with
+// `if k.Table == "casbin_rule" { continue }` and called the result an
+// assertion that "cannot rot"; it could not rot because it skipped its own
+// counterexample. casbin_rule.ptype carries casbin_rule_ptype_idx and is
+// keyed like any other column. Every table, every dialect.
+func TestKeyedColumnIdentity_Postgres(t *testing.T) {
 	t.Parallel()
 
 	root, err := atrest.ModuleRoot()
@@ -367,28 +378,60 @@ func TestKeyedLowerBound_Postgres(t *testing.T) {
 	schemas, err := atrest.LoadSchemas(root)
 	require.NoError(t, err)
 
-	byClass := map[atrest.Class]int{}
-	keyed := 0
+	var keyed []string
 	for k, col := range schemas["postgres"].Columns {
 		if len(col.Keys) > 0 {
-			keyed++
-			byClass[atrest.Classification[k]]++
+			keyed = append(keyed, k.Table+"."+k.Column)
 		}
 	}
 
-	assert.Equal(t, 29, keyed, "29 of the 87 postgres columns are keyed, casbin_rule INCLUDED")
-	assert.Equal(t, map[atrest.Class]int{
-		atrest.ClassReference: 15,
-		atrest.ClassScalar:    8,
-		atrest.ClassTimestamp: 4,
-		atrest.ClassActor:     1,
-		atrest.ClassPolicy:    1, // casbin_rule.ptype — the counterexample the old test skipped
-	}, byClass, "policy-keyed is ONE, not zero; do not restate the withdrawn claim")
+	assert.ElementsMatch(t, []string{
+		"casbin_rule.id",
+		"casbin_rule.ptype",
+		"wrkflw_call_links.child_instance_id",
+		"wrkflw_call_links.parent_instance_id",
+		"wrkflw_call_links.status",
+		"wrkflw_chain_links.outcome",
+		"wrkflw_chain_links.predecessor_instance_id",
+		"wrkflw_chain_links.successor_instance_id",
+		"wrkflw_definitions.def_id",
+		"wrkflw_definitions.version",
+		"wrkflw_human_task.claimed_by",
+		"wrkflw_human_task.instance_id",
+		"wrkflw_human_task.state",
+		"wrkflw_human_task.task_id",
+		"wrkflw_instances.ended_at",
+		"wrkflw_instances.instance_id",
+		"wrkflw_instances.started_at",
+		"wrkflw_instances.status",
+		"wrkflw_journal.instance_id",
+		"wrkflw_journal.seq",
+		"wrkflw_outbox.dedup_key",
+		"wrkflw_outbox.id",
+		"wrkflw_outbox.next_attempt_at",
+		"wrkflw_outbox.status",
+		"wrkflw_processed_message.message_id",
+		"wrkflw_processed_message.subscriber",
+		"wrkflw_timers.instance_id",
+		"wrkflw_timers.next_run",
+		"wrkflw_timers.timer_id",
+	}, keyed,
+		"these exact 29 of the 87 postgres columns are keyed, casbin_rule INCLUDED; "+
+			"a differing set means the key derivation changed, not that the pin is stale")
 }
 
-// TestKeyedCountPerDialect pins keyed for all three dialects. keyed is
-// dialect-DEPENDENT even though class is
-// not — never assert only one dialect as "the" number.
+// TestKeyedCountPerDialect pins keyed for all three dialects. keyed IS
+// dialect-dependent, but NOT in the direction the 29/28/28 spread suggests:
+// that spread comes entirely from casbin_rule.id and casbin_rule.ptype, which
+// only postgres has. Restricted to wrkflw_*, postgres keys FEWER columns than
+// the other two — 27 against 28 — because mysql and sqlite key
+// wrkflw_call_links.claimed_at and .notified_at where postgres does not, while
+// postgres keys wrkflw_instances.ended_at where they do not.
+//
+// On postgres, wrkflw_call_links.status, wrkflw_instances.ended_at and
+// wrkflw_outbox.status carry "index-predicate"; nothing does on the other two.
+// Two of those three are keyed on every dialect. Never assert one dialect's
+// number as "the" number.
 func TestKeyedCountPerDialect(t *testing.T) {
 	t.Parallel()
 
@@ -442,7 +485,7 @@ func TestKeyedIsDialectDependent(t *testing.T) {
 //     of its line and every column declared on it;
 //   - parseCreateTable delimited the body with strings.LastIndex(stmt, ")")
 //     instead of the matchingParen helper the same file already owns, so
-//     `CREATE TABLE t (a TEXT, b TEXT) WITH (fillfactor=70);` published
+//     `CREATE TABLE t (a TEXT, b TEXT) WITH (fillfactor=70);` returned
 //     `TEXT) WITH (fillfactor=70` verbatim as b's storage type.
 func TestParseSQL_StringLiteralsAndBodyBounds(t *testing.T) {
 	t.Parallel()
@@ -491,8 +534,8 @@ CREATE TABLE t (a TEXT, b TEXT) WITH (fillfactor=70);
 				// Failing closed rather than ignoring the remainder is
 				// deliberate: Postgres's INHERITS (parent) is a trailing clause
 				// that ADDS COLUMNS, so a silently-ignored remainder can under-report
-				// a security document's column census. No migration in this module
-				// carries one today, so the strictness costs nothing now.
+				// the column census this package returns. No migration in this
+				// module carries one today, so the strictness costs nothing now.
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "fillfactor",
 					"the error must name the remainder it could not account for")
@@ -630,9 +673,9 @@ CREATE TABLE t (a TEXT, PRIMARY KEY (zzz));
 
 // TestParseSQL_CreateIndexShapes covers the four CREATE INDEX defects
 // /code-review found and reproduced. Each one silently UNDER-derives `keyed`,
-// which the generated document publishes as a lower bound and which the "no
-// actor-classed column is indexed" sentence used to convert into a false
-// safety claim:
+// the count every consumer of this package's Schema treats as authoritative —
+// internal/persistence/store's TestAtRestKeysMatchLiveIntrospection_* compare
+// it against the keys a real database reports:
 //
 //   - the table name was taken as the whole span between ON and the first "(",
 //     so "ON t USING gin (col)" yielded the table "t USING gin" and the index
@@ -740,4 +783,94 @@ CREATE INDEX i ON t (a) WHERE status = 'error';
 			tc.assert(t, got, err)
 		})
 	}
+}
+
+// TestNormalizedKeySetAgreesAcrossDialects is the dialect-invariance pin:
+// once the MySQL journal-trigger normalization is applied, the wrkflw_* key
+// set declared by each dialect's migrations must be identical. casbin_rule
+// is deliberately excluded (prefix "wrkflw_" only) because it is
+// postgres-only by construction, and its absence elsewhere is not a
+// divergence.
+func TestNormalizedKeySetAgreesAcrossDialects(t *testing.T) {
+	t.Parallel()
+
+	root, err := atrest.ModuleRoot()
+	require.NoError(t, err)
+	schemas, err := atrest.LoadSchemas(root)
+	require.NoError(t, err)
+
+	// wrkflw_* only: casbin_rule is postgres-only by construction and its
+	// absence elsewhere is not a divergence.
+	pg := atrest.ColumnKeysWithPrefix(schemas["postgres"], "wrkflw_")
+	my := atrest.ColumnKeysWithPrefix(schemas["mysql"], "wrkflw_")
+	sq := atrest.ColumnKeysWithPrefix(schemas["sqlite"], "wrkflw_")
+
+	assert.ElementsMatch(t, pg, my, "postgres vs mysql normalized key set")
+	assert.ElementsMatch(t, pg, sq, "postgres vs sqlite normalized key set")
+	assert.Len(t, pg, 79)
+
+	// Sorted-order pin: ColumnKeysWithPrefix's doc
+	// contract promises keys sorted by (Table, Column); another package consumes
+	// that order. ElementsMatch above is order-independent
+	// and cannot pin this, so compare pg against an independently-sorted
+	// copy of itself with assert.Equal — a dropped sort call almost never
+	// coincides with the sorted order across 79 map-iterated entries.
+	sortedPG := slices.Clone(pg)
+	slices.SortFunc(sortedPG, func(a, b atrest.ColumnKey) int {
+		if c := strings.Compare(a.Table, b.Table); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Column, b.Column)
+	})
+	assert.Equal(t, sortedPG, pg,
+		"ColumnKeysWithPrefix must return keys sorted by (Table, Column)")
+}
+
+// TestKeySetMatcherFires is the liveness guard for ColumnKeysWithPrefix: it
+// drives the SAME matcher TestNormalizedKeySetAgreesAcrossDialects uses in
+// production, over a fixture that plants both a genuine key divergence
+// (t.only_in_pg) and a same-name-different-table column ("other".ignored)
+// that the matcher must exclude rather than report. A guard exercising a
+// different function than the production assertion proves nothing.
+func TestKeySetMatcherFires(t *testing.T) {
+	t.Parallel()
+
+	shared := atrest.ColumnKey{Table: "t", Column: "agrees"}
+	onlyPG := atrest.ColumnKey{Table: "t", Column: "only_in_pg"}
+	otherTable := atrest.ColumnKey{Table: "other", Column: "ignored"}
+
+	// pg carries one column sqlite lacks, plus a column under a DIFFERENT table
+	// prefix that the matcher must exclude rather than report as a divergence.
+	schemas := map[string]atrest.Schema{
+		"pg": {Dialect: "pg", Columns: map[atrest.ColumnKey]atrest.Column{
+			shared:     {Table: "t", Name: "agrees", Type: "TEXT"},
+			onlyPG:     {Table: "t", Name: "only_in_pg", Type: "TEXT"},
+			otherTable: {Table: "other", Name: "ignored", Type: "TEXT"},
+		}},
+		"sq": {Dialect: "sq", Columns: map[atrest.ColumnKey]atrest.Column{
+			shared: {Table: "t", Name: "agrees", Type: "TEXT"},
+		}},
+	}
+
+	pgKeys := atrest.ColumnKeysWithPrefix(schemas["pg"], "t")
+	sqKeys := atrest.ColumnKeysWithPrefix(schemas["sq"], "t")
+
+	assert.NotElementsMatch(t, pgKeys, sqKeys,
+		"the matcher must SEE the planted key divergence (t.only_in_pg)")
+	assert.ElementsMatch(t, pgKeys, atrest.ColumnKeysWithPrefix(schemas["pg"], "t"),
+		"and must be stable for identical input — a matcher that reports everything is as "+
+			"useless as one that reports nothing")
+
+	// Prefix-exclusion pin: the two
+	// assertions above depend only on the planted key divergence
+	// (t.only_in_pg) and pass even if the prefix filter is dropped
+	// entirely (every column of every table would then leak into pgKeys,
+	// but pgKeys would still differ from sqKeys and still be internally
+	// stable). Assert directly that otherTable's column is excluded, and
+	// that pgKeys contains exactly the two "t"-prefixed columns — nothing
+	// else.
+	assert.NotContains(t, pgKeys, otherTable,
+		"a column under a DIFFERENT table prefix must be excluded, not merely fail to match sqKeys")
+	assert.Len(t, pgKeys, 2,
+		"pgKeys must contain exactly the two \"t\"-prefixed columns (shared, onlyPG) — not otherTable's")
 }

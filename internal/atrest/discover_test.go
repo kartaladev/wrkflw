@@ -33,7 +33,7 @@ func TestDiscoverMigrationDirs_FindsAllFourAndAllAreDeclared(t *testing.T) {
 	for _, d := range dirs {
 		assert.Contains(t, atrest.MigrationSets, d,
 			"a discovered migration directory with no MigrationSets entry must fail: "+
-				"its columns would otherwise never be classified")
+				"its columns would otherwise be silently absent from every Schema")
 	}
 	for declared := range atrest.MigrationSets {
 		assert.Contains(t, dirs, declared,
@@ -48,8 +48,8 @@ func TestDiscoverMigrationDirs_FindsAllFourAndAllAreDeclared(t *testing.T) {
 // directory nested one level deeper under a "migrations" ancestor (e.g.
 // migrations/postgres/v2/*.sql) matches neither rule and, before this fix,
 // was silently discovered as nothing. Fail closed instead: error rather
-// than let those migrations become invisible to every downstream at-rest
-// classification while the generated security document stays green.
+// than let those migrations drop out of the Schema LoadSchemas returns, and
+// out of every consumer built on it, with nothing else to signal the gap.
 func TestDiscoverMigrationDirs_FailsClosedOnDeeperNesting(t *testing.T) {
 	t.Parallel()
 
@@ -217,70 +217,22 @@ func TestParserFailsClosedOnUnrecognisedStatements(t *testing.T) {
 	t.Parallel()
 
 	// Future schema changes resume as new numbered migration files, i.e.
-	// ALTER TABLE. A CREATE TABLE-only reader sees zero columns there:
-	// nothing unclassified, the generated block regenerating identically,
-	// every non-Docker guard green, and a new column silently absent from
-	// the security document. Verified free: the corpus has ZERO
-	// "alter table" today.
+	// ALTER TABLE. A CREATE TABLE-only reader sees zero columns there: the
+	// merged Schema silently omits the new column, every non-Docker guard
+	// stays green, and internal/persistence/store's crosscheck is the only
+	// thing left that could notice — and only where a live database is
+	// reachable. Verified free: the corpus has ZERO "alter table" today.
 	_, err := atrest.ParseSQL("postgres", "-- +goose Up\nALTER TABLE wrkflw_instances ADD COLUMN secret TEXT;\n")
 	require.Error(t, err, "an unrecognised statement must be an ERROR, never a skip")
 	assert.Contains(t, err.Error(), "ALTER TABLE")
 }
 
-// TestMigrationSetNotesCarryNoInternalEvidenceLabel guards against a
-// consumer-facing regression: MigrationSet.Note is published verbatim into
-// the generated "Data at rest" section by Render (it sources the casbin
-// availability sentence from this field rather than retyping it, so there is
-// one copy of the fact). An internal evidence-record id such as "(E3)",
-// which points at an internal measurement record, is meaningless to a reader
-// of a public security document. Note is consumer-facing prose from the
-// moment it is written, not an internal scratch comment — this test is the
-// regression guard for that rule.
-func TestMigrationSetNotesCarryNoInternalEvidenceLabel(t *testing.T) {
-	t.Parallel()
-
-	evidenceLabel := regexp.MustCompile(`\(E\d+(?:,\s*E\d+)*\)`)
-
-	for dir, set := range atrest.MigrationSets {
-		assert.False(t, evidenceLabel.MatchString(set.Note),
-			"MigrationSets[%q].Note = %q carries an internal evidence-record id "+
-				"(e.g. (E3)) that a security-document reader cannot resolve — Note is published "+
-				"verbatim, so state the fact plainly instead", dir, set.Note)
-	}
-}
-
-// TestCasbinNoteIsConditionedOnTheMigrationHavingRun pins the casbin
-// availability sentence Render publishes verbatim. The original wording —
-// "present only under the FromDB casbin policy source; Postgres only" — reads
-// as an if-and-only-if and is false in BOTH directions, because
-// casbinauthz.MigrateCasbin is an explicit standalone call that is never
-// auto-run (internal/authz/casbin/migrate.go documents exactly that):
-//
-//   - a deployment that runs MigrateCasbin and then wires FromStrings or
-//     FromEnforcer HAS the table, though it never uses the FromDB source;
-//   - a deployment that wires FromDB without ever running MigrateCasbin does
-//     NOT have it (the authorizer fails against a missing relation instead).
-//
-// Presence is therefore conditional on the MIGRATION having been applied, not
-// on which policy source is wired, and the published sentence must say so.
-func TestCasbinNoteIsConditionedOnTheMigrationHavingRun(t *testing.T) {
-	t.Parallel()
-
-	note := atrest.MigrationSets["internal/authz/casbin/migrations"].Note
-
-	assert.Contains(t, note, "casbinauthz.MigrateCasbin",
-		"the note must condition presence on the migration call a consumer can actually make")
-	assert.NotContains(t, note, "present only under the FromDB casbin policy source",
-		"the FromDB-only wording is a false if-and-only-if: MigrateCasbin is never auto-run, "+
-			"and a deployment that ran it keeps the table under any policy source")
-}
-
 // TestLoadSchemas_KeepsTheMySQLDeclaredColumnName pins the two halves of the
 // MySQL normalization that must NOT be conflated: the map KEY is canonicalized
 // so cross-dialect set operations work, while Column.Name keeps the name the
-// dialect's migration actually declares. Losing the declared name is how the
-// generated table came to publish "trigger" under a "mysql type" heading for a
-// column MySQL declares as "trigger_".
+// dialect's migration actually declares. Losing the declared name is how
+// "trigger" came to be reported as the MySQL column identifier for a column
+// MySQL declares as "trigger_".
 func TestLoadSchemas_KeepsTheMySQLDeclaredColumnName(t *testing.T) {
 	t.Parallel()
 
