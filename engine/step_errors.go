@@ -220,7 +220,7 @@ func routeToBoundary(ctx context.Context, top *model.ProcessDefinition, s *Insta
 	}
 	flowTarget := outs[0].Target
 
-	s.placeTokenInScope(flowTarget, targetScopeID, at)
+	s.placeTokenInScope(flowTarget, targetScopeID, outs[0].ID, at)
 
 	driveCmds, err := drive(ctx, top, s, at, pol)
 	if err != nil {

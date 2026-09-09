@@ -72,8 +72,11 @@ const (
 	// (AwaitMessage), or a human task. It is the general "parked, not consumed"
 	// state; the Await* fields say what is awaited.
 	TokenWaiting
-	// TokenJoining marks a token that has arrived at a join gateway and is
-	// waiting for its sibling branches to arrive.
+	// TokenJoining marks a token parked at a join gateway. Usually it is waiting
+	// for its sibling branches to arrive — but at a converging parallel gateway it
+	// may instead be SURPLUS: the join consumes one token per incoming sequence
+	// flow, so a second token that arrived over an already-satisfied flow stays
+	// parked in this state after the join has fired, available to a later firing.
 	TokenJoining
 	// TokenIncident marks a token that has exhausted its retry budget (or hit a
 	// non-retryable error) and is now parked as an incident. The token remains in
@@ -127,6 +130,30 @@ type Token struct {
 	// initiated. It serves as the anchor for MaxElapsed budget calculations.
 	// Zero value means the token is not currently retrying.
 	RetryStartedAt time.Time
+
+	// ArrivalFlowID is the ID of the model.SequenceFlow this token traversed to
+	// reach NodeID — its arrival provenance. It is rewritten on every hop, by
+	// every site that creates a token at a node or moves one to a new node.
+	//
+	// It exists because a converging parallel gateway is satisfied per INCOMING
+	// SEQUENCE FLOW, not per arrival (BPMN 2.0 §13.3.2). Counting arrivals lets a
+	// fork whose branches implicitly re-merge deliver two tokens over one edge and
+	// fire a join whose other edge was never traversed; see
+	// [InstanceState.tryParallelJoin]. Nothing else reads this field.
+	//
+	// EMPTY MEANS "arrived over no flow, or over a flow that was not recorded".
+	// Three populations carry it: a token placed at an instance start node or at a
+	// sub-process/event-sub-process start inside a fresh child scope (no flow was
+	// traversed); a compensation-walk resume, which is a relocation rather than a
+	// traversal; and a token decoded from a snapshot written before this field
+	// existed. At a parallel join an empty value satisfies at most ONE otherwise
+	// unsatisfied incoming flow — the reading that preserves the pre-field
+	// behaviour for legacy rows instead of deadlocking them.
+	//
+	// ⚠ It is added at the END of the struct deliberately. Three godoc comments in
+	// step_state.go cite this struct's await fields by absolute line number, and an
+	// insertion above them would silently invalidate all three.
+	ArrivalFlowID string
 }
 
 // clearAwait drops the await markers a token stops holding the moment it is

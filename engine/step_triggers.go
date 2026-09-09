@@ -569,7 +569,7 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 			tok.RetryStartedAt = time.Time{}
 			tok.clearAwait()
 			tok.State = TokenActive
-			s.moveTokenToTarget(tok, target, t.OccurredAt())
+			s.moveTokenToTarget(tok, target, rf, t.OccurredAt())
 			driveCmds, err := drive(ctx, def, s, t.OccurredAt(), resolvePolicy(opt))
 			if err != nil {
 				return StepResult{}, err

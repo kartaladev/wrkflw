@@ -82,7 +82,7 @@ func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *I
 	// sets it, but being explicit here makes the intent unambiguous).
 	tok.clearAwait()
 	tok.State = TokenActive
-	s.moveTokenToTargetAs(tok, deadlineTarget, at, CloseKindDeadlineExpired)
+	s.moveTokenToTargetAs(tok, deadlineTarget, deadlineFlow, at, CloseKindDeadlineExpired)
 
 	// (c) Mark the task Cancelled and emit UpdateTask.
 	if task != nil {

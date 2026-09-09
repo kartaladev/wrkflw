@@ -604,7 +604,7 @@ func resumeInParentScope(c *stepCtx, parentDef *model.ProcessDefinition, enclosi
 	if len(outs) == 0 {
 		return false
 	}
-	c.s.placeTokenInScope(outs[0].Target, parentScopeID, c.at)
+	c.s.placeTokenInScope(outs[0].Target, parentScopeID, outs[0].ID, c.at)
 	return true
 }
 
@@ -681,7 +681,10 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 	// Open a scope parented to the current token's scope.
 	scopeID := c.s.openScope(node.ID(), tok.ScopeID)
 	// Place the inner manual-start token in the new scope.
-	c.s.placeTokenInScope(manualStart, scopeID, c.at)
+	// No arrival flow: the sub-process's manual start node begins a fresh child
+	// scope; the flow into the sub-process ACTIVITY was traversed by the parent
+	// token, which is consumed here. See [Token.ArrivalFlowID].
+	c.s.placeTokenInScope(manualStart, scopeID, "", c.at)
 	// Consume the sub-process activity token (execution is now "inside").
 	c.s.consumeToken(tok, c.at)
 	// Arm any event sub-process nodes (SubProcess with an event-triggered inner
@@ -986,14 +989,14 @@ func (intermediateCatchEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 type exclusiveGatewayStrategy struct{}
 
 func (exclusiveGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
-	target, err := selectExclusiveTarget(c.tdef, c.s, node, c.pol.eval)
+	taken, err := selectExclusiveTarget(c.tdef, c.s, node, c.pol.eval)
 	if err != nil {
 		// cmds is carried here for a future error-handling path;
 		// Step currently discards StepResult on error, so partial commands
 		// are intentionally not delivered today.
 		return nil, false, err
 	}
-	c.s.moveTokenToTarget(tok, target, c.at)
+	c.s.moveTokenToTarget(tok, taken.Target, taken.ID, c.at)
 	// tok.State stays TokenActive (auto-advance): drive() derives stopped=false.
 	return nil, false, nil
 }
@@ -1004,17 +1007,20 @@ type parallelGatewayStrategy struct{}
 func (parallelGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Command, bool, error) {
 	if len(c.tdef.Incoming(node.ID())) > 1 {
 		c.s.tryParallelJoin(c.tdef, tok, node, tok.ScopeID, c.at)
-		// tryParallelJoin always sets tok.State = TokenJoining first, then
-		// conditionally removes all join-side tokens if the join fires.
-		// Stopped semantics must match the original switch arm:
-		//   - Join pending: token still in slice with State==TokenJoining → stopped=true.
-		//   - Join fired: token removed from slice → stopped=false (auto-advance).
-		// Re-read the token from the slice to distinguish the two cases:
+		// tryParallelJoin always sets tok.State = TokenJoining first, then, if the
+		// join fires, removes ONE token per incoming flow — which may or may not
+		// include this one. The question drive() needs answered is not "did the
+		// join fire" but "is THIS token still parked", so the test is presence in
+		// the slice, not the firing:
+		//   - Still present (pending, or fired-but-surplus): State==TokenJoining →
+		//     stopped=true, and Micro mode stops here. For the surplus case that is
+		//     an early stop rather than a wrong one: the firing placed an Active
+		//     token downstream and the next Step picks it up, so it fails CLOSED.
+		//   - Absent (this token was consumed by the firing): reset tok.State to
+		//     TokenActive so drive() derives stopped=false and keeps advancing.
 		if t := c.s.tokenByID(tok.ID); t != nil && t.State == TokenJoining {
-			// Pending: tok.State is already TokenJoining → drive() sees stopped=true.
+			// Parked: tok.State is already TokenJoining → drive() sees stopped=true.
 		} else {
-			// Fired: all join tokens consumed; reset tok.State to TokenActive so
-			// drive() derives stopped=false and keeps advancing.
 			tok.State = TokenActive
 		}
 	} else {

@@ -229,7 +229,10 @@ func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefi
 		// when this child scope drains with no tokens left in the enclosing scope,
 		// it closes the enclosing scope and resumes in the grandparent.
 		childScopeID := s.openScope(ea.EventSubprocessNode, ea.EnclosingScopeID)
-		s.placeTokenInScope(innerStart.ID(), childScopeID, at)
+		// No arrival flow: the event sub-process's start node is entered by the
+		// event firing, inside a scope that did not exist a moment ago. Nothing was
+		// traversed. See [Token.ArrivalFlowID].
+		s.placeTokenInScope(innerStart.ID(), childScopeID, "", at)
 	} else {
 		// Non-interrupting: leave enclosing scope running, spawn alongside. The arm
 		// STAYS armed so it can fire again on the next delivery — BPMN
@@ -245,7 +248,10 @@ func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefi
 		// This child scope runs alongside; when it drains, it is closed without affecting
 		// the enclosing scope (tokensInScope for the enclosing scope is unaffected).
 		childScopeID := s.openScope(ea.EventSubprocessNode, ea.EnclosingScopeID)
-		s.placeTokenInScope(innerStart.ID(), childScopeID, at)
+		// No arrival flow: the event sub-process's start node is entered by the
+		// event firing, inside a scope that did not exist a moment ago. Nothing was
+		// traversed. See [Token.ArrivalFlowID].
+		s.placeTokenInScope(innerStart.ID(), childScopeID, "", at)
 	}
 
 	// Drive forward.

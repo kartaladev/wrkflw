@@ -161,7 +161,7 @@ func fireBoundaryArm(ctx context.Context, def *model.ProcessDefinition, s *Insta
 
 		// Place a new Active token at the boundary's outgoing flow target, keeping
 		// the host token's scope so boundary-routed tokens stay in the same scope.
-		s.placeTokenInScope(flowTarget, hostScopeID, at)
+		s.placeTokenInScope(flowTarget, hostScopeID, ba.Flow, at)
 	} else {
 		// Non-interrupting: leave host parked, spawn an additional token. The arm
 		// STAYS armed so it can fire again on the next delivery — BPMN
@@ -173,7 +173,7 @@ func fireBoundaryArm(ctx context.Context, def *model.ProcessDefinition, s *Insta
 
 		// Spawn a new Active token at the boundary's outgoing flow target, keeping
 		// the host token's scope.
-		s.placeTokenInScope(flowTarget, hostScopeID, at)
+		s.placeTokenInScope(flowTarget, hostScopeID, ba.Flow, at)
 	}
 
 	// Drive forward (the newly placed token(s)).

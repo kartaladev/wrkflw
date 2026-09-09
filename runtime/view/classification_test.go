@@ -57,6 +57,12 @@ var classification = map[string]map[string]disposition{
 		"ID": public, "NodeID": public, "ScopeID": public, "State": public,
 		"EnteredAt": public, "RetryAttempts": public, "RetryStartedAt": public,
 
+		// A sequence-flow ID is definition structure, exactly like NodeID and
+		// ScopeID: it names an edge the definition's author wrote, carries no
+		// business data, and is already disclosed to anyone who can read the
+		// definition. It discloses nothing NodeID does not.
+		"ArrivalFlowID": public,
+
 		"Payload": gatedVariables,
 
 		// A correlation key or signal name is a business identifier, not a variable,

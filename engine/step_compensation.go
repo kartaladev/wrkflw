@@ -1317,7 +1317,11 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 			"resume_scope", plan.resumeScope,
 		)
 	} else {
-		s.placeTokenInScope(plan.resumeAt, plan.resumeScope, at)
+		// No arrival flow: a compensation-walk resume is a RELOCATION to a recorded
+		// resume point, not a traversal of a sequence flow — and for the partial and
+		// full-reverse outcomes it is operator-directed, with no edge involved at
+		// all. See [Token.ArrivalFlowID] for what an empty value costs at a join.
+		s.placeTokenInScope(plan.resumeAt, plan.resumeScope, "", at)
 	}
 	if plan.popDeferred {
 		popOneDeferredThrow(s)

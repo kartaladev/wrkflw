@@ -112,6 +112,7 @@ func projectTokens(in []engine.Token, d authz.DisclosureSet) []engine.Token {
 			EnteredAt:      t.EnteredAt,
 			RetryAttempts:  t.RetryAttempts,
 			RetryStartedAt: t.RetryStartedAt,
+			ArrivalFlowID:  t.ArrivalFlowID,
 		}
 		if d.Has(authz.DiscloseVariables) {
 			out[i].Payload = t.Payload

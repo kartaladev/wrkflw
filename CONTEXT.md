@@ -53,7 +53,9 @@ _Avoid_: run, execution, case, job
 
 **Token**:
 The unit of execution position inside an instance (`engine.Token`) — what sits on a
-node, moves along a flow, and waits. Parallelism is counted in tokens, not in flows.
+node, moves along a flow, and waits. Concurrency is carried by tokens, and a token
+records the flow it arrived over: a converging parallel gateway is satisfied per
+incoming flow, not by a count of arrivals (#120).
 _Avoid_: thread, marker, pointer
 
 **Scope**:

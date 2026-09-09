@@ -28,7 +28,9 @@ func (ExclusiveGateway) Kind() model.NodeKind { return model.KindExclusiveGatewa
 // compiler would notice. These assignments are that missing signal.
 var _ model.Node = ExclusiveGateway{}
 
-// ParallelGateway splits into all outgoing flows (AND split) or waits for all (AND join).
+// ParallelGateway splits into all outgoing flows (AND split), or waits for one
+// token on each INCOMING flow (AND join) — per flow, not per arrival, so two
+// tokens delivered over one edge do not stand in for two branches.
 type ParallelGateway struct{ model.Base }
 
 // Kind returns model.KindParallelGateway.
