@@ -914,11 +914,16 @@ func TestTrigger_NextMonthlyScanJumpsWholeGridStrides(t *testing.T) {
 //	MaxUint         -7                2026-08-10            TRUE   ← 10 days in the PAST
 //
 // Those numeric columns are a 64-bit measurement, where math.MaxUint is
-// math.MaxUint64. On a 32-bit platform math.MaxUint is 4294967295 and the
-// products differ, but no row's assertion moves, because what the rows assert
-// is post-clamp behaviour: maxSchedulableInterval is 1<<20, and MaxUint32,
-// MaxUint/7 (613566756 there) and MaxUint all still exceed it, so each is
-// refused on either word size.
+// math.MaxUint64. On a 32-bit platform math.MaxUint is 4294967295, which moves
+// two of the three products and not the third: MaxUint32 becomes -7 and
+// MaxUint/7 becomes -4, while the MaxUint row's product is -7 on BOTH word
+// sizes. It also collapses two rows into one interval, since MaxUint32 and
+// MaxUint are the same value there.
+//
+// No row's assertion moves either way, because what the rows assert is
+// post-clamp behaviour: maxSchedulableInterval is 1<<20 = 1048576, and every
+// interval from the MaxUint32 row down still exceeds it on either word size, so
+// each is refused.
 //
 // The MaxUint row is the defect: a next fire strictly BEFORE `after`,
 // reported ok=true. A past next-run accepted as valid is the never-due /

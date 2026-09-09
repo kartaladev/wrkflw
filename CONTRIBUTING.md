@@ -11,8 +11,12 @@ when a change trades library ergonomics for server convenience, library ergonomi
   to provision real PostgreSQL / MySQL / MinIO / mailpit. They are not mocked.
 - [`golangci-lint`](https://golangci-lint.run/) v2 (the config uses the v2 schema).
 - **A 64-bit target.** wrkflw is built, tested and linted on 64-bit platforms only. 32-bit builds
-  (`GOOS=linux GOARCH=386`, `GOARCH=arm`) are not part of CI and are not supported: a failure there
-  is not a defect. The tree happens to vet clean on both today, but nothing keeps that true.
+  (`GOOS=linux GOARCH=386`, `GOOS=linux GOARCH=arm` — the `GOOS` is required, or a macOS host reports
+  a PIE/cgo linker error instead of the real result) are not run in CI and are not a supported
+  configuration: a build or vet failure there is not a defect. The tree happens to vet clean on both
+  today, but nothing keeps that true. This disclaims **CI coverage**, not the in-code invariants:
+  `maxSchedulableInterval` is still chosen so its products stay inside a 32-bit `int`, and that bound
+  must be re-derived if the constant is ever raised.
 
 ## Local workflow
 
