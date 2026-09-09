@@ -94,8 +94,16 @@ type InstanceStore interface {
 // InstanceStore implementation keeps compiling and keeps working. A store that
 // does not implement it leaves the mark exactly as the last commit wrote it:
 // recovery still runs and is still correct, but it cannot record progress, so a
-// parked instance's commands are re-performed once per grace window until
-// something else advances it.
+// parked instance's commands are re-performed repeatedly until something else
+// advances it.
+// ⚠ Without it the rate is once per sweep TICK, not once per grace window. The
+// window is measured against engine.InstanceState.PendingCommandsAt, and this
+// capability is the ONLY thing that ever rewrites that stamp — so a store lacking
+// it leaves the stamp frozen at commit time, the age test passes on every tick,
+// and at defaults that is every 1m rather than every 5m. Measured: five re-drives
+// over five passes against one, with the port. It applies only to the two commands
+// alreadyPerformed cannot gate, ThrowSignal and UpdateTask, and ThrowSignal is the
+// worse of the two because its duplicate fans out to OTHER instances.
 //
 // Three properties are contractual, and each is load-bearing:
 //

@@ -118,6 +118,27 @@ func (s *Store) WritePendingCommands(ctx context.Context, id string, expected ke
 	if err := json.Unmarshal(snap, &doc); err != nil {
 		return fmt.Errorf("workflow-store: write pending commands %q: unmarshal snapshot: %w", id, err)
 	}
+	// ⚠ A JSON `null` snapshot decodes WITHOUT error and leaves doc nil, and
+	// assigning into a nil map panics. Every other malformed shape — an array, a
+	// string, a number, a truncated object — is rejected by Unmarshal above; only
+	// `null` gets this far, and Postgres JSONB, MySQL JSON and SQLite TEXT all
+	// accept the literal. Reproduced on all three.
+	//
+	// It is rejected rather than repaired: a null snapshot is a corrupted row (no
+	// build in this tree writes one — marshalSnapshot always emits an object), and
+	// silently replacing it with an object containing only a mark would make a
+	// corrupted instance look repaired. Returning an error puts it on the same
+	// footing as every other malformed shape: the sweep logs it and skips that
+	// instance without aborting the batch.
+	//
+	// The guard is load-bearing, not defensive decoration. There is exactly one
+	// recover() in runtime/ (processdriver_action.go, around a service action) and
+	// nothing guards the sweep, which walks every instance the store holds — so an
+	// unrecovered panic here would take down ProcessDriver.Start and the sweep
+	// goroutine, crash-looping every replica at boot for as long as the row exists.
+	if doc == nil {
+		return fmt.Errorf("workflow-store: write pending commands %q: snapshot is JSON null, not an object", id)
+	}
 	if bytes.Equal(doc[pendingCommandsKey], cmdsJSON) && bytes.Equal(doc[pendingCommandsAtKey], atJSON) {
 		return finish() // already exactly this; skip the rewrite entirely
 	}

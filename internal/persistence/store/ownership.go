@@ -125,6 +125,16 @@ func (o *AdvisoryLockOwnership) Acquire(ctx context.Context, instanceID string) 
 
 	ok, err := o.locker.TryLock(ctx, instanceID)
 	if err != nil {
+		if errors.Is(err, dialect.ErrUnsupported) {
+			// Join kernel.ErrOwnershipUnsupported to the chain so a caller in the
+			// runtime — which cannot import this dialect package — can tell "this
+			// backend cannot answer" from "another session holds it". A caller that
+			// conflates the two disables itself permanently on SQLite, which is the
+			// trap NewSQLiteOwnership's own doc warns about. dialect.ErrUnsupported
+			// stays in the chain, so every existing errors.Is check is unaffected.
+			return false, fmt.Errorf("workflow-store: ownership: acquire %q: %w: %w",
+				instanceID, kernel.ErrOwnershipUnsupported, err)
+		}
 		return false, fmt.Errorf("workflow-store: ownership: acquire %q: %w", instanceID, err)
 	}
 

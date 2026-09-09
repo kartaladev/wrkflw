@@ -249,3 +249,48 @@ func TestWritePendingCommandsPreservesUnrecognisedSnapshotFields(t *testing.T) {
 			"dialect %s: the mark must still have been cleared", b.name)
 	})
 }
+
+// TestWritePendingCommandsRejectsAMalformedSnapshot pins that no snapshot shape
+// a column will accept can panic the mark write.
+//
+// A JSON `null` is the one that could: it decodes WITHOUT error and leaves the
+// target map nil, and assigning into a nil map panics. Postgres JSONB, MySQL
+// JSON and SQLite TEXT all accept the literal. Reproduced on all three in review.
+//
+// It matters far out of proportion to its likelihood — no build in this tree
+// writes a null snapshot — because of where the panic lands. There is exactly one
+// recover() in runtime/ and it is around a service action, not this path; the
+// sweep walks every instance the store holds; so one corrupted row would
+// crash-loop every replica at boot, fleet-wide, for as long as it existed.
+//
+// The assertion is positive on both halves: an ERROR is returned (not a panic,
+// and not a silent success), and the row is left exactly as it was.
+func TestWritePendingCommandsRejectsAMalformedSnapshot(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, b backend) {
+		ctx := t.Context()
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+
+		markedAt := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+		id := "i-null-" + b.name
+		version, err := s.Create(ctx, pendingMarkedStep(t, id, markedAt))
+		require.NoError(t, err)
+
+		q := s.QuerierForTest(ctx)
+		_, err = q.Exec(ctx, b.dialect.Rebind(
+			`UPDATE wrkflw_instances SET snapshot = ? WHERE instance_id = ?`), []byte(`null`), id)
+		require.NoError(t, err, "dialect %s must accept a JSON null in the snapshot column", b.name)
+
+		require.NotPanics(t, func() {
+			err = s.WritePendingCommands(ctx, id, version, nil, time.Time{})
+		}, "dialect %s: a null snapshot must not panic the mark write", b.name)
+		require.Error(t, err, "dialect %s: a null snapshot must be reported, not silently accepted", b.name)
+		assert.Contains(t, err.Error(), "JSON null")
+
+		var after []byte
+		require.NoError(t, q.QueryRow(ctx, b.dialect.Rebind(
+			`SELECT snapshot FROM wrkflw_instances WHERE instance_id = ?`), id).Scan(&after))
+		assert.JSONEq(t, `null`, string(after),
+			"dialect %s: a refused write must leave the row exactly as it was", b.name)
+	})
+}

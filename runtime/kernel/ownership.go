@@ -1,6 +1,9 @@
 package kernel
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // InstanceOwnership decides whether THIS process is the single writer for an instance,
 // and therefore whether its mutable state may be cached and served from memory
@@ -49,3 +52,17 @@ func (AlwaysOwn) Acquire(context.Context, string) (bool, error) { return true, n
 
 // Release is a no-op.
 func (AlwaysOwn) Release(context.Context, string) error { return nil }
+
+// ErrOwnershipUnsupported reports that an [InstanceOwnership] implementation
+// cannot answer on this backend, as distinct from answering "someone else owns
+// it". SQLite has no advisory-locking mechanism, so persistence's SQLite
+// ownership returns it from every Acquire.
+//
+// It exists so a caller in the runtime can tell the two apart WITHOUT importing
+// the persistence dialect layer. The distinction is load-bearing: a flow that
+// treats "cannot answer" as "not owned" disables itself permanently on SQLite,
+// which is exactly the trap NewSQLiteOwnership's own doc warns about
+// ("Ownership-dependent flows must guard against ErrUnsupported and skip the
+// ownership path"). An implementation whose Acquire cannot answer MUST wrap this
+// sentinel so callers can obey that contract.
+var ErrOwnershipUnsupported = errors.New("workflow-runtime: instance ownership is not supported by this backend")

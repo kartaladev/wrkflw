@@ -20,6 +20,7 @@ type engineConfig struct {
 	store         kernel.InstanceStore
 	reg           kernel.DefinitionRegistry
 	lister        kernel.InstanceLister
+	ownership     kernel.InstanceOwnership
 	taskStore     humantask.TaskStore
 	authz         authz.Authorizer
 	resolver      humantask.ActorResolver
@@ -68,6 +69,26 @@ func WithLister(l kernel.InstanceLister) Option {
 	return func(c *engineConfig) {
 		if l != nil {
 			c.lister = l
+		}
+	}
+}
+
+// WithOwnership wires the single-writer-per-instance guarantee into the engine's
+// owned process driver, for the crash-recovery sweep to consult
+// (see runtime.WithInstanceOwnership).
+//
+// It is the SAME port persistence.NewCachingInstanceStore takes, so a
+// multi-replica deployment that already built one hands the sweep the exclusion
+// it already paid for instead of falling back to at-least-once across replicas.
+// Without it the sweep still runs and is still correct — N replicas can each
+// perform the same abandoned command once, which is the documented default.
+//
+// A nil value is ignored. It is not applied to a consumer-injected driver
+// (WithProcessDriver): that driver is consumer-owned and takes its own options.
+func WithOwnership(o kernel.InstanceOwnership) Option {
+	return func(c *engineConfig) {
+		if o != nil {
+			c.ownership = o
 		}
 	}
 }

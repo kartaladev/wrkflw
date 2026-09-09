@@ -1036,9 +1036,17 @@ func (driver *ProcessDriver) deliverLoop(
 // probe on the commit path — so every existing InstanceStore implementation keeps
 // working. A store without it leaves the mark as the last commit wrote it:
 // recovery stays correct, but it cannot record progress, so a parked instance's
-// commands are re-performed once per grace window until something advances it.
-// That is the documented cost of not implementing the capability, and it is why
-// both in-tree stores do.
+// commands are re-performed repeatedly until something advances it. That is the
+// documented cost of not implementing the capability, and it is why both in-tree
+// stores do.
+// ⚠ Without it the rate is once per sweep TICK, not once per grace window. The
+// window is measured against engine.InstanceState.PendingCommandsAt, and this
+// capability is the ONLY thing that ever rewrites that stamp — so a store lacking
+// it leaves the stamp frozen at commit time, the age test passes on every tick,
+// and at defaults that is every 1m rather than every 5m. Measured: five re-drives
+// over five passes against one, with the port. It applies only to the two commands
+// alreadyPerformed cannot gate, ThrowSignal and UpdateTask, and ThrowSignal is the
+// worse of the two because its duplicate fans out to OTHER instances.
 //
 // A failure here never fails the step: the work it describes has already been
 // performed and committed. The residual is a redundant re-drive, which every

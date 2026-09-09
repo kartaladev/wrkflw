@@ -54,14 +54,32 @@ func (driver *ProcessDriver) instanceLister() kernel.InstanceLister {
 // step carries commands that were never performed, and returns how many
 // instances it recovered.
 //
-// This is the BOOT pass. It honours the same grace window as the periodic one
-// ([WithRecoveryLease]), and that is a correction, not an oversight: an earlier
-// version skipped it on the reasoning that "a mark found at boot cannot belong to
-// a perform this process is running". True, and beside the point — it can belong
-// to a perform ANOTHER LIVE REPLICA is running, and the durable path this sweep
-// is wired for (see [WithInstanceLister]) is exactly the multi-replica one. A
-// rolling restart would otherwise re-perform every in-flight command of every
-// surviving replica.
+// This is the BOOT pass, and it does NOT wait out the grace window. That has been
+// settled twice and the reasoning is worth keeping, because both positions were
+// right about something:
+//
+//   - The window was applied here to stop a booting replica stealing a perform
+//     another LIVE replica is still running. Real concern, and correct as far as
+//     it goes.
+//   - But the window is a DELAY, not an exclusion. Two replicas past it both
+//     pass. All it can do is postpone a duplicate — and postponing is only safe
+//     if something retries afterwards. Applied to a one-shot boot pass with no
+//     periodic sweep running, it did not postpone the duplicate, it cancelled the
+//     recovery: a pod restarting in seconds found every mark inside the window,
+//     declined it, and — because boot recovery is once-per-driver — never looked
+//     again. That is worse than the duplicate it was avoiding, and it is a
+//     regression on the exact scenario this ticket exists to fix.
+//
+// So the window belongs on the PERIODIC pass, which repeats and therefore has
+// something to postpone until; and exclusion — the thing the window was standing
+// in for — belongs to [WithInstanceOwnership], which actually excludes. The boot
+// pass is bounded instead by being once-per-driver ([ProcessDriver.Start]) and by
+// [ProcessDriver.alreadyPerformed], which skips any command whose effect is
+// already durably visible.
+//
+// A deployment that wants the boot pass to defer to live peers wires an ownership
+// port. One that wires none gets at-least-once across replicas at boot — which is
+// what it gets from every other pass too, and is now stated rather than implied.
 //
 // ⚠ CONCURRENCY, stated precisely because an earlier version of this comment
 // overclaimed it. What follows is NOT a lease in the sense
@@ -108,7 +126,7 @@ func (driver *ProcessDriver) instanceLister() kernel.InstanceLister {
 // predicate on [kernel.InstanceFilter] so the scan becomes an indexed lookup —
 // deliberately not built here, because nothing has measured it yet.
 func (driver *ProcessDriver) RecoverPendingCommands(ctx context.Context) (int, error) {
-	return driver.sweepPendingCommands(ctx)
+	return driver.sweepPendingCommands(ctx, 0)
 }
 
 // RunRecoverySweep re-drives abandoned pending commands on every tick until ctx
@@ -149,15 +167,17 @@ func (driver *ProcessDriver) RunRecoverySweep(ctx context.Context) error {
 // sweepTick runs one lease-honouring pass and logs, rather than propagates, its
 // error.
 func (driver *ProcessDriver) sweepTick(ctx context.Context) {
-	if _, err := driver.sweepPendingCommands(ctx); err != nil && ctx.Err() == nil {
+	if _, err := driver.sweepPendingCommands(ctx, driver.recoveryLease); err != nil && ctx.Err() == nil {
 		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: recovery sweep pass failed, continuing",
 			append(driver.obs.tel.LogAttrs(ctx), slog.Any("error", err))...)
 	}
 }
 
 // sweepPendingCommands is the one pass shared by the boot and periodic entry
-// points. Both honour the same lease: see [ProcessDriver.RecoverPendingCommands].
-func (driver *ProcessDriver) sweepPendingCommands(ctx context.Context) (int, error) {
+// points. window is how old a mark must be before this pass will re-drive it;
+// zero re-drives every mark it finds, which is what the once-per-driver boot pass
+// passes and why — see [ProcessDriver.RecoverPendingCommands].
+func (driver *ProcessDriver) sweepPendingCommands(ctx context.Context, window time.Duration) (int, error) {
 	lister := driver.instanceLister()
 	if lister == nil || driver.defsReg == nil {
 		return 0, nil
@@ -168,7 +188,7 @@ func (driver *ProcessDriver) sweepPendingCommands(ctx context.Context) (int, err
 	}
 	defer release()
 
-	cutoff := driver.clk.Now().Add(-driver.recoveryLease)
+	cutoff := driver.clk.Now().Add(-window)
 	recovered := 0
 	cursor := ""
 	for {
@@ -184,11 +204,26 @@ func (driver *ProcessDriver) sweepPendingCommands(ctx context.Context) (int, err
 		// only Running and Compensating and asserted, wrongly, that doing so "loses
 		// nothing".
 		//
-		// ⚠ COST, and it is the real one: this walks every instance the store holds,
-		// not just the live working set, so it scales with retention rather than
-		// with concurrency. The store's own pruner is what bounds the terminal tail.
-		// The bounded fix is a marked-instances predicate on kernel.InstanceFilter
-		// so the scan becomes an indexed lookup; deliberately not built here.
+		// ⚠ COST, and it is the real one, stated without the mitigation an earlier
+		// version of this comment claimed. This walks every instance the store
+		// holds — not the live working set — so it scales with retention rather
+		// than with concurrency, once per pass, forever.
+		//
+		// There is NO bound on that today. The earlier claim that "the store's own
+		// pruner bounds the terminal tail" is false: internal/persistence/store's
+		// Pruner has six methods, over wrkflw_outbox, wrkflw_call_links,
+		// wrkflw_chain_links, the message deduper and wrkflw_timers. None touches
+		// wrkflw_instances, and no DELETE against that table exists anywhere in the
+		// tree. wrkflw_instances is the one genuinely unbounded table and it has no
+		// retention job at all, so this scan grows with every instance ever created
+		// and the boot pass pays it synchronously inside Start.
+		//
+		// Listing every status is still right — a terminal step can carry a mark
+		// (above), and narrowing the scan to make the cost look better would make
+		// that class unrecoverable. The bounded fix is a marked-instances predicate
+		// on kernel.InstanceFilter so this becomes an indexed lookup; deliberately
+		// not built here, and it is the shape a reader should reach for first if
+		// this scan ever shows up in a profile.
 		page, err := lister.List(ctx, kernel.InstanceFilter{
 			Limit:  driver.recoverySweepBatchSize,
 			Cursor: cursor,
@@ -244,13 +279,28 @@ func (driver *ProcessDriver) sweepPendingCommands(ctx context.Context) (int, err
 // written. A follow-up commits a new snapshot carrying its own mark, at a new
 // version, so writing first is the only ordering under which progress survives.
 //
-// ⚠ RESIDUAL, stated because it is real and bounded rather than hidden: applying
-// a follow-up re-marks the snapshot for the step it commits, which supersedes any
-// remainder this pass could not perform. So a step that both produced a follow-up
-// trigger AND left a command unperformable loses that command's mark. It is
-// strictly better than the alternative — dropping the follow-up strands a live
-// token forever — and it is a property of the mark living in the snapshot that
-// deliverLoop also owns.
+// ⚠ RESIDUAL — the one place this mechanism can lose work PERMANENTLY, stated in
+// those terms because an earlier version of this comment said only that the
+// instance "loses that command's mark", which reads like a lost retry and is not
+// what happens.
+//
+// Applying a follow-up commits a new snapshot, and deliverLoop rewrites
+// PendingCommands for the step it commits — so any remainder this pass could not
+// perform is superseded. The instance is then left RUNNING, with a live token, an
+// engine-state task whose projected row does not exist, and NO mark: it is never
+// listed again, never re-driven, and never mentioned in a log line again. That is
+// the same "parks forever with nothing that will ever move it" this ticket exists
+// to close, manufactured by the recovery path itself. Reproduced in review.
+//
+// It is logged at ERROR at the point of loss (below) rather than avoided, because
+// the alternative is worse: dropping the follow-up instead strands a LIVE token
+// forever. Both arms lose something, and that is a property of the mark living
+// inside a document the commit path owns and replaces atomically — not something
+// this function can fix. The evidence is filed against #22.
+//
+// Trigger shape: one step emitting two or more recoverable commands, an earlier
+// one succeeding with a follow-up, a later one failing. A parallel fork of a
+// service task and a user task is the canonical case.
 func (driver *ProcessDriver) recoverInstance(ctx context.Context, instanceID string, cutoff time.Time) (int, error) {
 	st, token, err := driver.store.Load(ctx, instanceID)
 	if err != nil {
@@ -272,13 +322,54 @@ func (driver *ProcessDriver) recoverInstance(ctx context.Context, instanceID str
 	// sticky and O(1) for an instance this process already owns, and it is called
 	// only for instances that actually carry an expired mark — never for the whole
 	// scan.
+	acquired := false
 	if driver.ownership != nil {
 		owned, oerr := driver.ownership.Acquire(ctx, instanceID)
-		if oerr != nil {
+		switch {
+		case errors.Is(oerr, kernel.ErrOwnershipUnsupported):
+			// The backend cannot answer — SQLite has no advisory locking, and
+			// persistence's SQLite ownership returns this from every Acquire. A
+			// SQLite deployment MUST construct that port to satisfy
+			// NewCachingInstanceStore, and WithInstanceOwnership invites passing the
+			// same value here; treating "cannot answer" as "not owned" therefore
+			// switched crash recovery off permanently on exactly the deployments
+			// most likely to wire it. Fall through to the documented no-ownership
+			// default (at-least-once) instead of disabling recovery, which is what
+			// NewSQLiteOwnership's own doc requires of an ownership-dependent flow.
+		case oerr != nil:
 			return 0, fmt.Errorf("ownership: %w", oerr)
-		}
-		if !owned {
+		case !owned:
 			return 0, nil // another replica is the writer for this instance
+		default:
+			acquired = true
+		}
+	}
+	// releaseIfIdle hands ownership back on the paths where this pass acquired it
+	// and then did NOT drive the instance.
+	//
+	// Deliberately not a blanket release. Acquire is contractually sticky and its
+	// `held` set is shared with whatever else was given the same port — typically a
+	// CachingInstanceStore — so releasing an instance that store is actively
+	// serving would drop the lock its cache coherence depends on, and this call
+	// cannot tell a lock it just took from one that was already held. Releasing
+	// only when nothing was performed keeps the case the sweep is responsible for
+	// — ownership taken for an instance it turned out to have no work on — from
+	// accumulating, which on AdvisoryLockOwnership is a session-scoped advisory
+	// lock per instance on one connection plus an entry in an in-memory map.
+	//
+	// Residual, bounded and stated: ownership of an instance this pass DID repair
+	// is held for the process lifetime. That set is bounded by the number of
+	// crash-abandoned instances this replica actually fixed, not by fleet size, and
+	// a consumer releases through CachingInstanceStore.Release as it does today.
+	releaseIfIdle := func(performed int) {
+		if !acquired || performed > 0 {
+			return
+		}
+		if rerr := driver.ownership.Release(ctx, instanceID); rerr != nil {
+			driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: recovery sweep: could not release ownership of an instance it did not drive",
+				append(driver.obs.tel.LogAttrs(ctx),
+					slog.String("instance_id", instanceID),
+					slog.Any("error", rerr))...)
 		}
 	}
 
@@ -287,6 +378,7 @@ func (driver *ProcessDriver) recoverInstance(ctx context.Context, instanceID str
 		// Leave the mark standing. An unresolvable definition is a registration
 		// problem, and the instance becomes recoverable the moment it is fixed —
 		// the same call the CallNotifier makes for an unresolvable parent def.
+		releaseIfIdle(0)
 		return 0, fmt.Errorf("lookup %s: %w", model.Version(st.DefID, st.DefVersion), err)
 	}
 
@@ -342,6 +434,36 @@ func (driver *ProcessDriver) recoverInstance(ctx context.Context, instanceID str
 				slog.Int("still_pending", len(remainder)))...)
 	}
 
+	// ⚠ The one place this mechanism can lose work permanently, and it is logged
+	// at ERROR because a mechanism that re-creates its own ticket's failure class
+	// must not do it silently.
+	//
+	// A follow-up trigger commits a NEW snapshot, and deliverLoop's mark block
+	// rewrites PendingCommands for the step it commits — so the remainder written
+	// a few lines above is superseded and gone. The instance is then parked, with
+	// a live token, an engine-state task whose projected row does not exist, and NO
+	// mark: nothing will list it, nothing will re-drive it, and no further log line
+	// will ever mention it. That is a PERMANENT STRAND, not a lost retry, and it is
+	// exactly the failure this ticket exists to close.
+	//
+	// The alternative is worse, which is why it is logged rather than avoided:
+	// dropping the follow-up instead strands a LIVE token forever. Both arms lose
+	// something because the mark lives inside a document the commit path owns and
+	// replaces atomically — the property that cannot be fixed from here, and the
+	// evidence for doing it differently is filed against #22.
+	//
+	// Trigger shape, so an operator can recognise it: one step emitting two or more
+	// recoverable commands, an earlier one succeeding with a follow-up, a later one
+	// failing. A parallel fork of a service task and a user task is the canonical case.
+	if len(remainder) > 0 && len(followups) > 0 {
+		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelError,
+			"runtime: recovery sweep: applying a follow-up will supersede this instance's remaining unperformed commands, which are then PERMANENTLY unrecoverable and will not be reported again",
+			append(driver.obs.tel.LogAttrs(ctx),
+				slog.String("instance_id", instanceID),
+				slog.Int("stranded_commands", len(remainder)),
+				slog.String("first_stranded_kind", string(remainder[0].Kind)))...)
+	}
+
 	for _, trg := range followups {
 		if _, aerr := driver.applyTriggerRetryingCAS(ctx, def, instanceID, trg); aerr != nil {
 			if errors.Is(aerr, engine.ErrTokenNotFound) {
@@ -355,6 +477,7 @@ func (driver *ProcessDriver) recoverInstance(ctx context.Context, instanceID str
 			}
 		}
 	}
+	releaseIfIdle(performed)
 	if failure != nil {
 		return 0, failure
 	}

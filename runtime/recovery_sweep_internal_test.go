@@ -10,6 +10,9 @@ package runtime
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -61,17 +64,16 @@ func markedInstanceWith(t *testing.T, store *kernel.MemInstanceStore, def *model
 	require.NoError(t, err)
 }
 
-// TestRecoverySweepGraceWindowGatesEveryPass pins the rule that keeps a pass
-// from overtaking a perform that is still legitimately running — and pins that
-// the BOOT pass obeys it too.
+// TestRecoverySweepGraceWindowGatesThePeriodicPass pins where the grace window
+// applies and where it deliberately does not.
 //
-// The boot pass used to skip the window, on the reasoning that a mark found at
-// boot cannot belong to a perform this process is running. That is true and
-// beside the point: it can belong to a perform another live replica is running,
-// and the durable path this sweep is wired for is the multi-replica one. A
-// rolling restart under the old rule re-performed every in-flight command of
-// every surviving replica.
-func TestRecoverySweepGraceWindowGatesEveryPass(t *testing.T) {
+// It gates the PERIODIC pass, which repeats and therefore has something to
+// postpone a duplicate until. It does NOT gate the BOOT pass, which runs once per
+// driver: applied there it could not postpone anything, so it cancelled the
+// recovery outright and a fast restart recovered nothing, ever. Exclusion — the
+// thing the window stands in for — is WithInstanceOwnership's job, and it is
+// pinned separately below.
+func TestRecoverySweepGraceWindowGatesThePeriodicPass(t *testing.T) {
 	t.Parallel()
 
 	markedAt := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
@@ -106,19 +108,26 @@ func TestRecoverySweepGraceWindowGatesEveryPass(t *testing.T) {
 			},
 		},
 		{
-			name:  "the boot pass obeys the same window",
+			// THE FAST-RESTART CASE, and the regression this row exists to pin. A pod
+			// that restarts in seconds finds every mark inside the window. When the
+			// boot pass honoured the window, it declined them — and because boot
+			// recovery is once-per-driver, it never looked again, so a fast restart
+			// recovered nothing, ever. That is strictly worse than the duplicate the
+			// window was avoiding, and it is a regression on the exact scenario this
+			// ticket exists to fix.
+			name:  "the boot pass recovers a mark still inside the window",
 			now:   markedAt.Add(time.Minute),
 			lease: 5 * time.Minute,
 			boot:  true,
 			assert: func(t *testing.T, recovered, calls int, st engine.InstanceState) {
-				assert.Zero(t, recovered,
-					"a boot pass must not steal a mark another live replica may still be performing")
-				assert.Zero(t, calls)
-				assert.NotEmpty(t, st.PendingCommands)
+				assert.Equal(t, 1, recovered,
+					"a restart faster than the grace window must still recover")
+				assert.Equal(t, 1, calls, "the abandoned action must be invoked exactly once")
+				assert.Empty(t, st.PendingCommands)
 			},
 		},
 		{
-			name:  "the boot pass re-drives once the window has passed",
+			name:  "the boot pass recovers a mark past the window too",
 			now:   markedAt.Add(6 * time.Minute),
 			lease: 5 * time.Minute,
 			boot:  true,
@@ -175,7 +184,7 @@ func TestRecoverySweepGraceWindowGatesEveryPass(t *testing.T) {
 			if tc.boot {
 				recovered, err = driver.RecoverPendingCommands(ctx)
 			} else {
-				recovered, err = driver.sweepPendingCommands(ctx)
+				recovered, err = driver.sweepPendingCommands(ctx, driver.recoveryLease)
 			}
 			require.NoError(t, err)
 
@@ -528,7 +537,7 @@ func TestFailedRecoveryRecordsProgressAndRestampsTheMark(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
 
-	_, err = driver.sweepPendingCommands(ctx)
+	_, err = driver.sweepPendingCommands(ctx, driver.recoveryLease)
 	require.NoError(t, err, "one unrecoverable instance must not abort the batch")
 	require.Equal(t, 1, charges, "the recoverable command must run exactly once")
 
@@ -542,7 +551,227 @@ func TestFailedRecoveryRecordsProgressAndRestampsTheMark(t *testing.T) {
 
 	// A second pass at the same instant is inside the re-stamped window and must
 	// do nothing at all — the amplification is gone.
-	_, err = driver.sweepPendingCommands(ctx)
+	_, err = driver.sweepPendingCommands(ctx, driver.recoveryLease)
 	require.NoError(t, err)
 	assert.Equal(t, 1, charges, "the succeeded command must never be re-executed")
+}
+
+// recordingOwnership counts Acquire/Release and answers from a fixed script.
+type recordingOwnership struct {
+	owned    bool
+	err      error
+	acquires int
+	releases int
+}
+
+func (o *recordingOwnership) Acquire(context.Context, string) (bool, error) {
+	o.acquires++
+	return o.owned, o.err
+}
+
+func (o *recordingOwnership) Release(context.Context, string) error {
+	o.releases++
+	return nil
+}
+
+// TestRecoverySweepOwnershipEdges pins the two ways the ownership consult used to
+// go wrong. Both are positive-shaped: each row asserts what DID happen — an
+// acquire count, a release count, an action count, and the mark read back from
+// the store — rather than that nothing happened.
+func TestRecoverySweepOwnershipEdges(t *testing.T) {
+	t.Parallel()
+
+	markedAt := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+
+	type testCase struct {
+		name   string
+		owner  *recordingOwnership
+		assert func(t *testing.T, o *recordingOwnership, recovered, calls int, st engine.InstanceState)
+	}
+
+	cases := []testCase{
+		{
+			// A backend that cannot ANSWER is not a backend that says "someone else
+			// owns it". SQLite has no advisory locking, so persistence's SQLite
+			// ownership returns kernel.ErrOwnershipUnsupported from every Acquire —
+			// and a SQLite deployment MUST construct that port to satisfy
+			// NewCachingInstanceStore, then is invited by WithInstanceOwnership's own
+			// doc to pass the same value here. Conflating the two switched crash
+			// recovery off permanently on exactly those deployments.
+			name: "an unsupported backend falls back to the no-ownership default",
+			owner: &recordingOwnership{
+				err: fmt.Errorf("acquire: %w: no advisory locking", kernel.ErrOwnershipUnsupported),
+			},
+			assert: func(t *testing.T, o *recordingOwnership, recovered, calls int, st engine.InstanceState) {
+				assert.Equal(t, 1, o.acquires, "the ownership path must have executed")
+				assert.Equal(t, 1, recovered, "an unanswerable backend must not disable recovery")
+				assert.Equal(t, 1, calls, "the abandoned action must be invoked")
+				assert.Empty(t, st.PendingCommands, "the mark must be cleared by the recovery")
+				assert.Zero(t, o.releases, "nothing was acquired, so nothing is released")
+			},
+		},
+		{
+			// Ownership taken for an instance the sweep turns out to have no work on
+			// must be handed back. Acquire is sticky and its held-set is shared with
+			// whatever else holds the same port, so this is the one case the sweep
+			// can safely release: it performed nothing.
+			name:  "ownership taken for an instance with nothing to do is released",
+			owner: &recordingOwnership{owned: true},
+			assert: func(t *testing.T, o *recordingOwnership, recovered, calls int, st engine.InstanceState) {
+				assert.Equal(t, 1, o.acquires)
+				assert.Equal(t, 1, o.releases,
+					"ownership acquired for an instance the sweep did not drive must be released")
+				assert.Zero(t, recovered)
+				assert.Zero(t, calls)
+				assert.NotEmpty(t, st.PendingCommands, "the mark survives for whoever can resolve the definition")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			calls := 0
+			def := &model.ProcessDefinition{
+				ID: "own-edge-def", Version: 1,
+				Nodes: []model.Node{
+					event.NewStart("start"),
+					activity.NewServiceTask("work", activity.WithTaskAction("lease-action")),
+					event.NewEnd("end"),
+				},
+				Flows: []flow.SequenceFlow{
+					{ID: "f1", Source: "start", Target: "work"},
+					{ID: "f2", Source: "work", Target: "end"},
+				},
+			}
+			cat := action.NewCatalog(map[string]action.Action{
+				"lease-action": action.ActionFunc(func(context.Context, map[string]any) (map[string]any, error) {
+					calls++
+					return nil, nil
+				}),
+			})
+			reg := kernel.NewMemDefinitionRegistry()
+			// The release row leaves the definition UNREGISTERED on purpose: that is
+			// the shape where the sweep acquires and then finds nothing it can drive.
+			if tc.owner.err != nil {
+				require.NoError(t, reg.Register(def))
+			}
+
+			store, err := kernel.NewMemInstanceStore()
+			require.NoError(t, err)
+			markedInstance(t, store, def, "i-own-edge", markedAt)
+
+			driver, err := NewProcessDriver(
+				WithActionCatalog(cat),
+				WithInstanceStore(store),
+				WithDefinitions(reg),
+				WithClock(clockwork.NewFakeClockAt(markedAt.Add(time.Hour))),
+				WithInstanceOwnership(tc.owner),
+			)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
+
+			recovered, _ := driver.RecoverPendingCommands(ctx)
+			st, _, lerr := store.Load(ctx, "i-own-edge")
+			require.NoError(t, lerr)
+			tc.assert(t, tc.owner, recovered, calls, st)
+		})
+	}
+}
+
+// TestStrandedRemainderIsReportedAtError pins the one place this mechanism loses
+// work permanently, and pins that it says so.
+//
+// A step emitting [InvokeAction, AwaitHuman] where the action succeeds (yielding
+// a follow-up) and the task store is down: the follow-up's commit rewrites the
+// mark for its own step, superseding the AwaitHuman remainder. The instance is
+// then parked with a live token, an engine-state task whose projected row does
+// not exist, and no mark — never listed, never re-driven, never mentioned again.
+//
+// The assertion is on the ERROR record naming the strand, because a mechanism
+// that re-creates its own ticket's failure class must not do it silently. A
+// single transient-looking WARN followed by permanent silence is what this
+// replaces.
+func TestStrandedRemainderIsReportedAtError(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	markedAt := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+
+	def := &model.ProcessDefinition{
+		ID: "strand-def", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("work", activity.WithTaskAction("charge-card")),
+			event.NewEnd("end"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "work"},
+			{ID: "f2", Source: "work", Target: "end"},
+		},
+	}
+	reg := kernel.NewMemDefinitionRegistry()
+	require.NoError(t, reg.Register(def))
+
+	charges := 0
+	cat := action.NewCatalog(map[string]action.Action{
+		"charge-card": action.ActionFunc(func(context.Context, map[string]any) (map[string]any, error) {
+			charges++
+			return map[string]any{"ok": true}, nil
+		}),
+	})
+
+	store, err := kernel.NewMemInstanceStore()
+	require.NoError(t, err)
+	// A non-fire-and-forget InvokeAction — so performing it yields an
+	// ActionCompleted follow-up, which is what supersedes the mark — with a token
+	// genuinely parked on its CommandID, followed by an AwaitHuman that can never
+	// be performed because no TaskStore is configured.
+	_, err = store.Create(ctx, kernel.AppliedStep{
+		State: engine.InstanceState{
+			InstanceID: "i-strand",
+			DefID:      def.ID,
+			DefVersion: def.Version,
+			Status:     engine.StatusRunning,
+			StartedAt:  markedAt,
+			Tokens: []engine.Token{{
+				ID: "tok-1", NodeID: "work", State: engine.TokenWaiting,
+				AwaitCommand: "cmd-strand", EnteredAt: markedAt,
+			}},
+			PendingCommands: []engine.PendingCommand{
+				{Kind: engine.PendingInvokeAction, CommandID: "cmd-strand", Name: "charge-card"},
+				{Kind: engine.PendingAwaitHuman, TaskID: "task-never"},
+			},
+			PendingCommandsAt: markedAt,
+		},
+		Trigger: engine.NewStartInstance(markedAt, nil),
+	})
+	require.NoError(t, err)
+
+	var buf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	driver, err := NewProcessDriver(
+		WithActionCatalog(cat),
+		WithInstanceStore(store),
+		WithDefinitions(reg),
+		WithLogger(logger),
+		WithClock(clockwork.NewFakeClockAt(markedAt.Add(time.Hour))),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = driver.Shutdown(context.Background()) })
+
+	_, err = driver.RecoverPendingCommands(ctx)
+	require.NoError(t, err, "one unrecoverable instance must not abort the batch")
+	require.Equal(t, 1, charges, "the recoverable command must have run")
+
+	logged := buf.String()
+	assert.Contains(t, logged, "level=ERROR",
+		"the strand must be reported at ERROR, not buried in a transient-looking WARN")
+	assert.Contains(t, logged, "PERMANENTLY unrecoverable",
+		"the record must name the consequence, not just the lost mark")
+	assert.Contains(t, logged, "stranded_commands=1")
+	assert.Contains(t, logged, "first_stranded_kind=await_human")
 }

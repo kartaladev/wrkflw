@@ -179,14 +179,20 @@ func humanTaskFixture() recoveryFixture {
 	}
 }
 
-// crashedAt / restartedAt bracket the recovery grace window. Both passes — boot
-// and periodic — decline a mark younger than [runtime.WithRecoveryLease] (5m by
-// default), because a fresh mark may belong to a perform another live replica is
-// still running. So the restart has to happen on the far side of that window,
-// and it is a FAKE clock rather than a wait: nothing here sleeps.
+// crashedAt / restartedAt model a FAST restart — two seconds, well inside the
+// default five-minute grace window ([runtime.WithRecoveryLease]).
+//
+// That is the case worth pinning, and it is deliberately not on the far side of
+// the window. A pod restarting in seconds is the ordinary shape of the crash this
+// ticket exists to recover from, and a revision of this file that moved the
+// restart outside the window to accommodate a boot pass which honoured it
+// accepted, without noticing, that a fast restart recovered nothing at all. The
+// boot pass no longer waits out the window; this pair is what holds it to that.
+//
+// A FAKE clock, not a wait: nothing in this file sleeps.
 var (
 	crashedAt   = time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
-	restartedAt = crashedAt.Add(30 * time.Minute)
+	restartedAt = crashedAt.Add(2 * time.Second)
 )
 
 // driverFor builds a driver over store wired for f, with its clock pinned at now.

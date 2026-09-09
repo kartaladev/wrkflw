@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/jonboulle/clockwork"
 
@@ -153,6 +154,13 @@ type ProcessEngine struct {
 	// omitDefinition is the WithoutEmbeddedDefinition setting, applied to every
 	// ProcessInstance this engine returns. Marshalling policy only.
 	omitDefinition bool
+
+	// sweepOnce guards the periodic crash-recovery sweeper so a second Start does
+	// not start a second one; stopSweep cancels it and waits, and is nil until
+	// Start has run. Both are engine-owned and untouched for a consumer-injected
+	// driver.
+	sweepOnce sync.Once
+	stopSweep func(context.Context) error
 }
 
 // NewProcessEngine constructs a ProcessEngine facade from functional options over a coherent
@@ -236,6 +244,13 @@ func NewProcessEngine(opts ...Option) (*ProcessEngine, error) {
 			// non-nil by here.
 			runtime.WithInstanceLister(c.lister),
 		}
+		if c.ownership != nil {
+			// The exclusion the recovery sweep consults, from the same port a
+			// CachingInstanceStore takes. Without it the sweep falls back to
+			// at-least-once across replicas — correct, documented, and strictly
+			// weaker than a guarantee the deployment may already hold.
+			dopts = append(dopts, runtime.WithInstanceOwnership(c.ownership))
+		}
 		if c.timerStore != nil {
 			dopts = append(dopts, runtime.WithTimerStore(c.timerStore))
 		}
@@ -278,6 +293,35 @@ func (e *ProcessEngine) Start(ctx context.Context) error {
 	if err := e.driver.Start(ctx); err != nil {
 		return fmt.Errorf("workflow-service: start: %w", err)
 	}
+	// Start the periodic crash-recovery sweep for the driver this engine owns.
+	//
+	// runtime keeps its background workers consumer-started — `go relay.Run(ctx)`,
+	// `go notifier.Run(ctx)` — because it is a library. This is the assembled
+	// product, and it is the layer that already starts the driver's scheduler, so
+	// it is where the sweep's retry loop belongs. Without it nothing in-tree ever
+	// started RunRecoverySweep: driver.Start's boot pass ran once, and a mark
+	// abandoned by a still-running process was never revisited.
+	//
+	// Bound to ctx exactly as the owned scheduler is, and stopped by Shutdown, so
+	// it never outlives the engine. Idempotent: a second Start does not start a
+	// second sweeper.
+	e.sweepOnce.Do(func() {
+		sweepCtx, stop := context.WithCancel(ctx)
+		done := make(chan struct{})
+		e.stopSweep = func(sctx context.Context) error {
+			stop()
+			select {
+			case <-done:
+				return nil
+			case <-sctx.Done():
+				return sctx.Err()
+			}
+		}
+		go func() {
+			defer close(done)
+			_ = e.driver.RunRecoverySweep(sweepCtx)
+		}()
+	})
 	return nil
 }
 
@@ -287,6 +331,13 @@ func (e *ProcessEngine) Start(ctx context.Context) error {
 func (e *ProcessEngine) Shutdown(ctx context.Context) error {
 	if !e.ownsDriver {
 		return nil
+	}
+	// Stop the recovery sweeper before the driver, so its in-flight pass finishes
+	// against a driver that is still admitting work rather than racing the drain.
+	if stop := e.stopSweep; stop != nil {
+		if err := stop(ctx); err != nil {
+			return fmt.Errorf("workflow-service: shutdown: recovery sweep: %w", err)
+		}
 	}
 	if err := e.driver.Shutdown(ctx); err != nil {
 		return fmt.Errorf("workflow-service: shutdown: %w", err)

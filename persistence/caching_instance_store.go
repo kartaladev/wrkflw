@@ -381,7 +381,16 @@ func (c *CachingInstanceStore) RunInTx(ctx context.Context, fn func(context.Cont
 // capability by type assertion (as it does for [kernel.TxRunner]), so a wrapper
 // that swallowed it would silently degrade every wrapped store to "the mark is
 // never rewritten" — and a failing recovery would then re-perform a parked
-// instance's whole command list once per grace window, forever.
+// instance's whole command list once per sweep TICK, forever. Not once per grace
+// window: the window is measured against a stamp only this call rewrites, so a
+// store that cannot rewrite it never ages out of the window at all.
+//
+// ⚠ This wrapper ALWAYS satisfies kernel.PendingCommandWriter, so the driver's
+// type-assertion probe succeeds even when the backing store cannot write the
+// mark, and the no-op below is then indistinguishable from a successful write.
+// The Warn logged there is the only diagnosis; NewCachingInstanceStore's one-time
+// Warn for the analogous AlwaysOwn misconfiguration is the pattern to follow if
+// this ever needs to be louder.
 //
 // Eviction rather than an in-place cache update: the write rewrites the durable
 // snapshot WITHOUT advancing the version, so a cached entry keyed on that same
@@ -403,6 +412,12 @@ func (c *CachingInstanceStore) RunInTx(ctx context.Context, fn func(context.Cont
 func (c *CachingInstanceStore) WritePendingCommands(ctx context.Context, id string, expected kernel.Version, cmds []engine.PendingCommand, at time.Time) error {
 	writer, ok := c.backing.(kernel.PendingCommandWriter)
 	if !ok {
+		// The probe upstream cannot see this: CachingInstanceStore satisfies the
+		// interface unconditionally, so the driver believes progress was recorded.
+		// Say so once per call rather than returning a silent nil.
+		c.logger.LogAttrs(ctx, slog.LevelWarn,
+			"persistence: backing instance store cannot rewrite the pending-command mark; recovery cannot record progress and will re-perform on every sweep tick",
+			slog.String("instance_id", id))
 		return nil
 	}
 	if err := writer.WritePendingCommands(ctx, id, expected, cmds, at); err != nil {
