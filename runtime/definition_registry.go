@@ -72,6 +72,12 @@ func DefaultDefinitionRegistry() *kernel.MemDefinitionRegistry {
 // Returns:
 //   - [kernel.ErrNilDefinition] if def is nil.
 //   - [kernel.ErrEmptyDefinitionID] if def.ID is empty.
+//   - [kernel.ErrInvalidDefinition] wrapping [kernel.ErrDefinitionIDTooLong],
+//     [kernel.ErrDefinitionIDNotUTF8], [kernel.ErrDefinitionIDContainsNUL] or
+//     [kernel.ErrDefinitionVersionTooLarge] if def.ID or def.Version falls
+//     outside the domain every supported backend stores faithfully. These apply
+//     even here, where nothing touches a database, so that an in-memory
+//     registration and a durable publish accept exactly the same definitions.
 //   - [kernel.ErrInvalidDefinition] (wrapped together with every rule def broke)
 //     if def fails [model.Validate].
 //   - [kernel.ErrDefinitionExists] (wrapped with the versioned key) if

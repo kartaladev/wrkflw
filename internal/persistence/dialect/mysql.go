@@ -57,6 +57,20 @@ func (mysql) UpsertTask() string {
 // treat "0 rows" as proof that a conflicting row exists. Read it back.
 func (mysql) InsertIgnorePrefix() string { return "INSERT IGNORE" }
 
+// InsertIgnoreDefinition returns MySQL's insert-if-absent clause for the
+// process-definition insert.
+//
+// "ON DUPLICATE KEY UPDATE def_id = def_id" is a deliberate no-op assignment.
+// It suppresses ONLY the duplicate-key error and reports zero affected rows on
+// a duplicate (MySQL counts an update to a column's existing value as 0), which
+// is exactly the insert-if-absent contract the caller needs — while leaving
+// every other error loud. INSERT IGNORE would suppress those too, silently
+// truncating an over-long def_id and clamping an out-of-range version, and
+// reporting both as a successful insert.
+func (mysql) InsertIgnoreDefinition() string {
+	return "\n\t\t\t ON DUPLICATE KEY UPDATE def_id = def_id"
+}
+
 // InsertIgnoreDedup returns an empty string. MySQL uses the INSERT IGNORE
 // prefix form ([InsertIgnorePrefix]) rather than a trailing conflict clause.
 func (mysql) InsertIgnoreDedup() string { return "" }

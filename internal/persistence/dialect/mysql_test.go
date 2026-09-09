@@ -191,6 +191,18 @@ func TestMySQLCapabilities(t *testing.T) {
 				assert.Equal(t, "", d.NotifyStatement("wrkflw_outbox"))
 			},
 		},
+		{
+			// NOT "INSERT IGNORE": that would suppress truncation and
+			// out-of-range errors too. This suppresses only the duplicate key.
+			name: "InsertIgnoreDefinition suppresses only the duplicate key",
+			assert: func(t *testing.T) {
+				t.Helper()
+				const want = "\n\t\t\t ON DUPLICATE KEY UPDATE def_id = def_id"
+				assert.Equal(t, want, d.InsertIgnoreDefinition())
+				assert.NotContains(t, d.InsertIgnoreDefinition(), "IGNORE",
+					"the definitions site must not use MySQL's blanket error suppression")
+			},
+		},
 	}
 
 	for _, tc := range cases {

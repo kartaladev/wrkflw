@@ -55,6 +55,12 @@ func (sqliteDialect) UpsertTask() string {
 // ([InsertIgnoreDedup]), identical to Postgres.
 func (sqliteDialect) InsertIgnorePrefix() string { return "INSERT" }
 
+// InsertIgnoreDefinition returns the conflict clause for the process-definition
+// insert, identical to Postgres.
+func (sqliteDialect) InsertIgnoreDefinition() string {
+	return " ON CONFLICT (def_id, version) DO NOTHING"
+}
+
 // InsertIgnoreDedup returns the conflict suffix for an insert-if-absent write.
 // SQLite uses the same "ON CONFLICT DO NOTHING" clause as Postgres.
 func (sqliteDialect) InsertIgnoreDedup() string { return " ON CONFLICT DO NOTHING" }

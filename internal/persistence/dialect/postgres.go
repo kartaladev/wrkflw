@@ -62,6 +62,10 @@ func (postgres) UpsertTask() string {
 // ([InsertIgnoreDedup]).
 func (postgres) InsertIgnorePrefix() string { return "INSERT" }
 
+// InsertIgnoreDefinition returns the conflict clause for the process-definition
+// insert. Postgres expresses insert-if-absent the same way at both sites.
+func (postgres) InsertIgnoreDefinition() string { return " ON CONFLICT (def_id, version) DO NOTHING" }
+
 // InsertIgnoreDedup returns the conflict suffix for an insert-if-absent write.
 func (postgres) InsertIgnoreDedup() string { return " ON CONFLICT DO NOTHING" }
 

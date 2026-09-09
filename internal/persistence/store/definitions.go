@@ -15,7 +15,6 @@ import (
 	_ "github.com/kartaladev/wrkflw/definition/kinds"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/internal/database"
-	"github.com/kartaladev/wrkflw/internal/database/transaction"
 	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
@@ -98,29 +97,22 @@ func NewDefinitionStore(conn any, d dialect.Dialect, opts ...DefinitionOption) (
 	return ds, nil
 }
 
-// querier returns the [database.Querier] the READ path should use:
-// [DefinitionStore.GetDefinition] and [DefinitionStore.Lookup] issue their
-// SELECTs through it.
+// querier returns a pool-backed [database.Querier] over ds.conn.
 //
-// It joins the caller's ambient transaction when ctx carries one, and falls
-// back to the pool otherwise. Both halves matter:
+// DefinitionStore uses only read-only SELECT queries through this path plus
+// [DefinitionStore.PublishDefinition]'s insert, which needs no explicit
+// transaction: the insert is a single statement made atomic by the conflict
+// clause, and when it is declined the follow-up read-back is safe to run
+// outside a transaction BECAUSE published definitions are immutable. A
+// published (def_id, version) never changes, so whatever row the read-back
+// finds is final — there is no interleaving that could make it observe a
+// value that later becomes something else. That property is established by
+// this change, and it is what makes the pool sufficient here.
 //
-//   - Joining is required for correctness. The write path joins the ambient
-//     transaction, so a read that went to the pool instead would be looking at
-//     a different connection than the one holding the caller's uncommitted
-//     writes. A publish-then-read inside a single unit would then miss the row
-//     it had just written — and on SQLite, whose write transaction holds the
-//     one connection, the read would block on it and hang. That is the same
-//     deadlock class moving the WRITE onto the transaction was meant to
-//     remove; leaving the read behind merely relocated it.
-//   - Falling back to the pool, rather than beginning a transaction, is why
-//     this uses [transaction.Join] and not [transaction.JoinOrBegin]. Lookup is
-//     a hot path; wrapping every uncontextualised read in its own transaction
-//     would be a real cost for no benefit.
+// Composing a publish with a caller's own writes in one transaction is issue
+// #151, deliberately not attempted here.
 func (ds *DefinitionStore) querier(ctx context.Context) database.Querier {
-	if q, ok := transaction.Join(ctx); ok {
-		return q
-	}
+	_ = ctx // retained for API stability; callers pass ctx to the returned Querier's methods
 	q, _ := database.From(ds.conn)
 	return q
 }
@@ -149,15 +141,15 @@ func (ds *DefinitionStore) querier(ctx context.Context) database.Querier {
 // is no such deletion path in this package today, which is why this branch has
 // no test; see the note on the publish conformance test.
 //
-// # Retry, and when to stop
+// # Retry
 //
-// Retrying is the right response, but BOUND IT — do not retry indefinitely. On
-// MySQL the insert-if-absent form is INSERT IGNORE, which downgrades any error
-// it meets to a warning, so a write MySQL declined for some reason other than
-// the primary key could present this same signature and would not clear on
-// retry. The one such cause that was reachable through this API — an over-long
-// def_id — is now refused up front by [kernel.MaxDefinitionIDRunes]. A retry
-// budget that expires is a bug report, not a reason to keep waiting.
+// Retrying is the right response, with a bounded budget. Every backend now
+// reports a genuinely failed write as an error rather than as a declined
+// insert — the definitions statement suppresses only the duplicate key, never
+// truncation or an out-of-range value (see
+// [dialect.Dialect.InsertIgnoreDefinition]) — so reaching this branch really
+// does mean "not yet decidable" rather than "quietly broken". A retry budget
+// that expires is therefore a bug report, not a reason to keep waiting.
 var ErrConcurrentPublish = errors.New("workflow-store: definition publish raced a concurrent publish")
 
 // PublishDefinition publishes def as the content of (def.ID, def.Version).
@@ -180,22 +172,17 @@ var ErrConcurrentPublish = errors.New("workflow-store: definition publish raced 
 // definitions. A Version of 0 is rejected there as [model.ErrInvalidVersion];
 // versions are never auto-assigned.
 //
-// # Transaction
+// # Transactions
 //
-// PublishDefinition joins the caller's ambient transaction when ctx carries one
-// (see [transaction.JoinOrBegin]), so a consumer can publish a version and
-// write its own rows as one atomic unit — and a rollback takes the publish with
-// it. With no ambient transaction it commits its own leaf. The read-back
-// happens on the same querier as the insert, which is what makes the rollback
-// total.
+// PublishDefinition runs on the connection pool and does NOT join a caller's
+// ambient transaction, so a publish cannot currently be made atomic with the
+// caller's own writes. That composition is issue #151.
 //
-// A REFUSED publish does not poison the caller's unit. [kernel.ErrDefinitionExists]
-// and [ErrConcurrentPublish] both mean nothing was written, so the unit is
-// committed rather than rolled back and the caller may handle the error and
-// carry on with its other writes in the same transaction. That is deliberate:
-// republishing an existing version is an expected, recoverable flow, and a
-// participant that marked the whole unit rollback-only on an expected outcome
-// would make joining useless.
+// It needs no transaction of its own. The insert is a single statement whose
+// conflict clause makes it atomic, and the read-back on the declined path is
+// sound outside a transaction because a published version is IMMUTABLE: the row
+// the read-back finds can never subsequently change, so there is no interleaving
+// in which this returns a value that was not final.
 //
 // created_at is read from the store's [clockwork.Clock] (override it with
 // [WithDefinitionClock]) and is set by the inserting publish only; an
@@ -212,25 +199,14 @@ func (ds *DefinitionStore) PublishDefinition(ctx context.Context, def *model.Pro
 		return fmt.Errorf("workflow-store: publish definition %s:%d: marshal: %w", def.ID, def.Version, err)
 	}
 
-	q, err := transaction.JoinOrBegin(ctx, ds.conn)
-	if err != nil {
-		return fmt.Errorf("workflow-store: publish definition %s:%d: begin: %w", def.ID, def.Version, err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = q.Rollback(ctx)
-		}
-	}()
+	q := ds.querier(ctx)
 
-	// Insert-if-absent, assembled from the dialect's prefix and suffix so no
-	// inline dialect checks are needed: "INSERT ... ON CONFLICT DO NOTHING" on
-	// Postgres and SQLite, "INSERT IGNORE ..." on MySQL.
+	// Insert-if-absent. The conflict clause comes from the dialect so no inline
+	// dialect checks are needed here; see [dialect.Dialect.InsertIgnoreDefinition]
+	// for why the definitions site does NOT use MySQL's INSERT IGNORE.
 	res, err := q.Exec(ctx, ds.dialect.Rebind(
-		ds.dialect.InsertIgnorePrefix()+
-			` INTO wrkflw_definitions (def_id, version, definition, created_at)
-			 VALUES (?,?,?,?)`+
-			ds.dialect.InsertIgnoreDedup()),
+		`INSERT INTO wrkflw_definitions (def_id, version, definition, created_at)
+		 VALUES (?,?,?,?)`+ds.dialect.InsertIgnoreDefinition()),
 		def.ID, def.Version, data, timeArg(ds.dialect, ds.clk.Now().UTC()),
 	)
 	if err != nil {
@@ -241,92 +217,51 @@ func (ds *DefinitionStore) PublishDefinition(ctx context.Context, def *model.Pro
 	if err != nil {
 		return fmt.Errorf("workflow-store: publish definition %s:%d: rows affected: %w", def.ID, def.Version, err)
 	}
-
-	// RowsAffected == 0 means the insert was declined. It does NOT on its own
-	// mean a conflicting row exists, so the stored row is read back before
-	// anything is concluded.
-	//
-	// A note on MySQL, because the obvious guess is wrong and was measured:
-	// INSERT IGNORE downgrades errors to warnings, but an over-long def_id does
-	// NOT arrive here. MySQL truncates it and reports RowsAffected == 1 — the
-	// success branch — which is why that hazard is prevented at the gate by
-	// [kernel.MaxDefinitionIDRunes] rather than detected here. A guard on this
-	// branch would never have fired for it.
-	if n == 0 {
-		outcome := ds.assertPublishedIsIdentical(ctx, q, def, data)
-
-		// ErrDefinitionExists and ErrConcurrentPublish are SEMANTIC outcomes,
-		// not failures of this unit of work: the insert affected zero rows, so
-		// nothing was written and there is nothing to undo. Commit rather than
-		// let the deferred rollback run.
-		//
-		// This matters because of what Rollback means to a JOINED participant.
-		// It does not roll back a nested unit — there is no such thing — it
-		// marks the caller's ENTIRE transaction rollback-only. Rolling back on
-		// an expected conflict would therefore destroy the caller's unrelated
-		// writes in the same unit, which would defeat the whole point of
-		// joining an ambient transaction. Commit is a no-op when joined and
-		// correctly closes an owned leaf, so this is right both ways.
-		//
-		// A read-back that failed for an infrastructure reason is NOT in that
-		// set and deliberately falls through to the rollback: that unit's
-		// health is in doubt.
-		if outcome == nil || isSemanticPublishOutcome(outcome) {
-			if err := q.Commit(ctx); err != nil {
-				return fmt.Errorf("workflow-store: publish definition %s:%d: commit: %w", def.ID, def.Version, err)
-			}
-			committed = true
-		}
-		return outcome
+	if n != 0 {
+		return nil
 	}
 
-	if err := q.Commit(ctx); err != nil {
-		return fmt.Errorf("workflow-store: publish definition %s:%d: commit: %w", def.ID, def.Version, err)
+	// Zero rows means the primary key already holds this version. Read it back
+	// and compare; the row is immutable, so what is read is final.
+	stored, err := ds.readPublished(ctx, q, def)
+	if err != nil {
+		return err
 	}
-	committed = true
-	return nil
+	return ds.compareWithPublished(stored, data, def)
 }
 
-// isSemanticPublishOutcome reports whether err is one of the two expected,
-// non-failure results of a declined insert — the publish was refused, but the
-// unit of work is intact and wrote nothing.
-func isSemanticPublishOutcome(err error) bool {
-	return errors.Is(err, kernel.ErrDefinitionExists) || errors.Is(err, ErrConcurrentPublish)
-}
-
-// assertPublishedIsIdentical reads the stored definition back through q — the
-// same querier the declined insert ran on, so it sees that unit's own writes
-// and rolls back with it — and reports whether the already-published content
-// matches incoming.
-func (ds *DefinitionStore) assertPublishedIsIdentical(
+// readPublished reads the already-published definition back through q, the same
+// querier the declined insert ran on.
+//
+// Returns a wrapped [ErrConcurrentPublish] when no row is visible. Any other
+// non-nil error is an infrastructure failure of the read itself.
+func (ds *DefinitionStore) readPublished(
 	ctx context.Context,
 	q database.Querier,
 	def *model.ProcessDefinition,
-	incoming []byte,
-) error {
+) ([]byte, error) {
 	var stored []byte
 	err := q.QueryRow(ctx, ds.dialect.Rebind(
 		`SELECT definition FROM wrkflw_definitions WHERE def_id = ? AND version = ?`),
 		def.ID, def.Version,
 	).Scan(&stored)
 	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("%w: %s:%d", ErrConcurrentPublish, def.ID, def.Version)
+		return nil, fmt.Errorf("%w: %s:%d", ErrConcurrentPublish, def.ID, def.Version)
 	}
 	if err != nil {
-		return fmt.Errorf("workflow-store: publish definition %s:%d: read back: %w", def.ID, def.Version, err)
+		return nil, fmt.Errorf("workflow-store: publish definition %s:%d: read back: %w", def.ID, def.Version, err)
 	}
+	return stored, nil
+}
 
+// compareWithPublished reports the publish outcome for an insert that was
+// declined because (def.ID, def.Version) already holds stored: nil when the
+// content is the same, [kernel.ErrDefinitionExists] when it differs, or a
+// decode error naming WHICH side failed.
+func (ds *DefinitionStore) compareWithPublished(stored, incoming []byte, def *model.ProcessDefinition) error {
 	same, err := sameDefinitionContent(stored, incoming)
 	if err != nil {
-		// Deliberately drops err. A decode failure here carries fragments of
-		// the STORED definition (an unknown node kind name, a malformed field)
-		// and this error is returned to whoever attempted the publish, who is
-		// not necessarily entitled to read the stored definition. The caller
-		// gets the key it already supplied and nothing it did not. The detail
-		// stays server-side; the condition means version skew or a row written
-		// outside this API, which is an operator problem, not a caller one.
-		return fmt.Errorf("workflow-store: publish definition %s:%d: cannot decode the stored definition",
-			def.ID, def.Version)
+		return fmt.Errorf("workflow-store: publish definition %s:%d: %w", def.ID, def.Version, err)
 	}
 	if !same {
 		return fmt.Errorf("%w: %s:%d: content differs from the published version",
@@ -383,13 +318,29 @@ func (ds *DefinitionStore) assertPublishedIsIdentical(
 // nothing a reader can observe through this API differs between the two. It
 // also fails closed — nothing is overwritten either way.
 func sameDefinitionContent(stored, incoming []byte) (bool, error) {
-	normStored, err := normaliseDefinition(stored)
-	if err != nil {
-		return false, fmt.Errorf("stored definition: %w", err)
-	}
+	// The INCOMING side first, so a fault in the caller's own definition is
+	// never misattributed to stored data and never sends an operator looking in
+	// the wrong place. Its detail is safe to return: these are the caller's own
+	// bytes, which it just supplied.
 	normIncoming, err := normaliseDefinition(incoming)
 	if err != nil {
-		return false, fmt.Errorf("incoming definition: %w", err)
+		return false, fmt.Errorf("cannot re-decode the definition supplied for publication: %w", err)
+	}
+
+	normStored, err := normaliseDefinition(stored)
+	if err != nil {
+		// Deliberately drops err. A decode failure here carries fragments of
+		// the STORED definition — an unknown node kind name, a malformed field
+		// — and this error goes to whoever attempted the publish, who is not
+		// necessarily entitled to read what is stored under this key. The
+		// caller gets the key it already supplied and nothing it did not.
+		//
+		// The dropped detail is NOT logged anywhere: this type holds no logger,
+		// and adding one is out of scope here. An operator diagnosing this must
+		// read the row directly. Stated plainly because an earlier wording
+		// claimed the detail "stays server-side", implying a server-side record
+		// that does not exist.
+		return false, errors.New("cannot decode the stored definition")
 	}
 	return bytes.Equal(normStored, normIncoming), nil
 }

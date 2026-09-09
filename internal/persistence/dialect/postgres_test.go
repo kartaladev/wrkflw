@@ -218,11 +218,19 @@ func TestPostgresUpsertClauses(t *testing.T) {
 				assert.Equal(t, want, got)
 			},
 		},
+		{
+			name: "InsertIgnoreDefinition names the (def_id, version) conflict target",
+			assert: func(t *testing.T, got string) {
+				t.Helper()
+				const want = " ON CONFLICT (def_id, version) DO NOTHING"
+				assert.Equal(t, want, got)
+			},
+		},
 	}
 
 	// results is indexed by case position: it must gain or lose an element
 	// whenever cases does, or the survivors silently mis-pair.
-	results := []string{d.UpsertTimer()}
+	results := []string{d.UpsertTimer(), d.InsertIgnoreDefinition()}
 	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

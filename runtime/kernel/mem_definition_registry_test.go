@@ -180,24 +180,29 @@ func TestMemDefinitionRegistryLatestIsHighestVersion(t *testing.T) {
 	assert.Equal(t, v1, p1, "Pinned Version(order,1) should still resolve to v1")
 }
 
-// TestValidateDefinitionBoundsTheID pins the definition-ID length bound.
+// TestValidateDefinitionEnforcesTheStorableDomain pins the gate to the domain
+// every supported backend stores faithfully.
 //
-// The bound exists because MySQL's def_id is VARCHAR(255) and the publish path
-// uses INSERT IGNORE, which TRUNCATES an over-long value and reports success —
-// storing the row under a key the caller never chose. Refusing the input here
-// closes that on every backend at once, so the set of publishable definitions
-// no longer depends on which database is behind the store.
+// Each rejected property is one where the three backends were MEASURED to
+// disagree, and where MySQL's INSERT IGNORE turns the disagreement into a
+// silent success — a write that reports nil while storing something the caller
+// did not ask for:
 //
-// The multibyte case is the reason this counts runes and not bytes: 255
-// multibyte runes is well over 255 BYTES, but MySQL's utf8mb4 VARCHAR(255)
-// holds 255 CHARACTERS, so a len() bound would reject IDs the storage accepts
-// happily.
-func TestValidateDefinitionBoundsTheID(t *testing.T) {
+//	property              SQLite        Postgres          MySQL
+//	>255 runes            stores        stores            TRUNCATES
+//	invalid UTF-8         stores raw    rejects (22021)   TRUNCATES
+//	NUL byte              stores        rejects (22021)   stores
+//	Version > MaxInt32    stores        rejects (int4)    CLAMPS
+//
+// Every rejection is paired with the accepting case just inside it. A bound
+// that rejected everything would satisfy the refusals on their own, so the
+// at-limit accepts are what stop this test passing for the wrong reason.
+func TestValidateDefinitionEnforcesTheStorableDomain(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
 		name   string
-		id     string
+		def    *model.ProcessDefinition
 		assert func(t *testing.T, err error)
 	}
 
@@ -205,44 +210,91 @@ func TestValidateDefinitionBoundsTheID(t *testing.T) {
 		t.Helper()
 		require.NoError(t, err)
 	}
-	refusedAsTooLong := func(t *testing.T, err error) {
-		t.Helper()
-		require.Error(t, err)
-		require.ErrorIs(t, err, kernel.ErrInvalidDefinition,
-			"must wrap ErrInvalidDefinition so the gate's callers match it uniformly; got %v", err)
-		assert.ErrorIs(t, err, kernel.ErrDefinitionIDTooLong,
-			"must also wrap the specific rule; got %v", err)
+	refusedAs := func(sentinel error) func(*testing.T, error) {
+		return func(t *testing.T, err error) {
+			t.Helper()
+			require.Error(t, err)
+			require.ErrorIs(t, err, kernel.ErrInvalidDefinition,
+				"must wrap ErrInvalidDefinition so callers match the gate uniformly; got %v", err)
+			assert.ErrorIs(t, err, sentinel,
+				"must also wrap the specific rule; got %v", err)
+		}
 	}
 
 	cases := []testCase{
+		// ── length, in runes ──
 		{
-			name:   "an ID at the limit is accepted",
-			id:     strings.Repeat("a", kernel.MaxDefinitionIDRunes),
+			name:   "an ID at the rune limit is accepted",
+			def:    minimalValidDef(strings.Repeat("a", kernel.MaxDefinitionIDRunes), 1),
 			assert: accepted,
 		},
 		{
 			name:   "an ID one rune over the limit is refused",
-			id:     strings.Repeat("a", kernel.MaxDefinitionIDRunes+1),
-			assert: refusedAsTooLong,
+			def:    minimalValidDef(strings.Repeat("b", kernel.MaxDefinitionIDRunes+1), 1),
+			assert: refusedAs(kernel.ErrDefinitionIDTooLong),
 		},
 		{
 			// 255 runes, 510 bytes — measured. A byte bound would refuse
 			// this, and MySQL would have stored it without complaint.
 			name:   "a multibyte ID at the rune limit is accepted",
-			id:     strings.Repeat("\u00e9\u00e9\u00e9", kernel.MaxDefinitionIDRunes/3),
+			def:    minimalValidDef(strings.Repeat("\u00e9\u00e9\u00e9", kernel.MaxDefinitionIDRunes/3), 1),
 			assert: accepted,
 		},
 		{
 			name:   "a multibyte ID one rune over the limit is refused",
-			id:     strings.Repeat("\u00e9", kernel.MaxDefinitionIDRunes+1),
-			assert: refusedAsTooLong,
+			def:    minimalValidDef(strings.Repeat("\u00e9", kernel.MaxDefinitionIDRunes+1), 1),
+			assert: refusedAs(kernel.ErrDefinitionIDTooLong),
+		},
+
+		// ── encoding ──
+		{
+			// Short, so the length bound cannot be what refuses it:
+			// RuneCountInString counts each bad byte as one RuneError, which is
+			// exactly why length alone let this through.
+			name:   "an ID that is not valid UTF-8 is refused",
+			def:    minimalValidDef("short-\xff\xfe-id", 1),
+			assert: refusedAs(kernel.ErrDefinitionIDNotUTF8),
+		},
+		{
+			name:   "an ID of valid multibyte UTF-8 is accepted",
+			def:    minimalValidDef("h\u00e9llo-w\u00f6rld-\u65e5\u672c\u8a9e", 1),
+			assert: accepted,
+		},
+
+		// ── NUL, which is valid UTF-8 and so needs its own check ──
+		{
+			name:   "an ID containing a NUL byte is refused",
+			def:    minimalValidDef("nul\x00inside", 1),
+			assert: refusedAs(kernel.ErrDefinitionIDContainsNUL),
+		},
+		{
+			name: "a NUL-containing ID is refused as NUL, not as bad encoding",
+			def:  minimalValidDef("nul\x00inside", 1),
+			assert: func(t *testing.T, err error) {
+				t.Helper()
+				require.Error(t, err)
+				assert.NotErrorIs(t, err, kernel.ErrDefinitionIDNotUTF8,
+					"NUL is valid UTF-8; refusing it as an encoding fault would be the right answer for the wrong reason")
+			},
+		},
+
+		// ── version range ──
+		{
+			name:   "a version at the backend maximum is accepted",
+			def:    minimalValidDef("ver-ok", kernel.MaxDefinitionVersion),
+			assert: accepted,
+		},
+		{
+			name:   "a version one over the backend maximum is refused",
+			def:    minimalValidDef("ver-big", kernel.MaxDefinitionVersion+1),
+			assert: refusedAs(kernel.ErrDefinitionVersionTooLarge),
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			tc.assert(t, kernel.ValidateDefinition(minimalValidDef(tc.id, 1)))
+			tc.assert(t, kernel.ValidateDefinition(tc.def))
 		})
 	}
 }

@@ -121,6 +121,14 @@ func TestSQLiteCapabilities(t *testing.T) {
 				assert.Equal(t, "", d.NotifyStatement("wrkflw_outbox"))
 			},
 		},
+		{
+			name: "InsertIgnoreDefinition mirrors the Postgres conflict target",
+			assert: func(t *testing.T) {
+				t.Helper()
+				const want = " ON CONFLICT (def_id, version) DO NOTHING"
+				assert.Equal(t, want, d.InsertIgnoreDefinition())
+			},
+		},
 	}
 
 	for _, tc := range cases {

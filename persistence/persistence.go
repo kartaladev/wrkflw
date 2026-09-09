@@ -70,15 +70,27 @@ type DefinitionStore interface {
 	//     in flight and uncommitted, so the outcome is not yet decidable.
 	//     Retry, with a bounded budget; a budget that expires is a bug report.
 	//
-	// Definition IDs are limited to kernel.MaxDefinitionIDRunes runes. The
-	// limit is the narrowest of the three backend schemas, so a definition that
-	// publishes on one backend publishes on all of them.
+	// Definition IDs and versions are bounded by kernel.ValidateDefinition to
+	// what every supported backend stores faithfully: at most
+	// kernel.MaxDefinitionIDRunes runes, valid UTF-8, no NUL byte, and a
+	// version no greater than kernel.MaxDefinitionVersion. Each bound is the
+	// narrowest of the three backend schemas, so a definition ACCEPTED by the
+	// gate is stored faithfully on all of them.
 	//
-	// It joins the caller's ambient transaction when there is one, so a publish
-	// can be made atomic with the caller's own writes. A REFUSED publish does
-	// not poison that transaction: ErrDefinitionExists and ErrConcurrentPublish
-	// both mean nothing was written, so the caller may handle the error and
-	// carry on with its other writes in the same unit.
+	// One divergence the gate cannot close, stated because it is a real
+	// difference in behaviour between backends. On MySQL the def_id column
+	// collates as utf8mb4_0900_ai_ci, which is case- and accent-INSENSITIVE, so
+	// "Order" and "order" are the SAME key there and DISTINCT keys on Postgres
+	// and SQLite. Publishing both therefore succeeds on Postgres and SQLite and
+	// refuses the second on MySQL with ErrDefinitionExists naming a key the
+	// caller never published. This is a property of a PAIR of IDs, not of any
+	// single one, so no per-definition check can detect it. Treat definition
+	// IDs as case-insensitive if you need to run on MySQL.
+	//
+	// PublishDefinition runs on the connection pool and does NOT join a
+	// caller's ambient transaction, so a publish cannot currently be made
+	// atomic with the caller's own writes. That composition is tracked
+	// separately as issue #151.
 	PublishDefinition(ctx context.Context, def *model.ProcessDefinition) error
 	// Lookup resolves a Qualifier to a definition.
 	// model.Latest(id) returns the highest-version definition for id;

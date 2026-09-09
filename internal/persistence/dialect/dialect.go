@@ -61,6 +61,26 @@ type Dialect interface {
 	// happened from one the primary key silently declined.
 	InsertIgnorePrefix() string
 
+	// InsertIgnoreDefinition returns the conflict clause appended to the
+	// process-definition insert, making it an insert-if-absent keyed on
+	// (def_id, version): the statement inserts when the version is new and
+	// affects ZERO rows when it already exists.
+	//
+	// It is deliberately NOT [InsertIgnorePrefix]/[InsertIgnoreDedup], even
+	// though the dedup site wants the same "insert if absent" shape. MySQL
+	// implements that shape as INSERT IGNORE, which suppresses EVERY error, not
+	// just the duplicate key: an over-long def_id is silently truncated and an
+	// out-of-range version silently clamped, both reported as a successful
+	// insert of one row. For definitions that is unacceptable — the row lands
+	// under a key the caller never chose — so MySQL uses
+	// ON DUPLICATE KEY UPDATE def_id = def_id here instead, which suppresses
+	// only the duplicate-key error and leaves truncation and range errors loud.
+	// Postgres and SQLite express it as ON CONFLICT DO NOTHING either way.
+	//
+	// The dedup site keeps INSERT IGNORE: its columns are a subscriber and a
+	// message id, with no numeric range or truncation hazard of this kind.
+	InsertIgnoreDefinition() string
+
 	// InsertIgnoreDedup returns the conflict clause (suffix) appended to an
 	// insert-if-absent write. Use together with [InsertIgnorePrefix]:
 	//

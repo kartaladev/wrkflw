@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"strings"
 	"sync"
 	"unicode/utf8"
 
@@ -62,6 +64,51 @@ const MaxDefinitionIDRunes = 255
 // afterwards, and it fails closed on every backend rather than only on MySQL.
 var ErrDefinitionIDTooLong = errors.New("workflow-runtime: definition ID too long")
 
+// ErrDefinitionIDNotUTF8 is returned by [ValidateDefinition] when def.ID is not
+// valid UTF-8. Always wrapped together with [ErrInvalidDefinition].
+//
+// Go strings may hold arbitrary bytes, and an ID assembled from a file, a
+// network payload or a []byte conversion can carry invalid sequences. The three
+// backends then disagree completely — measured, see [ValidateDefinition]:
+// Postgres refuses the write outright (SQLSTATE 22021), MySQL truncates at the
+// first bad byte under INSERT IGNORE, and SQLite stores the raw bytes. The
+// MySQL case is the dangerous one: two distinct IDs sharing a prefix up to
+// their first bad byte become ONE row, so a lookup for one identity can return
+// another's definition with no error at all.
+var ErrDefinitionIDNotUTF8 = errors.New("workflow-runtime: definition ID is not valid UTF-8")
+
+// ErrDefinitionIDContainsNUL is returned by [ValidateDefinition] when def.ID
+// contains a NUL byte. Always wrapped together with [ErrInvalidDefinition].
+//
+// NUL is perfectly valid UTF-8, so [ErrDefinitionIDNotUTF8] does not catch it,
+// and it needs its own check. Measured: Postgres cannot store NUL in a text
+// column at all and rejects it with SQLSTATE 22021, while MySQL and SQLite
+// accept it — so an ID containing one is publishable on two backends and
+// impossible on the third.
+var ErrDefinitionIDContainsNUL = errors.New("workflow-runtime: definition ID contains a NUL byte")
+
+// MaxDefinitionVersion is the largest version publishable on every supported
+// backend.
+//
+// The version column is INT on both MySQL and Postgres — 32-bit — while Go's
+// ProcessDefinition.Version is an int, 64-bit on every platform this runs on.
+// SQLite's INTEGER is 64-bit and stores anything. So the narrowest backend sets
+// the bound, exactly as it does for the ID length.
+//
+// Measured at 2147483648 (one over): SQLite stores it happily, Postgres refuses
+// to encode it for an int4 parameter, and MySQL reports it out of range — which
+// INSERT IGNORE downgrades to a warning while CLAMPING the value to 2147483647.
+// That last case is the reason this is a gate and not a comment: the publish
+// returns nil, and the row lands at a version the caller never asked for, so a
+// read at the requested version finds nothing.
+const MaxDefinitionVersion = math.MaxInt32
+
+// ErrDefinitionVersionTooLarge is returned by [ValidateDefinition] when
+// def.Version exceeds [MaxDefinitionVersion]. Always wrapped together with
+// [ErrInvalidDefinition]. The lower bound is model.Validate's business:
+// it already refuses Version < 1.
+var ErrDefinitionVersionTooLarge = errors.New("workflow-runtime: definition version too large")
+
 // ── The shared authoring gate ─────────────────────────────────────────────
 
 // ValidateDefinition is the authoring gate every definition passes through
@@ -69,8 +116,11 @@ var ErrDefinitionIDTooLong = errors.New("workflow-runtime: definition ID too lon
 // returns:
 //   - [ErrNilDefinition] if def is nil.
 //   - [ErrEmptyDefinitionID] if def.ID is empty.
-//   - [ErrDefinitionIDTooLong], wrapped with [ErrInvalidDefinition], if def.ID
-//     exceeds [MaxDefinitionIDRunes] runes.
+//   - [ErrDefinitionIDTooLong], [ErrDefinitionIDNotUTF8],
+//     [ErrDefinitionIDContainsNUL] or [ErrDefinitionVersionTooLarge] — each
+//     wrapped with [ErrInvalidDefinition] — if def.ID or def.Version falls
+//     outside what every supported backend stores faithfully. See
+//     "# The storable domain" below.
 //   - [ErrInvalidDefinition], wrapped together with the qualifier and every
 //     rule def broke, if def fails [model.Validate]. Callers may match either
 //     this sentinel or a specific rule (e.g. [model.ErrNoStartEvent],
@@ -88,6 +138,34 @@ var ErrDefinitionIDTooLong = errors.New("workflow-runtime: definition ID too lon
 // A Version of 0 needs no separate check: it is the "latest" sentinel and
 // [model.Validate] already refuses it with [model.ErrInvalidVersion].
 //
+// # The storable domain
+//
+// The checks on def.ID and def.Version are not cosmetic hygiene. Each one
+// closes a case where the three supported backends do NOT agree, established by
+// publishing hostile values against real Postgres, MySQL and SQLite rather than
+// by reading their documentation:
+//
+//	property              SQLite        Postgres            MySQL
+//	----------------------------------------------------------------------
+//	>255 runes            stores        stores              TRUNCATES silently
+//	invalid UTF-8         stores raw    rejects (22021)     TRUNCATES silently
+//	NUL byte              stores        rejects (22021)     stores
+//	Version > MaxInt32    stores        rejects (int4)      CLAMPS silently
+//
+// The MySQL column is the narrowest in every row, and its insert-if-absent form
+// is INSERT IGNORE, which downgrades each of those failures to a warning: the
+// write reports success while storing something the caller did not ask for.
+// Rejecting the input here is what makes the two promises this gate carries
+// true — that an in-memory registration and a durable publish accept exactly
+// the same definitions, and that a definition publishable on one backend is
+// publishable on all of them.
+//
+// A known divergence this gate CANNOT close: MySQL's def_id collation is
+// utf8mb4_0900_ai_ci, which is case- and accent-INSENSITIVE, so "a" and "A"
+// are the same primary key there and distinct keys on Postgres and SQLite.
+// That is a property of a PAIR of IDs, not of any single one, so no per-value
+// check can detect it. See the note on DefinitionStore.PublishDefinition.
+//
 // It is exported so a consumer can run the same check itself — before a publish,
 // or in a test — instead of discovering the rejection at the write.
 //
@@ -101,13 +179,22 @@ func ValidateDefinition(def *model.ProcessDefinition) error {
 	if def.ID == "" {
 		return ErrEmptyDefinitionID
 	}
-	// Bound the ID before anything else looks at the definition: this is what
-	// keeps the set of publishable definitions the same on all three backends.
-	// See [MaxDefinitionIDRunes] for why the limit is 255 and why it counts
-	// runes rather than bytes.
+	// The storable domain, checked before anything else looks at the
+	// definition. Encoding is checked before length because a rune count over
+	// invalid UTF-8 is not meaningful.
+	if !utf8.ValidString(def.ID) {
+		return fmt.Errorf("%w: %w", ErrInvalidDefinition, ErrDefinitionIDNotUTF8)
+	}
+	if strings.ContainsRune(def.ID, 0) {
+		return fmt.Errorf("%w: %w", ErrInvalidDefinition, ErrDefinitionIDContainsNUL)
+	}
 	if n := utf8.RuneCountInString(def.ID); n > MaxDefinitionIDRunes {
 		return fmt.Errorf("%w: %w: %d runes exceeds the %d-rune limit",
 			ErrInvalidDefinition, ErrDefinitionIDTooLong, n, MaxDefinitionIDRunes)
+	}
+	if def.Version > MaxDefinitionVersion {
+		return fmt.Errorf("%w: %w: %d exceeds the maximum of %d",
+			ErrInvalidDefinition, ErrDefinitionVersionTooLarge, def.Version, MaxDefinitionVersion)
 	}
 	if err := model.Validate(def); err != nil {
 		return fmt.Errorf("%w: %q: %w", ErrInvalidDefinition, def.Qualifier(), err)

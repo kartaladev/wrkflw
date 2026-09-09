@@ -3,8 +3,6 @@ package store_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -301,6 +299,29 @@ func countDefinitionRows(t *testing.T, b backend, defID string) int {
 	return n
 }
 
+// countDefinitionRowsWithPrefix counts rows whose def_id starts with prefix.
+//
+// It exists because an ID that no backend can store is also an ID that some
+// backend cannot QUERY: Postgres rejects invalid UTF-8 and NUL bytes as bind
+// parameters with SQLSTATE 22021, so asking "how many rows have this exact
+// hostile id?" is not answerable there. prefix must be plain ASCII; the point
+// is to ask a question every backend can represent.
+func countDefinitionRowsWithPrefix(t *testing.T, b backend, prefix string) int {
+	t.Helper()
+
+	s, err := store.New(b.conn, b.dialect)
+	require.NoError(t, err)
+
+	var n int
+	require.NoError(t,
+		s.QuerierForTest(t.Context()).QueryRow(t.Context(), b.dialect.Rebind(
+			`SELECT COUNT(*) FROM wrkflw_definitions WHERE def_id LIKE ?`), prefix+"%",
+		).Scan(&n),
+		"count definition rows with prefix %q", prefix,
+	)
+	return n
+}
+
 // divergentEncoding re-encodes def into JSON that decodes to exactly the same
 // definition but is byte-different from what json.Marshal currently emits, in
 // the two ways a serialisation change realistically shows up:
@@ -546,6 +567,96 @@ func TestDefinitionStorePublishImmutable(t *testing.T) {
 			},
 		},
 		{
+			// Encoding, not length. utf8.RuneCountInString counts each bad byte
+			// as one RuneError, so an invalid-UTF-8 ID sails through the length
+			// bound. Measured: Postgres refuses it (SQLSTATE 22021), MySQL's
+			// INSERT IGNORE truncates at the first bad byte, SQLite stores the
+			// raw bytes. On MySQL that made two distinct IDs one row, so a
+			// lookup for one identity returned another's definition.
+			name: "a definition ID that is not valid UTF-8 is refused and writes no row",
+			def:  minimalValidDef("utf8-bad-\xff\xfe-tail", 1),
+			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
+				require.Error(t, err, "%s: invalid UTF-8 must be refused", b.name)
+				require.ErrorIs(t, err, kernel.ErrInvalidDefinition,
+					"%s: must wrap ErrInvalidDefinition; got %v", b.name, err)
+				assert.ErrorIs(t, err, kernel.ErrDefinitionIDNotUTF8,
+					"%s: must also wrap ErrDefinitionIDNotUTF8; got %v", b.name, err)
+
+				// Asked by ASCII prefix, not by the hostile ID itself: Postgres
+				// rejects that ID as a bind parameter too, so the exact-match
+				// question is unanswerable there. This covers both the ID as
+				// sent and the prefix MySQL would have truncated it to.
+				assert.Equal(t, 0, countDefinitionRowsWithPrefix(t, b, "utf8-bad-"),
+					"%s: nothing may be stored under the ID or its truncation", b.name)
+			},
+		},
+		{
+			// The accept side of the encoding bound: multibyte UTF-8 is
+			// perfectly storable and must not be swept up by the check.
+			name: "a definition ID of valid multibyte UTF-8 is accepted",
+			def:  minimalValidDef("utf8-good-héllo-wörld-日本語", 1),
+			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
+				require.NoError(t, err, "%s: valid multibyte UTF-8 must publish", b.name)
+
+				got, err := ds.GetDefinition(t.Context(), "utf8-good-héllo-wörld-日本語", 1)
+				require.NoError(t, err, "%s: and read back under the same ID", b.name)
+				assert.Equal(t, "utf8-good-héllo-wörld-日本語", got.ID,
+					"%s: stored faithfully, byte for byte", b.name)
+			},
+		},
+		{
+			// NUL is VALID UTF-8, so the encoding check above cannot catch it
+			// and it needs its own. Measured: Postgres cannot store NUL in a
+			// text column at all (SQLSTATE 22021); MySQL and SQLite accept it.
+			name: "a definition ID containing a NUL byte is refused and writes no row",
+			def:  minimalValidDef("nul-mid\x00tail", 1),
+			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
+				require.Error(t, err, "%s: an embedded NUL must be refused", b.name)
+				require.ErrorIs(t, err, kernel.ErrInvalidDefinition,
+					"%s: must wrap ErrInvalidDefinition; got %v", b.name, err)
+				assert.ErrorIs(t, err, kernel.ErrDefinitionIDContainsNUL,
+					"%s: must also wrap ErrDefinitionIDContainsNUL; got %v", b.name, err)
+				// It is valid UTF-8, so it must NOT be reported as an encoding
+				// fault — that would be the right refusal for the wrong reason.
+				assert.NotErrorIs(t, err, kernel.ErrDefinitionIDNotUTF8,
+					"%s: NUL is valid UTF-8; the encoding sentinel must not fire", b.name)
+
+				assert.Equal(t, 0, countDefinitionRowsWithPrefix(t, b, "nul-mid"),
+					"%s: nothing may be stored", b.name)
+			},
+		},
+		{
+			// The version column is INT (32-bit) on MySQL and Postgres while
+			// Go's Version is 64-bit. At the limit every backend stores it.
+			name: "a version at the backend maximum is accepted",
+			def:  minimalValidDef("ver-at-max", kernel.MaxDefinitionVersion),
+			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
+				require.NoError(t, err, "%s: MaxDefinitionVersion must publish", b.name)
+
+				got, err := ds.GetDefinition(t.Context(), "ver-at-max", kernel.MaxDefinitionVersion)
+				require.NoError(t, err, "%s: and read back at the version published", b.name)
+				assert.Equal(t, kernel.MaxDefinitionVersion, got.Version, "%s: stored version", b.name)
+			},
+		},
+		{
+			// One over. Measured: SQLite stores it, Postgres refuses to encode
+			// it for int4, and MySQL CLAMPS it to 2147483647 while INSERT
+			// IGNORE reports success — so the publish returned nil and the row
+			// landed at a version the caller never asked for.
+			name: "a version one over the backend maximum is refused and writes no row",
+			def:  minimalValidDef("ver-over-max", kernel.MaxDefinitionVersion+1),
+			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
+				require.Error(t, err, "%s: an out-of-range version must be refused", b.name)
+				require.ErrorIs(t, err, kernel.ErrInvalidDefinition,
+					"%s: must wrap ErrInvalidDefinition; got %v", b.name, err)
+				assert.ErrorIs(t, err, kernel.ErrDefinitionVersionTooLarge,
+					"%s: must also wrap ErrDefinitionVersionTooLarge; got %v", b.name, err)
+
+				assert.Equal(t, 0, countDefinitionRows(t, b, "ver-over-max"),
+					"%s: nothing may be stored at any version, clamped or otherwise", b.name)
+			},
+		},
+		{
 			name: "version 0 is refused before any I/O",
 			def:  minimalValidDef("pub-zero", 0),
 			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
@@ -573,59 +684,6 @@ func TestDefinitionStorePublishImmutable(t *testing.T) {
 				tc.assert(t, b, ds, ds.PublishDefinition(t.Context(), tc.def))
 			})
 		}
-	})
-}
-
-// TestDefinitionStorePublishConflictPreservesAmbientUnit pins that a REFUSED
-// publish does not destroy the caller's transaction.
-//
-// A joined participant's Rollback does not roll back a nested unit — there is
-// no such thing — it marks the caller's ENTIRE transaction rollback-only. So a
-// participant that rolled back on an expected conflict would silently discard
-// the caller's unrelated writes in the same unit. Republishing an already
-// published version is an expected, recoverable outcome, so it must not do
-// that.
-//
-// Both directions are asserted deliberately. Checking only that the unrelated
-// write survived would also pass if the conflict error had simply been
-// swallowed, which would be a worse bug than the one being fixed.
-func TestDefinitionStorePublishConflictPreservesAmbientUnit(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, b backend) {
-		s, err := store.New(b.conn, b.dialect)
-		require.NoError(t, err)
-		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
-		require.NoError(t, err)
-
-		first := minimalValidDef("tx-conflict", 1)
-		first.CancelActions = []string{"action-first"}
-		require.NoError(t, ds.PublishDefinition(t.Context(), first), "%s: seed publish", b.name)
-
-		conflicting := minimalValidDef("tx-conflict", 1)
-		conflicting.CancelActions = []string{"action-second"}
-
-		// Inside one unit: hit the conflict, handle it, and do an unrelated
-		// write that must survive.
-		var conflictErr error
-		require.NoError(t, s.RunInTx(t.Context(), func(txCtx context.Context) error {
-			conflictErr = ds.PublishDefinition(txCtx, conflicting)
-			return ds.PublishDefinition(txCtx, minimalValidDef("tx-conflict-survivor", 1))
-		}), "%s: the unit must commit despite the refused publish", b.name)
-
-		// Direction 1: the caller was actually told about the conflict.
-		require.Error(t, conflictErr, "%s: the conflicting publish must still be refused", b.name)
-		require.ErrorIs(t, conflictErr, kernel.ErrDefinitionExists,
-			"%s: and must wrap ErrDefinitionExists; got %v", b.name, conflictErr)
-
-		// Direction 2: the unrelated write in the same unit survived.
-		_, err = ds.GetDefinition(t.Context(), "tx-conflict-survivor", 1)
-		require.NoError(t, err,
-			"%s: an unrelated write in the same unit must survive a refused publish", b.name)
-
-		// And immutability still held.
-		got, err := ds.GetDefinition(t.Context(), "tx-conflict", 1)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"action-first"}, got.CancelActions,
-			"%s: the first published content must survive", b.name)
 	})
 }
 
@@ -757,118 +815,5 @@ func TestDefinitionStoreScopedRepublishIsIdempotent(t *testing.T) {
 		err = ds.PublishDefinition(t.Context(), conflicting)
 		require.ErrorIs(t, err, kernel.ErrDefinitionExists,
 			"%s: a real content difference must still be refused; got %v", b.name, err)
-	})
-}
-
-// TestDefinitionStoreReadsSeeAmbientTransaction pins that a publish and a read
-// inside ONE unit of work are on the same connection.
-//
-// Moving only the write onto the ambient transaction and leaving the reads on
-// the pool splits the unit: the row exists on the transaction and the reader
-// looks somewhere else. On SQLite that read blocks on the connection the write
-// holds and the whole thing hangs; on Postgres and MySQL it returns
-// ErrDefinitionNotFound for a row written moments earlier in the same unit.
-func TestDefinitionStoreReadsSeeAmbientTransaction(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, b backend) {
-		s, err := store.New(b.conn, b.dialect)
-		require.NoError(t, err)
-		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
-		require.NoError(t, err)
-
-		require.NoError(t, s.RunInTx(t.Context(), func(txCtx context.Context) error {
-			if err := ds.PublishDefinition(txCtx, minimalValidDef("read-own-write", 1)); err != nil {
-				return err
-			}
-
-			// GetDefinition must see the row this unit just wrote.
-			got, err := ds.GetDefinition(txCtx, "read-own-write", 1)
-			if err != nil {
-				return fmt.Errorf("%s: GetDefinition inside the unit: %w", b.name, err)
-			}
-			assert.Equal(t, "read-own-write", got.ID, "%s: read-your-own-write", b.name)
-
-			// Lookup goes through the same path and must too.
-			latest, err := ds.Lookup(txCtx, model.Latest("read-own-write"))
-			if err != nil {
-				return fmt.Errorf("%s: Lookup inside the unit: %w", b.name, err)
-			}
-			assert.Equal(t, 1, latest.Version, "%s: Lookup latest inside the unit", b.name)
-			return nil
-		}), "%s: the unit must commit", b.name)
-
-		// And the row is really there after the commit.
-		got, err := ds.GetDefinition(t.Context(), "read-own-write", 1)
-		require.NoError(t, err, "%s: after commit", b.name)
-		assert.Equal(t, 1, got.Version, "%s: stored version", b.name)
-	})
-}
-
-// errPublishBoom is the sentinel a RunInTx unit returns to force a rollback.
-var errPublishBoom = errors.New("boom")
-
-// TestDefinitionStorePublishJoinsAmbientTransaction pins that a publish issued
-// inside a Store.RunInTx unit is part of that unit: it disappears when the unit
-// rolls back and survives when the unit commits.
-//
-// Both cases are required. The rollback case alone would also pass if
-// PublishDefinition simply never wrote anything, so the committing case is what
-// makes the rollback case mean "the write joined the ambient transaction"
-// rather than "there was no write".
-func TestDefinitionStorePublishJoinsAmbientTransaction(t *testing.T) {
-	type testCase struct {
-		name   string
-		defID  string
-		unit   func(txCtx context.Context, ds *store.DefinitionStore, def *model.ProcessDefinition) error
-		assert func(t *testing.T, b backend, ds *store.DefinitionStore, err error)
-	}
-
-	cases := []testCase{
-		{
-			name:  "a rolled-back unit leaves no row",
-			defID: "tx-rollback",
-			unit: func(txCtx context.Context, ds *store.DefinitionStore, def *model.ProcessDefinition) error {
-				if err := ds.PublishDefinition(txCtx, def); err != nil {
-					return err
-				}
-				return errPublishBoom
-			},
-			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
-				require.ErrorIs(t, err, errPublishBoom, "%s: RunInTx must surface the unit's error", b.name)
-
-				_, err = ds.GetDefinition(t.Context(), "tx-rollback", 1)
-				require.ErrorIs(t, err, kernel.ErrDefinitionNotFound,
-					"%s: the publish must roll back with the unit; got %v", b.name, err)
-			},
-		},
-		{
-			name:  "a committed unit leaves the row",
-			defID: "tx-commit",
-			unit: func(txCtx context.Context, ds *store.DefinitionStore, def *model.ProcessDefinition) error {
-				return ds.PublishDefinition(txCtx, def)
-			},
-			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
-				require.NoError(t, err, "%s: the committing unit must succeed", b.name)
-
-				got, err := ds.GetDefinition(t.Context(), "tx-commit", 1)
-				require.NoError(t, err, "%s: the publish must survive the commit", b.name)
-				assert.Equal(t, 1, got.Version, "%s: stored version", b.name)
-			},
-		},
-	}
-
-	forEachDialect(t, func(t *testing.T, b backend) {
-		s, err := store.New(b.conn, b.dialect)
-		require.NoError(t, err)
-		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
-		require.NoError(t, err)
-
-		for _, tc := range cases {
-			t.Run(tc.name, func(t *testing.T) {
-				def := minimalValidDef(tc.defID, 1)
-				tc.assert(t, b, ds, s.RunInTx(t.Context(), func(txCtx context.Context) error {
-					return tc.unit(txCtx, ds, def)
-				}))
-			})
-		}
 	})
 }
