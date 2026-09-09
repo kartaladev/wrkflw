@@ -26,6 +26,93 @@ func approve(_ context.Context, in approveIn) (approveOut, error) {
 	return approveOut{Approved: in.Count > 0}, nil
 }
 
+// strictBase is embedded into strictIn. Its exported fields flatten into the
+// parent JSON object even though the type itself is unexported.
+type strictBase struct {
+	Ref string `json:"ref"`
+}
+
+// strictIn exercises every JSON-name rule the strict key check must honour:
+// a promoted field from an embedded struct, a tag with options, an untagged
+// field (named by its Go field name), an excluded field, and an unexported one.
+type strictIn struct {
+	strictBase
+	Count    int    `json:"count,omitempty"`
+	Leading  string `json:",omitempty"` // a leading comma leaves the name empty
+	Untagged string
+	Skipped  string `json:"-"`
+	secret   string
+}
+
+type strictOut struct {
+	Ref      string `json:"ref"`
+	Count    int    `json:"count"`
+	Untagged string `json:"untagged"`
+}
+
+func strictEcho(_ context.Context, in strictIn) (strictOut, error) {
+	_, _ = in.Skipped, in.secret // declared to pin the exclusion rules, not read
+	_ = in.Leading
+	return strictOut{Ref: in.Ref, Count: in.Count, Untagged: in.Untagged}, nil
+}
+
+// StrictInner is embedded BY POINTER into strictPtrIn; encoding/json flattens an
+// embedded pointer-to-struct exactly as it flattens an embedded struct.
+type StrictInner struct {
+	Nested string `json:"nested"`
+}
+
+type strictPtrIn struct {
+	*StrictInner
+	Label string `json:"label"`
+}
+
+// strictCycleIn embeds itself, so the JSON-name walk must terminate.
+type strictCycleIn struct {
+	*strictCycleIn
+	Label string `json:"label"`
+}
+
+func strictPtrEcho(_ context.Context, in strictPtrIn) (strictOut, error) {
+	ref := ""
+	if in.StrictInner != nil {
+		ref = in.Nested
+	}
+	return strictOut{Ref: ref, Untagged: in.Label}, nil
+}
+
+func strictCycleEcho(_ context.Context, in strictCycleIn) (strictOut, error) {
+	_ = in.strictCycleIn // the self-embed exists to exercise the name walk's cycle guard
+	return strictOut{Untagged: in.Label}, nil
+}
+
+// idemIn is the escape hatch the WithStrictInput godoc recommends: declare the
+// engine's stamp yourself so a primary service task can use strict mode.
+type idemIn struct {
+	Ref            string `json:"ref"`
+	IdempotencyKey string `json:"_idempotencyKey"`
+}
+
+type idemOut struct {
+	Idem string `json:"idem"`
+}
+
+func idemEcho(_ context.Context, in idemIn) (idemOut, error) {
+	return idemOut{Idem: in.IdempotencyKey}, nil
+}
+
+type orderIn struct {
+	OrderID string `json:"orderId"`
+}
+
+type orderOut struct {
+	Seen string `json:"seen"`
+}
+
+func orderEcho(_ context.Context, in orderIn) (orderOut, error) {
+	return orderOut{Seen: in.OrderID}, nil
+}
+
 // unencodableOut carries a channel, which encoding/json cannot marshal.
 type unencodableOut struct {
 	Ch chan int `json:"ch"`
@@ -181,6 +268,143 @@ func TestTypedDo(t *testing.T) {
 			},
 		},
 		{
+			// L2: the escape hatch the godoc recommends is the ENTIRE remedy R1
+			// offers for strict mode on a primary service task. Pin it.
+			name: "strict accepts an In that declares the engine's _idempotencyKey",
+			act:  action.Typed(idemEcho, action.WithStrictInput()),
+			in: map[string]any{
+				"ref":             "ana-3",
+				"_idempotencyKey": "inst-42:task",
+			},
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, map[string]any{"idem": "inst-42:task"}, out)
+			},
+		},
+		{
+			// A case-variant is a DIFFERENT map key, so it survives the engine's
+			// stamp; encoding/json then folds case and assigns it. Because
+			// json.Marshal sorts keys byte-wise and 'K'(0x4b) < 'k'(0x6b), the
+			// lowercase twin is applied LAST and wins — silently, under strict.
+			name: "strict rejects a case-variant of the engine's idempotency stamp",
+			act:  action.Typed(idemEcho, action.WithStrictInput()),
+			in: map[string]any{
+				"ref":             "ana-3",
+				"_idempotencyKey": "inst-42:task",
+				"_idempotencykey": "SPOOFED-BY-ATTACKER",
+			},
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.ErrorIs(t, err, action.ErrDecodeInput)
+				assert.Contains(t, err.Error(), "_idempotencykey",
+					"the spoofing key must be named in the rejection")
+				assert.False(t, action.IsRetryable(err))
+				assert.Nil(t, out)
+			},
+		},
+		{
+			name: "strict rejects a case-variant of an ordinary camelCase tag",
+			act:  action.Typed(orderEcho, action.WithStrictInput()),
+			in: map[string]any{
+				"orderId": "ORD-TRUSTED",
+				"orderid": "ORD-ATTACKER",
+			},
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.ErrorIs(t, err, action.ErrDecodeInput)
+				assert.Contains(t, err.Error(), "orderid")
+				assert.False(t, action.IsRetryable(err))
+				assert.Nil(t, out)
+			},
+		},
+		{
+			name: "strict accepts a promoted, an untagged and a leading-comma field",
+			act:  action.Typed(strictEcho, action.WithStrictInput()),
+			in: map[string]any{
+				"ref":      "ana-3", // promoted from the embedded strictBase
+				"count":    2,
+				"Leading":  "a leading comma falls back to the Go field name",
+				"Untagged": "named by its Go field name",
+			},
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, map[string]any{
+					"ref": "ana-3", "count": float64(2), "untagged": "named by its Go field name",
+				}, out)
+			},
+		},
+		{
+			name: "strict rejects a field excluded by a json:\"-\" tag",
+			act:  action.Typed(strictEcho, action.WithStrictInput()),
+			in:   map[string]any{"ref": "ana-3", "Skipped": "not a declared name"},
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.ErrorIs(t, err, action.ErrDecodeInput)
+				assert.Contains(t, err.Error(), "Skipped")
+				assert.Nil(t, out)
+			},
+		},
+		{
+			name: "strict rejects an unexported field name",
+			act:  action.Typed(strictEcho, action.WithStrictInput()),
+			in:   map[string]any{"ref": "ana-3", "secret": "not a declared name"},
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.ErrorIs(t, err, action.ErrDecodeInput)
+				assert.Contains(t, err.Error(), "secret")
+				assert.Nil(t, out)
+			},
+		},
+		{
+			// Lenient is the only mode that places no constraint on In.
+			name: "lenient still accepts a map In and ignores nothing",
+			act: action.Typed(func(_ context.Context, in map[string]any) (map[string]any, error) {
+				return map[string]any{"saw": len(in)}, nil
+			}),
+			in: map[string]any{"ref": "ana-3", "unrelated": 1, "_idempotencyKey": "idem-7"},
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, map[string]any{"saw": float64(3)}, out)
+			},
+		},
+		{
+			name: "strict accepts fields flattened from an embedded POINTER struct",
+			act:  action.Typed(strictPtrEcho, action.WithStrictInput()),
+			in:   map[string]any{"nested": "from the embedded pointer", "label": "L"},
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, "from the embedded pointer", out["ref"])
+				assert.Equal(t, "L", out["untagged"])
+			},
+		},
+		{
+			name: "strict rejects a case-variant of a flattened embedded field",
+			act:  action.Typed(strictPtrEcho, action.WithStrictInput()),
+			in:   map[string]any{"nested": "trusted", "Nested": "spoofed"},
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.ErrorIs(t, err, action.ErrDecodeInput)
+				assert.Contains(t, err.Error(), "Nested")
+				assert.Nil(t, out)
+			},
+		},
+		{
+			// A self-embedding In must not hang the name walk at construction.
+			name: "strict handles a self-embedding In",
+			act:  action.Typed(strictCycleEcho, action.WithStrictInput()),
+			in:   map[string]any{"label": "L"},
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, "L", out["untagged"])
+			},
+		},
+		{
+			name: "strict names every unknown key, sorted, when several are present",
+			act:  action.Typed(orderEcho, action.WithStrictInput()),
+			in:   map[string]any{"orderId": "ORD-1", "zeta": 1, "alpha": 2},
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.ErrorIs(t, err, action.ErrDecodeInput)
+				assert.Contains(t, err.Error(), `unknown keys "alpha", "zeta"`,
+					"several unknown keys are reported together and sorted for a deterministic message")
+				assert.Nil(t, out)
+			},
+		},
+		{
 			name: "context reaches fn and its error is passed through unclassified",
 			act: action.Typed(func(ctx context.Context, _ approveIn) (approveOut, error) {
 				return approveOut{}, ctx.Err()
@@ -324,6 +548,53 @@ func TestTypedConstruction(t *testing.T) {
 			},
 			assert: rejectedAs("action.Typed: invalid Out type **action_test.approveOut: " +
 				"Out must be a struct or a map, optionally behind a single pointer"),
+		},
+		{
+			name: "strict with a struct In is accepted",
+			construct: func() action.Action {
+				return action.Typed(strictEcho, action.WithStrictInput())
+			},
+			assert: accepted,
+		},
+		{
+			name: "strict with a pointer-to-struct In is accepted",
+			construct: func() action.Action {
+				return action.Typed(func(context.Context, *approveIn) (approveOut, error) {
+					return approveOut{}, nil
+				}, action.WithStrictInput())
+			},
+			assert: accepted,
+		},
+		{
+			// DisallowUnknownFields is silently a no-op for map and interface
+			// destinations, so strict on a non-struct In would be a silent lie.
+			name: "strict with a map In is rejected",
+			construct: func() action.Action {
+				return action.Typed(func(context.Context, map[string]any) (approveOut, error) {
+					return approveOut{}, nil
+				}, action.WithStrictInput())
+			},
+			assert: rejectedAs("action.Typed: invalid In type map[string]interface {}: " +
+				"WithStrictInput requires a struct In, optionally behind a single pointer"),
+		},
+		{
+			name: "strict with an any In is rejected",
+			construct: func() action.Action {
+				return action.Typed(func(context.Context, any) (approveOut, error) {
+					return approveOut{}, nil
+				}, action.WithStrictInput())
+			},
+			assert: rejectedAs("action.Typed: invalid In type interface {}: " +
+				"WithStrictInput requires a struct In, optionally behind a single pointer"),
+		},
+		{
+			name: "lenient with a map In is accepted",
+			construct: func() action.Action {
+				return action.Typed(func(context.Context, map[string]any) (approveOut, error) {
+					return approveOut{}, nil
+				})
+			},
+			assert: accepted,
 		},
 		{
 			name: "nil fn is rejected",

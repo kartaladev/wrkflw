@@ -35,6 +35,17 @@ func typedApprove(_ context.Context, in typedApproveIn) (typedApproveOut, error)
 	return typedApproveOut{Approved: in.Count > 0}, nil
 }
 
+// typedIdemIn is the escape hatch the WithStrictInput godoc recommends: it
+// declares the engine's own stamp so a primary service task can use strict mode.
+type typedIdemIn struct {
+	Ref            string `json:"ref"`
+	IdempotencyKey string `json:"_idempotencyKey"`
+}
+
+func typedIdemEcho(_ context.Context, in typedIdemIn) (typedApproveOut, error) {
+	return typedApproveOut{Approved: in.IdempotencyKey != ""}, nil
+}
+
 // typedTaskDef builds start → task("t") → end.
 func typedTaskDef() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
@@ -100,6 +111,29 @@ func TestTypedActionDecodeFailureIsNonRetryable(t *testing.T) {
 				require.ErrorIs(t, af.Cause, action.ErrDecodeInput)
 				assert.Contains(t, af.Err, "_idempotencyKey",
 					"the engine stamps _idempotencyKey, so strict input must name it as the offender")
+				assert.False(t, armed)
+				assert.Equal(t, engine.StatusRunning, st.Status)
+				assert.Len(t, st.Incidents, 1)
+			},
+		},
+		{
+			// The security case, end to end through the real engine. An attacker
+			// who can start an instance places "_idempotencykey" in the variables
+			// map. That is a DIFFERENT map key from the engine's "_idempotencyKey"
+			// stamp, so it survives serviceActionInput's clone; encoding/json then
+			// folds case, and because json.Marshal sorts keys byte-wise
+			// ('K' 0x4b < 'k' 0x6b) the attacker's twin is applied LAST and would
+			// win. Strict must reject it by exact byte match instead.
+			name: "strict rejects an attacker's case-variant of the idempotency stamp",
+			act:  action.Typed(typedIdemEcho, action.WithStrictInput()),
+			vars: map[string]any{"ref": "req-1", "_idempotencykey": "SPOOFED-BY-ATTACKER"},
+			assert: func(t *testing.T, st engine.InstanceState, af engine.ActionFailed, armed bool) {
+				assert.False(t, af.Retryable)
+				require.ErrorIs(t, af.Cause, action.ErrDecodeInput)
+				assert.Contains(t, af.Err, "_idempotencykey",
+					"the spoofing key must be named in the durable failure message")
+				assert.NotContains(t, af.Err, "SPOOFED-BY-ATTACKER",
+					"the rejection names the offending KEY, never the attacker's value")
 				assert.False(t, armed)
 				assert.Equal(t, engine.StatusRunning, st.Status)
 				assert.Len(t, st.Incidents, 1)
