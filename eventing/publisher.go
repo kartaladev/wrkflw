@@ -153,6 +153,17 @@ func (p *publisher) publishOne(ctx context.Context, ev kernel.OutboxEvent) error
 		// shutdown, not an incident. The error is still returned — the relay
 		// leaves the outbox row pending and retries — but logging it at ERROR
 		// would fill a shutdown with alarms for something working as designed.
+		// ErrNoSubscription deliberately does NOT join isBenignBusShutdown's DEBUG
+		// path and takes the ERROR branch below. The two look alike — both mean
+		// "not delivered" — but they differ in what they say about the system.
+		//
+		// ErrBusClosed is a graceful shutdown racing a drain: expected, bounded,
+		// self-correcting, nobody to wake. ErrNoSubscription is DATA LOSS that was
+		// converted into a retry — an outbox row is now pending and will
+		// dead-letter unless something starts consuming that topic. It is returned
+		// by default, not only when a consumer opted in, precisely because it is
+		// the condition nobody would think to ask about; demoting it to DEBUG
+		// would restore the silence this whole change exists to break.
 		if isBenignBusShutdown(err) {
 			p.logger.DebugContext(ctx, "eventing: publish refused; bus is closing",
 				slog.String("topic", ev.Topic), slog.String("instance_id", ev.InstanceID))

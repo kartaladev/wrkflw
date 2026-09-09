@@ -24,8 +24,12 @@
 // [NewInProcess] is a complete in-memory pub/sub bus — publisher, subscriber and
 // closer in one value — for tests, examples and single-process deployments. Read
 // its doc comment before relying on it: like every broker-less bus it is
-// non-persistent, so an envelope published to a topic nobody has subscribed yet
-// is dropped.
+// non-persistent, so an envelope published to a topic with no live subscription
+// is dropped. Whether Publish TELLS you depends on the topic: one this bus has
+// subscribed at some point returns [ErrNoSubscription], by default, so an outbox
+// relay retries the row instead of marking it published; one nobody has ever
+// subscribed returns nil and drops silently, unless [WithRequireSubscription]
+// names it. See [InProcess] for both windows and for what remains lost.
 //
 // # Trace context
 //
@@ -65,6 +69,12 @@ type options struct {
 	mp                metric.MeterProvider
 	propagator        propagation.TextMapPropagator
 	redeliveryBackoff time.Duration
+
+	// requireSubscriptionTopics accumulates the topics named across every call
+	// to [WithRequireSubscription]. Nil and empty mean the same thing —
+	// escalate nothing — which is what makes an empty configuration safe
+	// rather than total; there is deliberately no "every topic" mode.
+	requireSubscriptionTopics []string
 }
 
 // newOptions applies opts over the package defaults, so every constructor
@@ -151,5 +161,41 @@ func WithRedeliveryBackoff(d time.Duration) Option {
 		if d > 0 {
 			o.redeliveryBackoff = d
 		}
+	}
+}
+
+// WithRequireSubscription escalates the named topics to strict: a publish to one
+// of them is refused with [ErrNoSubscription] whenever it has no live
+// subscription, INCLUDING before anything has ever subscribed it.
+//
+// This is not the switch that enables [ErrNoSubscription] — that is on by
+// default. [NewInProcess] already refuses a publish to a topic that HAS been
+// subscribed and currently is not, which is the silent-loss defect: the consumer
+// was listening, stopped, and the relay went on marking outbox rows published.
+// What this option adds is the first-publish window, for a topic that must
+// always have a live subscriber even before one has registered — a startup race
+// where the relay drains before the consumer subscribes would otherwise pass
+// unreported.
+//
+// At least one topic is required, and that is deliberate rather than
+// stylistic. An "every topic" mode is exactly the naive strict-by-default that
+// was measured breaking examples/scenarios/send_task_routing, which subscribes
+// message.OrderPlaced while still publishing instance.completed; having rejected
+// it as a default there is no case for reintroducing it as an option. Requiring
+// the first topic in the signature also makes the empty case impossible to
+// express, so a caller expanding a slice that happens to be empty escalates
+// NOTHING rather than everything — a fail-open the compiler now rejects.
+//
+// Calls accumulate: two calls escalate the union of their topics, and neither
+// narrows the other.
+//
+// Reach for it when a topic is load-bearing and you would rather have a retrying
+// outbox row than a silent success. Leave it alone for topics that legitimately
+// have no in-process consumer: naming those makes every publish to them an
+// error, which is how a deployment ends up dead-lettering rows nobody wanted.
+func WithRequireSubscription(topic string, more ...string) Option {
+	return func(o *options) {
+		o.requireSubscriptionTopics = append(o.requireSubscriptionTopics, topic)
+		o.requireSubscriptionTopics = append(o.requireSubscriptionTopics, more...)
 	}
 }
