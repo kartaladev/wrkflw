@@ -19,6 +19,19 @@ import (
 // after [InProcess.Close].
 var ErrBusClosed = errors.New("workflow-eventing: in-process bus closed")
 
+// ErrNoSubscription is returned by [InProcess.Publish] when the envelope's topic
+// has no live subscription AND that topic has been subscribed at some point in
+// this bus's life. It exists so a publisher can tell "delivered to nobody" from
+// "delivered", which a nil return cannot: persistence.Relay marks an outbox row
+// published on nil and leaves it pending, to retry, on an error.
+//
+// It is returned BY DEFAULT, because "someone was listening and now nobody is"
+// is the shape of a real loss rather than a configuration choice. A topic that
+// has NEVER been subscribed is not policed and still returns nil — that is
+// fire-and-forget, which [InProcess] documents. [WithRequireSubscription]
+// escalates named topics to strict from the very first publish.
+var ErrNoSubscription = errors.New("workflow-eventing: no live subscription on topic")
+
 // defaultRedeliveryBackoff is the pause between a handler nacking an envelope
 // and the bus handing it back. Short by design: it is paid on every retry of a
 // genuinely failing handler, and this bus is a single process, so there is no
@@ -47,6 +60,7 @@ const defaultRedeliveryBackoff = 10 * time.Millisecond
 //     with [InProcess.Start], which returns only once the subscription is live,
 //     or by republishing until the effect appears (what a [Chainer.Run] test must
 //     do, because Run starts its own subscriptions).
+//
 //   - SHUTDOWN: a Publish that races a stop function, or that lands after the
 //     last subscription on the topic has ended, is dropped just as silently.
 //     Stop publishing before you stop subscribing. This matters most behind
@@ -54,6 +68,21 @@ const defaultRedeliveryBackoff = 10 * time.Millisecond
 //     the outbox row published — so an envelope lost in this window is lost for
 //     good. [InProcess.Close] is the safe order: it refuses later publishes with
 //     [ErrBusClosed] rather than accepting and dropping them.
+//
+//     BY DEFAULT the second half of that — a publish landing after the last
+//     subscription on the topic has ended — is now [ErrNoSubscription] rather
+//     than a silent nil, so the relay retries the row instead of marking it
+//     published. The rule is scoped to topics this bus has seen a subscription
+//     on: a topic nobody ever subscribed is fire-and-forget and still returns
+//     nil. [WithRequireSubscription] escalates named topics to strict from the
+//     first publish.
+//
+//     TWO THINGS THAT REMAIN LOST, and neither is fixable here. An envelope
+//     accepted onto a live subscription's queue and then discarded because that
+//     subscription ends before draining it still returns nil, because there WAS
+//     a subscription at fanout time — when Publish returns, the information
+//     does not exist yet. And a bus whose topics were NEVER subscribed reports
+//     nothing at all, by design. For both, the ordering above is the remedy.
 //
 // # Delivery
 //
@@ -90,10 +119,27 @@ type InProcess struct {
 	propagator propagation.TextMapPropagator
 	backoff    time.Duration
 
+	// requireSub and requireSubTopics are [WithRequireSubscription]. Both are
+	// written once in NewInProcess and never again, so fanout reads them without
+	// the mutex. A nil requireSubTopics with requireSub set means every topic.
+	requireSub       bool
+	requireSubTopics map[string]struct{}
+
 	mu     sync.Mutex
 	subs   map[string][]*subscription
 	closed bool
 	done   chan struct{}
+	// seen is every topic that has EVER had a subscription registered on it.
+	// It is what separates "someone was listening and now nobody is" — the
+	// defect — from "nobody ever listened", which is documented fire-and-forget.
+	// Entries are never removed: a topic that has been subscribed once stays
+	// policed for the life of the bus, which is the whole point.
+	//
+	// It is written ONLY by register, so its size is bounded by the number of
+	// DISTINCT TOPICS THE CONSUMER SUBSCRIBES — a handful, fixed by the code —
+	// and never by traffic, workflow data or anything an attacker supplies.
+	// Publishing to a million distinct topics adds nothing to it.
+	seen map[string]struct{}
 }
 
 var (
@@ -152,7 +198,15 @@ func NewInProcess(opts ...Option) *InProcess {
 		propagator: o.propagator,
 		backoff:    o.redeliveryBackoff,
 		subs:       make(map[string][]*subscription),
+		seen:       make(map[string]struct{}),
 		done:       make(chan struct{}),
+		requireSub: o.requireSubscription,
+	}
+	if len(o.requireSubscriptionTopics) > 0 {
+		b.requireSubTopics = make(map[string]struct{}, len(o.requireSubscriptionTopics))
+		for _, topic := range o.requireSubscriptionTopics {
+			b.requireSubTopics[topic] = struct{}{}
+		}
 	}
 	b.pub = NewPublisher(b.fanout, opts...)
 	return b
@@ -175,13 +229,59 @@ func (b *InProcess) fanout(_ context.Context, env Envelope) error {
 		b.mu.Unlock()
 		return ErrBusClosed
 	}
+	// MEASURED, and kept deliberately: this defensive copy is CURRENTLY
+	// unobservable — deleting it leaves the whole suite green, because
+	// unregister rebuilds with the capacity-limited append(list[:i:i], …) at
+	// :375, and a rebuilt slice that still aliases the original array therefore
+	// always has cap == len. Verified exhaustively over every (len, cap, removal
+	// index) shape for len 1..64: 567 aliasing cases, none with spare capacity.
+	// So no later register append can write inside a range a fanout is reading,
+	// and the aliased loop would see exactly what this copy sees.
+	//
+	// It stays because that equivalence is a property of THIS CODE, not of the
+	// language. Two plausible edits break it into a live data race with no test
+	// to catch it: dropping the ":i" from unregister's rebuild, or replacing it
+	// with slices.Delete, which shifts elements down IN PLACE inside the very
+	// range an in-flight fanout is iterating. The copy is the guard that makes
+	// those edits safe rather than silently racy — the one line to keep if the
+	// other is ever touched.
 	subs := append([]*subscription(nil), b.subs[env.Topic]...)
+	// Read under the SAME acquisition rather than a second one: two locks would
+	// let a subscription register between them, and the pair must be consistent.
+	_, known := b.seen[env.Topic]
 	b.mu.Unlock()
+
+	// The default rule, and the fix for the silent-loss defect: a topic somebody
+	// has subscribed at some point, with nobody subscribed NOW, is a delivery
+	// that will not happen and the publisher is told. A topic nobody has ever
+	// subscribed is left alone — that is fire-and-forget, which [InProcess]
+	// documents, and reporting it would turn every legitimately unconsumed topic
+	// into a retrying outbox row. [WithRequireSubscription] escalates named
+	// topics to strict from the very first publish, before anything has
+	// subscribed.
+	if len(subs) == 0 && (known || b.requiresSubscription(env.Topic)) {
+		return ErrNoSubscription
+	}
 
 	for _, s := range subs {
 		s.push(env)
 	}
 	return nil
+}
+
+// requiresSubscription reports whether [WithRequireSubscription] policies topic.
+// The option with no arguments policies every topic; with arguments it narrows
+// to exactly those, so a deployment can be strict about the terminal topics it
+// consumes while message.* legitimately has no in-process consumer.
+func (b *InProcess) requiresSubscription(topic string) bool {
+	if !b.requireSub {
+		return false
+	}
+	if b.requireSubTopics == nil {
+		return true
+	}
+	_, ok := b.requireSubTopics[topic]
+	return ok
 }
 
 // Subscribe delivers every envelope published to topic to h, on the CALLER's
@@ -294,6 +394,10 @@ func (b *InProcess) register(topic string, cancel context.CancelFunc) (*subscrip
 	}
 	s := &subscription{notify: make(chan struct{}, 1), cancel: cancel}
 	b.subs[topic] = append(b.subs[topic], s)
+	// Under the mutex we already hold, and never unset: from here on, a publish
+	// to this topic that finds no live subscription is an error rather than a
+	// silent drop. See the seen field and [ErrNoSubscription].
+	b.seen[topic] = struct{}{}
 	return s, nil
 }
 

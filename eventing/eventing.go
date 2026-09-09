@@ -25,7 +25,10 @@
 // closer in one value — for tests, examples and single-process deployments. Read
 // its doc comment before relying on it: like every broker-less bus it is
 // non-persistent, so an envelope published to a topic nobody has subscribed yet
-// is dropped.
+// is dropped — and Publish still returns nil, which behind an outbox relay marks
+// the row published. [WithRequireSubscription] turns that particular drop into
+// an error instead; it is opt-in, and the option documents both why and which
+// half of the problem it does not reach.
 //
 // # Trace context
 //
@@ -65,6 +68,14 @@ type options struct {
 	mp                metric.MeterProvider
 	propagator        propagation.TextMapPropagator
 	redeliveryBackoff time.Duration
+
+	// requireSubscription is the opt-in from [WithRequireSubscription];
+	// requireSubscriptionTopics narrows it, and nil-with-the-flag-set means
+	// every topic. Two fields rather than a nil-vs-empty slice convention,
+	// because "strict everywhere" and "strict nowhere" must not be the same
+	// zero value.
+	requireSubscription       bool
+	requireSubscriptionTopics []string
 }
 
 // newOptions applies opts over the package defaults, so every constructor
@@ -151,5 +162,30 @@ func WithRedeliveryBackoff(d time.Duration) Option {
 		if d > 0 {
 			o.redeliveryBackoff = d
 		}
+	}
+}
+
+// WithRequireSubscription escalates the named topics to strict: a publish to one
+// of them is refused with [ErrNoSubscription] whenever it has no live
+// subscription, INCLUDING before anything has ever subscribed it. With no
+// arguments it applies to every topic.
+//
+// This is not the switch that enables [ErrNoSubscription] — that is on by
+// default. [NewInProcess] already refuses a publish to a topic that HAS been
+// subscribed and currently is not, which is the silent-loss defect: the consumer
+// was listening, stopped, and the relay went on marking outbox rows published.
+// What this option adds is the first-publish window, for a topic that must
+// always have a live subscriber even before one has registered — a startup race
+// where the relay drains before the consumer subscribes would otherwise pass
+// unreported.
+//
+// Reach for it when a topic is load-bearing and you would rather have a retrying
+// outbox row than a silent success. Leave it alone for topics that legitimately
+// have no in-process consumer: naming those makes every publish to them an
+// error, which is how a deployment ends up dead-lettering rows nobody wanted.
+func WithRequireSubscription(topics ...string) Option {
+	return func(o *options) {
+		o.requireSubscription = true
+		o.requireSubscriptionTopics = append(o.requireSubscriptionTopics, topics...)
 	}
 }

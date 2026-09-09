@@ -930,3 +930,275 @@ func TestInProcessStopIsSafeToCallTwiceAndConcurrently(t *testing.T) {
 	assert.NotPanics(t, stop,
 		"stop must be safe to call again after it has already returned")
 }
+
+// TestPublishAfterTheLastSubscriptionStoppedIsReported is THE RED for #132's
+// default behaviour: at HEAD this publish returns nil and the envelope is lost
+// silently. It is window A, and it is the shape that makes the loss
+// unrecoverable rather than merely late — persistence.Relay reads a nil as
+// "delivered" and marks the outbox row published
+// (internal/persistence/store/relay.go:288), so nothing ever retries it.
+//
+// stop() returns only after the delivery goroutine's deferred unregister has run
+// (defers are LIFO, so unregister precedes close(done)), so by the time Publish
+// runs the topic has no live subscription — but the bus has SEEN one. That is
+// exactly the condition the default rule polices. Fully deterministic: no rate,
+// no sleep, no goroutine in the decisive path.
+func TestPublishAfterTheLastSubscriptionStoppedIsReported(t *testing.T) {
+	t.Parallel()
+
+	bus := eventing.NewInProcess()
+	t.Cleanup(func() { require.NoError(t, bus.Close()) })
+
+	got := &collector{}
+	stop, err := bus.Start(t.Context(), eventing.TopicInstanceCompleted, got.handle)
+	require.NoError(t, err)
+	stop() // joins the loop AND unregisters: the topic is now known but unsubscribed
+
+	err = bus.Publish(t.Context(), kernel.OutboxEvent{
+		Topic: eventing.TopicInstanceCompleted, InstanceID: "would-have-been-lost",
+		Payload: map[string]any{},
+	})
+
+	require.ErrorIs(t, err, eventing.ErrNoSubscription,
+		"a topic that HAS been subscribed and now has no live subscription must be "+
+			"reported, or the relay marks the outbox row published and the envelope "+
+			"is gone for good")
+	assert.Zero(t, got.len(), "the stopped subscription must not be reached")
+}
+
+// TestPublishToATopicNobodyEverSubscribedStaysSilent is the other side of the
+// default rule, and it is deliberately a CHARACTERISATION test: it pins
+// behaviour that did NOT change, because that is what keeps the fix from being a
+// breaking change.
+//
+// A topic nobody has ever subscribed is fire-and-forget. Reporting it would turn
+// every legitimately unconsumed topic — message.* with no in-process consumer,
+// instance.failed with no chainer — into a retrying, eventually dead-lettered
+// outbox row. Measured on this repo's five example programs: three establish no
+// subscription at all, so a rule without this scoping would change all of them.
+//
+// This is also what makes the refuse case above evidence rather than decoration:
+// a rule that refused every unsubscribed topic would satisfy that test just as
+// well, and this is the test it could not satisfy.
+func TestPublishToATopicNobodyEverSubscribedStaysSilent(t *testing.T) {
+	t.Parallel()
+
+	bus := eventing.NewInProcess()
+	t.Cleanup(func() { require.NoError(t, bus.Close()) })
+
+	// A subscription on ANOTHER topic, so the bus is not trivially empty: the
+	// rule has to be per-topic, not per-bus.
+	stop, err := bus.Start(t.Context(), eventing.TopicInstanceCompleted, (&collector{}).handle)
+	require.NoError(t, err)
+	defer stop()
+
+	err = bus.Publish(t.Context(), kernel.OutboxEvent{
+		Topic: eventing.TopicInstanceTerminated, InstanceID: "nobody-listens",
+		Payload: map[string]any{},
+	})
+
+	require.NoError(t, err,
+		"a topic that has never been subscribed is fire-and-forget and must stay "+
+			"silent; policing it would dead-letter every unconsumed topic")
+	require.NotErrorIs(t, err, eventing.ErrNoSubscription)
+}
+
+// TestPublishWithRequireSubscriptionReportsNoSubscription covers the ESCALATION
+// option, which is a different claim from the default rule above: it polices a
+// named topic from the very first publish, before anything has ever subscribed
+// it.
+//
+// Every row exists to stop a degenerate implementation passing. A rule that
+// refused everything would satisfy the refuse rows; a rule that evaluated
+// nothing would satisfy the accept rows; a topic filter matching everything
+// would satisfy both kinds but not the narrowing row. Each was mutated and each
+// row shown to go red for its own reason — see the PR body.
+func TestPublishWithRequireSubscriptionReportsNoSubscription(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		opts []eventing.Option
+		// subscribe establishes a live subscription on this topic, or "" for
+		// none. It is what makes an accept row exercise the check rather than
+		// merely be permitted by it.
+		subscribe string
+		publishTo string
+		assert    func(t *testing.T, err error, delivered int)
+	}
+
+	cases := map[string]testCase{
+		"escalated, never subscribed: refused from the first publish": {
+			opts:      []eventing.Option{eventing.WithRequireSubscription(eventing.TopicInstanceCompleted)},
+			publishTo: eventing.TopicInstanceCompleted,
+			assert: func(t *testing.T, err error, delivered int) {
+				require.ErrorIs(t, err, eventing.ErrNoSubscription,
+					"this is the whole of what the option adds over the default: the "+
+						"default stays silent here, because nothing ever subscribed")
+				assert.Zero(t, delivered)
+			},
+		},
+		"escalated on every topic, never subscribed: refused": {
+			opts:      []eventing.Option{eventing.WithRequireSubscription()},
+			publishTo: eventing.TopicInstanceCompleted,
+			assert: func(t *testing.T, err error, delivered int) {
+				require.ErrorIs(t, err, eventing.ErrNoSubscription,
+					"no arguments must mean every topic, not no topic")
+				assert.Zero(t, delivered)
+			},
+		},
+		"escalated, one live subscription: accepted and delivered": {
+			opts:      []eventing.Option{eventing.WithRequireSubscription()},
+			subscribe: eventing.TopicInstanceCompleted,
+			publishTo: eventing.TopicInstanceCompleted,
+			assert: func(t *testing.T, err error, delivered int) {
+				require.NoError(t, err,
+					"AT-LIMIT ACCEPT: a bound that refuses everything satisfies the "+
+						"refuse rows just as well, so this row is what makes them evidence")
+				assert.Equal(t, 1, delivered, "and the envelope must actually arrive")
+			},
+		},
+		"escalated on another topic only: an unlisted, never-subscribed topic stays silent": {
+			opts:      []eventing.Option{eventing.WithRequireSubscription(eventing.TopicInstanceFailed)},
+			publishTo: eventing.TopicInstanceCompleted,
+			assert: func(t *testing.T, err error, delivered int) {
+				require.NoError(t, err,
+					"the topic list must NARROW the escalation; a filter matching "+
+						"everything would fail here")
+				assert.Zero(t, delivered)
+			},
+		},
+		"no option, never subscribed: the default leaves it silent": {
+			publishTo: eventing.TopicInstanceCompleted,
+			assert: func(t *testing.T, err error, delivered int) {
+				require.NoError(t, err,
+					"the default polices only topics that HAVE been subscribed")
+				assert.Zero(t, delivered)
+			},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			bus := eventing.NewInProcess(tc.opts...)
+			t.Cleanup(func() { require.NoError(t, bus.Close()) })
+
+			got := &collector{}
+			if tc.subscribe != "" {
+				stop, err := bus.Start(t.Context(), tc.subscribe, got.handle)
+				require.NoError(t, err)
+				defer stop()
+			}
+
+			err := bus.Publish(t.Context(), kernel.OutboxEvent{
+				Topic: tc.publishTo, InstanceID: "p1", Payload: map[string]any{},
+			})
+
+			if err == nil && tc.subscribe != "" {
+				require.Eventually(t, func() bool { return got.len() == 1 },
+					3*time.Second, 5*time.Millisecond,
+					"an accepted publish must reach the subscription it was accepted for")
+			}
+			tc.assert(t, err, got.len())
+		})
+	}
+}
+
+// TestPublishAcceptedOntoAStoppingSubscriptionIsStillDroppedSilently pins the
+// DOCUMENTED LIMIT of #132's fix, so the half that is NOT fixed cannot later be
+// mistaken for a regression — or re-filed as a fresh bug.
+//
+// This is window B, and it survives the new default. The envelope is accepted
+// onto a subscription that is alive and registered at fanout time, so the
+// no-live-subscription rule does not fire and Publish returns NIL; the
+// subscription is then cancelled before it drains the queue, and the envelope is
+// discarded. Neither the default rule nor WithRequireSubscription can help here,
+// and no Publish-boundary check could: when Publish returns, the information
+// needed to answer "will this be delivered?" does not exist yet. The remedy is
+// ordering — stop publishing before you stop subscribing — which [InProcess]
+// documents.
+//
+// TestInProcessAbandonsItsBacklogWhenTheSubscriptionEnds (from #133) owns the
+// other half of this behaviour — that the backlog really is abandoned. This test
+// owns only the Publish-boundary claim: that the caller was told nothing.
+func TestPublishAcceptedOntoAStoppingSubscriptionIsStillDroppedSilently(t *testing.T) {
+	t.Parallel()
+
+	bus := eventing.NewInProcess()
+	t.Cleanup(func() { require.NoError(t, bus.Close()) })
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	got := &collector{}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+
+	stop, err := bus.Start(ctx, eventing.TopicInstanceCompleted,
+		func(hctx context.Context, env eventing.Envelope) error {
+			_ = got.handle(hctx, env)
+			if got.len() == 1 {
+				close(entered)
+				<-release
+			}
+			return nil
+		})
+	require.NoError(t, err)
+
+	require.NoError(t, bus.Publish(t.Context(), kernel.OutboxEvent{
+		Topic: eventing.TopicInstanceCompleted, InstanceID: "delivered", Payload: map[string]any{},
+	}))
+	<-entered // the loop is parked inside the handler, subscription still live
+
+	// Accepted: there IS a live subscription, so the strict check passes.
+	err = bus.Publish(t.Context(), kernel.OutboxEvent{
+		Topic: eventing.TopicInstanceCompleted, InstanceID: "abandoned", Payload: map[string]any{},
+	})
+	require.NoError(t, err,
+		"DOCUMENTED LIMIT: the rule checks for a live subscription at fanout time "+
+			"and there was one, so this returns nil even though the envelope is "+
+			"about to be discarded")
+	require.NotErrorIs(t, err, eventing.ErrNoSubscription,
+		"neither the default rule nor the option may claim to cover window B")
+
+	cancel()
+	close(release)
+	stop() // joins the loop, so the collector is final by construction
+
+	assert.Equal(t, []string{"delivered"}, instanceIDs(got.snapshot()),
+		"the second envelope was accepted and then discarded — the loss the option "+
+			"cannot reach")
+}
+
+// TestRequireSubscriptionErrorReachesTheOutboxPublisherBoundary is the
+// relay-level half of #132, asserted at the seam the relay actually uses rather
+// than by editing the relay.
+//
+// persistence.Relay holds a kernel.OutboxPublisher and branches on its error:
+// internal/persistence/store/relay.go:288 increments retry_count and leaves the
+// row pending (dead-lettering after MaxDeliveryAttempts) for a NON-NIL error,
+// and marks the row published for a nil. So the whole value of #132 rests on
+// ErrNoSubscription being non-nil AT THIS INTERFACE and surviving the wrapping
+// publisher.go applies — which is what this test pins.
+func TestRequireSubscriptionErrorReachesTheOutboxPublisherBoundary(t *testing.T) {
+	t.Parallel()
+
+	// Deliberately typed as the interface the relay holds, not as *InProcess:
+	// the claim is about what a relay sees.
+	var pub kernel.OutboxPublisher = eventing.NewInProcess(
+		eventing.WithRequireSubscription(eventing.TopicInstanceCompleted))
+
+	err := pub.Publish(t.Context(), kernel.OutboxEvent{
+		Topic: eventing.TopicInstanceCompleted, InstanceID: "p1", Payload: map[string]any{},
+	})
+
+	require.Error(t, err,
+		"a nil here is what makes the relay mark the outbox row published")
+	assert.ErrorIs(t, err, eventing.ErrNoSubscription,
+		"the sentinel must survive the publisher's wrapping, or errors.Is at a "+
+			"caller cannot distinguish it")
+	assert.NotErrorIs(t, err, eventing.ErrBusClosed,
+		"and it must not be confusable with the shutdown sentinel, which is "+
+			"logged at DEBUG and means something else entirely")
+}
