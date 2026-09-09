@@ -392,6 +392,15 @@ func TestRuleSpecCodecRejectsMalformedInput(t *testing.T) {
 			reason: "an unrecognised value",
 		},
 		{
+			// S4: the null arm matches the 4-byte token, not every n-initial byte.
+			// It used to name `not`, `nan`, `nil`, `none` and `no` all "null", which
+			// is confidently wrong and made the default arm unreachable, contradicting
+			// that arm's own rationale.
+			name:   "JSON: an n-initial token is not called null",
+			decode: func(rule *model.RuleSpec) error { return rule.UnmarshalJSON([]byte(`not`)) },
+			reason: "an unrecognised value",
+		},
+		{
 			// A COMPLEX key (a sequence or mapping used as a key). An int key does
 			// NOT reach here — yaml.v3 coerces `1:` to the string "1" — which is why
 			// this row uses `? [a, b]` and why the field is map[string]any.
@@ -420,6 +429,88 @@ func TestRuleSpecCodecRejectsMalformedInput(t *testing.T) {
 			require.ErrorIs(t, err, model.ErrInvalidRule)
 			assert.True(t, rule.IsZero(), "a refused rule must leave the value zero")
 			assert.ErrorContains(t, err, tc.reason, "the message must say what was wrong")
+		})
+	}
+}
+
+// TestRuleSpecYAMLInlineConversionIsLossy enforces the LIMIT documented on
+// RuleSpec.Inline instead of leaving it as prose. A YAML-authored inline document
+// is decoded into map[string]any and re-encoded as JSON, so yaml.v3's scalar
+// resolution is applied on the way through: the document that reaches the rule
+// engine is not byte-identical to the one that was typed, and in two rows below it
+// is not information-preserving either.
+//
+// An earlier version of that doc comment claimed key order was the only casualty
+// and the CONTENT was untouched. A security review measured otherwise. Pinning the
+// transformations here means the claim cannot drift back to a falsehood, and means
+// a yaml.v3 upgrade that changes any of them fails the build rather than silently
+// changing what a rule means.
+//
+// This is a documented limit, NOT a deferred defect: wrkflw never interprets the
+// document, so it cannot warn; changing yaml.v3's resolution is out of scope and
+// would itself be a wire-format change. The honest move is to say what it does.
+func TestRuleSpecYAMLInlineConversionIsLossy(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name       string
+		yaml       string
+		wantInline string
+		why        string
+	}
+
+	cases := []testCase{
+		{
+			name:       "a null key is dropped entirely",
+			yaml:       "~: v\n",
+			wantInline: `{}`,
+			why:        "INFORMATION LOST: the entry disappears with no diagnostic",
+		},
+		{
+			name:       "an integer too wide for float64 loses precision",
+			yaml:       "x: 123456789012345678901234567890\n",
+			wantInline: `{"x":1.2345678901234568e+29}`,
+			why:        "INFORMATION LOST: yaml.v3 resolves it to float64",
+		},
+		{
+			name:       "a date becomes an RFC3339 string",
+			yaml:       "x: 2020-01-01\n",
+			wantInline: `{"x":"2020-01-01T00:00:00Z"}`,
+			why:        "reshaped, not lost",
+		},
+		{
+			name:       "binary is base64-decoded to raw bytes",
+			yaml:       "x: !!binary aGVsbG8=\n",
+			wantInline: `{"x":"hello"}`,
+			why:        "reshaped, not lost",
+		},
+		{
+			name:       "an octal literal becomes its decimal value",
+			yaml:       "x: 0o17\n",
+			wantInline: `{"x":15}`,
+			why:        "reshaped, not lost",
+		},
+		{
+			name:       "a non-string key is stringified",
+			yaml:       "1: one\n",
+			wantInline: `{"1":"one"}`,
+			why:        "reshaped; this is also why the field decodes into map[string]any",
+		},
+		{
+			name:       "keys are re-ordered into JSON canonical order",
+			yaml:       "z: 1\na: 2\n",
+			wantInline: `{"a":2,"z":1}`,
+			why:        "order lost; nothing downstream depends on it",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var rule model.RuleSpec
+			require.NoError(t, yaml.Unmarshal([]byte(tc.yaml), &rule))
+			assert.Equal(t, tc.wantInline, string(rule.Inline), tc.why)
 		})
 	}
 }

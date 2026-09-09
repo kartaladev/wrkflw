@@ -348,3 +348,26 @@ func TestBusinessRuleTaskRuleOptions(t *testing.T) {
 		})
 	}
 }
+
+// TestWithInlineRuleDoesNotAliasCallerBuffer pins that the option COPIES the
+// caller's bytes. Without the copy the node's rule aliases the caller's slice, so
+// reusing or mutating that buffer afterwards silently rewrites a rule on an
+// already-built node — measured before the fix as `{"a":1}` becoming `{za":1}`.
+//
+// model.RuleSpec.UnmarshalJSON clones at its own door, so this is also what keeps
+// one type from having two aliasing contracts depending on which door it came
+// through.
+func TestWithInlineRuleDoesNotAliasCallerBuffer(t *testing.T) {
+	t.Parallel()
+
+	buf := []byte(`{"a":1}`)
+	node := activity.NewBusinessRuleTask("score", activity.WithInlineRule(buf))
+	task, ok := node.(activity.BusinessRuleTask)
+	require.True(t, ok)
+	require.NotNil(t, task.Rule)
+
+	buf[1] = 'z' // the caller reuses its buffer
+
+	assert.JSONEq(t, `{"a":1}`, string(task.Rule.Inline),
+		"the node's rule must not follow the caller's mutation")
+}

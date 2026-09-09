@@ -1060,10 +1060,23 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	// carrying one until that adapter exists. Deleting ErrRuleNotSupported is what
 	// switches the feature on.
 	//
-	// Kind-agnostic on purpose: only BusinessRuleTask carries a rule today, so
-	// filtering on KindBusinessRuleTask would add nothing and would fail OPEN if
-	// another kind ever gained the field. ErrRuleAndAction is checked first, so a
-	// node setting both is told about the exclusivity rather than the reservation.
+	// Kind-agnostic: the loop asks "does this node carry a rule?", not "is this a
+	// businessRuleTask?", so it stays correct if another kind ever embeds
+	// RuleReference.
+	//
+	// Be exact about what it does NOT cover, because an earlier version of this
+	// comment claimed the kind-agnostic form is what avoids a fail-open, and that
+	// was wrong. The open door is one layer UP, at DECODE: NodeWire.Rule sits on the
+	// flat all-kinds wire union, so `rule` on an exclusiveGateway decodes with no
+	// error, RuleOf returns nil because that kind embeds no RuleReference, and the
+	// key is silently discarded before this loop can see it. Nothing here can close
+	// that — a rule this loop never sees is not a rule it can refuse — and the fix
+	// belongs at the decode boundary, filed as a follow-up. Measured on the way:
+	// `"action"` on that same kind behaves identically, so the silent drop is the
+	// flat wire's pre-existing convention rather than something `rule` introduced.
+	//
+	// ErrRuleAndAction is checked before the reservation so a node setting both is
+	// told about the exclusivity rather than about the reservation.
 	//
 	// Read through RuleOf/ActionOf rather than toWire(n): toWire's local escapes
 	// to the heap, so a whole-nodes toWire loop costs one 640-byte allocation per
@@ -1077,13 +1090,20 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 			continue
 		}
 		switch {
-		case rule.IsZero():
-			// Not reachable from either decoder — both refuse a zero RuleSpec — but
-			// a Go caller can assign &RuleSpec{} directly. Refusing it here keeps
-			// "validates" and "can be marshalled" the SAME set: RuleSpec.MarshalJSON
-			// fails closed on a zero spec, so skipping this case would let a
-			// definition validate green and then be unstorable.
-			errs = append(errs, fmt.Errorf("%w: node %q", ErrInvalidRule, n.ID()))
+		case rule.shapeErr() != nil:
+			// The SHAPE gate, and it runs first: a malformed rule is told it is
+			// malformed rather than being reported as merely reserved.
+			//
+			// It delegates to RuleSpec.shapeErr — the same predicate both codecs
+			// run — rather than testing IsZero, which says nothing about whether
+			// Inline is a JSON object. Discriminating on IsZero alone made the
+			// invariant on RuleSpec.shapeErr false in three measured ways: inline
+			// bytes that are not JSON validated and then failed in MarshalJSON,
+			// while an inline array and a blank name validated, marshalled, and
+			// produced bytes the decoder refuses. No decoded spec can be ill-formed,
+			// but WithInlineRule and WithRule are Go doors that do not check, so
+			// Validate is where both doors meet.
+			errs = append(errs, fmt.Errorf("%w: node %q", rule.shapeErr(), n.ID()))
 		case ActionOf(n) != "":
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrRuleAndAction, n.ID()))
 		default:

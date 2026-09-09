@@ -524,12 +524,19 @@ func declaredYAMLTags(t *testing.T, file string, structs ...string) []string {
 // carrying either one ever loads. They therefore CANNOT appear in
 // allFieldsYAML, which must parse and Build cleanly.
 //
-// This is not an exemption list. TestRefusedYAMLTagsAreActuallyRefused
-// exercises each entry from the other side, asserting the refusal actually
-// fires with the sentinel that documents it, and asserting the tag is really
-// declared. A tag parked here to dodge the fixture requirement fails that test,
-// so the exhaustiveness this file provides for every other tag is not weakened
-// — the domain stays total, split into accepted and refused halves.
+// This is not an exemption list. TestRefusedYAMLTagsAreActuallyRefused exercises
+// each entry from the other side, asserting three things: that the tag is really
+// declared (a stale entry excuses nothing), that the entry names a NON-NIL
+// sentinel, and that a definition carrying the key really fails with it. A tag
+// parked here to dodge the fixture requirement fails that test, so the
+// exhaustiveness this file provides for every other tag is not weakened — the
+// domain stays total, split into accepted and refused halves.
+//
+// The non-nil check is load-bearing and was added after review: errors.Is(nil,
+// nil) is true, so an entry written `err: nil` satisfied require.ErrorIs while
+// being refused by nothing at all, and the skip below had already excused it from
+// allFieldsYAML. An earlier version of THIS comment asserted that could not
+// happen. It could, for exactly that one value.
 var refusedYAMLTags = map[string]struct {
 	// fields is the node-level YAML that authors the key (4-space indented).
 	fields string
@@ -602,6 +609,14 @@ func TestRefusedYAMLTagsAreActuallyRefused(t *testing.T) {
 
 			require.True(t, declared[tag],
 				"refusedYAMLTags names %q, which nodeYAML/definitionYAML do not declare — a stale entry excuses nothing", tag)
+
+			// errors.Is(nil, nil) is true, so without this a tag parked with a nil
+			// sentinel would satisfy the ErrorIs below while being refused by
+			// NOTHING — and the exhaustiveness skip above would already have
+			// excused it from allFieldsYAML. That is the fail-open this guard
+			// exists to prevent, so the ledger's own entry is checked first.
+			require.Error(t, refusal.err,
+				"refusedYAMLTags[%q] names no sentinel; a nil one would exempt the tag from allFieldsYAML while refusing nothing", tag)
 
 			ld, err := model.ParseYAML(strings.NewReader(fmt.Sprintf(refusedTagYAML, refusal.fields)))
 			if err == nil {

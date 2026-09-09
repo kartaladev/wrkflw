@@ -1,6 +1,7 @@
 package activity
 
 import (
+	"bytes"
 	"encoding/json"
 
 	"github.com/kartaladev/wrkflw/definition/model"
@@ -105,7 +106,15 @@ func WithRule(name string) BusinessRuleOption { return ruleOpt{model.RuleSpec{Na
 // Like WithRule, it is refused by model.Validate (model.ErrRuleNotSupported)
 // until the adapter ships.
 func WithInlineRule(doc json.RawMessage) BusinessRuleOption {
-	return ruleOpt{model.RuleSpec{Inline: doc}}
+	// bytes.Clone, because the node must not alias the caller's buffer: a caller
+	// that reuses or mutates doc afterwards would silently rewrite the rule on an
+	// already-built node. Measured before the fix: buf := []byte(`{"a":1}`), build,
+	// then buf[1] = 'z' and the node reads {za":1}.
+	//
+	// model.RuleSpec.UnmarshalJSON clones at its own door for the same reason, so
+	// without this the same type had two aliasing contracts depending on which door
+	// the value arrived through.
+	return ruleOpt{model.RuleSpec{Inline: bytes.Clone(doc)}}
 }
 
 // --- shared activity-field options (work on all activity constructors) ---

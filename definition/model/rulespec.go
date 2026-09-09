@@ -27,20 +27,95 @@ type RuleSpec struct {
 	// Name is the rule-catalog name, e.g. "pricing.v3". Set when the key was
 	// authored as a string.
 	Name string
-	// Inline is the rule document as authored, held verbatim as JSON. Set when
-	// the key was authored as an object. wrkflw never parses its contents.
+	// Inline is the rule document, held as JSON. Set when the key was authored as
+	// an object. wrkflw never parses its contents.
 	//
-	// A YAML-authored document is converted to JSON on decode, so its KEY ORDER
-	// is the JSON canonical (sorted) order rather than the order it was written
-	// in. Verbatim means the document's CONTENT is untouched, not its byte
-	// framing; nothing downstream depends on key order.
+	// What "as authored" means differs by FORMAT, and the difference is measured,
+	// not assumed. An earlier version of this comment claimed key order was the
+	// only casualty and the CONTENT was untouched. That was false, so the limit is
+	// written out here instead:
+	//
+	//   - JSON: byte-preserved apart from framing. encoding/json compacts whatever
+	//     MarshalJSON returns and HTML-escapes < > &. Nothing is added or dropped.
+	//   - YAML: CONVERTED, not copied. The mapping is decoded into map[string]any
+	//     and re-encoded as JSON, so yaml.v3's scalar resolution is applied on the
+	//     way through. Measured consequences: keys are reordered (JSON canonical
+	//     order); a null key (`~: v`) is DROPPED ENTIRELY; an integer too wide for
+	//     float64 loses precision (a 30-digit literal becomes 1.23e+29); a date
+	//     becomes an RFC3339 string; !!binary is base64-decoded to raw bytes;
+	//     `0o17` becomes 15; a merge key (`<<:`) is expanded; a custom tag on the
+	//     mapping is dropped; a non-UTF-8 key gains U+FFFD; and a non-string key is
+	//     stringified (`1:` becomes "1").
+	//
+	// So a YAML-authored rule is NOT byte-recoverable, and for the dropped-null-key
+	// and wide-integer cases not information-preserving either. wrkflw cannot warn
+	// about it, because it never interprets the document: the rule engine will
+	// receive what is recorded here, not what was typed. A consumer needing byte
+	// fidelity should author the document in JSON, or name it with WithRule and keep
+	// it out of the definition entirely.
+	//
+	// This is a documented LIMIT, not a defect deferred. Changing yaml.v3's scalar
+	// resolution is out of scope and would itself be a wire-format change; the
+	// honest move is to say what the conversion does. Pinned by
+	// TestRuleSpecYAMLInlineConversionIsLossy.
 	Inline json.RawMessage
 }
 
 // IsZero reports whether the spec carries no rule at all — the state of a
 // businessRuleTask authored without the key, which is the only state Validate
 // currently accepts.
+//
+// IsZero is NOT the well-formedness test. It says nothing about whether Inline is
+// a JSON object, so a spec can be non-zero and still un-encodable; shapeErr is the
+// predicate for that, and Validate uses shapeErr. Discriminating on IsZero alone
+// is precisely the defect two reviews measured independently.
 func (r RuleSpec) IsZero() bool { return r.Name == "" && len(r.Inline) == 0 }
+
+// shapeErr reports whether the spec is one of the two shapes a rule may take — a
+// non-blank catalog NAME, or an INLINE document that is a valid JSON object — and
+// returns an ErrInvalidRule naming the defect otherwise. Exactly one of the two,
+// never both and never neither.
+//
+// It is the SINGLE domain, and that is the point. Both decoders run it, so no
+// decoded spec can violate it; MarshalJSON runs it, so an ill-formed spec is
+// refused rather than emitted; and model.Validate runs it, which is what makes the
+// invariant hold:
+//
+//	if Validate does not report ErrInvalidRule, the definition marshals AND the
+//	marshalled bytes decode back.
+//
+// Before this was factored out, Validate discriminated on IsZero alone and that
+// invariant was false in three measured ways: inline bytes that are not JSON
+// validated and then failed in MarshalJSON, while an inline array and a blank name
+// validated, marshalled, and produced bytes the decoder refuses. A Go caller can
+// still reach all three through WithInlineRule/WithRule, so the check belongs
+// somewhere both doors pass through, and Validate is that door.
+func (r RuleSpec) shapeErr() error {
+	switch {
+	case r.Name != "" && len(r.Inline) > 0:
+		return fmt.Errorf("%w: a catalog name and an inline document are exclusive", ErrInvalidRule)
+	case r.Name != "":
+		if strings.TrimSpace(r.Name) == "" {
+			// Fails CLOSED. A blank name is indistinguishable from an absent rule
+			// once decoded, so accepting it would let the author's mistake through
+			// as "no rule" and nothing would ever report it.
+			return fmt.Errorf("%w: the catalog name is blank", ErrInvalidRule)
+		}
+		return nil
+	case len(r.Inline) > 0:
+		trimmed := bytes.TrimSpace(r.Inline)
+		if len(trimmed) == 0 || trimmed[0] != '{' {
+			return fmt.Errorf("%w: the inline document must be a JSON object, got %s",
+				ErrInvalidRule, describeJSONShape(trimmed))
+		}
+		if !json.Valid(trimmed) {
+			return fmt.Errorf("%w: the inline document is not valid JSON", ErrInvalidRule)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%w: neither a catalog name nor an inline document", ErrInvalidRule)
+	}
+}
 
 // MarshalJSON re-emits the spec in the shape it was authored in: a string for a
 // catalog name, the document itself for an inline rule.
@@ -51,14 +126,13 @@ func (r RuleSpec) IsZero() bool { return r.Name == "" && len(r.Inline) == 0 }
 // and Validate refuses a non-nil zero spec (ErrInvalidRule) so that "validates"
 // and "can be marshalled" stay the same set.
 func (r RuleSpec) MarshalJSON() ([]byte, error) {
-	switch {
-	case r.Name != "":
-		return json.Marshal(r.Name)
-	case len(r.Inline) > 0:
-		return r.Inline, nil
-	default:
-		return nil, fmt.Errorf("%w: nothing to encode", ErrInvalidRule)
+	if err := r.shapeErr(); err != nil {
+		return nil, err
 	}
+	if r.Name != "" {
+		return json.Marshal(r.Name)
+	}
+	return r.Inline, nil
 }
 
 // UnmarshalJSON accepts a string (a catalog name) or an object (an inline rule
@@ -67,29 +141,26 @@ func (r RuleSpec) MarshalJSON() ([]byte, error) {
 // an author who writes `rule: 42` has made a mistake and must be told.
 func (r *RuleSpec) UnmarshalJSON(data []byte) error {
 	trimmed := bytes.TrimSpace(data)
+	var spec RuleSpec
 	switch {
 	case len(trimmed) > 0 && trimmed[0] == '"':
 		var name string
 		if err := json.Unmarshal(trimmed, &name); err != nil {
 			return fmt.Errorf("%w: %w", ErrInvalidRule, err)
 		}
-		if strings.TrimSpace(name) == "" {
-			// Fails CLOSED. A blank name is indistinguishable from an absent rule
-			// once decoded, so accepting it would let the author's mistake through
-			// as "no rule" and Validate would never report it.
-			return fmt.Errorf("%w: the catalog name is blank", ErrInvalidRule)
-		}
-		*r = RuleSpec{Name: name}
-		return nil
+		spec = RuleSpec{Name: name}
 	case len(trimmed) > 0 && trimmed[0] == '{':
-		if !json.Valid(trimmed) {
-			return fmt.Errorf("%w: the inline document is not valid JSON", ErrInvalidRule)
-		}
-		*r = RuleSpec{Inline: json.RawMessage(bytes.Clone(trimmed))}
-		return nil
+		spec = RuleSpec{Inline: json.RawMessage(bytes.Clone(trimmed))}
 	default:
 		return fmt.Errorf("%w: got %s", ErrInvalidRule, describeJSONShape(trimmed))
 	}
+	// The leading byte picks the ARM; shapeErr is what accepts or refuses, so the
+	// codec and Validate cannot disagree about what a well-formed rule is.
+	if err := spec.shapeErr(); err != nil {
+		return err
+	}
+	*r = spec
+	return nil
 }
 
 // UnmarshalYAML is the YAML mirror of UnmarshalJSON. It discriminates on the
@@ -97,13 +168,10 @@ func (r *RuleSpec) UnmarshalJSON(data []byte) error {
 // name while `rule: true` is a bool and refused. A mapping is converted to JSON
 // so that Inline holds one representation whichever format authored it.
 func (r *RuleSpec) UnmarshalYAML(value *yaml.Node) error {
+	var spec RuleSpec
 	switch {
 	case value.Kind == yaml.ScalarNode && value.Tag == "!!str":
-		if strings.TrimSpace(value.Value) == "" {
-			return fmt.Errorf("%w: the catalog name is blank", ErrInvalidRule)
-		}
-		*r = RuleSpec{Name: value.Value}
-		return nil
+		spec = RuleSpec{Name: value.Value}
 	case value.Kind == yaml.MappingNode:
 		// map[string]any, not any: a key yaml.v3 cannot render as a string — a
 		// COMPLEX key, i.e. a sequence or mapping used as a key — errors here with a
@@ -121,11 +189,20 @@ func (r *RuleSpec) UnmarshalYAML(value *yaml.Node) error {
 		if err != nil {
 			return fmt.Errorf("%w: %w", ErrInvalidRule, err)
 		}
-		*r = RuleSpec{Inline: inline}
-		return nil
+		spec = RuleSpec{Inline: inline}
 	default:
 		return fmt.Errorf("%w: got a %s value", ErrInvalidRule, strings.TrimPrefix(value.Tag, "!!"))
 	}
+	// One call site, as in UnmarshalJSON: the switch picks the ARM, shapeErr
+	// accepts or refuses. Checking inside each arm instead would leave the mapping
+	// arm's error branch unreachable — json.Marshal of a map[string]any always
+	// yields a valid object — and unreachable error branches are what this file has
+	// already had to justify once.
+	if err := spec.shapeErr(); err != nil {
+		return err
+	}
+	*r = spec
+	return nil
 }
 
 // describeJSONShape names the JSON type of data for an ErrInvalidRule message,
@@ -138,7 +215,13 @@ func describeJSONShape(data []byte) string {
 	case c == '[':
 		return "an array"
 	case c == 'n':
-		return "null"
+		// The 4-byte token only. Matching every n-initial byte named `not`, `nan`,
+		// `nil`, `none` and `no` "null", which is confidently wrong and also made
+		// the default arm below unreachable, contradicting its own rationale.
+		if string(data) == "null" {
+			return "null"
+		}
+		return "an unrecognised value"
 	case c == 't' || c == 'f':
 		return "a bool"
 	case c == '-' || (c >= '0' && c <= '9'):
