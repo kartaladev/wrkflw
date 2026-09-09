@@ -5,21 +5,15 @@
 # THE DEFECT (#146). golangci-lint keys its cache by CONTENT, not by location,
 # and by default that cache is ONE directory shared by every checkout on the
 # machine (`golangci-lint cache status` -> Dir:). A cache entry carries the file
-# path as it was FIRST seen. So when two git worktrees of this repo hold a
-# byte-identical file, the second worktree to lint it is handed the first
-# worktree's entry and prints the FIRST worktree's path. Two throwaway modules
-# with identical sources, run from a common parent:
+# path as it was FIRST seen. So when two checkouts of this repo hold a
+# byte-identical file, the second one to lint it is handed the first one's entry
+# and prints the FIRST one's path:
 #
 #   $ golangci-lint cache clean
 #   $ (cd a && golangci-lint run ./...)   ->      pkg/foo.go:7:15: ... (errcheck)
 #   $ (cd b && golangci-lint run ./...)   ->  ../a/pkg/foo.go:7:15: ... (errcheck)
 #
-# Measured 2026-09-09 on darwin/arm64 with golangci-lint 2.12.2. The mechanism
-# is content-keyed lookup, not timing, so it is deterministic rather than flaky
-# -- but a version or platform can change it, which is why self_test regenerates
-# the reproduction on every invocation instead of trusting this comment.
-#
-# WHY IT MATTERS, IN BOTH DIRECTIONS. This is not a cosmetic path bug.
+# WHY IT MATTERS, IN BOTH DIRECTIONS. Not a cosmetic path bug.
 #   * A finding is reported against a file the developer is not editing, which
 #     is a phantom to chase; and
 #   * -- the expensive direction -- a REAL finding in THIS worktree is read as
@@ -30,18 +24,52 @@
 #
 # TWO JOBS, AND THE SECOND IS NOT REDUNDANT.
 #   1. ISOLATE -- lint_cache_dir derives a GOLANGCI_LINT_CACHE from the worktree
-#      root, so no two worktrees share cache entries and the misattribution
+#      root, so no two checkouts share cache entries and the misattribution
 #      cannot arise. Under ${TMPDIR}, never inside the tracked tree (so no
 #      .gitignore entry is needed and `git status` stays clean) and never inside
-#      .git/ (so `git worktree remove` is not blocked and a stale cache does not
-#      outlive its worktree inside git's own metadata).
-#   2. DETECT -- escaping_paths scans the run's output and fails loudly if any
-#      reported path escapes the run root. The isolation makes the defect not
-#      happen; the detector makes this script fail CLOSED when the isolation
-#      stops working -- a golangci-lint release that renames or ignores the
-#      variable, a caller that exports a shared value, a refactor that drops the
-#      export. A fix with no detector is a guard with a blind spot, and what a
-#      check cannot see cannot fail.
+#      .git/ (so `git worktree remove` is not blocked).
+#   2. DETECT -- escaping_paths asks, of every reported path, whether it belongs
+#      to THIS checkout, and fails loudly if any does not. Isolation makes the
+#      defect not happen; the detector makes this script fail CLOSED when the
+#      isolation stops working -- a golangci-lint release that renames or
+#      ignores the variable, a caller that exports a shared value, a refactor
+#      that drops the export. A fix with no detector is a guard with a blind
+#      spot, and what a check cannot see cannot fail.
+#
+# MEMBERSHIP, NOT SPELLING -- the property the detector actually tests.
+# An earlier revision of this file asked whether a path was spelled `../…` or
+# began with an absolute prefix outside the run root. That is a test of
+# SPELLINGS, and it needed a new arm for every new shape: it missed
+# `sub/../../sibling`, it missed `/repo/../other`, it was hard-coded to `\.go`
+# so a reported `.s` file escaped it, and -- the one that matters here -- it was
+# completely blind to `.claude/worktrees/B/pkg/foo.go`, which is the shape THIS
+# repo's own layout produces, because worktrees live INSIDE the repo root and
+# that path has no `../` in it at all.
+#
+# So the question asked is now: does the reported file belong to this checkout?
+# Two clauses, jointly sufficient for every shape found so far:
+#
+#   a. RESOLVE PHYSICALLY, COMPARE PHYSICALLY. Resolve each reported path and
+#      compare against the physical worktree root. Outside, or unresolvable at
+#      all, is an escape -- a misattributed entry often names a directory that
+#      no longer exists, and a path that cannot be shown to be ours is not ours.
+#      Resolving physically is also what stops a symlinked checkout raising a
+#      false #146 alarm on its own genuine findings.
+#   b. INSIDE IS NOT SUFFICIENT. `.claude/worktrees/B/pkg/foo.go` resolves
+#      inside the main clone and still belongs to another checkout. Go tooling
+#      never descends into a dot-directory, so a dot-directory component BELOW
+#      the run root is an escape. (Below: the root itself is routinely inside
+#      `.claude/worktrees/`, and that is not an escape.)
+#
+# Membership does not care about file extension, so this DELETES the `\.go`
+# hard-coding rather than widening it to a list.
+#
+# The base for relative paths is the WORKTREE ROOT, not $PWD. Measured:
+# golangci-lint reports relative to the module root, so from `m/x` a finding in
+# that directory prints as `x/f.go`, not `f.go`. Resolving against $PWD would
+# therefore false-fail every run from a subdirectory. Both bases are tried and a
+# path legitimate under either is accepted, so a layout where they differ cannot
+# produce a false alarm.
 #
 # SCOPE -- local and agent checkouts only. CI is NOT affected and is NOT wired
 # to this script: each GitHub Actions job is a fresh runner with a single
@@ -53,40 +81,68 @@
 # The accepted cost, stated plainly: nothing in CI exercises this file, so it
 # can rot. self_test running on every invocation is what stands in for that.
 #
-# NON-VACUITY, IN TWO HALVES -- a green run has to prove BOTH, because either
-# one alone is green while the guard is dead:
+# NON-VACUITY, IN THREE HALVES -- a green run has to prove all of them, because
+# any one alone is green while the guard is dead:
 #
-#   * DETECTION -- assert_detects feeds planted output through the SAME
-#     escaping_paths used by the real run and asserts it reports the escaping
-#     lines and none of the in-tree or near-miss ones. This half is
-#     deterministic: no toolchain, no cache, no upstream behaviour.
-#   * THE CONTROL -- assert_isolation_matters plants the two-module fixture and
-#     asserts the DIFFERENCE: with one shared cache the b/ run misattributes to
-#     ../a/, and with lint_cache_dir's per-root caches it does not. Without this
-#     half the isolated runs prove nothing, because they pass identically on a
-#     machine where the defect does not exist at all -- the same vacuity
-#     check-doc-refs.sh's own header calls out. Asserting only that the two
-#     cache dirs differ would prove the mechanism is WIRED, not that it MATTERS.
+#   * DETECTION (assert_detects) -- planted output through the SAME
+#     escaping_paths the real run uses: both escape directions this repo can
+#     produce, and four near-misses that must NOT fire. Deterministic; no
+#     toolchain, no cache, no upstream behaviour.
+#   * WIRING (assert_main_wiring) -- runs THIS SCRIPT, end to end, against a
+#     stub `golangci-lint` whose output and exit status are chosen. It is what
+#     proves the pieces are connected: that the detector's verdict reaches the
+#     exit status, that golangci-lint's own status is passed through untouched,
+#     and that the derived cache actually reaches the child's environment.
+#     Before it existed, four separate mutations of the main block -- including
+#     `exit "${rc}"` -> `exit 0`, which makes this wrapper return success on
+#     real findings -- passed --self-test with a cheerful OK.
+#   * THE CONTROL (assert_isolation_matters) -- the two-module fixture with the
+#     REAL golangci-lint, asserting the DIFFERENCE isolation makes. This is the
+#     only half that depends on upstream still having the bug, and it is
+#     therefore the only half that WARNS rather than fails; see below.
 #
-# Cost of running both halves: four fixture lint runs, measured at ~0.9s wall
-# for the set. That is the price of every invocation, and it is why the fixture
-# is one file per module with errcheck alone rather than this repo's config.
+# WHY THE CONTROL WARNS AND THE OTHER TWO FAIL. self_test runs on every
+# invocation and gates the real lint, and CONTRIBUTING.md makes this script the
+# mandated lint command -- so a self-test that exits non-zero is a refusal to
+# lint at all. The control was measured failing 3 times in 10 serial runs and 5
+# in 15 parallel ones under this repo's own five-worktree load, because when
+# a/'s cache entry is not yet visible, b/ legitimately computes fresh and the
+# control reads that as "upstream fixed #146". Hard-gating on it converted a
+# flaky observation into an intermittent denial of linting, which is worse than
+# the defect this script fixes. Note carefully that warning here is NOT a
+# retreat from failing closed: the property that matters is DETECTING
+# misattribution, the detector half fails closed on its own, and it does not
+# depend on the control. A positive demonstration that isolation is broken is
+# still fatal; only an inconclusive control warns.
 #
-# NARROWABLE, NOT DELETABLE. If a future golangci-lint stops misattributing,
-# the control stops reproducing and this script fails with a message saying so.
-# That failure is the signal to re-evaluate -- narrow self_test to the detection
-# half and record the version that fixed it -- not to delete the file. The
-# detector half stands either way; it is the half that fails closed.
+# NARROWABLE, NOT DELETABLE. If a future golangci-lint stops misattributing, the
+# control stops reproducing and warns every run. That is the signal to
+# re-evaluate -- narrow self_test to the deterministic halves and record the
+# version that fixed it -- not to delete the file. The detector stands either
+# way; it is the half that fails closed.
 #
 # Usage:
 #   scripts/lint.sh ./...              # lint (self-test runs first, always)
 #   scripts/lint.sh ./engine/...       # any golangci-lint `run` arguments
 #   scripts/lint.sh --self-test        # prove the guard still works, lint nothing
 #
-# Exit status: golangci-lint's own is preserved (0 clean, 1 issues found; 3 and
-# 7 observed for config/argument failure and no-Go-files). This script exits 2,
-# and only 2, when escaping_paths reports a misattributed path -- a tooling
-# failure a caller can tell apart from lint findings.
+# EXIT STATUS. golangci-lint's own is preserved exactly (0 clean, 1 issues
+# found; 3 and 7 observed for config/argument failure and no-Go-files, and
+# `--issues-exit-code` can make it anything). This script uses **9** for a
+# misattributed path, and 1 for its own usage errors. 9 is outside golangci-lint
+# 2.x's own 0-7 range on purpose: an earlier revision claimed exit 2 "and only
+# 2", which was false -- `--issues-exit-code 2` reaches 2 with no misattribution
+# whatsoever, and upstream reserves 2 for WarningInTest.
+#
+# KNOWN LIMITS, written here rather than left in a review thread:
+#   * golangci-lint lints only files matching the default build tags, so a
+#     misattributed finding in a tag-gated file is invisible to both the
+#     detector and the self-test. Inherited from the tool, not introduced here.
+#   * A reported path containing a colon cannot be extracted unambiguously and
+#     is skipped by the line parser.
+#   * Everything here was measured on darwin/arm64, golangci-lint 2.12.2, bash
+#     3.2.57. The sha256sum and openssl branches of path_digest have never been
+#     exercised on this machine; only shasum has.
 #
 # Requires bash, git, sed, and one of shasum/sha256sum/openssl, plus
 # golangci-lint and the Go toolchain. Kept bash-3.2-friendly (no mapfile, no
@@ -95,26 +151,32 @@
 set -euo pipefail
 
 script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+script_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")"
+
+# Exit status for a misattributed path. Deliberately outside golangci-lint's own
+# range; see EXIT STATUS above.
+readonly ESCAPE_EXIT=9
 
 fail() { echo "lint: $*" >&2; exit 1; }
 
 # --- isolation ---------------------------------------------------------------
 
-# The absolute path of the worktree whose cache we are about to key on. `git
-# rev-parse` from the CALLER's directory, so running this from a subdirectory of
-# a worktree still keys on that worktree and not on wherever the script file
-# lives. The fallback covers a checkout exported without .git; script_root is
-# the same answer whenever the script is run from inside its own worktree.
+# The absolute path of the worktree whose cache we key on. `git rev-parse` from
+# the CALLER's directory, so running this from a subdirectory still keys on that
+# worktree and not on wherever the script file lives. The fallback covers a
+# checkout exported without .git.
 worktree_root() {
   git rev-parse --show-toplevel 2>/dev/null || printf '%s\n' "${script_root}"
 }
 
+# Physical form of a directory: resolves symlinks and normalises `..` without
+# needing realpath(1), which stock macOS bash 3.2 environments lack. Prints
+# nothing and returns non-zero when the directory does not exist.
+physical_dir() { (cd "$1" 2>/dev/null && pwd -P); }
+
 # sha256 of a string. Three implementations because no single one is present
 # everywhere: shasum ships with macOS, sha256sum with coreutils, openssl with
-# almost everything. If none exists we FAIL rather than fall back to a weaker
-# digest or to a path-mangling scheme -- a scheme that maps two distinct roots
-# to one directory would silently re-create the very defect this file exists to
-# remove, and it would do it invisibly.
+# almost everything.
 path_digest() {
   if command -v shasum >/dev/null 2>&1; then
     printf '%s' "$1" | shasum -a 256 | cut -d' ' -f1
@@ -127,95 +189,287 @@ path_digest() {
   fi
 }
 
+# Checked once, up front, by whoever is about to need a digest. lint_cache_dir
+# deliberately does NOT do this itself: it is called inside `$(...)`, where a
+# `fail` would exit only the subshell and leave the caller to report some later,
+# unrelated assertion as the cause.
+require_digest_tool() {
+  path_digest probe >/dev/null 2>&1 ||
+    fail "no sha256 tool found (need shasum, sha256sum or openssl); set GOLANGCI_LINT_CACHE yourself to a per-worktree path"
+}
+
 # The cache directory for a given worktree root. Three constraints, all load
-# bearing, and each one rules out an alternative that looks simpler:
-#   * distinct per root      -- a digest of the absolute path, so two worktrees
+# bearing, and each rules out an alternative that looks simpler:
+#   * distinct per root      -- a digest of the absolute path, so two checkouts
 #                               never collide (that collision IS the defect);
 #   * outside the tracked tree -- <root>/.lintcache would need a .gitignore
-#                               entry and would show up in `git status` and in
-#                               every `git clean -xdn`;
-#   * outside .git/          -- a cache there blocks `git worktree remove` and
-#                               survives inside metadata that is meant to be
-#                               disposable.
+#                               entry and would show up in `git status`;
+#   * outside .git/          -- a cache there blocks `git worktree remove`.
 # It deliberately does NOT depend on the worktree still existing: the digest is
 # of the path string, so a removed worktree leaves only an orphaned temp
-# directory that the OS reclaims.
+# directory the OS reclaims.
+#
+# $(id -u) is in the path because ${TMPDIR} is unset on most Linux distros, in
+# containers and under systemd, where the fallback is a world-writable /tmp and
+# the digest is entirely predictable. Ownership then separates users, and
+# prepare_cache_root chmods it 700.
 lint_cache_dir() {
   local root="$1" digest tmp
-  digest="$(path_digest "${root}")" ||
-    fail "no sha256 tool found (need shasum, sha256sum or openssl); set GOLANGCI_LINT_CACHE yourself to a per-worktree path"
+  digest="$(path_digest "${root}")" || return 1
   tmp="${TMPDIR:-/tmp}"
-  printf '%s/wrkflw-golangci-lint-cache/%s\n' "${tmp%/}" "${digest}"
+  printf '%s/wrkflw-golangci-lint-cache-%s/%s\n' "${tmp%/}" "$(id -u)" "${digest}"
+}
+
+prepare_cache_root() {
+  local dir parent
+  dir="$1"
+  parent="$(dirname "${dir}")"
+  mkdir -p "${parent}" || fail "cannot create cache root ${parent}"
+  chmod 700 "${parent}" 2>/dev/null || true
 }
 
 # --- detection ---------------------------------------------------------------
 
-# Read golangci-lint's text output on stdin; print, one per line, every reported
-# file path that is not under the run root.
-#
-# The sed extracts the leading `path:line:` of a finding line. `[^:]*` stops at
-# the first colon, so a message that itself mentions a `foo.go:1:1` path cannot
-# be mistaken for the finding's own path, and the tab-indented source/caret
-# context lines are excluded by the leading non-space class.
-#
-# Two escape shapes are reported, not one. `../` is what the defect actually
-# produces today; an out-of-root ABSOLUTE path is what it would produce if a
-# future version emitted absolute paths, and a detector that only knew about
-# `../` would go quietly blind on that day.
-escaping_paths() {
-  local run_root="$1" path
-  sed -n 's/^\([^:[:space:]][^:]*\.go\):[0-9][0-9]*:.*$/\1/p' |
-    while IFS= read -r path; do
-      case "${path}" in
-        ../*) printf '%s\n' "${path}" ;;
-        /*) case "${path}" in "${run_root%/}"/*) ;; *) printf '%s\n' "${path}" ;; esac ;;
-      esac
-    done | sort -u
+# Extract the leading `path:line:` of each finding line. `[^:]*` stops at the
+# first colon, so a message that itself mentions `foo.go:1:1` cannot be mistaken
+# for the finding's own path, and the tab-indented source/caret context lines
+# are excluded by the leading non-space class. Requiring a digit straight after
+# the colon is what keeps summary lines (`3 issues:`, `* errcheck: 3`) out.
+finding_paths() {
+  sed -n 's/^\([^:[:space:]][^:]*\):[0-9][0-9]*:.*$/\1/p' | sort -u
 }
 
-# --- self-test ---------------------------------------------------------------
+# Is this reported path a file belonging to the checkout rooted at $2, when read
+# relative to base $3? Returns 0 for "yes, ours".
+path_is_ours() {
+  local path="$1" root="$2" base="$3" abs resolved rel
+  case "${path}" in
+    /*) abs="${path}" ;;
+    *) abs="${base}/${path}" ;;
+  esac
 
-# Half one. Deterministic: it exercises escaping_paths itself, with no
-# toolchain, no cache and no dependence on golangci-lint's behaviour.
+  # Resolve the directory physically. Unresolvable means it cannot be shown to
+  # be ours -- a misattributed entry frequently names a checkout that has since
+  # been deleted -- so it is not ours.
+  resolved="$(physical_dir "$(dirname "${abs}")")" || return 1
+  [ -n "${resolved}" ] || return 1
+
+  case "${resolved}" in
+    "${root}") rel="" ;;
+    "${root}"/*) rel="${resolved#"${root}"}" ;;
+    *) return 1 ;;   # outside the root. The exact-match arm above is what keeps
+                     # a sibling named /repo-evil from matching root /repo.
+  esac
+
+  # A dot-directory component BELOW the root belongs to another checkout (or to
+  # tooling), never to a legitimate Go lint of this one.
+  case "${rel}/$(basename "${abs}")/" in
+    */.*/*) return 1 ;;
+  esac
+  return 0
+}
+
+# Read golangci-lint's text output on stdin; print every reported path that does
+# not belong to this checkout. `root` is the physical worktree root; `pwd_phys`
+# is the physical current directory, tried as a second base so a layout where
+# golangci-lint reports relative to something other than the worktree root
+# cannot produce a false alarm.
+escaping_paths() {
+  local root="$1" pwd_phys="$2" path
+  finding_paths | while IFS= read -r path; do
+    if path_is_ours "${path}" "${root}" "${root}"; then continue; fi
+    if [ "${pwd_phys}" != "${root}" ] && path_is_ours "${path}" "${root}" "${pwd_phys}"; then continue; fi
+    printf '%s\n' "${path}"
+  done
+}
+
+# --- self-test: half one, detection ------------------------------------------
+
+# Deterministic: exercises escaping_paths itself, with no toolchain, no cache
+# and no dependence on golangci-lint's behaviour.
 assert_detects() {
-  local tmp="$1" got want
-  mkdir -p "${tmp}/root"
+  local tmp="$1" root="${1}/root" got want
+  # Real directories, because the membership test resolves paths physically.
+  mkdir -p "${root}/engine" "${root}/.claude/worktrees/B/pkg" "${tmp}/sibling-worktree/engine"
+  root="$(physical_dir "${root}")"
 
-  # Two escaping lines, and four near-misses that must NOT be reported: an
-  # in-tree relative path, an in-tree absolute path, a finding whose MESSAGE
-  # quotes an escaping path, and a tab-indented context line.
+  # Two escapes -- one per direction this repo can actually produce -- and five
+  # near-misses that must NOT fire.
   cat > "${tmp}/planted" <<EOF
 engine/state.go:10:2: Error return value is not checked (errcheck)
-${tmp}/root/pkg/ok.go:3:1: Error return value is not checked (errcheck)
+${root}/engine/state.go:12:2: Error return value is not checked (errcheck)
 engine/state.go:11:2: could not import ../gone/pkg/foo.go:1:1 (typecheck)
-../sibling-worktree/engine/state.go:10:2: Error return value is not checked (errcheck)
-/somewhere/else/engine/state.go:10:2: Error return value is not checked (errcheck)
+engine/../engine/state.go:13:2: a climb that lands back inside is ours (errcheck)
 	os.Remove("../not/a/finding.go:1:1: and neither is this")
+../sibling-worktree/engine/state.go:10:2: Error return value is not checked (errcheck)
+.claude/worktrees/B/pkg/foo.go:6:11: Error return value is not checked (errcheck)
 2 issues:
 * errcheck: 2
 EOF
 
-  want='../sibling-worktree/engine/state.go
-/somewhere/else/engine/state.go'
-  got="$(escaping_paths "${tmp}/root" < "${tmp}/planted")"
+  # NOTE the second escape: it has no "../" anywhere. It is the shape this
+  # repo's own layout produces, and the spelling-based detector this replaced
+  # was silent on it.
+  # Sorted on both sides: finding_paths sorts, and where these two shapes fall
+  # relative to each other is a locale question this assertion must not depend on.
+  want="$(printf '%s\n' '.claude/worktrees/B/pkg/foo.go' '../sibling-worktree/engine/state.go' | sort)"
+  got="$(escaping_paths "${root}" "${root}" < "${tmp}/planted" | sort)"
   if [ "${got}" != "${want}" ]; then
     {
-      echo "self-test: escaping_paths does not detect what this script claims."
+      echo "self-test: escaping_paths does not report exactly the paths that are not ours."
       echo "  expected: $(printf '%s' "${want}" | tr '\n' ' ')"
       echo "  got:      $(printf '%s' "${got}" | tr '\n' ' ')"
     } >&2
     return 1
   fi
 
-  # An empty input must produce no findings -- otherwise a run that emitted
-  # nothing at all would be reported as misattributed.
-  got="$(escaping_paths "${tmp}/root" < /dev/null)"
+  # The sibling-prefix case: /root-evil must not read as inside /root. This is
+  # the case a bare prefix comparison gets wrong, and it was measured
+  # load-bearing before this rewrite, so it keeps a planted line of its own.
+  mkdir -p "${root}-evil"
+  printf '%s\n' "${root}-evil/x.go:1:2: nope (errcheck)" > "${tmp}/planted-evil"
+  got="$(escaping_paths "${root}" "${root}" < "${tmp}/planted-evil")"
+  if [ "${got}" != "${root}-evil/x.go" ]; then
+    echo "self-test: a sibling directory sharing the root's name prefix was treated as inside it (got '${got}')" >&2
+    return 1
+  fi
+
+  # Empty input must produce nothing, or a run that emitted no findings at all
+  # would be reported as misattributed.
+  got="$(escaping_paths "${root}" "${root}" < /dev/null)"
   [ -z "${got}" ] || { echo "self-test: escaping_paths reports '${got}' on empty input" >&2; return 1; }
 }
 
+# --- self-test: half two, main-path wiring -----------------------------------
+
+# Runs THIS SCRIPT end to end against a stub `golangci-lint` whose stdout and
+# exit status we choose, so every assertion here is deterministic: no real
+# linting, no cache, no dependence on the upstream defect. This is the half that
+# proves the pieces are connected -- detector verdict to exit status, upstream
+# status passed through, derived cache reaching the child's environment.
+assert_main_wiring() {
+  local tmp="$1" stub="$1/stub" work="$1/wire" rc out want_cache
+
+  mkdir -p "${stub}"
+  cat > "${stub}/golangci-lint" <<'STUB'
+#!/usr/bin/env bash
+# Records what the wrapper handed it, then prints and exits as instructed.
+printf '%s\n' "${GOLANGCI_LINT_CACHE:-<unset>}" > "${WRKFLW_STUB_DIR}/cache-seen"
+printf '%s\n' "$*" > "${WRKFLW_STUB_DIR}/args-seen"
+if [ -n "${WRKFLW_STUB_OUT:-}" ]; then printf '%s\n' "${WRKFLW_STUB_OUT}"; fi
+exit "${WRKFLW_STUB_RC:-0}"
+STUB
+  chmod +x "${stub}/golangci-lint"
+
+  # A real git repo, so worktree_root resolves here rather than falling back to
+  # the repo this script lives in.
+  mkdir -p "${work}"
+  ( cd "${work}" && git init -q . ) 2>/dev/null || { echo "self-test: could not git init the wiring fixture" >&2; return 1; }
+  mkdir -p "${work}/pkg" "${work}/.claude/worktrees/B/pkg" "${tmp}/outside/pkg"
+  work="$(physical_dir "${work}")"
+
+  # $1 stub stdout, $2 stub exit status; echoes the wrapper's exit status.
+  wired() {
+    local o="$1" r="$2" e=0
+    # env -u: these children must exercise the DERIVE-and-export path, so the
+    # caller's own GOLANGCI_LINT_CACHE must not leak in. Without this the
+    # self-test fails -- and therefore refuses to lint -- for every developer
+    # who has the variable set, which is a supported configuration.
+    ( cd "${work}" &&
+      env -u GOLANGCI_LINT_CACHE \
+      WRKFLW_STUB_DIR="${stub}" WRKFLW_STUB_OUT="${o}" WRKFLW_STUB_RC="${r}" \
+      _WRKFLW_LINT_SELF_TEST_DEPTH=1 PATH="${stub}:${PATH}" TMPDIR="${tmp}" \
+      bash "${script_self}" ./... ) > "${tmp}/wired.out" 2> "${tmp}/wired.err" || e=$?
+    printf '%s' "${e}"
+  }
+
+  check() {
+    local label="$1" want="$2" got="$3"
+    [ "${want}" = "${got}" ] && return 0
+    {
+      echo "self-test: main-path wiring, ${label}: expected the wrapper to exit ${want}, got ${got}."
+      sed 's/^/      /' "${tmp}/wired.err" | head -6
+    } >&2
+    return 1
+  }
+
+  # 1. In-tree findings: golangci-lint's own status must survive untouched.
+  #    This is the assertion that catches `exit "${rc}"` -> `exit 0`, i.e. the
+  #    wrapper silently turning a repo-wide quality gate green.
+  rc="$(wired 'pkg/f.go:1:2: something (errcheck)' 1)"
+  check "in-tree findings pass golangci-lint's exit 1 through" 1 "${rc}" || return 1
+
+  # 2. Clean run.
+  rc="$(wired '' 0)"
+  check "a clean run exits 0" 0 "${rc}" || return 1
+
+  # 3. A non-lint failure must also pass through, not be rewritten.
+  rc="$(wired '' 3)"
+  check "a golangci-lint failure (3) passes through" 3 "${rc}" || return 1
+
+  # 4. Sibling escape -> ESCAPE_EXIT.
+  rc="$(wired '../outside/pkg/f.go:1:2: something (errcheck)' 1)"
+  check "a ../ escape is caught" "${ESCAPE_EXIT}" "${rc}" || return 1
+  grep -q 'lint: FAIL' "${tmp}/wired.err" || { echo "self-test: the escape exit was returned without the lint: FAIL explanation" >&2; return 1; }
+
+  # 5. Nested escape, the shape this repo's layout produces -> ESCAPE_EXIT.
+  rc="$(wired '.claude/worktrees/B/pkg/f.go:1:2: something (errcheck)' 1)"
+  check "a nested .claude/worktrees escape is caught" "${ESCAPE_EXIT}" "${rc}" || return 1
+
+  # 6. The derived cache must actually reach the child's environment. Without
+  #    this, dropping `export GOLANGCI_LINT_CACHE` leaves #146 fully live while
+  #    every other assertion here still passes.
+  want_cache="$(TMPDIR="${tmp}" lint_cache_dir "${work}")" || { echo "self-test: lint_cache_dir failed" >&2; return 1; }
+  rc="$(wired '' 0)"
+  out="$(cat "${stub}/cache-seen")"
+  if [ "${out}" != "${want_cache}" ]; then
+    {
+      echo "self-test: the isolated cache never reached golangci-lint's environment."
+      echo "  expected GOLANGCI_LINT_CACHE=${want_cache}"
+      echo "  golangci-lint saw       =${out}"
+    } >&2
+    return 1
+  fi
+
+  # 7. The output sink must be pinned, or a caller flag can send findings
+  #    somewhere the detector cannot read while the run still looks healthy.
+  case "$(cat "${stub}/args-seen")" in
+    *--output.text.path=stdout) ;;
+    *) echo "self-test: the forced text output sink is not the last argument passed to golangci-lint (got '$(cat "${stub}/args-seen")')" >&2; return 1 ;;
+  esac
+
+  # 9. An already-set GOLANGCI_LINT_CACHE must be HONOURED and the run must still
+  #    proceed. Regression guard: an earlier draft of this very function let the
+  #    caller's value leak into the children above, so assertion 6 failed and the
+  #    script refused to lint at all for anyone who had the variable exported.
+  rc=0
+  ( cd "${work}" && GOLANGCI_LINT_CACHE="${tmp}/caller-chosen" \
+      WRKFLW_STUB_DIR="${stub}" WRKFLW_STUB_OUT="" WRKFLW_STUB_RC=0 \
+      _WRKFLW_LINT_SELF_TEST_DEPTH=1 PATH="${stub}:${PATH}" TMPDIR="${tmp}" \
+      bash "${script_self}" ./... ) >/dev/null 2>"${tmp}/wired.err" || rc=$?
+  check "an already-set GOLANGCI_LINT_CACHE is honoured and the run proceeds" 0 "${rc}" || return 1
+  out="$(cat "${stub}/cache-seen")"
+  if [ "${out}" != "${tmp}/caller-chosen" ]; then
+    echo "self-test: an explicitly set GOLANGCI_LINT_CACHE was not honoured (golangci-lint saw '${out}')" >&2
+    return 1
+  fi
+
+  # 8. --path-prefix rewrites paths, so it must be refused rather than pinned.
+  rc=0
+  ( cd "${work}" && env -u GOLANGCI_LINT_CACHE _WRKFLW_LINT_SELF_TEST_DEPTH=1 \
+      PATH="${stub}:${PATH}" TMPDIR="${tmp}" \
+      bash "${script_self}" --path-prefix vendored ./... ) >/dev/null 2>"${tmp}/wired.err" || rc=$?
+  if [ "${rc}" != "1" ] || ! grep -q 'path-prefix' "${tmp}/wired.err"; then
+    echo "self-test: --path-prefix was not refused (exit ${rc})" >&2
+    return 1
+  fi
+}
+
+# --- self-test: half three, the control --------------------------------------
+
 # One byte-identical throwaway module. Identical content is the precondition of
 # the defect: the cache entry is keyed by what is in the file, so two modules
-# that differ do not collide and would make this fixture prove nothing.
+# that differ do not collide and the fixture would prove nothing.
 plant_fixture_module() {
   local dir="$1"
   mkdir -p "${dir}/pkg"
@@ -224,8 +478,6 @@ module example.com/lintcachefixture
 
 go 1.21
 EOF
-  # errcheck alone, and `default: none`, so the fixture runs in well under a
-  # second and does not inherit this repo's linter set.
   cat > "${dir}/.golangci.yml" <<'EOF'
 version: "2"
 linters:
@@ -244,100 +496,143 @@ func Foo() {
 EOF
 }
 
-# Run the fixture in `dir` with the given cache, and echo the findings' paths.
+# Set by run_fixture when the run itself failed, as opposed to running fine and
+# reporting nothing. Distinguishing those two is the whole point: an assertion
+# that cannot tell "my input did nothing" from "my tool died" names the wrong
+# cause every time, and this one did -- a golangci-lint that fell over under
+# cache contention was reported as a cache-isolation failure.
+fixture_error=""
+
 run_fixture() {
-  local dir="$1" cache="$2"
-  (
-    cd "${dir}" &&
-      GOLANGCI_LINT_CACHE="${cache}" golangci-lint run --config "${dir}/.golangci.yml" ./... 2>/dev/null || true
-  ) | sed -n 's/^\([^:[:space:]][^:]*\.go\):[0-9][0-9]*:.*$/\1/p' | sort -u
+  local dir="$1" cache="$2" gocache="$3" rc=0
+  fixture_error=""
+  ( cd "${dir}" &&
+    GOLANGCI_LINT_CACHE="${cache}" GOCACHE="${gocache}" \
+      golangci-lint run --config "${dir}/.golangci.yml" ./... ) \
+    > "${dir}/.run.out" 2> "${dir}/.run.err" || rc=$?
+  # 0 = clean, 1 = findings. Anything else means the run did not complete, and
+  # its stdout says nothing about caches.
+  if [ "${rc}" != "0" ] && [ "${rc}" != "1" ]; then
+    fixture_error="golangci-lint exited ${rc} in ${dir}:
+$(head -5 "${dir}/.run.err" | sed 's/^/        /')"
+    return 1
+  fi
+  finding_paths < "${dir}/.run.out"
 }
 
-# Half two, and the half that is easy to write vacuously. It asserts the
-# DIFFERENCE the isolation makes, not merely that isolation was configured.
+# Asserts the DIFFERENCE isolation makes, with the real tool. Warns rather than
+# fails when it cannot reach a verdict; see WHY THE CONTROL WARNS above. Returns
+# 0 for "proved" and for "inconclusive", 1 only for a positive demonstration
+# that isolation does not work.
 assert_isolation_matters() {
-  local tmp="$1" shared_b iso_a iso_b cache_a cache_b
+  local tmp="$1" shared_b iso_a iso_b cache_a cache_b attempt gocache="$1/gocache"
+
   plant_fixture_module "${tmp}/a"
   plant_fixture_module "${tmp}/b"
+  # A private GOCACHE as well as a private lint cache. These are two-file
+  # throwaway modules, so a cold build is trivial, and it makes this half
+  # hermetic -- contention on the shared build cache is what made it flaky.
+  mkdir -p "${gocache}"
 
-  # THE CONTROL. One cache, a/ first, then b/. This must reproduce the defect,
-  # or the isolated runs below are asserting nothing. The shared cache is a
-  # dedicated temp directory, NOT the developer's real one: a self-test that ran
-  # `golangci-lint cache clean` on every invocation would throw away the cache
-  # the very next real run needs.
-  run_fixture "${tmp}/a" "${tmp}/shared-cache" >/dev/null
-  shared_b="$(run_fixture "${tmp}/b" "${tmp}/shared-cache")"
+  # Two attempts, each with a fresh shared cache. The control is a race by
+  # nature -- it needs a/'s entry to be visible to b/ -- and one retry converts
+  # most of the misses measured under parallel load into a real result. Measured
+  # 5-way parallel, 10 runs: without a retry the control reached a verdict 4
+  # times; the retry is what buys back the non-vacuity proof on a loaded
+  # machine. Bounded at two on purpose: this runs before every lint.
+  attempt=1
+  while [ "${attempt}" -le 2 ]; do
+    shared_b=""
+    rm -rf "${tmp}/shared-cache"
+    if ! run_fixture "${tmp}/a" "${tmp}/shared-cache" "${gocache}" >/dev/null ||
+       ! shared_b="$(run_fixture "${tmp}/b" "${tmp}/shared-cache" "${gocache}")"; then
+      echo "lint: NOTE -- the self-test's isolation control could not run: ${fixture_error}" >&2
+      echo "lint:         The detector half is unaffected and still fails closed. Continuing." >&2
+      return 0
+    fi
+    case "${shared_b}" in ../a/*) break ;; esac
+    attempt=$(( attempt + 1 ))
+  done
+
   case "${shared_b}" in
-    ../a/*)
-      : # reproduced -- the control can fail, so the assertions below can pass
-      ;;
+    ../a/*) ;;   # reproduced: the control can fail, so the assertion below means something
     *)
       {
-        echo "self-test: the control no longer reproduces #146, so the isolation half proves nothing."
-        echo "  linting ${tmp}/b through a cache already holding ${tmp}/a should report"
-        echo "  a path under ../a/, and reported: ${shared_b:-<nothing>}"
-        echo "  golangci-lint: $(golangci-lint --version 2>&1 | head -1)"
-        echo
-        echo "  Either the fixture drifted, or this golangci-lint no longer misattributes."
-        echo "  If it is the latter, that is good news and this file NARROWS rather than"
-        echo "  gets deleted: keep lint_cache_dir and escaping_paths, drop"
-        echo "  assert_isolation_matters, and record the version that fixed it here."
+        echo "lint: NOTE -- the self-test could not reproduce #146 this run, so the isolation"
+        echo "lint:         half proved nothing. Linting b/ through a cache already holding a/"
+        echo "lint:         should have reported a path under ../a/ and after 2 attempts reported: ${shared_b:-<no findings>}"
+        echo "lint:         This is EXPECTED occasionally under parallel load -- a/'s entry may"
+        echo "lint:         not be visible yet, in which case b/ correctly computes fresh. Do NOT"
+        echo "lint:         read one occurrence as upstream having fixed #146, and do not delete"
+        echo "lint:         assert_isolation_matters on the strength of it. If it never reproduces"
+        echo "lint:         across many runs on an idle machine, THEN re-evaluate."
+        echo "lint:         The detector half is unaffected and still fails closed. Continuing."
       } >&2
-      return 1
-      ;;
+      return 0 ;;
   esac
 
-  # The isolated runs go through lint_cache_dir -- the same function the real
-  # invocation below uses. Hand-written cache paths here would test a scheme
-  # this script does not actually run.
-  #
-  # TMPDIR is overridden so the fixture caches land inside this self-test's own
-  # temp directory and are reclaimed by the `rm -rf` in self_test. Without the
-  # override they land in the shared cache root under the real TMPDIR, and since
-  # each self-test gets a fresh mktemp path they are keyed differently every
-  # time: two orphaned directories per invocation, growing without bound. It is
-  # set only for these two substitutions, so the digest, the TMPDIR handling and
-  # the trailing-slash trim are all still the real ones under test.
-  cache_a="$(TMPDIR="${tmp}" lint_cache_dir "${tmp}/a")"
-  cache_b="$(TMPDIR="${tmp}" lint_cache_dir "${tmp}/b")"
+  cache_a="$(TMPDIR="${tmp}" lint_cache_dir "${tmp}/a")" || return 1
+  cache_b="$(TMPDIR="${tmp}" lint_cache_dir "${tmp}/b")" || return 1
   if [ "${cache_a}" = "${cache_b}" ]; then
     echo "self-test: lint_cache_dir maps two distinct roots to '${cache_a}'" >&2
     return 1
   fi
 
-  iso_a="$(run_fixture "${tmp}/a" "${cache_a}")"
-  iso_b="$(run_fixture "${tmp}/b" "${cache_b}")"
+  if ! iso_a="$(run_fixture "${tmp}/a" "${cache_a}" "${gocache}")" ||
+     ! iso_b="$(run_fixture "${tmp}/b" "${cache_b}" "${gocache}")"; then
+    echo "lint: NOTE -- the self-test's isolated runs could not complete: ${fixture_error}" >&2
+    echo "lint:         The detector half is unaffected and still fails closed. Continuing." >&2
+    return 0
+  fi
+
+  # Positive demonstration that isolation does not work: fatal.
   if [ "${iso_a}" != "pkg/foo.go" ] || [ "${iso_b}" != "pkg/foo.go" ]; then
     {
-      echo "self-test: per-root caches did not keep the fixture runs in-tree."
-      echo "  a/ reported: ${iso_a:-<nothing>}"
-      echo "  b/ reported: ${iso_b:-<nothing>}"
+      echo "self-test: per-root caches did NOT keep the fixture runs in-tree, though the"
+      echo "           shared-cache control reproduced normally. Isolation is broken."
+      echo "  a/ reported: ${iso_a:-<no findings>}"
+      echo "  b/ reported: ${iso_b:-<no findings>}"
       echo "  expected 'pkg/foo.go' from each."
     } >&2
     return 1
   fi
+  control_proved=1
 }
+
+# --- self-test ---------------------------------------------------------------
+
+control_proved=0
 
 self_test() {
   local tmp status=0
   command -v golangci-lint >/dev/null 2>&1 ||
     fail "golangci-lint is not on PATH; see CONTRIBUTING.md for the version this repo expects"
+  require_digest_tool
 
   tmp="$(mktemp -d)"
+  # A trap, not straight-line cleanup: an interrupt between here and the rm
+  # leaked the directory, measured under SIGTERM.
+  trap 'rm -rf "${tmp}"' EXIT
+
   assert_detects "${tmp}" || status=1
+  assert_main_wiring "${tmp}" || status=1
   assert_isolation_matters "${tmp}" || status=1
+
   rm -rf "${tmp}"
+  trap - EXIT
 
   if [ "${status}" != "0" ]; then
     echo "lint: SELF-TEST FAILED -- this script can no longer be shown to do what it claims." >&2
     exit 1
   fi
-  # States exactly what was proved, and no more.
-  # Deliberately spells no literal "../": this line is printed on the SUCCESS
-  # path, and a success banner that trips every `grep '\.\./'` would train the
-  # exact reflex escaping_paths exists to stop -- reading a real escaped path as
-  # background noise.
-  echo "lint: self-test OK -- escaping_paths reports both planted escapes and none of the four near-misses, and a deliberately shared cache still misattributes the b/ fixture to the sibling a/ module while lint_cache_dir's per-root caches do not (isolation proved to matter, not merely wired)."
+  # States exactly what was proved, and no more. In particular it distinguishes
+  # the two deterministic halves from the control, which may have been
+  # inconclusive this run (it says so on stderr when it was).
+  if [ "${control_proved}" = "1" ]; then
+    echo "lint: self-test OK -- escaping_paths reports both escape shapes and none of the near-misses; this script, run end to end against a stub, passes golangci-lint's exit status through, returns ${ESCAPE_EXIT} on a misattributed path, pins the output sink and exports its per-worktree cache; and a deliberately shared cache still misattributes the fixture while per-root caches do not."
+  else
+    echo "lint: self-test OK -- escaping_paths reports both escape shapes and none of the near-misses; this script, run end to end against a stub, passes golangci-lint's exit status through, returns ${ESCAPE_EXIT} on a misattributed path, pins the output sink and exports its per-worktree cache. The shared-cache control was inconclusive this run; see the note above."
+  fi
 }
 
 # --- main --------------------------------------------------------------------
@@ -350,53 +645,76 @@ case "${1:-}" in
     ;;
 esac
 
-self_test
+# --path-prefix rewrites every reported path, which blinds the detector AND the
+# reader: unlike a redirected output sink, there is nothing left in the output
+# for a human to notice. Refused rather than worked around.
+for arg in "$@"; do
+  case "${arg}" in
+    --path-prefix|--path-prefix=*)
+      fail "refusing --path-prefix: it rewrites reported paths, so neither this script nor you could see a finding attributed to another checkout (#146). Run without it." ;;
+  esac
+done
 
-run_root="${PWD}"
-root="$(worktree_root)"
+# Skipped only for the child processes assert_main_wiring spawns, which would
+# otherwise recurse forever.
+if [ -z "${_WRKFLW_LINT_SELF_TEST_DEPTH:-}" ]; then
+  self_test
+fi
+
+root="$(physical_dir "$(worktree_root)")" || fail "cannot resolve the worktree root"
+pwd_phys="$(physical_dir "${PWD}")" || fail "cannot resolve the current directory"
 
 # An explicitly exported value is honoured rather than overridden: a caller that
 # set it made a deliberate choice, and silently discarding it would be a worse
-# surprise than the one this script fixes. The guarantee then belongs to them --
-# which is precisely the case escaping_paths below is here to catch.
+# surprise than the one this script fixes. The guarantee is then theirs -- which
+# is precisely the case escaping_paths below is here to catch.
 if [ -n "${GOLANGCI_LINT_CACHE:-}" ]; then
-  echo "lint: GOLANGCI_LINT_CACHE is already set to '${GOLANGCI_LINT_CACHE}'; honouring it. Per-worktree isolation is the caller's to guarantee."
+  echo "lint: GOLANGCI_LINT_CACHE is already set to '${GOLANGCI_LINT_CACHE}'; honouring it. Per-worktree isolation is the caller's to guarantee." >&2
 else
-  GOLANGCI_LINT_CACHE="$(lint_cache_dir "${root}")"
+  require_digest_tool
+  GOLANGCI_LINT_CACHE="$(lint_cache_dir "${root}")" || fail "could not derive a cache directory"
+  prepare_cache_root "${GOLANGCI_LINT_CACHE}"
   export GOLANGCI_LINT_CACHE
 fi
 
 out="$(mktemp)"
 trap 'rm -f "${out}"' EXIT
 
-# Not `exec`: the output has to be read back before this process can exit. stdout
-# is captured (which also drops golangci-lint's colour, since it is no longer a
-# tty) and replayed; stderr streams through untouched.
+# Not `exec`: the output has to be read back before this process can exit.
+# stdout is captured (which also drops golangci-lint's colour, since it is no
+# longer a tty) and replayed; stderr streams through untouched.
+#
+# The trailing --output.text.path=stdout is not cosmetic. Without it a caller
+# passing --output.json.path stdout or --output.text.path stderr moves the
+# findings somewhere this capture cannot read, and the detector goes silent
+# while the run still looks healthy -- measured exit 1 with a live
+# misattribution on screen and no warning. Last flag wins, so this pins it back.
 rc=0
-golangci-lint run "$@" > "${out}" || rc=$?
+golangci-lint run "$@" --output.text.path=stdout > "${out}" || rc=$?
 cat "${out}"
 
-escaped="$(escaping_paths "${run_root}" < "${out}")"
+escaped="$(escaping_paths "${root}" "${pwd_phys}" < "${out}")"
 if [ -n "${escaped}" ]; then
   {
     echo
-    echo "lint: FAIL -- golangci-lint reported findings against files outside ${run_root}:"
+    echo "lint: FAIL -- golangci-lint reported findings against files that do not belong to"
+    echo "      this checkout (${root}):"
     printf '%s\n' "${escaped}" | sed 's/^/    /'
     echo
     echo "That is #146: the cache is keyed by content and shared across checkouts, so an"
-    echo "entry first written by a sibling worktree is replayed here carrying THAT"
-    echo "worktree's path. The findings above are attributed to the wrong tree, and the"
-    echo "expensive half of the mistake is the opposite one -- a real finding in this"
-    echo "worktree read as noise from another and waved off."
+    echo "entry first written by another checkout is replayed here carrying THAT checkout's"
+    echo "path. The findings above are attributed to the wrong tree, and the expensive half"
+    echo "of the mistake is the opposite one -- a real finding in this worktree read as"
+    echo "noise from another and waved off."
     echo
-    echo "This script exists to make that impossible, so seeing it means the isolation"
-    echo "did not take. Check GOLANGCI_LINT_CACHE (currently '${GOLANGCI_LINT_CACHE}'):"
-    echo "if a caller exported a shared value, stop doing that; if it is per-worktree and"
-    echo "this still happened, golangci-lint's cache handling has changed and"
-    echo "lint_cache_dir needs revisiting. Re-derive every finding above inside this"
-    echo "worktree before acting on it -- re-derive, not dismiss."
+    echo "This script exists to make that impossible, so seeing it means the isolation did"
+    echo "not take. Check GOLANGCI_LINT_CACHE (currently '${GOLANGCI_LINT_CACHE}'): if a"
+    echo "caller exported a shared value, stop doing that; if it is per-worktree and this"
+    echo "still happened, golangci-lint's cache handling has changed and lint_cache_dir"
+    echo "needs revisiting. Re-derive every finding above inside this worktree before"
+    echo "acting on it -- re-derive, not dismiss."
   } >&2
-  exit 2
+  exit "${ESCAPE_EXIT}"
 fi
 
 exit "${rc}"

@@ -47,8 +47,12 @@ handed the first worktree's cache entry and prints the first worktree's path —
 one direction, and, more expensively, a real finding here waved off as another branch's noise in the
 other. CI is unaffected and stays on `golangci-lint-action`: each job is a fresh runner with a single
 checkout, so it has no sibling worktrees to inherit from. Pass any `golangci-lint run` arguments
-straight through; `scripts/lint.sh --self-test` proves the wrapper still works and runs on every
-invocation anyway.
+straight through. `scripts/lint.sh --self-test` runs on every invocation anyway; it checks that the
+detector reports exactly the paths that do not belong to this checkout, and — by running the script
+end to end against a stub `golangci-lint` — that golangci-lint's exit status is passed through, that a
+misattributed path exits 9, and that the per-worktree cache reaches the tool. The shared-cache
+reproduction it also attempts is best-effort: it warns and lets the lint proceed when it cannot reach
+a verdict, because a self-test that refuses to lint is worse than the defect it guards.
 
 ## Expectations for a change
 
