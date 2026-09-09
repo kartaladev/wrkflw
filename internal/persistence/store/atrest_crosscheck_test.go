@@ -152,12 +152,16 @@ func TestCrossCheckColumns_CatchesTableIdentityAndPKDrift(t *testing.T) {
 }
 
 // TestEveryParsedTableIsCrossChecked is the closing guard for the
-// uncross-checked-table hole (A19): every table the parser discovers must
-// appear in SOME live cross-check above. Without this, a fifth migration set
-// creating non-wrkflw_ tables would be discovered and parsed while being
-// silently absent from every live comparison, and nothing in this file would
-// say so — the per-column guards above each pin the tables their own
-// assertions name, and none of them notices a table no assertion mentions.
+// uncross-checked-table hole (A19): every table the parser discovers for the
+// postgres, mysql and sqlite dialects must appear in SOME live cross-check
+// above. Those three are what uncrossCheckedTables walks; see its doc comment
+// for the dialect outside them that this guard cannot see.
+//
+// Without this, a fifth migration set creating non-wrkflw_ tables would be
+// discovered and parsed while being silently absent from every live
+// comparison, and nothing in this file would say so — the per-column guards
+// above each pin the tables their own assertions name, and none of them
+// notices a table no assertion mentions.
 func TestEveryParsedTableIsCrossChecked(t *testing.T) {
 	root, err := atrest.ModuleRoot()
 	require.NoError(t, err)
@@ -165,8 +169,8 @@ func TestEveryParsedTableIsCrossChecked(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Empty(t, uncrossCheckedTables(parsed, coveredTables),
-		"every table the parser discovers, across ALL THREE dialects, must be "+
-			"compared against a live database by some test in this file")
+		"every table the parser discovers for the postgres, mysql and sqlite "+
+			"dialects must be compared against a live database by some test in this file")
 }
 
 // tableCoverage pairs one exemption from TestEveryParsedTableIsCrossChecked
