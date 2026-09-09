@@ -106,8 +106,9 @@ func TestPendingCommandRoundTripsThroughJSON(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			envelope, ok := engine.NewPendingCommand(tc.cmd)
-			require.True(t, ok, "%T must be recoverable", tc.cmd)
+			marks := engine.PendingCommandsFor([]engine.Command{tc.cmd})
+			require.Len(t, marks, 1, "%T must be recoverable", tc.cmd)
+			envelope := marks[0]
 
 			data, err := json.Marshal(envelope)
 			require.NoError(t, err)

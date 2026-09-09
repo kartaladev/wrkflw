@@ -90,6 +90,16 @@ func (driver *ProcessDriver) instanceLister() kernel.InstanceLister {
 // ([WithDefinitions]). Without either it recovers nothing and returns no error:
 // this is a capability, not a requirement, and a driver lacking it behaves
 // exactly as it did before recovery existed.
+//
+// COST, stated because it is accepted rather than hidden: [kernel.InstanceSummary]
+// carries no mark, so a pass reads one page of summaries and then one
+// [kernel.InstanceStore.Load] per listed instance simply to test whether it is
+// marked. On a deployment with tens of thousands of running instances that is
+// tens of thousands of snapshot reads per pass, and the boot pass runs
+// synchronously inside [ProcessDriver.Start]. It is the price of a mark that
+// needs no migration. The cheap fix, if it ever bites, is a marked-instances
+// predicate on [kernel.InstanceFilter] so the scan becomes an indexed lookup —
+// deliberately not built here, because nothing has measured it yet.
 func (driver *ProcessDriver) RecoverPendingCommands(ctx context.Context) (int, error) {
 	return driver.sweepPendingCommands(ctx, 0)
 }
@@ -104,7 +114,16 @@ func (driver *ProcessDriver) RecoverPendingCommands(ctx context.Context) (int, e
 // stop recovery for the process's whole lifetime.
 //
 // It mirrors [calllink.CallNotifier.Run]: an immediate pass before the first
-// tick, then one pass per tick.
+// tick, then one pass per tick — and, like it and like the outbox relay, it is a
+// CONSUMER-STARTED background worker. Nothing in this module starts it:
+//
+//	go driver.RunRecoverySweep(ctx)
+//
+// Boot recovery alone ([ProcessDriver.Start]) already closes the crash window
+// this mechanism exists for. The periodic loop covers the second shape — a
+// process that stays up but abandons a perform, and the lent-transaction
+// consumer who commits and never resumes — and a deployment that wants it opts
+// in the same way it opts into relaying the outbox.
 func (driver *ProcessDriver) RunRecoverySweep(ctx context.Context) error {
 	ticker := driver.clk.NewTicker(driver.recoverySweepInterval)
 	defer ticker.Stop()

@@ -981,11 +981,19 @@ func (driver *ProcessDriver) deliverLoop(
 		}
 
 		// Every command of this step has been performed, so the mark has served
-		// its purpose. Drop it in memory — a following iteration's commit then
-		// persists the cleared value at no extra cost — and durably only when the
-		// queue has drained, because that is the one exit where no further commit
-		// will rewrite this snapshot and the mark would otherwise outlive the work
-		// it describes.
+		// its purpose.
+		//
+		// The DURABLE clear runs only when the queue has drained, because that is
+		// the one exit where no further commit will rewrite this snapshot and the
+		// mark would otherwise outlive the work it describes. A step that produced
+		// a follow-up trigger needs nothing: the next iteration's mark block above
+		// clears the field before its own commit either way.
+		//
+		// The in-memory clear is NOT what makes that work — the block above is —
+		// and it is kept for the returned state alone: deliverLoop hands this
+		// value straight back through Drive and ApplyTrigger, and returning a
+		// snapshot still carrying a mark the store no longer holds would be a lie
+		// to the caller.
 		if len(st.PendingCommands) > 0 {
 			st.PendingCommands = nil
 			st.PendingCommandsAt = time.Time{}

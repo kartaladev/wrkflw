@@ -484,6 +484,13 @@ type InstanceState struct {
 	// on the persisted JSON snapshot, no migration, nil when nothing is pending
 	// so an unmarked snapshot is byte-identical to one written before this
 	// existed.
+	//
+	// ⚠ SIZE, since it is paid on a row the store rewrites in full on every
+	// commit: a marked step duplicates its commands' action Input and signal
+	// Payload into this field, so an instance parked on an action with a 100 KB
+	// input carries 100 KB more snapshot for as long as it stays parked. That is
+	// inherent to a command having no other durable form; the only cheaper shape
+	// is a side table, which is the redesign recorded on #22.
 	PendingCommands []PendingCommand
 
 	// PendingCommandsAt is the instant PendingCommands was stamped, read as a

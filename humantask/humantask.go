@@ -10,7 +10,6 @@ import (
 	"context"
 	"errors"
 	"maps"
-	"slices"
 	"time"
 
 	"github.com/kartaladev/wrkflw/authz"
@@ -140,11 +139,10 @@ type HumanTask struct {
 func (t HumanTask) Clone() HumanTask {
 	// Guard on nil, not on length: a zero-length slice with spare capacity is
 	// still shared, so two clones appending to it would write the same backing
-	// array. authz.CloneActors and slices.Clone both map nil to nil and anything
-	// else to a fresh array.
+	// array. authz.CloneActors and authz.AuthzSpec.Clone both map nil to nil and
+	// anything else to a fresh array.
 	t.Candidates = authz.CloneActors(t.Candidates)
-	t.Eligibility.Roles = slices.Clone(t.Eligibility.Roles)
-	t.Eligibility.Privileges = slices.Clone(t.Eligibility.Privileges)
+	t.Eligibility = t.Eligibility.Clone()
 	if t.Claim != nil {
 		claim := *t.Claim
 		claim.Actor = claim.Actor.Clone()

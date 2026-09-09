@@ -90,24 +90,20 @@ func (s *crashAfterCommitStore) RunInTx(ctx context.Context, fn func(context.Con
 // reproduction test opts out of recovery WITHOUT depending on any API the fix
 // adds — so both tests in this file compile against the pre-fix tree.
 //
-// It also pins the sweep's documented opt-out: a driver that cannot enumerate
+// Embedding the two INTERFACES rather than the concrete store is what hides the
+// lister: a struct embedding *kernel.MemInstanceStore would promote List along
+// with everything else. It also means this double never needs re-editing when
+// kernel.InstanceStore grows a method.
+//
+// It pins the sweep's documented opt-out: a driver that cannot enumerate
 // instances must leave the parked instance untouched.
-type unlistableStore struct{ inner *crashAfterCommitStore }
-
-func (s *unlistableStore) Create(ctx context.Context, step kernel.AppliedStep) (kernel.Version, error) {
-	return s.inner.Create(ctx, step)
+type unlistableStore struct {
+	kernel.InstanceStore
+	kernel.TxRunner
 }
 
-func (s *unlistableStore) Load(ctx context.Context, id string) (engine.InstanceState, kernel.Version, error) {
-	return s.inner.Load(ctx, id)
-}
-
-func (s *unlistableStore) Commit(ctx context.Context, expected kernel.Version, step kernel.AppliedStep) (kernel.Version, error) {
-	return s.inner.Commit(ctx, expected, step)
-}
-
-func (s *unlistableStore) RunInTx(ctx context.Context, fn func(context.Context) error) error {
-	return s.inner.RunInTx(ctx, fn)
+func newUnlistableStore(inner *crashAfterCommitStore) *unlistableStore {
+	return &unlistableStore{InstanceStore: inner, TxRunner: inner}
 }
 
 // serviceTaskDef is start → serviceTask(action) → end. The token parks on the
@@ -275,7 +271,7 @@ func TestCommittedStepWithUnperformedCommandsStaysParkedWithoutRecovery(t *testi
 	ctx := t.Context()
 	f := serviceTaskFixture()
 	backing := newCrashAfterCommitStore(t)
-	store := &unlistableStore{inner: backing}
+	store := newUnlistableStore(backing)
 
 	backing.Arm()
 	crashed := driverFor(t, f, store)
@@ -357,11 +353,16 @@ func TestSuccessfulDriveLeavesNoPendingCommandMark(t *testing.T) {
 				"the lease stamp must be cleared with the mark it dates")
 			tc.assert(t, f, st)
 
-			// And the sweep must therefore find nothing to do.
+			// And the sweep must therefore find nothing to do. Re-load afterwards
+			// rather than re-asserting the pre-sweep snapshot: a stale `st` would
+			// make the status half of the assertion vacuous.
 			n, err := driver.RecoverPendingCommands(ctx)
 			require.NoError(t, err)
 			assert.Zero(t, n, "the sweep must not re-drive an instance that performed its commands")
-			tc.assert(t, f, st)
+
+			after, _, err := store.Load(ctx, "i-clean")
+			require.NoError(t, err)
+			tc.assert(t, f, after)
 		})
 	}
 }
@@ -388,7 +389,7 @@ func TestRecoverPendingCommandsWithoutCapabilitiesIsANoOp(t *testing.T) {
 			name: "no enumeration capability",
 			build: func(t *testing.T, f recoveryFixture, store *crashAfterCommitStore) *runtime.ProcessDriver {
 				t.Helper()
-				return driverFor(t, f, &unlistableStore{inner: store})
+				return driverFor(t, f, newUnlistableStore(store))
 			},
 		},
 		{

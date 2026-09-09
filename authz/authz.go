@@ -85,6 +85,22 @@ type AuthzSpec struct {
 	Attribute  string   // expr predicate over {"actor": Actor, "vars": map} (optional)
 }
 
+// Clone returns a copy of the spec whose Roles and Privileges slices are
+// independently allocated, so mutating the copy cannot affect the receiver. Nil
+// fields stay nil. Attribute is a string and needs no copy.
+//
+// It is the single spec-level deep copy, the counterpart of [CloneActors]: a
+// spec crosses an isolation boundary in a cached human-task record, a cloned
+// instance state and a persisted pending-command mark, and each of those
+// previously re-derived the same two lines.
+func (s AuthzSpec) Clone() AuthzSpec {
+	// Guard on nil, not on length: a zero-length slice with spare capacity is
+	// still shared between clones. slices.Clone already maps nil to nil.
+	s.Roles = slices.Clone(s.Roles)
+	s.Privileges = slices.Clone(s.Privileges)
+	return s
+}
+
 // Authorizer decides whether an actor satisfies a spec given process variables.
 // Implementations may perform I/O (e.g. casbin policy lookups); the engine
 // core never calls this directly — it goes through the runtime abstraction.

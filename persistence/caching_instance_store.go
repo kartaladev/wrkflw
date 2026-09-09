@@ -386,9 +386,20 @@ func (c *CachingInstanceStore) RunInTx(ctx context.Context, fn func(context.Cont
 // Eviction rather than an in-place cache update: the clear rewrites the durable
 // snapshot WITHOUT advancing the version, so a cached entry keyed on that same
 // version would still compare current while carrying the stale mark. Evicting is
-// the only correct move, and it is cheap — a clear happens once per park, not
-// once per step. A backing store without the capability is a documented no-op:
-// nothing was written, so nothing is evicted.
+// the conservative correct move.
+//
+// ⚠ It is not free, and the cost lands where the cache is most useful: a clear
+// fires exactly at a park, and the next thing to happen to a parked instance is
+// the reply or task completion doing a Load — which this eviction has just
+// turned into a guaranteed miss plus a full backing read. The exact alternative
+// is an in-place update under lockFor: read the entry, and if its version still
+// equals expected, nil the two fields and put it back at the same version,
+// evicting only otherwise. Deliberately not taken here — it reaches into the
+// cache's own invariants for a once-per-park saving — but it is the named fix if
+// the extra read ever shows up in a profile.
+//
+// A backing store without the capability is a documented no-op: nothing was
+// written, so nothing is evicted.
 func (c *CachingInstanceStore) ClearPendingCommands(ctx context.Context, id string, expected kernel.Version) error {
 	clearer, ok := c.backing.(kernel.PendingCommandClearer)
 	if !ok {

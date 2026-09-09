@@ -2,7 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"maps"
 
 	"github.com/kartaladev/wrkflw/authz"
 	"github.com/kartaladev/wrkflw/definition/model"
@@ -96,26 +95,30 @@ type PendingCommand struct {
 	DefRef model.Qualifier `json:"def_ref,omitzero"`
 }
 
-// NewPendingCommand builds the durable envelope for c.
+// newPendingCommand builds the durable envelope for c.
 //
 // The second return value reports whether c is recoverable at all: false for
 // every command listed as deliberately absent on [PendingCommandKind]. A false
 // return is a routine classification, not an error.
-func NewPendingCommand(c Command) (PendingCommand, bool) {
+//
+// Unexported on purpose: [PendingCommandsFor] is the only shape a caller needs,
+// and this type's field set is a wire contract, so every exported entry point
+// into it is one more thing that can never be narrowed.
+func newPendingCommand(c Command) (PendingCommand, bool) {
 	switch cmd := c.(type) {
 	case InvokeAction:
 		return PendingCommand{
 			Kind:          PendingInvokeAction,
 			CommandID:     cmd.CommandID,
 			Name:          cmd.Name,
-			Input:         maps.Clone(cmd.Input),
+			Input:         copyVars(cmd.Input),
 			FireAndForget: cmd.FireAndForget,
 		}, true
 	case AwaitHuman:
 		return PendingCommand{
 			Kind:        PendingAwaitHuman,
 			TaskID:      cmd.TaskID,
-			Eligibility: cmd.Eligibility,
+			Eligibility: cmd.Eligibility.Clone(),
 		}, true
 	case UpdateTask:
 		task := cmd.Task.Clone()
@@ -124,14 +127,14 @@ func NewPendingCommand(c Command) (PendingCommand, bool) {
 		return PendingCommand{
 			Kind:    PendingThrowSignal,
 			Name:    cmd.Name,
-			Payload: maps.Clone(cmd.Payload),
+			Payload: copyVars(cmd.Payload),
 		}, true
 	case StartSubInstance:
 		return PendingCommand{
 			Kind:      PendingStartSubInstance,
 			CommandID: cmd.CommandID,
 			DefRef:    cmd.DefRef,
-			Input:     maps.Clone(cmd.Input),
+			Input:     copyVars(cmd.Input),
 		}, true
 	default:
 		return PendingCommand{}, false
@@ -145,7 +148,7 @@ func NewPendingCommand(c Command) (PendingCommand, bool) {
 func PendingCommandsFor(cmds []Command) []PendingCommand {
 	var out []PendingCommand
 	for _, c := range cmds {
-		if p, ok := NewPendingCommand(c); ok {
+		if p, ok := newPendingCommand(c); ok {
 			out = append(out, p)
 		}
 	}
@@ -163,23 +166,23 @@ func (p PendingCommand) Command() (Command, error) {
 		return InvokeAction{
 			CommandID:     p.CommandID,
 			Name:          p.Name,
-			Input:         maps.Clone(p.Input),
+			Input:         copyVars(p.Input),
 			FireAndForget: p.FireAndForget,
 		}, nil
 	case PendingAwaitHuman:
-		return AwaitHuman{TaskID: p.TaskID, Eligibility: p.Eligibility}, nil
+		return AwaitHuman{TaskID: p.TaskID, Eligibility: p.Eligibility.Clone()}, nil
 	case PendingUpdateTask:
 		if p.Task == nil {
 			return nil, fmt.Errorf("workflow-engine: pending %s carries no task", p.Kind)
 		}
 		return UpdateTask{Task: p.Task.Clone()}, nil
 	case PendingThrowSignal:
-		return ThrowSignal{Name: p.Name, Payload: maps.Clone(p.Payload)}, nil
+		return ThrowSignal{Name: p.Name, Payload: copyVars(p.Payload)}, nil
 	case PendingStartSubInstance:
 		return StartSubInstance{
 			CommandID: p.CommandID,
 			DefRef:    p.DefRef,
-			Input:     maps.Clone(p.Input),
+			Input:     copyVars(p.Input),
 		}, nil
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnknownPendingCommand, p.Kind)
@@ -190,13 +193,13 @@ func (p PendingCommand) Command() (Command, error) {
 // mutable state with its original.
 func (p PendingCommand) clone() PendingCommand {
 	c := p
-	c.Input = maps.Clone(p.Input)
-	c.Payload = maps.Clone(p.Payload)
+	c.Input = copyVars(p.Input)
+	c.Payload = copyVars(p.Payload)
 	if p.Task != nil {
 		t := p.Task.Clone()
 		c.Task = &t
 	}
-	c.Eligibility = cloneAuthzSpec(p.Eligibility)
+	c.Eligibility = p.Eligibility.Clone()
 	return c
 }
 
@@ -211,16 +214,4 @@ func clonePendingCommands(in []PendingCommand) []PendingCommand {
 		out[i] = p.clone()
 	}
 	return out
-}
-
-// cloneAuthzSpec independently allocates a spec's two string slices.
-func cloneAuthzSpec(s authz.AuthzSpec) authz.AuthzSpec {
-	c := s
-	if s.Roles != nil {
-		c.Roles = append([]string(nil), s.Roles...)
-	}
-	if s.Privileges != nil {
-		c.Privileges = append([]string(nil), s.Privileges...)
-	}
-	return c
 }
