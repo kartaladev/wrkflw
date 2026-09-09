@@ -176,7 +176,7 @@ func newDriver() *runtime.ProcessDriver {
 	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(memSt),
-		runtime.WithHumanTasks(humantask.NewStaticActorResolver(nil), taskStore, authz.RoleAuthorizer{}),
+		runtime.WithHumanTasks(humantask.NewStaticActorResolver(nil), taskStore, authz.NewComposite()),
 	)
 	if err != nil {
 		log.Fatal("driver:", err)

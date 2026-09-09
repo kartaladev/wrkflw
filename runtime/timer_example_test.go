@@ -121,7 +121,7 @@ func TestProcessDriverUserTaskDeadlineFiresUnderFakeClock(t *testing.T) {
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"reviewer": {reviewer},
 	})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 	sched := processtest.NewMemScheduler(processtest.WithMemSchedulerClock(fc))
 	store := runtimetest.MustMemStore(t)
 

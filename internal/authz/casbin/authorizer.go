@@ -23,7 +23,11 @@ type Authorizer struct {
 	attrEval *expreval.Evaluator
 }
 
-var _ authz.Authorizer = (*Authorizer)(nil)
+// This type predates the [authz.Request] port and deliberately does NOT satisfy
+// [authz.Authorizer] any more: the module-root casbinauthz facade adapts it, and
+// that facade carries the port assertion instead. The narrowing is safe because
+// New has exactly one call site — the facade — whose delegation is itself a
+// compile-time check on this signature.
 
 // New constructs an Authorizer over the given synced enforcer.
 func New(e *casbinv2.SyncedEnforcer) *Authorizer {

@@ -119,7 +119,7 @@ func TestNestedAsyncCallActivity(t *testing.T) {
 		"worker": {worker},
 	})
 	tasks := humantask.NewMemTaskStore()
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 
 	// Registry: NewMapDefinitionRegistry auto-indexes by both "defID" (latest)
 	// and "defID:version" (pinned), so pass defs directly as variadic args.

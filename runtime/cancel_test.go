@@ -88,7 +88,7 @@ func TestProcessDriverCancelInstanceCancelsParkedTask(t *testing.T) {
 	tasks := humantask.NewMemTaskStore()
 	store := runtimetest.MustMemStore(t)
 	r := runtimetest.MustProcessDriver(t, action.NewCatalog(nil), store,
-		runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, authz.RoleAuthorizer{}))
+		runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, authz.NewComposite()))
 	def := cancelDef(nil)
 
 	_, err := r.Drive(t.Context(), def, "c3", nil)

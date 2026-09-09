@@ -90,7 +90,7 @@ func TestCallNotifierResumesParkedParent(t *testing.T) {
 		"worker": {worker},
 	})
 	tasks := humantask.NewMemTaskStore()
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 
 	driver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithClock(clk),
@@ -405,7 +405,7 @@ func TestCallNotifierRetiresLinkWhenParentIsTerminal(t *testing.T) {
 
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"worker": {worker}})
 	tasks := humantask.NewMemTaskStore()
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 
 	driver := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithClock(clk),

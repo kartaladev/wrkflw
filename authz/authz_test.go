@@ -17,7 +17,7 @@ func TestAllowAll(t *testing.T) {
 	a := authz.AllowAll{}
 	spec := authz.AuthzSpec{Roles: []string{"admin"}}
 	actor := authz.Actor{ID: "u1", Roles: []string{"viewer"}}
-	err := a.Authorize(t.Context(), spec, actor, nil)
+	err := a.Authorize(t.Context(), authz.Request{Operation: authz.OpClaim, Spec: spec, Actor: actor})
 	require.NoError(t, err)
 }
 
@@ -72,7 +72,7 @@ func TestRoleAuthorizer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			ra := authz.RoleAuthorizer{}
-			err := ra.Authorize(t.Context(), tc.spec, tc.actor, nil)
+			err := ra.Authorize(t.Context(), authz.Request{Operation: authz.OpClaim, Spec: tc.spec, Actor: tc.actor})
 			tc.assert(t, err)
 		})
 	}
@@ -162,7 +162,7 @@ func TestRoleAuthorizer_AttributePredicate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			ra := authz.RoleAuthorizer{}
-			err := ra.Authorize(t.Context(), tc.spec, tc.actor, tc.vars)
+			err := ra.Authorize(t.Context(), authz.Request{Operation: authz.OpClaim, Spec: tc.spec, Actor: tc.actor, Vars: tc.vars})
 			tc.assert(t, err)
 		})
 	}
@@ -193,6 +193,14 @@ func TestActorClone(t *testing.T) {
 			},
 		},
 		{
+			name:  "privileges are independently allocated",
+			actor: authz.Actor{ID: "u-jane", Privileges: []string{"finance-task claim"}},
+			assert: func(t *testing.T, orig, clone authz.Actor) {
+				clone.Privileges[0] = "mutated"
+				require.Equal(t, "finance-task claim", orig.Privileges[0])
+			},
+		},
+		{
 			name:  "attributes are independently allocated",
 			actor: authz.Actor{ID: "u-jane", Attributes: map[string]any{"email": "jane@acme.com"}},
 			assert: func(t *testing.T, orig, clone authz.Actor) {
@@ -205,6 +213,7 @@ func TestActorClone(t *testing.T) {
 			actor: authz.Actor{ID: "u-jane"},
 			assert: func(t *testing.T, _, clone authz.Actor) {
 				require.Nil(t, clone.Roles)
+				require.Nil(t, clone.Privileges)
 				require.Nil(t, clone.Attributes)
 			},
 		},
@@ -367,4 +376,93 @@ func ExampleCloneActors() {
 	// reviewer eu
 	// admin us
 	// true false
+}
+
+// TestRoleAuthorizer_PrivilegesOnlySpec pins that a spec whose only identity
+// field is Privileges is EVALUATED, not ignored.
+//
+// ⚠ This is the #107 defect, live on main when this test was written: the
+// authorizer read spec.Roles and spec.Attribute and never spec.Privileges, so a
+// task authored with WithEligiblePrivileges and no roles was allow-all under the
+// default authorizer. #107 was closed as completed against work that never
+// shipped.
+//
+// The REFUSE rows are paired with at-limit ACCEPT rows deliberately: this is
+// authorization, and an implementation that denies everything satisfies a
+// "refused" assertion exactly as well as a correct one. The ACCEPT rows are what
+// make the REFUSE rows mean something.
+func TestRoleAuthorizer_PrivilegesOnlySpec(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		spec   authz.AuthzSpec
+		actor  authz.Actor
+		assert func(t *testing.T, err error)
+	}
+
+	cases := []testCase{
+		{
+			name:  "REFUSE: actor holds none of the required privileges",
+			spec:  authz.AuthzSpec{Privileges: []string{"finance-task claim"}},
+			actor: authz.Actor{ID: "u1"},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, authz.ErrNotAuthorized,
+					"a privileges-only spec must be evaluated, not silently allowed")
+			},
+		},
+		{
+			name:  "ACCEPT: actor holds exactly the required privilege",
+			spec:  authz.AuthzSpec{Privileges: []string{"finance-task claim"}},
+			actor: authz.Actor{ID: "u2", Privileges: []string{"finance-task claim"}},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err,
+					"the at-limit accept: without this row a deny-everything "+
+						"implementation would satisfy the REFUSE row above")
+			},
+		},
+		{
+			name:  "ACCEPT: any-of, actor holds one of several privileges",
+			spec:  authz.AuthzSpec{Privileges: []string{"a"}},
+			actor: authz.Actor{ID: "u3", Privileges: []string{"b", "a"}},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err)
+			},
+		},
+		{
+			name:  "REFUSE: matching is exact, not a grammar",
+			spec:  authz.AuthzSpec{Privileges: []string{"a b"}},
+			actor: authz.Actor{ID: "u4", Privileges: []string{"a"}},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, authz.ErrNotAuthorized,
+					"wrkflw expands no wildcards or hierarchies; the consumer flattens")
+			},
+		},
+		{
+			name:  "REFUSE: roles do not satisfy a privileges-only spec",
+			spec:  authz.AuthzSpec{Privileges: []string{"finance-task claim"}},
+			actor: authz.Actor{ID: "u5", Roles: []string{"finance-task claim"}},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, authz.ErrNotAuthorized,
+					"a role is not a privilege; the two namespaces are separate")
+			},
+		},
+		{
+			name:  "ACCEPT: an empty spec still allows",
+			spec:  authz.AuthzSpec{},
+			actor: authz.Actor{ID: "u6"},
+			assert: func(t *testing.T, err error) {
+				require.NoError(t, err,
+					"no identity field set means no identity requirement")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := authz.RoleAuthorizer{}.Authorize(t.Context(), authz.Request{Operation: authz.OpClaim, Spec: tc.spec, Actor: tc.actor})
+			tc.assert(t, err)
+		})
+	}
 }

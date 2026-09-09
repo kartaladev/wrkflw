@@ -244,7 +244,7 @@ func run(logger *slog.Logger) error {
 	// --- ProcessEngine + human-task plumbing + Service facade ---
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 	driver, err = runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(cachingStore),

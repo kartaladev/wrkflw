@@ -442,7 +442,7 @@ func TestHumanTaskLifecycleCounter(t *testing.T) {
 			resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 				"manager": {manager, admin},
 			})
-			az := authz.RoleAuthorizer{}
+			az := authz.NewComposite()
 			clk := clockwork.NewRealClock()
 
 			driver := runtimetest.MustProcessDriver(t, nil, runtimetest.MustMemStore(t),

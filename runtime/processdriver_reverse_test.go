@@ -119,7 +119,7 @@ func driveReverseFixtureToApprove2(t *testing.T) reverseFixture {
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"manager": {manager}})
 	taskStore := humantask.NewMemTaskStore()
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 	store := runtimetest.MustMemStore(t)
 
 	driver := runtimetest.MustProcessDriver(t, reverseFixtureCatalog(counts), store, runtime.WithHumanTasks(resolver, taskStore, az))
@@ -205,7 +205,7 @@ func driveReverseTargetVarsFixtureToApprove3(t *testing.T) reverseFixture {
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"manager": {manager}})
 	taskStore := humantask.NewMemTaskStore()
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 	store := runtimetest.MustMemStore(t)
 
 	driver := runtimetest.MustProcessDriver(t, reverseFixtureCatalog(counts), store, runtime.WithHumanTasks(resolver, taskStore, az))
@@ -292,7 +292,7 @@ func driveRunningInstanceForMalformedDefCases(t *testing.T) reverseFixture {
 	def := runtimetest.ApprovalDef()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"manager": {{ID: "alice", Roles: []string{"manager"}}}})
 	store := runtimetest.MustMemStore(t)
-	driver := runtimetest.MustProcessDriver(t, nil, store, runtime.WithHumanTasks(resolver, humantask.NewMemTaskStore(), authz.RoleAuthorizer{}))
+	driver := runtimetest.MustProcessDriver(t, nil, store, runtime.WithHumanTasks(resolver, humantask.NewMemTaskStore(), authz.NewComposite()))
 	instanceID := "reverse-malformed-1"
 
 	parked, err := driver.Drive(t.Context(), def, instanceID, nil)

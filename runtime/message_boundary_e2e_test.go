@@ -63,7 +63,7 @@ func TestDeliverMessageFiresBoundary(t *testing.T) {
 	r := runtimetest.MustProcessDriver(t, nil, store,
 		runtime.WithClock(fc),
 		runtime.WithDefinitions(reg),
-		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}))
+		runtime.WithHumanTasks(resolver, taskStore, authz.NewComposite()))
 
 	st, err := r.Drive(ctx, def, "i1", nil)
 	require.NoError(t, err)

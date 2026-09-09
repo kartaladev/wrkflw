@@ -41,7 +41,7 @@ func TestProcessDriverUnhandledFailureCancelsParkedTask(t *testing.T) {
 		}),
 	})
 	r := runtimetest.MustProcessDriver(t, cat, store,
-		runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, authz.RoleAuthorizer{}))
+		runtime.WithClock(fc), runtime.WithHumanTasks(resolver, tasks, authz.NewComposite()))
 
 	// start → fork → (user[UserTask] | svc[Service "boom"]) → join → end
 	def := &model.ProcessDefinition{

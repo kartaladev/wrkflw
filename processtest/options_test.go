@@ -83,7 +83,7 @@ func TestHarnessOptions(t *testing.T) {
 		{
 			name: "WithAuthorizer deny blocks a task claim",
 			opts: []processtest.Option{
-				processtest.WithAuthorizer(func(context.Context, authz.AuthzSpec, authz.Actor, map[string]any) error {
+				processtest.WithAuthorizer(func(context.Context, authz.Request) error {
 					return authz.ErrNotAuthorized
 				}),
 			},

@@ -196,7 +196,7 @@ func (s *TaskService) Claim(ctx context.Context, taskID string, actor authz.Acto
 	if err != nil {
 		return nil, fmt.Errorf("workflow-runtime: taskservice: get task: %w", err)
 	}
-	if err := s.authz.Authorize(ctx, task.Eligibility, actor, task.Vars); err != nil {
+	if err := s.authorize(ctx, authz.OpClaim, task, actor); err != nil {
 		return nil, fmt.Errorf("workflow-runtime: taskservice: claim: %w", err)
 	}
 	s.humanTasks.Add(ctx, 1, metric.WithAttributes(attribute.String("event", "claimed")))
@@ -231,7 +231,7 @@ func (s *TaskService) Reassign(ctx context.Context, taskID string, from, to stri
 	if from != claimant {
 		return nil, fmt.Errorf("workflow-runtime: reassign: from %q is not the current claimant %q", from, claimant)
 	}
-	if err := s.authz.Authorize(ctx, task.Eligibility, by, task.Vars); err != nil {
+	if err := s.authorize(ctx, authz.OpReassign, task, by); err != nil {
 		return nil, fmt.Errorf("workflow-runtime: taskservice: reassign: %w", err)
 	}
 	s.humanTasks.Add(ctx, 1, metric.WithAttributes(attribute.String("event", "reassigned")))
@@ -252,7 +252,7 @@ func (s *TaskService) Complete(ctx context.Context, taskID string, actor authz.A
 	if err != nil {
 		return nil, fmt.Errorf("workflow-runtime: taskservice: get task: %w", err)
 	}
-	if err := s.authz.Authorize(ctx, task.Eligibility, actor, task.Vars); err != nil {
+	if err := s.authorize(ctx, authz.OpComplete, task, actor); err != nil {
 		return nil, fmt.Errorf("workflow-runtime: taskservice: complete: %w", err)
 	}
 	s.humanTasks.Add(ctx, 1, metric.WithAttributes(attribute.String("event", "completed")))
@@ -303,7 +303,7 @@ func (s *TaskService) RefreshCandidates(ctx context.Context, taskID string, by a
 		return nil, fmt.Errorf("workflow-runtime: taskservice: refresh candidates: task %q is %s: %w",
 			taskID, task.State, ErrTaskNotOpen)
 	}
-	if err := s.authz.Authorize(ctx, task.Eligibility, by, task.Vars); err != nil {
+	if err := s.authorize(ctx, authz.OpRefreshCandidates, task, by); err != nil {
 		return nil, fmt.Errorf("workflow-runtime: taskservice: refresh candidates: %w", err)
 	}
 	actors, err := s.resolveCandidates(ctx, task.Eligibility, task.Vars)
@@ -312,6 +312,34 @@ func (s *TaskService) RefreshCandidates(ctx context.Context, taskID string, by a
 	}
 	s.humanTasks.Add(ctx, 1, metric.WithAttributes(attribute.String("event", "candidates_refreshed")))
 	return engine.NewHumanCandidatesResolved(s.clk.Now(), taskID, actors), nil
+}
+
+// authorize asks the configured [authz.Authorizer] whether actor may perform op
+// on task. It is the ONE place a [humantask.HumanTask] is projected into an
+// [authz.Request], so the projection — in particular the claim state the
+// ownership rule will read — is derived once rather than at each call site.
+//
+// The task's variable snapshot (taken by the runner's AwaitHuman perform at
+// task-creation time) is forwarded so that attribute predicates referencing
+// process variables, e.g. vars["region"] == "EU", evaluate correctly.
+func (s *TaskService) authorize(ctx context.Context, op authz.Operation, task humantask.HumanTask, actor authz.Actor) error {
+	return s.authz.Authorize(ctx, authz.Request{
+		Operation: op,
+		Spec:      task.Eligibility,
+		Actor:     actor,
+		Vars:      task.Vars,
+		Task:      taskView(task),
+	})
+}
+
+// taskView projects a human task's claim state into the shape authz can read.
+// authz must not import humantask — [TestAuthzPurity] pins that — so the
+// projection happens here.
+func taskView(task humantask.HumanTask) authz.TaskView {
+	if task.Claim == nil {
+		return authz.TaskView{}
+	}
+	return authz.TaskView{Claimed: true, ClaimantID: task.Claim.Actor.ID}
 }
 
 // resolveCandidates performs one ActorResolver lookup under the service's

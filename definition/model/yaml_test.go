@@ -187,14 +187,22 @@ nodes:
     kind: startEvent
   - id: approve
     kind: userTask
-    eligible_roles: ["manager"]
     eligible_privileges: ["finance-task claim"]
+  - id: review
+    kind: userTask
+    eligible_roles: ["manager"]
   - id: end
     kind: endEvent
 flows:
   - { id: f1, source: start, target: approve }
-  - { id: f2, source: approve, target: end }
+  - { id: f2, source: approve, target: review }
+  - { id: f3, source: review, target: end }
 `
+	// The two identity tags sit on SEPARATE nodes: model.Validate refuses a node
+	// declaring both eligible_roles and eligible_privileges
+	// (ErrRolesAndPrivileges), because the authorizer resolves identity
+	// first-applicable and one of the two would be silently ignored. Both tags
+	// are still exercised, which is what this test is for.
 
 	// Parse the YAML and build.
 	ld, err := model.ParseYAML(strings.NewReader(yamlInput))
@@ -215,8 +223,19 @@ flows:
 	if len(ut.EligiblePrivileges) != 1 || ut.EligiblePrivileges[0] != "finance-task claim" {
 		t.Fatalf("EligiblePrivileges = %v, want [finance-task claim]", ut.EligiblePrivileges)
 	}
-	if len(ut.EligibleRoles) != 1 || ut.EligibleRoles[0] != "manager" {
-		t.Fatalf("EligibleRoles = %v, want [manager]", ut.EligibleRoles)
+	reviewNode, ok := parsed.Node("review")
+	if !ok {
+		t.Fatal(`node "review" not found`)
+	}
+	reviewTask, ok := reviewNode.(activity.UserTask)
+	if !ok {
+		t.Fatalf("node review is %T, want activity.UserTask", reviewNode)
+	}
+	if len(reviewTask.EligibleRoles) != 1 || reviewTask.EligibleRoles[0] != "manager" {
+		t.Fatalf("EligibleRoles = %v, want [manager]", reviewTask.EligibleRoles)
+	}
+	if len(reviewTask.EligiblePrivileges) != 0 {
+		t.Fatalf("EligiblePrivileges = %v, want none", reviewTask.EligiblePrivileges)
 	}
 }
 

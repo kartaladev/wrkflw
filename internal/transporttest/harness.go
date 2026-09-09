@@ -64,7 +64,7 @@ func NewHarness(t testing.TB, defs ...*model.ProcessDefinition) (*Harness, servi
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{
 		"manager": {{ID: "alice", Roles: []string{"manager"}}},
 	})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 
 	cat := action.NewCatalog(map[string]action.Action{
 		"greet": greetAction{},

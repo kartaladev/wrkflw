@@ -21,7 +21,7 @@ func authorizeOK(t *testing.T, a authz.Authorizer, actorID, obj, act string) boo
 		Privileges: []string{obj + " " + act},
 	}
 	actor := authz.Actor{ID: actorID}
-	err := a.Authorize(t.Context(), spec, actor, nil)
+	err := a.Authorize(t.Context(), authz.Request{Operation: authz.OpClaim, Spec: spec, Actor: actor})
 	return err == nil
 }
 

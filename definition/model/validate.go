@@ -301,6 +301,21 @@ var (
 	// on a bare trigger with no payload, so there is no output to validate — the
 	// combination is contradictory and rejected at authoring time.
 	ErrManualTaskValidation = errors.New("workflow-definition: manual user task cannot carry completion validation")
+	// ErrRolesAndPrivileges is returned when a UserTask declares BOTH eligible
+	// roles and eligible privileges.
+	//
+	// The authorizer resolves identity first-applicable over
+	// [github.com/kartaladev/wrkflw/authz.PrivilegeDecider] then
+	// [github.com/kartaladev/wrkflw/authz.RoleDecider]: whichever field is set
+	// decides, and when both are set the roles are never consulted. An author
+	// writing both almost certainly means "either", so rather than silently
+	// dropping one field at runtime the combination is refused at authoring
+	// time. Express "either" with an eligible-expr predicate, or model the two
+	// audiences as separate tasks.
+	//
+	// The attribute predicate is unaffected: it is a constraint rather than an
+	// identity field, so it composes with either one and is always evaluated.
+	ErrRolesAndPrivileges = errors.New("workflow-definition: user task cannot declare both eligible roles and eligible privileges")
 	// ErrEmptyOutcome is returned when a UserTask declares a blank (empty or
 	// whitespace-only) completion outcome. A blank outcome can never be selected
 	// — the engine treats an empty outcome as "none given" — so it is dead
@@ -1130,6 +1145,9 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	//   - Manual UserTask must not carry completion validation: a manual task
 	//     completes with no payload, so a validation strategy would never
 	//     receive input to check.
+	//   - Eligible roles and eligible privileges are mutually exclusive: the
+	//     authorizer resolves identity first-applicable, so declaring both means
+	//     one is silently ignored at runtime (ErrRolesAndPrivileges).
 	//   - The completion-outcome declaration must be well-formed.
 	//
 	// model cannot import the activity package, so both Manual and the outcome
@@ -1146,6 +1164,9 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 		w := toWire(n)
 		if w.Manual && ValidationStrategyFor(n) != nil {
 			errs = append(errs, fmt.Errorf("%w: node %q", ErrManualTaskValidation, n.ID()))
+		}
+		if len(w.EligibleRoles) > 0 && len(w.EligiblePrivileges) > 0 {
+			errs = append(errs, fmt.Errorf("%w: node %q", ErrRolesAndPrivileges, n.ID()))
 		}
 		outcomeErrs = append(outcomeErrs, validateOutcomes(n.ID(), &w)...)
 	}

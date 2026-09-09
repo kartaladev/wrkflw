@@ -124,6 +124,20 @@ var classification = map[string]map[string]disposition{
 	},
 	"Actor": {
 		"ID": gatedActors, "Roles": gatedActors, "Attributes": gatedActors,
+		// ⚠ Privileges is gatedActors because that is what the code DOES, not
+		// because it is the mildest option: projectHumanTasks copies Claim and
+		// Candidates WHOLESALE under DiscloseActors, so the field is restored
+		// with the rest of the struct and could not be gated separately without
+		// new projection code. Classifying it anything else would make this
+		// table describe a posture the projection does not implement.
+		//
+		// It is the principal's granted resource-privilege tokens — the same
+		// class of fact as Roles, at finer grain, and what crosses is not scoped
+		// to the task in hand. Whether persisted actor copies should carry
+		// privileges at all is #115 item 7, deferred to a follow-up issue; if
+		// they stop, this entry stays correct and the field is simply empty on
+		// this path.
+		"Privileges": gatedActors,
 	},
 }
 

@@ -29,8 +29,8 @@ func TestEndToEnd_AllowDeny(t *testing.T) {
 	bob := authz.Actor{ID: "bob"}
 	spec := authz.AuthzSpec{Privileges: []string{"approve"}}
 
-	assert.NoError(t, a.Authorize(t.Context(), spec, alice, nil))
-	assert.ErrorIs(t, a.Authorize(t.Context(), spec, bob, nil), authz.ErrNotAuthorized)
+	assert.NoError(t, a.Authorize(t.Context(), authz.Request{Operation: authz.OpClaim, Spec: spec, Actor: alice}))
+	assert.ErrorIs(t, a.Authorize(t.Context(), authz.Request{Operation: authz.OpClaim, Spec: spec, Actor: bob}), authz.ErrNotAuthorized)
 }
 
 func TestNewCasbinAuthorizerFromStrings_ExplicitDefaultModel(t *testing.T) {
@@ -40,7 +40,7 @@ func TestNewCasbinAuthorizerFromStrings_ExplicitDefaultModel(t *testing.T) {
 
 	alice := authz.Actor{ID: "alice"}
 	spec := authz.AuthzSpec{Privileges: []string{"approve"}}
-	assert.NoError(t, a.Authorize(t.Context(), spec, alice, nil))
+	assert.NoError(t, a.Authorize(t.Context(), authz.Request{Operation: authz.OpClaim, Spec: spec, Actor: alice}))
 }
 
 func TestReloadPolicy_ViaTypeAssertion(t *testing.T) {
@@ -65,7 +65,7 @@ func TestNewCasbinAuthorizer_PrebuiltEnforcer(t *testing.T) {
 
 	alice := authz.Actor{ID: "alice"}
 	spec := authz.AuthzSpec{Privileges: []string{"approve"}}
-	assert.NoError(t, a.Authorize(t.Context(), spec, alice, nil))
+	assert.NoError(t, a.Authorize(t.Context(), authz.Request{Operation: authz.OpClaim, Spec: spec, Actor: alice}))
 }
 
 func TestNewCasbinAuthorizerFromStrings_MalformedModel(t *testing.T) {

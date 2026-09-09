@@ -60,7 +60,7 @@ func newRefreshFixture(t *testing.T, ctx context.Context, withResolver bool) ref
 	def := approvalDef()
 	resolver := &swapResolver{actors: []authz.Actor{{ID: "alice", Roles: []string{"manager"}}}}
 	tasks := humantask.NewMemTaskStore()
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 	clk := clockwork.NewFakeClock()
 
 	store, err := kernel.NewMemInstanceStore()

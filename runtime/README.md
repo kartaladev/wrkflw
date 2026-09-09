@@ -267,7 +267,7 @@ taskStore := humantask.NewMemTaskStore()
 resolver  := humantask.NewStaticActorResolver(map[string][]authz.Actor{
     "manager": {manager},
 })
-az  := authz.RoleAuthorizer{}
+az  := authz.NewComposite()
 
 r, _ := runtime.NewProcessDriver(
     // no service actions: omit WithActionCatalog (uses DefaultCatalog)

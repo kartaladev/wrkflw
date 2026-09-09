@@ -41,12 +41,24 @@ const (
 //
 // ⚠ An empty string is not a role: strings.Split("", ",") returns [""] (length 1),
 // which is what the canonical header middleware produces for a header-less request.
+//
+// ⚠ Privileges count as identity, on the same terms as roles. An ID-less actor
+// carrying only a privilege — {Privileges: ["finance-task claim"]} — is the exact
+// analogue of the ID-less kiosk actor blessed below, and the default authorizer
+// authorizes it: PrivilegeDecider reads Actor.Privileges. Omitting the field here
+// classified such a principal as unauthenticated and returned 401 for a claim the
+// authorizer would have allowed. The roles arm and the privileges arm must agree.
 func isZeroActor(a authz.Actor) bool {
 	if a.ID != "" || len(a.Attributes) > 0 {
 		return false
 	}
 	for _, r := range a.Roles {
 		if r != "" {
+			return false
+		}
+	}
+	for _, p := range a.Privileges {
+		if p != "" {
 			return false
 		}
 	}

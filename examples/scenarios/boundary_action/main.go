@@ -128,7 +128,7 @@ func main() {
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
 		runtime.WithClock(clk),
-		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}),
+		runtime.WithHumanTasks(resolver, taskStore, authz.NewComposite()),
 		runtime.WithScheduler(sched),
 	)
 	if err != nil {

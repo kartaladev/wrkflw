@@ -115,7 +115,7 @@ func main() {
 		"reviewer": {reviewer},
 		"approver": {approver},
 	})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 	clk := clockwork.NewRealClock()
 
 	memSt, err := kernel.NewMemInstanceStore()

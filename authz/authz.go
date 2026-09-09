@@ -33,14 +33,19 @@ var ErrNotAuthorized = errors.New("workflow-authz: not authorized")
 // rather than re-mapped by every view. There is no first-class username or
 // email — populate Attributes from your [ActorResolver] if you need them.
 type Actor struct {
-	ID         string         `json:"id"`
-	Roles      []string       `json:"roles,omitempty"`
+	ID    string   `json:"id"`
+	Roles []string `json:"roles,omitempty"`
+	// Privileges are the resource-privilege tokens the principal has been
+	// granted, flattened by the consumer's translator. wrkflw stores no policy
+	// and performs no expansion: no wildcards, no hierarchy, no inheritance.
+	// A spec privilege matches only by exact string equality.
+	Privileges []string       `json:"privileges,omitempty"`
 	Attributes map[string]any `json:"attributes,omitempty"`
 }
 
-// Clone returns a copy of the actor whose Roles slice and Attributes map are
-// independently allocated, so mutating the copy cannot affect the receiver. Nil
-// fields stay nil. Attributes are cloned one level deep: nested maps and slices
+// Clone returns a copy of the actor whose Roles slice, Privileges slice and
+// Attributes map are independently allocated, so mutating the copy cannot affect
+// the receiver. Nil fields stay nil. Attributes are cloned one level deep: nested maps and slices
 // inside an attribute value remain shared, matching the shallow-snapshot rule
 // that applies to process variables elsewhere in the engine.
 //
@@ -50,6 +55,7 @@ func (a Actor) Clone() Actor {
 	// Guard on nil, not on length: a zero-length slice with spare capacity is
 	// still shared between clones. slices.Clone already maps nil to nil.
 	a.Roles = slices.Clone(a.Roles)
+	a.Privileges = slices.Clone(a.Privileges)
 	if a.Attributes != nil {
 		a.Attributes = maps.Clone(a.Attributes)
 	}
@@ -81,21 +87,169 @@ func CloneActors(actors []Actor) []Actor {
 // means allow-all.
 type AuthzSpec struct {
 	Roles      []string // actor authorized if it has any of these roles
-	Privileges []string // resource-privilege tokens evaluated by a casbin-backed Authorizer (e.g. "finance-task claim")
+	Privileges []string // resource-privilege tokens matched verbatim against [Actor.Privileges] (e.g. "finance-task claim")
 	Attribute  string   // expr predicate over {"actor": Actor, "vars": map} (optional)
 }
 
-// Authorizer decides whether an actor satisfies a spec given process variables.
-// Implementations may perform I/O (e.g. casbin policy lookups); the engine
-// core never calls this directly — it goes through the runtime abstraction.
+// Operation names the human-task action a [Request] is asking about. It lets a
+// [Decider] scope itself to the operations it has an opinion on and return
+// [NotApplicable] for the rest, which is how the ownership rule stays out of
+// claim and reassign without every decider growing a switch.
+type Operation string
+
+// The operations the library authorizes today. The set grows — an in-progress
+// task state is expected to add one — so see [Decider] for what an implementor
+// owes an Operation it does not recognise.
+const (
+	OpClaim             Operation = "claim"
+	OpComplete          Operation = "complete"
+	OpReassign          Operation = "reassign"
+	OpRefreshCandidates Operation = "refresh_candidates"
+)
+
+// TaskView is the authorization-relevant projection of a human task: whether it
+// is claimed, and by whom.
+//
+// It exists because authz must not import humantask — [TestAuthzPurity] pins
+// that authz depends on nothing in this repo but internal/expreval, and the
+// engine core imports authz, so any dependency added here propagates into it.
+// The caller projects the task; authz never loads one.
+type TaskView struct {
+	Claimed    bool
+	ClaimantID string
+}
+
+// Request is one authorization question: may this actor perform this operation,
+// against a task carrying this spec, in this variable context?
+//
+// It is a struct rather than a parameter list so that a new authorization input
+// does not break every [Authorizer] and [Decider] implementation again.
+type Request struct {
+	Operation Operation
+	Spec      AuthzSpec
+	Actor     Actor
+	Vars      map[string]any
+	Task      TaskView
+}
+
+// Decision is what a single [Decider] concluded about a [Request].
+//
+// [NotApplicable] is the zero value deliberately: a Decider that returns an
+// error, or that is reached by a code path nobody wrote on purpose, must be read
+// as having decided NOTHING rather than as having allowed. The combiner treats
+// [Allow] and [Deny] as decisions and NotApplicable as abstention.
+type Decision int
+
+// Decision values. NotApplicable is at iota 0 so the zero Decision abstains.
+const (
+	// NotApplicable means the Decider has no opinion: the spec field it reads
+	// is unset, or the Operation is outside its remit.
+	NotApplicable Decision = iota
+	// Allow means the Decider is satisfied.
+	Allow
+	// Deny means the Decider is not satisfied and the request must be refused.
+	Deny
+)
+
+// String implements [fmt.Stringer] so a Decision reads in test output and logs.
+func (d Decision) String() string {
+	switch d {
+	case NotApplicable:
+		return "NotApplicable"
+	case Allow:
+		return "Allow"
+	case Deny:
+		return "Deny"
+	default:
+		return fmt.Sprintf("Decision(%d)", int(d))
+	}
+}
+
+// SpecField names a field of [AuthzSpec] that a [Decider] may evaluate. It
+// exists so a [Composite] can tell whether the deciders it holds actually cover
+// the spec in front of it, rather than allowing a request because nobody looked.
+type SpecField string
+
+// The spec fields a decider can declare it reads.
+const (
+	FieldRoles      SpecField = "roles"
+	FieldPrivileges SpecField = "privileges"
+	FieldAttribute  SpecField = "attribute"
+)
+
+// SpecReader is an optional interface a [Decider] may implement to declare which
+// [AuthzSpec] fields it evaluates. All three deciders in this package implement
+// it, and [Composite] uses it to refuse a spec that sets a field nothing reads.
+//
+// ⚠ A decider that does NOT implement SpecReader is treated as covering
+// NOTHING. That direction is deliberate: the alternative — assuming an
+// undeclared decider might read anything — would let one custom decider switch
+// the whole coverage check off, which is the fail-open this interface exists to
+// prevent. If you write a Decider that evaluates a spec field, say so here. If
+// yours reads none of them (a time-of-day rule, say), return nil and it composes
+// alongside the standard deciders unchanged.
+type SpecReader interface {
+	ReadsSpecFields() []SpecField
+}
+
+// Decider evaluates one authorization rule and nothing else. Each decider in
+// this package is single-purpose and usable standalone; [Composite] is what
+// combines them.
+//
+// ⚠ The (Decision, error) pair is not redundant. A Decider that CANNOT reach a
+// conclusion — a predicate that will not compile, a directory lookup that failed
+// — returns a non-nil error and NOT [Deny]. Deny asserts that the actor is not
+// authorized; an error asserts only that the rule could not be evaluated. See
+// [AttributeDecider] for why that distinction is a disclosure boundary and not
+// only a modelling nicety. Both paths fail closed: [Composite] refuses on either.
+//
+// ⚠ THAT ERROR MUST NOT WRAP [ErrNotAuthorized], and this is the half that makes
+// the rule a disclosure boundary rather than a modelling preference.
+// ErrNotAuthorized classifies 403, and that arm renders err.Error() — the whole
+// wrapped chain — into the client's response body. [Composite] propagates a
+// decider's error with %w, so an error wrapping ErrNotAuthorized carries whatever
+// your decider put in its message to the caller you just refused. Returning
+// fmt.Errorf("ldap group %q unreachable: %w", group, authz.ErrNotAuthorized)
+// hands that group name to an unauthorized client. Wrap a sentinel of your own,
+// or none. This is #69, which shipped twice before it was found.
+//
+// ⚠ An Operation you do not recognise is one you have no opinion on: return
+// [NotApplicable], never [Allow]. The operation set grows, and a decider that
+// allows on an operation added after it was written is a rule that silently
+// stops applying.
+//
+// Implement [SpecReader] as well if your decider evaluates an [AuthzSpec] field,
+// or [Composite] will treat that field as uncovered and refuse the request.
+type Decider interface {
+	Decide(ctx context.Context, r Request) (Decision, error)
+}
+
+// Authorizer decides whether a [Request] is permitted, returning nil when it is.
+// It is the port the runtime consumes. Implementations may perform I/O; the
+// engine core never calls this directly — it goes through the runtime
+// abstraction.
+//
+// A refusal returns [ErrNotAuthorized] and nothing else: the 403 arm of the HTTP
+// adapters renders the whole error chain into the client response body, so an
+// Authorizer must never fold policy text into a denial. An error that is not
+// ErrNotAuthorized means the decision could not be made; it still fails closed.
 type Authorizer interface {
-	Authorize(ctx context.Context, spec AuthzSpec, actor Actor, vars map[string]any) error
+	Authorize(ctx context.Context, r Request) error
 }
 
 // Compile-time interface assertions.
 var (
 	_ Authorizer = AllowAll{}
 	_ Authorizer = RoleAuthorizer{}
+	_ Authorizer = Composite{}
+
+	_ Decider = PrivilegeDecider{}
+	_ Decider = RoleDecider{}
+	_ Decider = AttributeDecider{}
+
+	_ SpecReader = PrivilegeDecider{}
+	_ SpecReader = RoleDecider{}
+	_ SpecReader = AttributeDecider{}
 )
 
 // AllowAll is an [Authorizer] that unconditionally permits every actor.
@@ -103,93 +257,46 @@ var (
 type AllowAll struct{}
 
 // Authorize always returns nil.
-func (AllowAll) Authorize(_ context.Context, _ AuthzSpec, _ Actor, _ map[string]any) error {
+func (AllowAll) Authorize(_ context.Context, _ Request) error {
 	return nil
 }
 
-// RoleAuthorizer authorizes an actor when:
-//  1. spec.Roles is empty (open access), OR the actor shares at least one role
-//     with spec.Roles.
-//  2. If spec.Attribute is non-empty, the predicate is evaluated via expreval
-//     against {"actor": actor, "vars": vars} and must return true.
+// RoleAuthorizer is the historical default [Authorizer].
 //
-// A failed check returns [ErrNotAuthorized].
+// Deprecated: use [NewComposite], or assemble a [Composite] from the deciders in
+// this package. RoleAuthorizer is retained for one release so existing wiring
+// keeps compiling; it now delegates to [NewComposite] and has no behaviour of
+// its own.
 //
-// ⚠ An expression that FAILS TO EVALUATE is reported differently, and the
-// distinction is deliberate (#69): it returns a plain wrapped error that does
-// NOT satisfy errors.Is(err, ErrNotAuthorized). A predicate that will not
-// compile or does not yield a bool has decided nothing, so calling it a denial
-// claims a fact this code does not have — and ErrNotAuthorized classifies 403,
-// an arm that renders the whole error chain to the client, while every
-// evaluator error embeds the predicate source verbatim. It still fails CLOSED;
-// see the note at the call site.
+// ⚠ Its behaviour CHANGED when it started delegating. It previously read
+// spec.Roles and spec.Attribute and never spec.Privileges, so a spec whose only
+// identity field was Privileges was allow-all. It is now evaluated. A deployment
+// running a Privileges-only spec was open and now refuses actors that do not
+// carry the privilege; that is the fix, and it is a breaking behavioural change.
+// Populate [Actor].Privileges from your actor translator.
 //
-// Note: [AuthzSpec].Privileges is reserved for future resource-privilege checks
-// and is NOT evaluated by RoleAuthorizer.
+// The zero value is usable and equivalent to NewComposite().
 type RoleAuthorizer struct{}
 
-// Authorize implements [Authorizer].
-func (RoleAuthorizer) Authorize(_ context.Context, spec AuthzSpec, actor Actor, vars map[string]any) error {
-	// Step 1: role check.
-	if len(spec.Roles) > 0 && !hasAnyRole(actor.Roles, spec.Roles) {
-		return ErrNotAuthorized
-	}
-
-	// Step 2: attribute predicate (optional).
-	if spec.Attribute != "" {
-		env := map[string]any{
-			"actor": actor,
-			"vars":  vars,
-		}
-		ok, err := attrEval.EvalBool(spec.Attribute, env)
-		if err != nil {
-			// ⚠ NOT wrapped in ErrNotAuthorized, deliberately, and this must
-			// stay that way. Two reasons, and the second is why it is a
-			// disclosure rather than only a modelling slip:
-			//
-			// A predicate that evaluates to false is a DENIAL. One that fails
-			// to evaluate has determined NOTHING — the policy is broken —
-			// so claiming ErrNotAuthorized asserts a fact this code does not
-			// have.
-			//
-			// And ErrNotAuthorized classifies 403, whose arm in
-			// httpcore.ClassifyError renders err.Error(): the whole wrapped
-			// chain, into the client's response body. Every error path in the
-			// evaluator embeds the expression SOURCE verbatim (compile %q,
-			// run %q, %q did not evaluate to bool). MEASURED before this fix,
-			// a denied caller received the deployment's own authorization rule:
-			//
-			//	403 {"message":"workflow-authz: not authorized: attribute
-			//	 predicate: workflow-expreval: \"actor.Attributes[...]\" did
-			//	 not evaluate to bool (got string)"}
-			//
-			// Unwrapped it falls to ClassifyError's 500 default, which sends an
-			// empty Message and whose raw error the adapters' writeErr logs —
-			// so operators keep the full diagnostic and the caller gets none of
-			// it.
-			//
-			// ⚠ It still fails CLOSED: this returns a non-nil error and every
-			// caller of Authorize treats any error as a refusal.
-			//
-			// TestRoleAuthorizer_PredicateFailureIsNotADenial pins all of this.
-			return fmt.Errorf("workflow-authz: attribute predicate: %w", err)
-		}
-		if !ok {
-			return ErrNotAuthorized
-		}
-	}
-
-	return nil
+// Authorize implements [Authorizer] by delegating to [NewComposite].
+func (RoleAuthorizer) Authorize(ctx context.Context, r Request) error {
+	return NewComposite().Authorize(ctx, r)
 }
 
-// hasAnyRole reports whether actorRoles and specRoles share at least one value.
-func hasAnyRole(actorRoles, specRoles []string) bool {
-	set := make(map[string]struct{}, len(actorRoles))
-	for _, r := range actorRoles {
-		set[r] = struct{}{}
+// hasAny reports whether have and want share at least one value, compared by
+// exact string equality. It is the matching rule for both roles and privileges:
+// wrkflw expands nothing — no wildcards, no hierarchy, no inheritance — so the
+// consumer's translator must present the principal's grants already flattened.
+func hasAny(have, want []string) bool {
+	if len(have) == 0 || len(want) == 0 {
+		return false
 	}
-	for _, r := range specRoles {
-		if _, ok := set[r]; ok {
+	set := make(map[string]struct{}, len(have))
+	for _, v := range have {
+		set[v] = struct{}{}
+	}
+	for _, v := range want {
+		if _, ok := set[v]; ok {
 			return true
 		}
 	}

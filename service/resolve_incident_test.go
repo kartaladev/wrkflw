@@ -58,7 +58,7 @@ func TestEngineResolveIncident(t *testing.T) {
 
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
 	cat := action.NewCatalog(map[string]action.Action{
@@ -128,7 +128,7 @@ func TestEngineResolveIncidentDefaultsAddAttempts(t *testing.T) {
 
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 	store, err := kernel.NewMemInstanceStore()
 	require.NoError(t, err)
 	cat := action.NewCatalog(map[string]action.Action{

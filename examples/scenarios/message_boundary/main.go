@@ -125,7 +125,7 @@ func main() {
 	driver, err := runtime.NewProcessDriver(
 		runtime.WithActionCatalog(cat),
 		runtime.WithInstanceStore(store),
-		runtime.WithHumanTasks(resolver, taskStore, authz.RoleAuthorizer{}),
+		runtime.WithHumanTasks(resolver, taskStore, authz.NewComposite()),
 		runtime.WithDefinitions(reg),
 	)
 	if err != nil {

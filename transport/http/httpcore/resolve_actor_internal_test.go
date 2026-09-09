@@ -109,6 +109,34 @@ func TestResolveRequestActor(t *testing.T) {
 				assert.ErrorIs(t, err, ErrUnauthenticated)
 			},
 		},
+		// ⚠ The privileges arm must agree with the roles arm. An ID-less actor
+		// carrying only a privilege is the exact analogue of the ID-less kiosk
+		// actor blessed below, and the default authorizer authorizes it —
+		// PrivilegeDecider reads Actor.Privileges. isZeroActor did not know about
+		// the field when it was introduced, so such a principal was classified
+		// unauthenticated and got 401 for a claim that would have been allowed.
+		"an ID-less actor carrying only a PRIVILEGE is accepted": {
+			resolve: func(context.Context) (authz.Actor, error) {
+				return authz.Actor{Privileges: []string{"finance-task claim"}}, nil
+			},
+			assert: func(t *testing.T, got authz.Actor, err error) {
+				require.NoError(t, err,
+					"a privilege is identity, exactly as a role is")
+				assert.Equal(t, []string{"finance-task claim"}, got.Privileges)
+			},
+		},
+		// The at-limit refuse beside the accept above: the same strings.Split
+		// artifact that empties a role list empties a privilege list too, and an
+		// empty string is not a privilege any more than it is a role. Without
+		// this row, isZeroActor could accept every actor and still pass.
+		`{Privileges:[""]} — the strings.Split artifact — is refused`: {
+			resolve: func(context.Context) (authz.Actor, error) {
+				return authz.Actor{Privileges: []string{""}}, nil
+			},
+			assert: func(t *testing.T, _ authz.Actor, err error) {
+				assert.ErrorIs(t, err, ErrUnauthenticated)
+			},
+		},
 		// strings.Split("", ",") returns [""] — what the canonical header middleware
 		// produces for a header-less request. An empty string is not a role.
 		`{Roles:[""]} — the strings.Split artifact — is refused`: {

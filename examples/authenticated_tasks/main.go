@@ -278,7 +278,7 @@ func newService(def *model.ProcessDefinition) (service.Service, error) {
 	manager := authz.Actor{ID: "alice", Roles: []string{"manager"}}
 	taskStore := humantask.NewMemTaskStore()
 	resolver := humantask.NewStaticActorResolver(map[string][]authz.Actor{"manager": {manager}})
-	az := authz.RoleAuthorizer{}
+	az := authz.NewComposite()
 
 	memSt, err := kernel.NewMemInstanceStore()
 	if err != nil {
