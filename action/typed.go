@@ -27,7 +27,8 @@ type typedConfig struct {
 }
 
 // WithStrictInput rejects an input map carrying any key the In type does not
-// declare, instead of ignoring it (the default is lenient).
+// declare. The default is lenient, which rejects nothing — see [Typed] for what
+// lenient does and does not ignore.
 //
 // Matching is EXACT, byte for byte, against the JSON names In declares, so a
 // case-variant such as "_idempotencykey" is rejected rather than folded onto
@@ -35,9 +36,17 @@ type typedConfig struct {
 // [json.Decoder.DisallowUnknownFields] matches object keys to struct fields
 // case-INSENSITIVELY and so never fires on a case-variant, and because
 // [json.Marshal] sorts map keys byte-wise, a lowercase twin would otherwise be
-// applied after — and therefore win over — the value it shadows. Both guards run:
-// the exact-key check covers the top-level object, DisallowUnknownFields covers
-// nested ones.
+// applied after — and therefore win over — the value it shadows.
+//
+// Both guards run, but their reach differs:
+//
+//   - the exact-key check covers the TOP-LEVEL object;
+//   - DisallowUnknownFields rejects genuinely-unknown keys inside NESTED objects;
+//   - a nested CASE-VARIANT is caught by NEITHER, because DisallowUnknownFields
+//     folds case. Strict rejects a case-variant at the top level only.
+//
+// That last point is a known, documented limit, not an oversight: recursive
+// exact-key checking for nested objects is tracked as a follow-up.
 //
 // Strict REQUIRES a struct In, optionally behind a single pointer, and [Typed]
 // panics otherwise. DisallowUnknownFields is silently a no-op for map and
@@ -107,10 +116,16 @@ func (a typedAction[In, Out]) Do(ctx context.Context, in map[string]any) (map[st
 // The input map is decoded into In by JSON round trip, and fn's result is encoded
 // back to a map[string]any the same way.
 //
-// Input decoding is LENIENT by default: keys the In type does not declare are
-// ignored, because a service task receives the whole variables map plus the
-// engine's "_idempotencyKey" stamp. Pass [WithStrictInput] to reject any key that
-// is not an exact JSON name In declares.
+// Input decoding is LENIENT by default, because a service task receives the whole
+// variables map plus the engine's "_idempotencyKey" stamp.
+//
+// Lenient ignores keys that match nothing — but that is NOT every undeclared key.
+// encoding/json folds case, so a case-variant of a declared name BINDS to that
+// field instead of being ignored, and because [json.Marshal] emits map keys
+// byte-sorted, a lowercase variant of a camelCase name is applied last and WINS.
+// A workflow variable named "_idempotencykey" therefore overrides the engine's
+// "_idempotencyKey" stamp for an In that declares it. [WithStrictInput] is the
+// only mode that rejects such a key, and only at the top level.
 //
 // A failure to decode the input into In is reported as [ErrDecodeInput] and is
 // non-retryable. An error returned by fn itself is passed through unchanged, so fn
@@ -253,9 +268,19 @@ func validOutType(rt reflect.Type) bool {
 
 // decodeInto decodes the input map into a fresh In by JSON round trip.
 //
-// Under strict, DisallowUnknownFields is the SECOND guard: it covers nested
-// objects, while rejectUnknownKeys covers the top level by exact byte match. It
-// cannot cover the top level alone, because it folds case (see [WithStrictInput]).
+// Under strict, DisallowUnknownFields is the SECOND guard, and it is LOAD-BEARING.
+// Do NOT remove it as redundant with the exact-key check:
+//
+//   - it rejects genuinely-unknown keys inside NESTED objects, which
+//     rejectUnknownKeys does not descend into;
+//   - it is the ONLY guard that catches an embedded-name CONFLICT — two embedded
+//     structs declaring the same JSON name. encoding/json drops both conflicting
+//     fields, so that name is unknown to the decoder, while collectJSONNames still
+//     adds it. The name set over-accepts there, and this guard is what turns the
+//     composite back into a rejection.
+//
+// It folds case, so it cannot replace the top-level exact-key check, and a nested
+// case-variant is caught by neither (a known limit; see [WithStrictInput]).
 //
 // A nil in marshals to JSON null, which has no members: even a strict decode
 // succeeds and leaves dst at its zero value.
