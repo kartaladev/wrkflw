@@ -662,6 +662,25 @@ func TestCompositeRejectsMisconfiguration(t *testing.T) {
 			},
 		},
 		{
+			// ⚠ THE EMPTY-SPEC CELL. A nil element is a wiring defect whatever
+			// the spec asks for, but the coverage shortcut used to return before
+			// the nil scan, so this case reached stage 1 and PANICKED — while
+			// ErrNilDecider's own godoc promised "a diagnosable refusal instead
+			// of a nil-pointer panic on the request path". A documented limit
+			// may be stated only if it is true.
+			//
+			// An empty spec is the documented allow case — every task authored
+			// with no eligibility — so it is the shape most likely to be in
+			// flight when a wiring bug lands.
+			name:      "a nil decider is caught even when the spec sets nothing",
+			composite: authz.Composite{Identity: []authz.Decider{nil}},
+			spec:      authz.AuthzSpec{},
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, authz.ErrNilDecider)
+				assert.NotErrorIs(t, err, authz.ErrNotAuthorized)
+			},
+		},
+		{
 			// ⚠ The direction that matters. A decider that does not implement
 			// SpecReader declares no coverage and is treated as covering
 			// NOTHING. The permissive alternative would let a single custom

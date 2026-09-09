@@ -40,6 +40,10 @@ var ErrSpecNotEvaluable = errors.New("workflow-authz: no decider evaluates a fie
 // a nil element. Like the other two it is a configuration error and does not
 // satisfy errors.Is(err, [ErrNotAuthorized]). It turns a wiring typo into a
 // diagnosable refusal instead of a nil-pointer panic on the request path.
+//
+// It is checked for EVERY request, including one whose spec sets no fields at
+// all — see the ordering note in checkCoverage for why that case is the one that
+// matters most.
 var ErrNilDecider = errors.New("workflow-authz: composite holds a nil decider")
 
 // Composite combines single-purpose [Decider]s into an [Authorizer] in two
@@ -145,6 +149,20 @@ func (c Composite) Authorize(ctx context.Context, r Request) error {
 // treated as covering nothing — see that interface for why that direction, and
 // not the permissive one, is the safe default.
 func (c Composite) checkCoverage(spec AuthzSpec) error {
+	deciders := append(append([]Decider(nil), c.Identity...), c.Constraint...)
+
+	// ⚠ The nil scan runs BEFORE the empty-spec shortcut, and the order is
+	// load-bearing. A nil element is a wiring defect whatever the spec asks for;
+	// returning early left it to panic in stage 1 for exactly the empty spec —
+	// the documented allow case, and so the shape most likely to be in flight
+	// when a wiring bug lands. It also made ErrNilDecider's own godoc false for
+	// that case, and a documented limit may be stated only if it is true.
+	for _, d := range deciders {
+		if d == nil {
+			return fmt.Errorf("%w: a decider slice holds a nil element", ErrNilDecider)
+		}
+	}
+
 	required := requiredFields(spec)
 	if len(required) == 0 {
 		// An empty spec asks nothing of the authorizer, so no composite is
@@ -152,10 +170,7 @@ func (c Composite) checkCoverage(spec AuthzSpec) error {
 		return nil
 	}
 
-	for _, d := range append(append([]Decider(nil), c.Identity...), c.Constraint...) {
-		if d == nil {
-			return fmt.Errorf("%w: a decider slice holds a nil element", ErrNilDecider)
-		}
+	for _, d := range deciders {
 		reader, ok := d.(SpecReader)
 		if !ok {
 			continue

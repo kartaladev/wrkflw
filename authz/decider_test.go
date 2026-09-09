@@ -404,3 +404,144 @@ func TestAttributeDecider(t *testing.T) {
 		})
 	}
 }
+
+// TestDeciderSpecCoverageDeclarations asserts what each decider DECLARES it
+// reads, directly, against the exact field constants.
+//
+// ⚠ Why this is asserted at the declaration and not inferred through
+// [authz.Composite]: a decider that lies about its coverage is invisible
+// end-to-end. Make RoleDecider claim FieldPrivileges as well — a plausible
+// copy-paste — and the whole package stays green while
+//
+//	Composite{Identity: [RoleDecider{}]}, spec{Privileges: [...]}, actor holding none
+//
+// is ALLOWED: the false claim satisfies checkCoverage, RoleDecider then abstains
+// because Spec.Roles is empty, and the combiner falls through to "an empty spec
+// allows". That is #107 arriving through the very mechanism built to stop it.
+//
+// This is round 1's own lesson one level down. The NotApplicable rows above are
+// asserted against the exact Decision constant rather than inferred from what
+// Composite concludes; a coverage declaration is foundational in the same way
+// and gets the same treatment.
+//
+// The negative assertions are the load-bearing half: a decider claiming MORE
+// than it reads is the direction that fails open.
+func TestDeciderSpecCoverageDeclarations(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		reader authz.SpecReader
+		assert func(t *testing.T, got []authz.SpecField)
+	}
+
+	cases := []testCase{
+		{
+			name:   "PrivilegeDecider declares privileges and nothing else",
+			reader: authz.PrivilegeDecider{},
+			assert: func(t *testing.T, got []authz.SpecField) {
+				assert.Equal(t, []authz.SpecField{authz.FieldPrivileges}, got)
+			},
+		},
+		{
+			name:   "RoleDecider declares roles and nothing else",
+			reader: authz.RoleDecider{},
+			assert: func(t *testing.T, got []authz.SpecField) {
+				assert.Equal(t, []authz.SpecField{authz.FieldRoles}, got)
+			},
+		},
+		{
+			name:   "AttributeDecider declares the attribute and nothing else",
+			reader: authz.AttributeDecider{},
+			assert: func(t *testing.T, got []authz.SpecField) {
+				assert.Equal(t, []authz.SpecField{authz.FieldAttribute}, got)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, tc.reader.ReadsSpecFields())
+		})
+	}
+}
+
+// TestDeciderDeclarationMatchesBehaviour binds each declaration to the
+// behaviour it promises, closing the gap the assertions above cannot see on
+// their own: that a decider declaring a field actually DECIDES on it, and that
+// it abstains on every field it does not declare.
+//
+// Together the two tests pin both directions — declaring too much (fails open
+// through checkCoverage) and declaring too little (fails closed with a spurious
+// ErrSpecNotEvaluable).
+func TestDeciderDeclarationMatchesBehaviour(t *testing.T) {
+	t.Parallel()
+
+	// A spec that sets every field at once, and an actor satisfying none of
+	// them, so a decider that reads its declared field must Deny and one that
+	// does not must abstain.
+	spec := authz.AuthzSpec{
+		Roles:      []string{"a-role"},
+		Privileges: []string{"a-privilege"},
+		Attribute:  `1 == 2`,
+	}
+
+	type testCase struct {
+		name    string
+		decider authz.Decider
+	}
+
+	cases := []testCase{
+		{name: "PrivilegeDecider", decider: authz.PrivilegeDecider{}},
+		{name: "RoleDecider", decider: authz.RoleDecider{}},
+		{name: "AttributeDecider", decider: authz.AttributeDecider{}},
+	}
+
+	// fieldSetters blanks one spec field at a time, so each decider can be shown
+	// to go NotApplicable for exactly the fields it does not declare.
+	blank := map[authz.SpecField]func(s authz.AuthzSpec) authz.AuthzSpec{
+		authz.FieldRoles:      func(s authz.AuthzSpec) authz.AuthzSpec { s.Roles = nil; return s },
+		authz.FieldPrivileges: func(s authz.AuthzSpec) authz.AuthzSpec { s.Privileges = nil; return s },
+		authz.FieldAttribute:  func(s authz.AuthzSpec) authz.AuthzSpec { s.Attribute = ""; return s },
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			reader, ok := tc.decider.(authz.SpecReader)
+			require.True(t, ok, "every decider in this package declares its coverage")
+			declared := reader.ReadsSpecFields()
+			require.Len(t, declared, 1, "each decider here reads exactly one field")
+
+			// With its declared field SET, it must reach a decision.
+			d, err := tc.decider.Decide(t.Context(), authz.Request{
+				Operation: authz.OpClaim,
+				Spec:      spec,
+				Actor:     authz.Actor{ID: "u1"},
+				Vars:      map[string]any{},
+			})
+			require.NoError(t, err)
+			assert.Equal(t, authz.Deny, d,
+				"the actor satisfies none of the fields, so the declared field must DENY — "+
+					"a decider that declares a field it does not read would abstain here, "+
+					"and checkCoverage would have been satisfied by a claim it cannot honour")
+
+			// With its declared field BLANK, it must abstain — proving it reads
+			// that field and not one of the others left standing.
+			narrowed := blank[declared[0]](spec)
+			d, err = tc.decider.Decide(t.Context(), authz.Request{
+				Operation: authz.OpClaim,
+				Spec:      narrowed,
+				Actor:     authz.Actor{ID: "u1"},
+				Vars:      map[string]any{},
+			})
+			require.NoError(t, err)
+			assert.Equal(t, authz.NotApplicable, d,
+				"with its declared field blank it must abstain, even though the OTHER "+
+					"two fields are still set — that is what proves the declaration names "+
+					"the field this decider actually reads")
+		})
+	}
+}
