@@ -209,7 +209,19 @@ type definitionWire struct {
 
 // MarshalJSON serializes a ProcessDefinition to JSON using the flat NodeWire
 // form so stored JSONB definitions remain backward-compatible.
+//
+// checkNodeTypes runs first, over this level's nodes only, before either
+// ValidationStrategyFor or toWire touches one: both dispatch on the node's
+// concrete type with a bare assertion, so a foreign node — one satisfying Node
+// and claiming a registered kind without being that kind's concrete type —
+// would otherwise panic instead of being refused (#147). The flat check is
+// enough for a nested subprocess too: NodeWire.Subprocess is a
+// *ProcessDefinition with its own MarshalJSON, so json.Marshal recurses into
+// it below and re-runs this same gate at every level for free.
 func (d ProcessDefinition) MarshalJSON() ([]byte, error) {
+	if err := checkNodeTypes(d.Nodes); err != nil {
+		return nil, err
+	}
 	dw := definitionWire{
 		ID:            d.ID,
 		Version:       d.Version,

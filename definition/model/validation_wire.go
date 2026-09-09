@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/kartaladev/wrkflw/definition/model/validate"
 )
@@ -79,10 +80,28 @@ func PutValidation(s validate.ValidationStrategy) *validate.ValidationDescriptor
 // registered spec rather than type-switching on concrete node types, since
 // model must not import the leaf node packages (definition/event,
 // definition/activity) that define them.
+//
+// It still panics on a foreign node — ErrForeignNodeType's doc comment records
+// why this exported signature is not changed to return an error, and why a nil
+// return for an unrecognized type is ruled out as failing open (#147). What
+// changed under #147 is the panic's diagnostic only: ValidationGet's own bare
+// assertion would panic with Go's opaque "interface conversion" message, so
+// this checks the type gate first and panics with an error naming
+// ErrForeignNodeType, the node id, and both types, matching the message a
+// caller would see from Validate. Same fail-closed direction, strictly better
+// message, no signature change — an improvement to the residue, not a fix.
 func ValidationStrategyFor(n Node) validate.ValidationStrategy {
 	s, ok := specFor(n.Kind())
 	if !ok || s.ValidationGet == nil {
 		return nil
+	}
+	if want, recorded := nodeTypeFor(n.Kind()); recorded {
+		if got := reflect.TypeOf(n); got != want {
+			panic(fmt.Errorf(
+				"%w: node %q declares kind %s (%s) but is %s",
+				ErrForeignNodeType, n.ID(), n.Kind(), want, got,
+			))
+		}
 	}
 	return s.ValidationGet(n)
 }
