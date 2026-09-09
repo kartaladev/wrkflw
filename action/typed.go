@@ -173,6 +173,51 @@ func Typed[In, Out any](fn func(context.Context, In) (Out, error), opts ...Typed
 // rejectUnknownKeys reports an error naming every key of in that is not an exact
 // byte-for-byte member of names. Unknown keys are sorted so the message — which is
 // persisted on the resulting ActionFailed — is deterministic.
+//
+// # The blast radius of this message, measured (#145)
+//
+// This message does not stay here. It becomes ErrDecodeInput, the runtime records
+// err.Error() as ActionFailed.Err, and the engine both persists it as the
+// "_errorMessage" instance variable on a catch-flow and hands it to an error
+// boundary's ErrorExpr as "_error". So every byte below reaches a durable variable
+// and an expression evaluator, and the key names in it are CALLER-CHOSEN: the
+// engine merges StartInstance variables, action output and message payloads into
+// the instance variables wholesale, keys included.
+//
+// Two properties of that were measured against the pre-exact-match tree
+// (11037351, which used DisallowUnknownFields) and this one, with the same probe:
+//
+//   - VOLUME grew, and this is the real delta. DisallowUnknownFields names only
+//     the FIRST offending key, so its message was 65 bytes for 1 unknown key and
+//     65 bytes for 50. This one names them all: 95, 106, 136, 186, 586 bytes for
+//     1, 2, 5, 10, 50 keys — a fixed 87-byte frame plus len(strconv.Quote(key))+2
+//     per key. So the message is UNBOUNDED in the NUMBER of keys where the old one
+//     was constant in it.
+//
+//     Read that as what it is. It is linear over data the instance ALREADY
+//     stores: every key named here came from the input map, which is a copy of
+//     s.Variables, so each name is duplicated rather than amplified — the values
+//     are not repeated, only the names. It is not a resource-exhaustion vector
+//     and nothing here measures one. It matters because the copy lands somewhere
+//     the original does not: an expression evaluator, via "_error" and
+//     "_errorMessage".
+//
+//   - The SIZE of any one key was already unbounded and is unchanged: a 10 KiB key
+//     produced a 10 059-byte message before and a 10 089-byte one now. Arbitrary
+//     caller-chosen text of arbitrary length did not newly become reachable here.
+//
+// Escaping is unchanged in both directions: strconv.Quote and encoding/json's %q
+// produce byte-identical output, so the exact-match change neither added nor
+// removed a mitigation. What that escaping is and is not worth was measured for
+// #141 and the two halves differ — see the comment on env["_error"] in
+// engine/step_errors.go. It is a real barrier against a key name being read as
+// EXPRESSION SOURCE. It is no barrier at all against a predicate that reads the
+// message as DATA, which `_error contains "…"` does.
+//
+// The one KIND of key that newly reaches this message is a case-variant of a
+// declared JSON name: before, encoding/json folded it into the matching field and
+// no error was produced at all. Genuinely-unknown keys already reached
+// "_errorMessage" as `json: unknown field "…"`.
 func rejectUnknownKeys(in map[string]any, names map[string]struct{}) error {
 	var unknown []string
 	for k := range in {

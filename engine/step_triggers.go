@@ -509,6 +509,22 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 			if s.Variables == nil {
 				s.Variables = map[string]any{}
 			}
+			// _errorMessage carries CALLER-INFLUENCED content into a durable
+			// instance variable, and a definition author reading it should know
+			// that. Measured for #141 in TestErrorMessageReachabilityAndGatewayRouting:
+			// when the failing action is a strict action.Typed, t.Err names the
+			// input keys it rejected, and those key names come from whoever
+			// supplied the process variables — StartInstance vars, action output,
+			// a message payload; mergeVars copies all of them in wholesale, keys
+			// included. A gateway condition written as `_errorMessage contains
+			// "fatal"` therefore branches on a string an outside party partly
+			// chose. It is not an injection: the condition is definition-authored
+			// and the variable reaches expreval as environment data, which the
+			// same test attempts and records as a measured negative.
+			//
+			// This write is NARROWER than "an action failed": it needs an
+			// effective retry policy AND a RecoveryFlow, both checked above. The
+			// wider path, needing neither, is env["_error"] in step_errors.go.
 			s.Variables["_errorMessage"] = t.Err
 			// Total executions: initial attempt plus all retries.
 			s.Variables["_errorAttempts"] = tok.RetryAttempts + 1

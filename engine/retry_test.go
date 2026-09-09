@@ -13,6 +13,7 @@ import (
 	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/flow"
+	"github.com/kartaladev/wrkflw/definition/gateway"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
 )
@@ -454,6 +455,154 @@ func TestStepExhaustion(t *testing.T) {
 
 			r2, err := engine.Step(t.Context(), tc.def, r1.State,
 				engine.NewActionFailed(time.Unix(1, 0), cmdID, "boom", true),
+				engine.StepOptions{})
+			require.NoError(t, err)
+			tc.assert(t, r2)
+		})
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #141 — _errorMessage, its reachability precondition, and gateway routing
+// ─────────────────────────────────────────────────────────────────────────────
+
+// recoveryGatewayDef builds the full chain #141 predicts: a service task whose
+// terminal retry exhaustion routes down RecoveryFlow "rf" into an exclusive
+// gateway that branches on a definition-authored condition over _errorMessage.
+//
+//	start → task ─rf→ xor ─{cond}→ escalate → end-escalate
+//	                      └default→ log      → end-log
+func recoveryGatewayDef(cond string) *model.ProcessDefinition {
+	return &model.ProcessDefinition{
+		ID: "p", Version: 1,
+		Nodes: []model.Node{
+			event.NewStart("start"),
+			activity.NewServiceTask("task",
+				activity.WithTaskAction("a"),
+				activity.WithRecoveryFlow("rf"),
+				activity.WithRetryPolicy(&model.RetryPolicy{MaxAttempts: 1})),
+			gateway.NewExclusive("xor"),
+			activity.NewServiceTask("escalate", activity.WithTaskAction("escalate-action")),
+			activity.NewServiceTask("log", activity.WithTaskAction("log-action")),
+			event.NewEnd("end"),
+			event.NewEnd("end-escalate"),
+			event.NewEnd("end-log"),
+		},
+		Flows: []flow.SequenceFlow{
+			{ID: "f1", Source: "start", Target: "task"},
+			{ID: "f2", Source: "task", Target: "end"},
+			{ID: "rf", Source: "task", Target: "xor"},
+			{ID: "f-esc", Source: "xor", Target: "escalate", Condition: cond},
+			{ID: "f-log", Source: "xor", Target: "log", IsDefault: true},
+			{ID: "f-esc-end", Source: "escalate", Target: "end-escalate"},
+			{ID: "f-log-end", Source: "log", Target: "end-log"},
+		},
+	}
+}
+
+// TestErrorMessageReachabilityAndGatewayRouting is the second half of #141's
+// measurement — the durable path, as distinct from the ephemeral _error the
+// boundary tests in boundary_error_matching_test.go cover.
+//
+// Two things are being measured, and the issue states neither:
+//
+//  1. THE PRECONDITION. _errorMessage is NOT written whenever an action fails.
+//     engine/step_triggers.go writes it only inside the terminal
+//     retry-exhaustion → catch-flow branch, so the node needs BOTH an effective
+//     retry policy AND a RecoveryFlow. The "no RecoveryFlow" case pins that; it
+//     is a narrower reachability than the issue assumes.
+//
+//  2. THE PREDICTION ITSELF, on gateway conditions. Where the precondition does
+//     hold, a caller-chosen key name inside the strict-decode message lands in
+//     durable instance variables and a definition-authored gateway condition
+//     reading _errorMessage branches on it. That reproduces.
+//
+// The injection case is the same measured NEGATIVE the boundary table records,
+// re-attempted on the durable path because the two use different evaluator call
+// sites: the condition string comes from the process definition, and the variable
+// reaches expreval as one entry of an environment map. It is data on both paths.
+func TestErrorMessageReachabilityAndGatewayRouting(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		def    *model.ProcessDefinition
+		keys   []string
+		assert func(t *testing.T, r engine.StepResult)
+	}
+
+	cases := []testCase{
+		{
+			name: "PRECONDITION: without a RecoveryFlow no _errorMessage is written at all",
+			def:  retryDef(&model.RetryPolicy{MaxAttempts: 1}),
+			keys: []string{"fatal-boundary"},
+			assert: func(t *testing.T, r engine.StepResult) {
+				_, ok := r.State.Variables["_errorMessage"]
+				assert.False(t, ok,
+					"_errorMessage is written only on the catch-flow branch, so an action "+
+						"failure on a node without a RecoveryFlow must leave no trace of the "+
+						"caller-chosen key name in instance variables")
+			},
+		},
+		{
+			name: "REPRODUCES: a caller-chosen key name lands verbatim in a durable instance variable",
+			def:  recoveryGatewayDef(`_errorMessage contains "fatal"`),
+			keys: []string{"fatal-boundary"},
+			assert: func(t *testing.T, r engine.StepResult) {
+				msg, ok := r.State.Variables["_errorMessage"].(string)
+				require.True(t, ok, "_errorMessage must be present and a string")
+				assert.Contains(t, msg, `"fatal-boundary"`,
+					"the caller's key name is carried into durable instance variables verbatim, "+
+						"quoted by strconv.Quote but not otherwise transformed")
+			},
+		},
+		{
+			name: "REPRODUCES: it flips a definition-authored gateway condition",
+			def:  recoveryGatewayDef(`_errorMessage contains "fatal"`),
+			keys: []string{"fatal-boundary"},
+			assert: func(t *testing.T, r engine.StepResult) {
+				assert.True(t, hasInvokeActionForName(r.Commands, "escalate-action"),
+					"the caller-chosen key name must route the token down the conditional branch")
+				assert.False(t, hasInvokeActionForName(r.Commands, "log-action"),
+					"and not down the default branch")
+			},
+		},
+		{
+			name: "at-limit accept: a key name the condition does not ask for takes the default branch",
+			def:  recoveryGatewayDef(`_errorMessage contains "fatal"`),
+			keys: []string{"harmless-variable"},
+			assert: func(t *testing.T, r engine.StepResult) {
+				assert.True(t, hasInvokeActionForName(r.Commands, "log-action"),
+					"an unrelated key name must leave the routing on the default branch")
+				assert.False(t, hasInvokeActionForName(r.Commands, "escalate-action"),
+					"otherwise the assertion above would be satisfied by a condition matching everything")
+			},
+		},
+		{
+			name: "DOES NOT REPRODUCE: a key name that is expr source is not evaluated as expr source",
+			def:  recoveryGatewayDef(`_errorMessage == "boom"`),
+			keys: []string{`" or true or "`},
+			assert: func(t *testing.T, r engine.StepResult) {
+				assert.True(t, hasInvokeActionForName(r.Commands, "log-action"),
+					"the condition string comes from the process definition; the variable reaches "+
+						"expreval as environment data and cannot become part of the predicate")
+				assert.False(t, hasInvokeActionForName(r.Commands, "escalate-action"))
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			at0 := time.Unix(0, 0)
+			r1, err := engine.Step(t.Context(), tc.def, engine.InstanceState{InstanceID: "p"},
+				engine.NewStartInstance(at0, nil), engine.StepOptions{})
+			require.NoError(t, err)
+			cmdID := findInvokeActionCmdID(t, r1.Commands)
+
+			r2, err := engine.Step(t.Context(), tc.def, r1.State,
+				engine.NewActionFailed(time.Unix(1, 0), cmdID, strictDecodeErrorFor(t, tc.keys...), true),
 				engine.StepOptions{})
 			require.NoError(t, err)
 			tc.assert(t, r2)

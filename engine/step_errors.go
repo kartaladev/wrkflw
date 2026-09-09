@@ -48,6 +48,30 @@ func boundaryErrorMatches(n event.BoundaryEvent, vars map[string]any, cause erro
 		for k, v := range vars {
 			env[k] = v
 		}
+		// errorCode is the failing action's error STRING, and for a strict
+		// action.Typed it names the input keys the decode rejected — key names
+		// supplied by whoever supplied the process variables. So a boundary
+		// predicate like `_error contains "fatal"` branches on partly
+		// caller-chosen content, and this path needs no RecoveryFlow and no retry
+		// policy, which makes it wider than the "_errorMessage" write in
+		// step_triggers.go. Measured for #141 in
+		// TestBoundaryRoutingUnderCallerChosenKeyNames.
+		//
+		// The limit that holds: this is DATA, never expr SOURCE. n.ErrorExpr comes
+		// from the process definition and errorCode arrives as one entry of this
+		// environment map, so a key name shaped like expr source cannot become
+		// part of the predicate. The same test attempts that and records it as a
+		// measured negative.
+		//
+		// Two barriers, and they are independent — measured by mutating this
+		// line to interpolate errorCode into the predicate instead of binding
+		// it. With strconv.Quote still in place in rejectUnknownKeys the
+		// interpolated source does not compile at all (the escapes are not expr
+		// syntax); only with BOTH the binding and the quoting removed does a
+		// crafted key name flip the predicate. So the quoting is a real second
+		// barrier against expression injection. It is NOT a barrier against the
+		// data-influence half above: a `contains` predicate reads the quoted
+		// string as data just as happily.
 		env["_error"] = errorCode
 		return eval.EvalBool(n.ErrorExpr, env)
 	}

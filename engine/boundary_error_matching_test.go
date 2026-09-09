@@ -5,6 +5,7 @@ package engine_test
 // live-error cause threading, and bare-code-source synthesis.
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kartaladev/wrkflw/action"
 	"github.com/kartaladev/wrkflw/definition/activity"
 	"github.com/kartaladev/wrkflw/definition/event"
 	"github.com/kartaladev/wrkflw/definition/flow"
@@ -683,4 +685,163 @@ func TestMalformedErrorExprNonFatal(t *testing.T) {
 
 	// The second boundary (bnd-real) must have caught the error.
 	assertCaught(t, r2)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #141 — what a caller-chosen VARIABLE KEY NAME can do to boundary routing
+// ─────────────────────────────────────────────────────────────────────────────
+
+// strictDecodeErrorFor returns the ActionFailed error string the runtime records
+// when a strict [action.Typed] action is invoked with caller-supplied keys its In
+// does not declare.
+//
+// The string is produced by the real decoder rather than written out here, so
+// these tests are measuring the live message and break if its shape changes. That
+// matters: the whole of #141 turns on which bytes of that message an attacker
+// chooses, and a hand-written literal would keep passing after the decoder stopped
+// emitting them.
+func strictDecodeErrorFor(t *testing.T, keys ...string) string {
+	t.Helper()
+
+	type strictIn struct {
+		OrderID string `json:"orderId"`
+	}
+	a := action.Typed(func(_ context.Context, in strictIn) (map[string]any, error) {
+		return map[string]any{"orderId": in.OrderID}, nil
+	}, action.WithStrictInput())
+
+	vars := map[string]any{"orderId": "ORD-1"}
+	for _, k := range keys {
+		vars[k] = "x"
+	}
+	_, err := a.Do(t.Context(), vars)
+	require.Error(t, err, "the probe must actually produce a decode error, or it is measuring nothing")
+	return err.Error()
+}
+
+// TestBoundaryRoutingUnderCallerChosenKeyNames is #141's measurement, and it keeps
+// the issue's two halves apart because they have opposite verdicts.
+//
+// The reachability chain, derived rather than recalled: a strict decode failure
+// names the offending keys (action/typed.go rejectUnknownKeys) → the runtime
+// records err.Error() as ActionFailed.Err → engine/step_triggers.go passes that
+// string to propagateError as the errorCode → engine/step_errors.go injects it as
+// env["_error"] for a boundary's ErrorExpr. Key names are caller-supplied: eight
+// mergeVars call sites in step_triggers.go copy StartInstance vars, action output
+// and message/signal payloads into s.Variables wholesale, keys and all.
+//
+//	INJECTION half — MEASURED NEGATIVE. The value never becomes expr SOURCE. The
+//	predicate string comes from the process definition; the error reaches the
+//	evaluator as one entry of an environment map, i.e. as data. Cases 3 and 4
+//	attempt it and it does not reproduce.
+//
+//	DATA-INFLUENCE half — MEASURED POSITIVE, and it is not a code-injection bug.
+//	A definition author who writes a substring predicate over _error is writing it
+//	over a string that partly consists of caller-chosen key names. Case 1
+//	reproduces that; case 2 is the at-limit accept beside it.
+//
+// Cases 3 and 4 are refusals, so case 5 pins the accept next to them: the same
+// message shape DOES catch when the predicate asks for something actually in it.
+// Without it, "did not catch" would be satisfied by a boundary that never catches.
+func TestBoundaryRoutingUnderCallerChosenKeyNames(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name string
+		expr string
+		code string
+		// keys are the caller-chosen variable names the strict decode will name.
+		keys []string
+		// rawCode, when set, is used as the ActionFailed error verbatim instead of
+		// deriving one from keys.
+		rawCode string
+		assert  func(t *testing.T, r engine.StepResult)
+	}
+
+	cases := []testCase{
+		{
+			name: "REPRODUCES: a caller-chosen key name flips a definition-authored substring predicate",
+			expr: `_error contains "fatal"`,
+			keys: []string{"fatal-boundary"},
+			assert: func(t *testing.T, r engine.StepResult) {
+				assertCaught(t, r)
+			},
+		},
+		{
+			name: "at-limit accept: a key name the predicate does not ask for leaves routing alone",
+			expr: `_error contains "fatal"`,
+			keys: []string{"harmless-variable"},
+			assert: func(t *testing.T, r engine.StepResult) {
+				assertPropagated(t, r)
+			},
+		},
+		{
+			name: "DOES NOT REPRODUCE: a key name that is expr source is not evaluated as expr source",
+			expr: `_error == "PAY_ERR"`,
+			keys: []string{`" or true or "`},
+			assert: func(t *testing.T, r engine.StepResult) {
+				assertPropagated(t, r)
+			},
+		},
+		{
+			// The strongest form of the attempt, not a token one: a key name that
+			// is a COMPLETE, well-typed expr fragment. Interpolated naively into
+			// `_error == "…"` it would read
+			//	("…unknown key " == "") or true or ("… only)" == "PAY_ERR")
+			// and evaluate true. It still does not reproduce.
+			name: "DOES NOT REPRODUCE: a key name that is a complete, well-typed expr fragment",
+			expr: `_error == "PAY_ERR"`,
+			keys: []string{`" == "" or true or "`},
+			assert: func(t *testing.T, r engine.StepResult) {
+				assertPropagated(t, r)
+			},
+		},
+		{
+			name: "DOES NOT REPRODUCE: a key name equal to the awaited code cannot satisfy an equality",
+			expr: `_error == "PAY_ERR"`,
+			keys: []string{"PAY_ERR"},
+			assert: func(t *testing.T, r engine.StepResult) {
+				assertPropagated(t, r)
+			},
+		},
+		{
+			name: "at-limit accept for the two refusals: this message shape does route when the predicate asks for it",
+			expr: `_error contains "unknown key"`,
+			keys: []string{"PAY_ERR"},
+			assert: func(t *testing.T, r engine.StepResult) {
+				assertCaught(t, r)
+			},
+		},
+		{
+			name: "the ErrorCode tier is unreachable: the message is prefixed, so it can never equal a code",
+			code: "PAY_ERR",
+			keys: []string{"PAY_ERR"},
+			assert: func(t *testing.T, r engine.StepResult) {
+				assertPropagated(t, r)
+			},
+		},
+		{
+			name:    "at-limit accept for the ErrorCode tier: the same boundary catches its own code",
+			code:    "PAY_ERR",
+			rawCode: "PAY_ERR",
+			assert: func(t *testing.T, r engine.StepResult) {
+				assertCaught(t, r)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			errCode := tc.rawCode
+			if errCode == "" {
+				errCode = strictDecodeErrorFor(t, tc.keys...)
+			}
+
+			def := boundaryExprAndCodeDef(tc.expr, tc.code)
+			st, ia := stepToParked(t, def)
+			tc.assert(t, fireActionFailed(t, def, st, ia, errCode, nil))
+		})
+	}
 }
