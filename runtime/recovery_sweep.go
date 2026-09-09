@@ -9,6 +9,7 @@ import (
 
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
+	"github.com/kartaladev/wrkflw/humantask"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
@@ -27,19 +28,6 @@ const (
 	// matching the call notifier's claim batch.
 	defaultRecoverySweepBatchSize = 100
 )
-
-// nonTerminalStatuses are the statuses an instance carrying a live
-// pending-command mark can be in.
-//
-// A mark is only ever written for the commands the runtime performs AFTER the
-// commit, and every command whose emission accompanies a terminal status is
-// excluded from the mark by construction (see [engine.PendingCommandKind]): a
-// terminal step's CompleteInstance / FailInstance are delivered inside the
-// commit, and InvokeCancelAction is best-effort by contract. So restricting the
-// scan to these two statuses loses nothing, and it is what makes the sweep an
-// indexed lookup rather than a full-table walk — `wrkflw_instances_status_idx`
-// is `(status) WHERE ended_at IS NULL`.
-var nonTerminalStatuses = []engine.Status{engine.StatusRunning, engine.StatusCompensating}
 
 // instanceLister resolves the enumeration capability the sweep needs.
 //
@@ -66,24 +54,43 @@ func (driver *ProcessDriver) instanceLister() kernel.InstanceLister {
 // step carries commands that were never performed, and returns how many
 // instances it recovered.
 //
-// This is the BOOT pass, and it deliberately ignores the lease: a mark found at
-// boot cannot belong to a perform this process is running, because this process
-// has not performed anything yet. [ProcessDriver.RunRecoverySweep] is the
-// periodic counterpart and does honour the lease.
+// This is the BOOT pass. It honours the same grace window as the periodic one
+// ([WithRecoveryLease]), and that is a correction, not an oversight: an earlier
+// version skipped it on the reasoning that "a mark found at boot cannot belong to
+// a perform this process is running". True, and beside the point — it can belong
+// to a perform ANOTHER LIVE REPLICA is running, and the durable path this sweep
+// is wired for (see [WithInstanceLister]) is exactly the multi-replica one. A
+// rolling restart would otherwise re-perform every in-flight command of every
+// surviving replica.
 //
-// ⚠ Recovery is AT-LEAST-ONCE, and cannot be otherwise while a command's only
-// durable record is written in the same transaction as the step that emits it.
-// Two residuals follow, and both are properties of the mechanism rather than
-// defects in it:
+// ⚠ CONCURRENCY, stated precisely because an earlier version of this comment
+// overclaimed it. What follows is NOT a lease in the sense
+// [kernel.CallLinkStore] uses: there is no claim, nothing is written, nothing is
+// hidden from another worker. It is an AGE COMPARISON against a stamp the
+// committing step wrote — a grace window, and two replicas evaluating it
+// concurrently both pass.
 //
-//   - A second live process that is mid-perform on the same instance will have
-//     its work duplicated. The ENGINE side is safe — the re-driven follow-up goes
-//     through the CAS-retrying apply path and an already-resumed token answers
-//     [engine.ErrTokenNotFound], which is treated as success — but the action's
-//     own side effect runs twice. Actions reached through recovery should be
-//     idempotent.
-//   - A step whose perform failed part-way re-drives ALL of that step's
-//     commands, including the ones that had already succeeded.
+// The exclusion mechanism, when there is one, is [WithInstanceOwnership]. With an
+// ownership port configured, this pass re-drives only instances this process owns
+// and a second replica skips them. Without one, recovery is at-least-once ACROSS
+// replicas: N replicas can each perform the same abandoned command once.
+//
+// Two further residuals, both properties of the mechanism rather than defects:
+//
+//   - A process that is mid-perform on the same instance can have its work
+//     duplicated once the grace window expires. The ENGINE side is safe — the
+//     re-driven follow-up goes through the CAS-retrying apply path and an
+//     already-resumed token answers [engine.ErrTokenNotFound], which is treated as
+//     success — but the action's own side effect runs twice. Actions reached
+//     through recovery should be idempotent, and
+//     [ProcessDriver.alreadyPerformed] narrows this to the two commands that
+//     leave no durable evidence of having run.
+//   - The stamp is written by one node's wall clock and compared against
+//     another's. Clock skew shifts the window one-for-one: a sweeper five minutes
+//     fast against a five-minute window has effectively none. No DB clock and no
+//     monotonic source is used. Size [WithRecoveryLease] above your fleet's skew
+//     bound, or configure [WithInstanceOwnership], which does not depend on the
+//     clock at all.
 //
 // It requires an enumeration capability ([WithInstanceLister], or a store that
 // is itself a [kernel.InstanceLister]) and a definition registry
@@ -101,7 +108,7 @@ func (driver *ProcessDriver) instanceLister() kernel.InstanceLister {
 // predicate on [kernel.InstanceFilter] so the scan becomes an indexed lookup —
 // deliberately not built here, because nothing has measured it yet.
 func (driver *ProcessDriver) RecoverPendingCommands(ctx context.Context) (int, error) {
-	return driver.sweepPendingCommands(ctx, 0)
+	return driver.sweepPendingCommands(ctx)
 }
 
 // RunRecoverySweep re-drives abandoned pending commands on every tick until ctx
@@ -142,16 +149,15 @@ func (driver *ProcessDriver) RunRecoverySweep(ctx context.Context) error {
 // sweepTick runs one lease-honouring pass and logs, rather than propagates, its
 // error.
 func (driver *ProcessDriver) sweepTick(ctx context.Context) {
-	if _, err := driver.sweepPendingCommands(ctx, driver.recoveryLease); err != nil && ctx.Err() == nil {
+	if _, err := driver.sweepPendingCommands(ctx); err != nil && ctx.Err() == nil {
 		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: recovery sweep pass failed, continuing",
 			append(driver.obs.tel.LogAttrs(ctx), slog.Any("error", err))...)
 	}
 }
 
 // sweepPendingCommands is the one pass shared by the boot and periodic entry
-// points. minAge is how old a mark must be to be re-driven; zero re-drives every
-// mark it finds.
-func (driver *ProcessDriver) sweepPendingCommands(ctx context.Context, minAge time.Duration) (int, error) {
+// points. Both honour the same lease: see [ProcessDriver.RecoverPendingCommands].
+func (driver *ProcessDriver) sweepPendingCommands(ctx context.Context) (int, error) {
 	lister := driver.instanceLister()
 	if lister == nil || driver.defsReg == nil {
 		return 0, nil
@@ -162,53 +168,89 @@ func (driver *ProcessDriver) sweepPendingCommands(ctx context.Context, minAge ti
 	}
 	defer release()
 
-	cutoff := driver.clk.Now().Add(-minAge)
+	cutoff := driver.clk.Now().Add(-driver.recoveryLease)
 	recovered := 0
-	for _, status := range nonTerminalStatuses {
-		cursor := ""
-		for {
-			page, err := lister.List(ctx, kernel.InstanceFilter{
-				Status: &status,
-				Limit:  driver.recoverySweepBatchSize,
-				Cursor: cursor,
-			})
-			if err != nil {
-				return recovered, fmt.Errorf("workflow-runtime: recovery sweep: list %s: %w", status, err)
-			}
-			for _, item := range page.Items {
-				if ctx.Err() != nil {
-					return recovered, ctx.Err()
-				}
-				n, err := driver.recoverInstance(ctx, item.InstanceID, cutoff)
-				if err != nil {
-					// One unrecoverable instance must never abort the batch — the
-					// same rule RehydrateTimers applies to one unschedulable timer.
-					driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: recovery sweep: instance skipped",
-						append(driver.obs.tel.LogAttrs(ctx),
-							slog.String("instance_id", item.InstanceID),
-							slog.Any("error", err))...)
-					continue
-				}
-				recovered += n
-			}
-			if !page.HasMore || page.NextCursor == "" {
-				break
-			}
-			cursor = page.NextCursor
+	cursor := ""
+	for {
+		// Status is nil — EVERY status, terminal included, and that is not an
+		// oversight. A terminal step can carry a mark: intermediateThrowEventStrategy
+		// emits ThrowSignal and then auto-advances, so `start → throw → end` emits
+		// ThrowSignal alongside CompleteInstance in ONE command list; and
+		// InstanceState.endInstance's cancelOpenTasks emits one UpdateTask per open
+		// human task alongside the terminal command. A crash in the commit→perform
+		// window on either leaves a durable mark on a terminal instance — a lost
+		// signal, or a task projection stuck `unclaimed` on a cancelled instance.
+		// Both were reproduced in review; an earlier version of this file scanned
+		// only Running and Compensating and asserted, wrongly, that doing so "loses
+		// nothing".
+		//
+		// ⚠ COST, and it is the real one: this walks every instance the store holds,
+		// not just the live working set, so it scales with retention rather than
+		// with concurrency. The store's own pruner is what bounds the terminal tail.
+		// The bounded fix is a marked-instances predicate on kernel.InstanceFilter
+		// so the scan becomes an indexed lookup; deliberately not built here.
+		page, err := lister.List(ctx, kernel.InstanceFilter{
+			Limit:  driver.recoverySweepBatchSize,
+			Cursor: cursor,
+		})
+		if err != nil {
+			return recovered, fmt.Errorf("workflow-runtime: recovery sweep: list: %w", err)
 		}
+		for _, item := range page.Items {
+			if ctx.Err() != nil {
+				return recovered, ctx.Err()
+			}
+			n, err := driver.recoverInstance(ctx, item.InstanceID, cutoff)
+			if err != nil {
+				// One unrecoverable instance must never abort the batch — the
+				// same rule RehydrateTimers applies to one unschedulable timer.
+				driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: recovery sweep: instance skipped",
+					append(driver.obs.tel.LogAttrs(ctx),
+						slog.String("instance_id", item.InstanceID),
+						slog.Any("error", err))...)
+				continue
+			}
+			recovered += n
+		}
+		if !page.HasMore || page.NextCursor == "" {
+			return recovered, nil
+		}
+		cursor = page.NextCursor
 	}
-	return recovered, nil
 }
 
 // recoverInstance re-drives one instance's unperformed commands, returning 1
 // when it did and 0 when the instance needed nothing.
 //
-// Ordering is deliberate: the follow-up triggers are applied FIRST and the mark
-// is cleared LAST. A follow-up commits a new snapshot carrying its own mark, at
-// a new version, so the trailing clear then finds a moved version and no-ops —
-// which is exactly right. Clearing first would instead drop the mark and then
-// risk losing the follow-up, turning a recoverable instance into an
-// unrecoverable one on the failure path.
+// Three properties make it safe to run repeatedly, and each answers a defect
+// reproduced in review:
+//
+//  1. **Per-command progress.** Each command is removed from the durable mark as
+//     it succeeds, so a pass that fails on the fourth command does not re-run the
+//     first three next time. Without it, a permanently unperformable mark
+//     re-executed its already-succeeded siblings on every tick, forever — measured
+//     at eleven charges of a payment action for one committed step.
+//  2. **A re-stamped mark on failure.** The remainder is written back with
+//     `at = now`, so the grace window measures from the last ATTEMPT rather than
+//     from the original commit. Without it, a mark once older than the window
+//     was retried on every tick for the life of the deployment.
+//  3. **An already-performed gate.** A command whose effect is durably visible is
+//     skipped rather than repeated. This is what stops a re-driven AwaitHuman
+//     from replacing a CLAIMED task row with a fresh Unclaimed one and erasing
+//     the claimant, and stops a re-driven StartSubInstance from reporting a live
+//     child as a failure.
+//
+// Ordering is deliberate: the follow-up triggers are applied AFTER the mark is
+// written. A follow-up commits a new snapshot carrying its own mark, at a new
+// version, so writing first is the only ordering under which progress survives.
+//
+// ⚠ RESIDUAL, stated because it is real and bounded rather than hidden: applying
+// a follow-up re-marks the snapshot for the step it commits, which supersedes any
+// remainder this pass could not perform. So a step that both produced a follow-up
+// trigger AND left a command unperformable loses that command's mark. It is
+// strictly better than the alternative — dropping the follow-up strands a live
+// token forever — and it is a property of the mark living in the snapshot that
+// deliverLoop also owns.
 func (driver *ProcessDriver) recoverInstance(ctx context.Context, instanceID string, cutoff time.Time) (int, error) {
 	st, token, err := driver.store.Load(ctx, instanceID)
 	if err != nil {
@@ -218,8 +260,26 @@ func (driver *ProcessDriver) recoverInstance(ctx context.Context, instanceID str
 		return 0, nil
 	}
 	if st.PendingCommandsAt.After(cutoff) {
-		// Inside the lease: assume a live perform still owns these commands.
+		// Inside the grace window: assume a live perform still owns these commands.
 		return 0, nil
+	}
+
+	// Consult the single-writer guarantee, when the driver has one. The repo
+	// already ships this port precisely so a multi-replica deployment can name one
+	// writer per instance (kernel.InstanceOwnership, persistence.NewAdvisoryLockOwnership),
+	// and a sweep that ignored it would hand a deployment that bought that
+	// guarantee N concurrent re-drives on a rolling restart. Acquire is contractually
+	// sticky and O(1) for an instance this process already owns, and it is called
+	// only for instances that actually carry an expired mark — never for the whole
+	// scan.
+	if driver.ownership != nil {
+		owned, oerr := driver.ownership.Acquire(ctx, instanceID)
+		if oerr != nil {
+			return 0, fmt.Errorf("ownership: %w", oerr)
+		}
+		if !owned {
+			return 0, nil // another replica is the writer for this instance
+		}
 	}
 
 	def, err := driver.defsReg.Lookup(ctx, model.Version(st.DefID, st.DefVersion))
@@ -230,27 +290,57 @@ func (driver *ProcessDriver) recoverInstance(ctx context.Context, instanceID str
 		return 0, fmt.Errorf("lookup %s: %w", model.Version(st.DefID, st.DefVersion), err)
 	}
 
-	var followups []engine.Trigger
-	for _, pending := range st.PendingCommands {
+	var (
+		followups []engine.Trigger
+		failure   error
+		performed int
+		i         int
+	)
+	for ; i < len(st.PendingCommands); i++ {
+		pending := st.PendingCommands[i]
 		cmd, cerr := pending.Command()
 		if cerr != nil {
-			// A mark this build cannot read (a kind written by a newer one). Report
-			// it rather than re-driving it as something else.
-			return 0, cerr
+			// A mark this build cannot read (a kind written by a newer one). Stop
+			// here and leave it in the remainder rather than re-driving it as
+			// something else.
+			failure = cerr
+			break
+		}
+		done, derr := driver.alreadyPerformed(ctx, st, pending)
+		if derr != nil {
+			failure = derr
+			break
+		}
+		if done {
+			continue
 		}
 		next, perr := driver.perform(ctx, def, st, cmd)
 		if perr != nil {
-			return 0, fmt.Errorf("perform %s: %w", pending.Kind, perr)
+			failure = fmt.Errorf("perform %s: %w", pending.Kind, perr)
+			break
 		}
+		performed++
 		if next != nil {
 			followups = append(followups, next)
 		}
 	}
 
-	driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelInfo, "runtime: recovery sweep: re-drove a committed step's unperformed commands",
-		append(driver.obs.tel.LogAttrs(ctx),
-			slog.String("instance_id", instanceID),
-			slog.Int("command_count", len(st.PendingCommands)))...)
+	// Write progress back BEFORE any follow-up apply, while the token is still
+	// current. An empty remainder is the clear.
+	remainder := append([]engine.PendingCommand(nil), st.PendingCommands[i:]...)
+	stamp := time.Time{}
+	if len(remainder) > 0 {
+		stamp = driver.clk.Now().UTC()
+	}
+	driver.writePendingCommands(ctx, instanceID, token, remainder, stamp)
+
+	if performed > 0 {
+		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelInfo, "runtime: recovery sweep: re-drove a committed step's unperformed commands",
+			append(driver.obs.tel.LogAttrs(ctx),
+				slog.String("instance_id", instanceID),
+				slog.Int("performed", performed),
+				slog.Int("still_pending", len(remainder)))...)
+	}
 
 	for _, trg := range followups {
 		if _, aerr := driver.applyTriggerRetryingCAS(ctx, def, instanceID, trg); aerr != nil {
@@ -260,9 +350,86 @@ func (driver *ProcessDriver) recoverInstance(ctx context.Context, instanceID str
 				// outcome, exactly as the call notifier treats it.
 				continue
 			}
-			return 0, fmt.Errorf("apply %T: %w", trg, aerr)
+			if failure == nil {
+				failure = fmt.Errorf("apply %T: %w", trg, aerr)
+			}
 		}
 	}
-	driver.clearPendingCommands(ctx, instanceID, token)
+	if failure != nil {
+		return 0, failure
+	}
+	if performed == 0 {
+		return 0, nil
+	}
 	return 1, nil
+}
+
+// alreadyPerformed reports whether pending's effect is already durably visible,
+// so the sweep can skip it instead of repeating it.
+//
+// It exists because "re-drive" and "re-execute" are not the same thing. Recovery
+// is at-least-once at the level of the SWEEP, but three of the five recoverable
+// commands leave durable evidence of having run, and repeating those is not a
+// harmless duplicate:
+//
+//   - AwaitHuman writes the task row with State: Unclaimed and no Claim, and
+//     TaskStore.Upsert REPLACES the row — so re-performing one after a claim
+//     erases the claimant from every inbox and from what TaskService loads before
+//     authorizing. Reproduced in review.
+//   - StartSubInstance derives a deterministic child id, so a second start hits
+//     ErrInstanceExists; without this gate that surfaced as a fabricated
+//     SubInstanceFailed against a live child.
+//   - InvokeAction parks a token on its CommandID. No token awaiting it means the
+//     reply already came back, so re-invoking would repeat an external side effect
+//     for work that is complete.
+//
+// The two it cannot gate — UpdateTask and ThrowSignal — leave no durable evidence
+// of delivery, so they are re-performed and are covered by the at-least-once
+// contract on [ProcessDriver.RecoverPendingCommands].
+//
+// An error means "cannot tell", and is returned rather than swallowed: guessing
+// "not performed" is exactly the guess that erases a claim.
+func (driver *ProcessDriver) alreadyPerformed(ctx context.Context, st engine.InstanceState, pending engine.PendingCommand) (bool, error) {
+	switch pending.Kind {
+	case engine.PendingAwaitHuman:
+		if driver.tasks == nil {
+			return false, nil // perform will report the missing TaskStore
+		}
+		_, err := driver.tasks.Get(ctx, pending.TaskID)
+		switch {
+		case err == nil:
+			return true, nil
+		case errors.Is(err, humantask.ErrTaskNotFound):
+			return false, nil
+		default:
+			return false, fmt.Errorf("task %q lookup: %w", pending.TaskID, err)
+		}
+
+	case engine.PendingStartSubInstance:
+		childID := childInstanceIDFor(st.InstanceID, pending.CommandID)
+		_, _, err := driver.store.Load(ctx, childID)
+		switch {
+		case err == nil:
+			return true, nil
+		case errors.Is(err, kernel.ErrInstanceNotFound):
+			return false, nil
+		default:
+			return false, fmt.Errorf("child %q lookup: %w", childID, err)
+		}
+
+	case engine.PendingInvokeAction:
+		if pending.FireAndForget {
+			// No token ever awaits one, so token state cannot answer the question.
+			return false, nil
+		}
+		for _, tok := range st.Tokens {
+			if tok.AwaitCommand == pending.CommandID {
+				return false, nil
+			}
+		}
+		return true, nil
+
+	default:
+		return false, nil
+	}
 }

@@ -20,7 +20,7 @@ var (
 	_ kernel.JournalReader = (*CachingInstanceStore)(nil)
 	_ kernel.TxRunner      = (*CachingInstanceStore)(nil)
 
-	_ kernel.PendingCommandClearer = (*CachingInstanceStore)(nil)
+	_ kernel.PendingCommandWriter = (*CachingInstanceStore)(nil)
 )
 
 const defaultInstanceCacheTTL = 5 * time.Minute
@@ -374,16 +374,16 @@ func (c *CachingInstanceStore) RunInTx(ctx context.Context, fn func(context.Cont
 	return err
 }
 
-// ClearPendingCommands forwards the optional [kernel.PendingCommandClearer]
+// WritePendingCommands forwards the optional [kernel.PendingCommandWriter]
 // capability to the backing store and then EVICTS the cached entry.
 //
 // Forwarding is required, not optional decoration: the driver probes for this
 // capability by type assertion (as it does for [kernel.TxRunner]), so a wrapper
 // that swallowed it would silently degrade every wrapped store to "the mark is
-// never cleared" — and the recovery sweep would then re-perform a parked
-// instance's commands once per lease, forever.
+// never rewritten" — and a failing recovery would then re-perform a parked
+// instance's whole command list once per grace window, forever.
 //
-// Eviction rather than an in-place cache update: the clear rewrites the durable
+// Eviction rather than an in-place cache update: the write rewrites the durable
 // snapshot WITHOUT advancing the version, so a cached entry keyed on that same
 // version would still compare current while carrying the stale mark. Evicting is
 // the conservative correct move.
@@ -393,19 +393,19 @@ func (c *CachingInstanceStore) RunInTx(ctx context.Context, fn func(context.Cont
 // the reply or task completion doing a Load — which this eviction has just
 // turned into a guaranteed miss plus a full backing read. The exact alternative
 // is an in-place update under lockFor: read the entry, and if its version still
-// equals expected, nil the two fields and put it back at the same version,
+// equals expected, rewrite the two fields and put it back at the same version,
 // evicting only otherwise. Deliberately not taken here — it reaches into the
 // cache's own invariants for a once-per-park saving — but it is the named fix if
 // the extra read ever shows up in a profile.
 //
 // A backing store without the capability is a documented no-op: nothing was
 // written, so nothing is evicted.
-func (c *CachingInstanceStore) ClearPendingCommands(ctx context.Context, id string, expected kernel.Version) error {
-	clearer, ok := c.backing.(kernel.PendingCommandClearer)
+func (c *CachingInstanceStore) WritePendingCommands(ctx context.Context, id string, expected kernel.Version, cmds []engine.PendingCommand, at time.Time) error {
+	writer, ok := c.backing.(kernel.PendingCommandWriter)
 	if !ok {
 		return nil
 	}
-	if err := clearer.ClearPendingCommands(ctx, id, expected); err != nil {
+	if err := writer.WritePendingCommands(ctx, id, expected, cmds, at); err != nil {
 		return err
 	}
 	c.evict(ctx, id)

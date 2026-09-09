@@ -179,6 +179,16 @@ type ProcessDriver struct {
 	// Set via [WithRecoverySweepBatchSize].
 	recoverySweepBatchSize int
 
+	// recoverOnce guards boot recovery so [ProcessDriver.Start] stays idempotent:
+	// the pass repairs what a PREVIOUS process left behind, so it is once-per-
+	// driver work, not once-per-call work.
+	recoverOnce sync.Once
+	// ownership, when configured, is the single-writer-per-instance guarantee the
+	// recovery sweep consults before re-driving an instance. nil means the driver
+	// has no ownership port and recovery is at-least-once across replicas; see
+	// [ProcessDriver.RecoverPendingCommands]. Set via [WithInstanceOwnership].
+	ownership kernel.InstanceOwnership
+
 	// gate is the executor-side validation memoizer (runtime/validation.Gate)
 	// used by validateInput to compile-once-and-cache each
 	// validate.ValidationStrategy by its descriptor (kind + schema). Always
@@ -306,6 +316,11 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 // scheduler is driver-owned, needs an enumeration capability to do anything
 // (see [WithInstanceLister]), and never fails Start — see the call site.
 //
+// Idempotence is preserved by running boot recovery at most ONCE per driver, not
+// once per Start call: it is a repair pass over what a previous process left
+// behind, so a second Start has nothing new to repair, and re-running it would
+// re-drive marks this same process had just stamped.
+//
 // It is optional — the owned scheduler also auto-starts on the first timer it is
 // asked to arm — but calling Start lets a consumer tie the scheduler's goroutine
 // to their application context and fail fast if it cannot start. When the driver
@@ -316,23 +331,31 @@ func NewProcessDriver(opts ...Option) (*ProcessDriver, error) {
 // externally-initiated work with [ErrDriverShuttingDown]; Start does not un-drain a
 // driver (the owned scheduler is already closed and Start surfaces its terminal error).
 func (driver *ProcessDriver) Start(ctx context.Context) error {
-	// Boot recovery (#110) runs FIRST and unconditionally — before the owned-
-	// scheduler early return below, because a driver given a consumer-owned
-	// scheduler needs recovery just as much as one that owns its own.
+	// Boot recovery (#110) runs FIRST — before the owned-scheduler early return
+	// below, because a driver given a consumer-owned scheduler needs recovery
+	// just as much as one that owns its own — and exactly ONCE per driver.
 	//
-	// Its error is logged rather than returned: recovery is a repair pass over
-	// state a previous process left behind, and refusing to start because that
-	// repair failed would take a partially-degraded deployment offline entirely.
-	// The periodic sweep retries what this pass could not do. Call
-	// [ProcessDriver.RecoverPendingCommands] directly for a caller that wants
-	// the error and the count.
-	if n, err := driver.RecoverPendingCommands(ctx); err != nil {
-		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: boot recovery sweep failed, continuing",
-			append(driver.obs.tel.LogAttrs(ctx), slog.Any("error", err))...)
-	} else if n > 0 {
-		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelInfo, "runtime: boot recovery sweep re-drove committed steps whose commands were never performed",
-			append(driver.obs.tel.LogAttrs(ctx), slog.Int("instances", n))...)
-	}
+	// The sync.Once is what keeps Start's documented idempotence true. Boot
+	// recovery is a repair pass over state a PREVIOUS process left behind; it is
+	// not per-call work, and running it on every Start would have a second call
+	// re-drive marks this same process stamped seconds earlier.
+	//
+	// Its error is logged rather than returned: refusing to start because a
+	// repair pass failed would take a partially-degraded deployment offline
+	// entirely, and the periodic sweep retries what this pass could not do. Call
+	// [ProcessDriver.RecoverPendingCommands] directly for a caller that wants the
+	// error and the count.
+	driver.recoverOnce.Do(func() {
+		n, err := driver.RecoverPendingCommands(ctx)
+		switch {
+		case err != nil:
+			driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn, "runtime: boot recovery sweep failed, continuing",
+				append(driver.obs.tel.LogAttrs(ctx), slog.Any("error", err))...)
+		case n > 0:
+			driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelInfo, "runtime: boot recovery sweep re-drove committed steps whose commands were never performed",
+				append(driver.obs.tel.LogAttrs(ctx), slog.Int("instances", n))...)
+		}
+	})
 	if driver.ownedScheduler == nil {
 		return nil
 	}
@@ -998,38 +1021,39 @@ func (driver *ProcessDriver) deliverLoop(
 			st.PendingCommands = nil
 			st.PendingCommandsAt = time.Time{}
 			if len(queue) == 0 {
-				driver.clearPendingCommands(ctx, st.InstanceID, token)
+				driver.writePendingCommands(ctx, st.InstanceID, token, nil, time.Time{})
 			}
 		}
 	}
 	return st, nil
 }
 
-// clearPendingCommands drops the durable crash-recovery mark for instanceID at
-// token, when the configured store carries the optional
-// [kernel.PendingCommandClearer] capability.
+// writePendingCommands rewrites the durable crash-recovery mark for instanceID
+// at token, when the configured store carries the optional
+// [kernel.PendingCommandWriter] capability. A nil cmds with a zero at clears it.
 //
-// The capability is PROBED, not required — the same shape as
-// [kernel.TxRunner]'s probe on the commit path — so every existing InstanceStore
-// implementation keeps working. A store without it degrades to "the mark is
-// cleared by the instance's next committed step", which for a parked instance
-// means the recovery sweep re-performs its commands once per lease window until
-// something advances it. That is the documented cost of not implementing the
-// capability, and it is why both in-tree stores do.
+// The capability is PROBED, not required — the same shape as [kernel.TxRunner]'s
+// probe on the commit path — so every existing InstanceStore implementation keeps
+// working. A store without it leaves the mark as the last commit wrote it:
+// recovery stays correct, but it cannot record progress, so a parked instance's
+// commands are re-performed once per grace window until something advances it.
+// That is the documented cost of not implementing the capability, and it is why
+// both in-tree stores do.
 //
 // A failure here never fails the step: the work it describes has already been
 // performed and committed. The residual is a redundant re-drive, which every
 // path through this mechanism is already required to tolerate.
-func (driver *ProcessDriver) clearPendingCommands(ctx context.Context, instanceID string, token kernel.Version) {
-	clearer, ok := driver.store.(kernel.PendingCommandClearer)
+func (driver *ProcessDriver) writePendingCommands(ctx context.Context, instanceID string, token kernel.Version, cmds []engine.PendingCommand, at time.Time) {
+	writer, ok := driver.store.(kernel.PendingCommandWriter)
 	if !ok {
 		return
 	}
-	if err := clearer.ClearPendingCommands(ctx, instanceID, token); err != nil {
+	if err := writer.WritePendingCommands(ctx, instanceID, token, cmds, at); err != nil {
 		driver.obs.tel.Logger.LogAttrs(ctx, slog.LevelWarn,
-			"runtime: could not clear the pending-command mark; the recovery sweep may re-perform this step",
+			"runtime: could not rewrite the pending-command mark; the recovery sweep may re-perform this step",
 			append(driver.obs.tel.LogAttrs(ctx),
 				slog.String("instance_id", instanceID),
+				slog.Int("pending_after", len(cmds)),
 				slog.Any("error", err))...)
 	}
 }

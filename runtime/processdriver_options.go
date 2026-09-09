@@ -369,16 +369,17 @@ func WithInstanceLister(lister kernel.InstanceLister) Option {
 }
 
 // WithRecoveryLease sets how old a pending-command mark must be before a
-// PERIODIC recovery pass ([ProcessDriver.RunRecoverySweep]) re-drives it.
+// recovery pass re-drives it — the boot pass ([ProcessDriver.RecoverPendingCommands])
+// and every periodic tick ([ProcessDriver.RunRecoverySweep]) alike.
 // Default: defaultRecoveryLease (5m). A non-positive value is ignored.
 //
-// The lease exists to keep a sweep tick from overtaking a perform that is
-// legitimately still running, so it wants to sit comfortably above the longest
-// action the driver will wait on — compare [WithActionTimeout], which bounds
-// exactly that for an in-process invocation.
-//
-// It does NOT apply to the boot pass: a mark found at boot cannot belong to a
-// perform this process is running. See [ProcessDriver.RecoverPendingCommands].
+// ⚠ It is a GRACE WINDOW, not a lease: nothing is claimed and no worker is
+// excluded by it. It keeps a pass from overtaking a perform that is legitimately
+// still running, so it wants to sit comfortably above the longest action the
+// driver will wait on — compare [WithActionTimeout], which bounds exactly that
+// for an in-process invocation — and above the clock skew between the node that
+// stamps a mark and the node that reads it. The mechanism that actually excludes
+// a concurrent replica is [WithInstanceOwnership].
 func WithRecoveryLease(d time.Duration) Option {
 	return func(driver *ProcessDriver) {
 		if d > 0 {
@@ -405,6 +406,31 @@ func WithRecoverySweepBatchSize(n int) Option {
 	return func(driver *ProcessDriver) {
 		if n > 0 {
 			driver.recoverySweepBatchSize = n
+		}
+	}
+}
+
+// WithInstanceOwnership wires the single-writer-per-instance guarantee the
+// crash-recovery sweep consults before re-driving an instance
+// ([ProcessDriver.RecoverPendingCommands]).
+//
+// It is the SAME port [persistence.NewCachingInstanceStore] takes —
+// [kernel.AlwaysOwn] for a single-replica deployment, or
+// persistence.NewAdvisoryLockOwnership for a real multi-replica lease — so a
+// deployment that already bought single-writer safety hands the sweep the
+// guarantee it already paid for rather than a second, weaker mechanism.
+//
+// Without it the sweep has no way to exclude a concurrent replica: recovery is
+// then at-least-once ACROSS replicas, not merely at-least-once per replica, and a
+// rolling restart of N replicas can perform the same abandoned command N times.
+// That is the documented contract, not a defect — but it is strictly worse than
+// consulting a lease the deployment already has.
+//
+// A nil value is ignored.
+func WithInstanceOwnership(owner kernel.InstanceOwnership) Option {
+	return func(driver *ProcessDriver) {
+		if owner != nil {
+			driver.ownership = owner
 		}
 	}
 }

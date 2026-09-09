@@ -6,6 +6,7 @@ package kernel
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/engine"
@@ -72,29 +73,45 @@ type InstanceStore interface {
 	Commit(ctx context.Context, expected Version, step AppliedStep) (Version, error)
 }
 
-// PendingCommandClearer is an OPTIONAL [InstanceStore] capability: it drops the
-// [engine.InstanceState.PendingCommands] mark from an instance's durable
-// snapshot once the runtime has performed those commands.
+// PendingCommandWriter is an OPTIONAL [InstanceStore] capability: it rewrites an
+// instance's [engine.InstanceState.PendingCommands] mark in place, without
+// applying a step.
+//
+// The runtime uses it for all three of the mark's lifecycle transitions, which
+// is why it is one method and not three:
+//
+//   - CLEAR, when every command of a committed step has been performed:
+//     cmds=nil, at=zero.
+//   - PROGRESS, when a recovery pass performed some of a mark's commands and
+//     failed on one: cmds=the unperformed remainder, at=now. Without this a
+//     failing re-drive re-runs its already-succeeded siblings on every pass,
+//     forever — measured at eleven charges for one committed step.
+//   - DEFER, which is the same call: re-stamping `at` is what lets the sweep's
+//     grace window space out a repeatedly-failing instance instead of retrying
+//     it on every tick.
 //
 // It is probed by type assertion, exactly like [TxRunner], so an existing
 // InstanceStore implementation keeps compiling and keeps working. A store that
-// does not implement it simply leaves the mark in place until the instance's
-// next committed step overwrites the snapshot; the runtime's recovery sweep
-// stays correct either way, because it re-drives at-least-once and its lease
-// window bounds how often, but such a store re-performs a parked instance's
-// commands once per lease until something else advances it.
+// does not implement it leaves the mark exactly as the last commit wrote it:
+// recovery still runs and is still correct, but it cannot record progress, so a
+// parked instance's commands are re-performed once per grace window until
+// something else advances it.
 //
 // Three properties are contractual, and each is load-bearing:
 //
-//   - It does NOT advance the optimistic-concurrency token. Clearing the mark
-//     records that work already committed has now been performed; it is not a
-//     new applied step, and bumping the version would invalidate the token the
-//     caller is still holding mid-loop.
-//   - It records NO journal entry and NO outbox event. The journal is the
-//     replay log of applied triggers, and this applies none.
+//   - It does NOT advance the optimistic-concurrency token. The mark records
+//     what has and has not been performed; it applies no trigger, and bumping
+//     the version would invalidate the token the caller is still holding.
+//   - It records NO journal entry and NO outbox event. The journal is the replay
+//     log of applied triggers, and this applies none.
 //   - A STALE expected is not an error. A later step has already rewritten the
-//     snapshot, mark included, so there is nothing to clear and nothing to
+//     snapshot, mark included, so there is nothing to write and nothing to
 //     report. Implementations return nil.
-type PendingCommandClearer interface {
-	ClearPendingCommands(ctx context.Context, id string, expected Version) error
+//
+// Implementations MUST preserve every other byte of the snapshot, including keys
+// they do not recognise: this runs on every replica against every listed
+// instance, so a decode-and-re-encode through a stale struct definition would
+// strip newer fields fleet-wide with no CAS to detect it.
+type PendingCommandWriter interface {
+	WritePendingCommands(ctx context.Context, id string, expected Version, cmds []engine.PendingCommand, at time.Time) error
 }

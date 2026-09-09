@@ -368,3 +368,84 @@ func ExampleCloneActors() {
 	// admin us
 	// true false
 }
+
+// TestAuthzSpecClone verifies the three properties [authz.AuthzSpec.Clone]
+// documents: both slice fields are independently allocated, nil stays nil, and
+// the guard is on NIL rather than on length.
+//
+// The last one is the reason this is a method rather than two inline
+// slices.Clone calls at each call site. A zero-length slice with spare capacity
+// is still shared, so two clones of one spec appending to it would write the
+// same backing array — and the sites that matter (a cached human-task record, a
+// cloned instance state, a persisted crash-recovery mark) are precisely where
+// that aliasing would corrupt stored audit data rather than a local variable.
+func TestAuthzSpecClone(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		spec   authz.AuthzSpec
+		assert func(t *testing.T, orig, clone authz.AuthzSpec)
+	}
+
+	cases := []testCase{
+		{
+			name: "nil stays nil",
+			spec: authz.AuthzSpec{Attribute: `vars.region == "EU"`},
+			assert: func(t *testing.T, orig, clone authz.AuthzSpec) {
+				t.Helper()
+				require.Nil(t, clone.Roles)
+				require.Nil(t, clone.Privileges)
+				require.Equal(t, orig.Attribute, clone.Attribute, "the scalar predicate must be carried")
+			},
+		},
+		{
+			name: "populated slices are independently allocated",
+			spec: authz.AuthzSpec{
+				Roles:      []string{"manager"},
+				Privileges: []string{"finance-task claim"},
+			},
+			assert: func(t *testing.T, orig, clone authz.AuthzSpec) {
+				t.Helper()
+				require.Equal(t, orig.Roles, clone.Roles)
+				require.Equal(t, orig.Privileges, clone.Privileges)
+				clone.Roles[0] = "intruder"
+				clone.Privileges[0] = "finance-task complete"
+				require.Equal(t, "manager", orig.Roles[0], "mutating the clone must not reach the source")
+				require.Equal(t, "finance-task claim", orig.Privileges[0])
+			},
+		},
+		{
+			name: "guard is on nil, not on length: spare capacity is not shared",
+			spec: authz.AuthzSpec{
+				Roles:      make([]string, 0, 8),
+				Privileges: make([]string, 0, 8),
+			},
+			assert: func(t *testing.T, orig, clone authz.AuthzSpec) {
+				t.Helper()
+				require.NotNil(t, clone.Roles, "a non-nil empty slice must stay non-nil")
+				require.NotNil(t, clone.Privileges)
+				// Two independent clones appending into what would be one shared
+				// backing array if the guard were on length.
+				a, b := orig.Clone(), orig.Clone()
+				a.Roles = append(a.Roles, "from-a")
+				b.Roles = append(b.Roles, "from-b")
+				a.Privileges = append(a.Privileges, "priv-a")
+				b.Privileges = append(b.Privileges, "priv-b")
+				require.Equal(t, []string{"from-a"}, a.Roles)
+				require.Equal(t, []string{"from-b"}, b.Roles)
+				require.Equal(t, []string{"priv-a"}, a.Privileges)
+				require.Equal(t, []string{"priv-b"}, b.Privileges)
+				require.Empty(t, orig.Roles, "the source must not have grown")
+				require.Empty(t, orig.Privileges)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.assert(t, tc.spec, tc.spec.Clone())
+		})
+	}
+}

@@ -488,11 +488,14 @@ func cloneState(st InstanceState) InstanceState {
 	// into the same backing slot, a dispatched id vanishes, and the duplicate-reply
 	// 422 this ring closes returns non-deterministically.
 	s.RecentCompensationCmdIDs = append([]string(nil), st.RecentCompensationCmdIDs...)
-	// Deep-copy PendingCommands: each envelope carries Input/Payload maps and an
+	// Copy PendingCommands: each envelope carries Input/Payload maps and an
 	// eligibility spec's string slices, so a slice copy alone would share them.
 	// The engine never writes this field — it is runtime bookkeeping riding the
 	// snapshot — but Clone's contract is "independently allocated", and a field
 	// exempted from it is the one a future caller mutates through.
+	//
+	// ONE LEVEL, exactly like Variables and every other map on this struct: see
+	// PendingCommand.clone. A nested value inside an Input map stays shared.
 	s.PendingCommands = clonePendingCommands(st.PendingCommands)
 	return s
 }

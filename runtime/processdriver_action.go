@@ -608,7 +608,18 @@ func (driver *ProcessDriver) startSubInstanceAsync(
 
 	// Start the child's first burst non-blocking: drive it until it parks or
 	// completes. The link is threaded into the child's first Create atomically.
-	if err := driver.runChild(ctx, childDef, childInstanceID, cmd.Input, &link); err != nil {
+	//
+	// ErrInstanceExists is NOT a failure. The child id is derived deterministically
+	// from (parent, commandID), so a second start of the same command finds the
+	// child already there — which means the command was already performed, and the
+	// child will notify the parent through its call link exactly as if this call
+	// had started it. Reporting SubInstanceFailed here would fabricate a
+	// call-activity failure against a LIVE child and take the parent down the error
+	// path while the child is still running. Reachable through the recovery sweep;
+	// kernel.ErrInstanceExists is documented for precisely this "duplicate start,
+	// clean no-op ack" distinction, and process-instance chaining already reads it
+	// that way.
+	if err := driver.runChild(ctx, childDef, childInstanceID, cmd.Input, &link); err != nil && !errors.Is(err, kernel.ErrInstanceExists) {
 		return engine.NewSubInstanceFailed(driver.clk.Now(), cmd.CommandID, err.Error()), nil
 	}
 

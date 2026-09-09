@@ -25,7 +25,9 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -177,12 +179,25 @@ func humanTaskFixture() recoveryFixture {
 	}
 }
 
-// driverFor builds a driver over store wired for f.
-func driverFor(t *testing.T, f recoveryFixture, store kernel.InstanceStore) *runtime.ProcessDriver {
+// crashedAt / restartedAt bracket the recovery grace window. Both passes — boot
+// and periodic — decline a mark younger than [runtime.WithRecoveryLease] (5m by
+// default), because a fresh mark may belong to a perform another live replica is
+// still running. So the restart has to happen on the far side of that window,
+// and it is a FAKE clock rather than a wait: nothing here sleeps.
+var (
+	crashedAt   = time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	restartedAt = crashedAt.Add(30 * time.Minute)
+)
+
+// driverFor builds a driver over store wired for f, with its clock pinned at now.
+func driverFor(t *testing.T, f recoveryFixture, store kernel.InstanceStore, now time.Time) *runtime.ProcessDriver {
 	t.Helper()
 	reg := kernel.NewMemDefinitionRegistry()
 	require.NoError(t, reg.Register(f.def))
-	opts := []runtime.Option{runtime.WithDefinitions(reg)}
+	opts := []runtime.Option{
+		runtime.WithDefinitions(reg),
+		runtime.WithClock(clockwork.NewFakeClockAt(now)),
+	}
 	if f.tasks != nil {
 		opts = append(opts, runtime.WithHumanTasks(f.resolver, f.tasks, authz.AllowAll{}))
 	}
@@ -236,7 +251,7 @@ func TestCommittedStepWithUnperformedCommandsIsRecoveredOnRestart(t *testing.T) 
 
 			// ── the fault ────────────────────────────────────────────────────
 			store.Arm()
-			crashed := driverFor(t, f, store)
+			crashed := driverFor(t, f, store, crashedAt)
 			_, err := crashed.Drive(ctx, f.def, "i-recover", nil)
 			require.ErrorIs(t, err, errAbortedAfterCommit,
 				"the injected fault must abort the drive after the commit")
@@ -251,7 +266,7 @@ func TestCommittedStepWithUnperformedCommandsIsRecoveredOnRestart(t *testing.T) 
 				"fault-injection guard: no command may have been performed before the restart")
 
 			// ── the restart ──────────────────────────────────────────────────
-			restarted := driverFor(t, f, store)
+			restarted := driverFor(t, f, store, restartedAt)
 			require.NoError(t, restarted.Start(ctx))
 
 			final, _, err := store.Load(ctx, "i-recover")
@@ -274,7 +289,7 @@ func TestCommittedStepWithUnperformedCommandsStaysParkedWithoutRecovery(t *testi
 	store := newUnlistableStore(backing)
 
 	backing.Arm()
-	crashed := driverFor(t, f, store)
+	crashed := driverFor(t, f, store, crashedAt)
 	_, err := crashed.Drive(ctx, f.def, "i-parked", nil)
 	require.ErrorIs(t, err, errAbortedAfterCommit)
 
@@ -285,7 +300,7 @@ func TestCommittedStepWithUnperformedCommandsStaysParkedWithoutRecovery(t *testi
 	require.Equal(t, 0, f.performed(t, committed),
 		"fault-injection guard: no command may have been performed before the restart")
 
-	restarted := driverFor(t, f, store)
+	restarted := driverFor(t, f, store, restartedAt)
 	require.NoError(t, restarted.Start(ctx))
 
 	st, _, err := store.Load(ctx, "i-parked")
@@ -340,7 +355,7 @@ func TestSuccessfulDriveLeavesNoPendingCommandMark(t *testing.T) {
 			ctx := t.Context()
 			f := tc.fixture()
 			store := newCrashAfterCommitStore(t) // never armed: no fault in this test
-			driver := driverFor(t, f, store)
+			driver := driverFor(t, f, store, crashedAt)
 
 			_, err := driver.Drive(ctx, f.def, "i-clean", nil)
 			require.NoError(t, err)
@@ -389,7 +404,7 @@ func TestRecoverPendingCommandsWithoutCapabilitiesIsANoOp(t *testing.T) {
 			name: "no enumeration capability",
 			build: func(t *testing.T, f recoveryFixture, store *crashAfterCommitStore) *runtime.ProcessDriver {
 				t.Helper()
-				return driverFor(t, f, newUnlistableStore(store))
+				return driverFor(t, f, newUnlistableStore(store), restartedAt)
 			},
 		},
 		{
@@ -399,7 +414,8 @@ func TestRecoverPendingCommandsWithoutCapabilitiesIsANoOp(t *testing.T) {
 				// An EMPTY isolated registry: the sweep enumerates the instance,
 				// fails to resolve its definition, and skips it with the mark intact.
 				return runtimetest.MustProcessDriver(t, f.catalog, store,
-					runtime.WithDefinitions(kernel.NewMemDefinitionRegistry()))
+					runtime.WithDefinitions(kernel.NewMemDefinitionRegistry()),
+					runtime.WithClock(clockwork.NewFakeClockAt(restartedAt)))
 			},
 		},
 	}
@@ -413,7 +429,7 @@ func TestRecoverPendingCommandsWithoutCapabilitiesIsANoOp(t *testing.T) {
 			store := newCrashAfterCommitStore(t)
 
 			store.Arm()
-			crashed := driverFor(t, f, store)
+			crashed := driverFor(t, f, store, crashedAt)
 			_, err := crashed.Drive(ctx, f.def, "i-nocap", nil)
 			require.ErrorIs(t, err, errAbortedAfterCommit)
 			require.Equal(t, int32(1), store.fired.Load(),
@@ -437,7 +453,7 @@ func TestRunRecoverySweepStopsOnContextCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	f := serviceTaskFixture()
-	driver := driverFor(t, f, newCrashAfterCommitStore(t))
+	driver := driverFor(t, f, newCrashAfterCommitStore(t), crashedAt)
 
 	cancel()
 	require.ErrorIs(t, driver.RunRecoverySweep(ctx), context.Canceled)

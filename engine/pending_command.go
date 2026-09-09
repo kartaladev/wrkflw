@@ -35,9 +35,28 @@ type PendingCommandKind string
 //     cancellation side effect against an instance no sweep should be walking.
 //   - Compensate — reserved, never emitted.
 const (
-	PendingInvokeAction     PendingCommandKind = "invoke_action"
-	PendingAwaitHuman       PendingCommandKind = "await_human"
-	PendingUpdateTask       PendingCommandKind = "update_task"
+	PendingInvokeAction PendingCommandKind = "invoke_action"
+	PendingAwaitHuman   PendingCommandKind = "await_human"
+	PendingUpdateTask   PendingCommandKind = "update_task"
+	// PendingThrowSignal is recoverable, and it is the one kind whose duplicate
+	// reaches instances OTHER than the one being recovered.
+	//
+	// Signal delivery is fan-out, so a re-driven throw re-publishes to the whole
+	// bus: the "an already-resumed token answers ErrTokenNotFound" argument that
+	// bounds a duplicated InvokeAction covers follow-up triggers on the recovered
+	// instance and says nothing about fan-out. A duplicate can therefore re-trigger
+	// a signal boundary event or a signal-started event sub-process in an unrelated
+	// instance that armed AFTER the first delivery. An instance that already
+	// consumed its arm is unaffected — the engine removes the arm on delivery and a
+	// second SignalReceived finds nothing to match — so the exposed window is
+	// between the two deliveries, not the whole park.
+	//
+	// It is kept recoverable anyway, and the alternative was weighed: excluding it
+	// would make a signal thrown inside the commit→perform window unrecoverable
+	// and SILENT, stranding every instance waiting on it with nothing that will
+	// ever wake them. That is the exact class this mechanism exists to close, and
+	// it is a worse failure than a duplicate the engine largely absorbs. Deliver
+	// signals whose handlers are idempotent, or accept the narrow re-trigger window.
 	PendingThrowSignal      PendingCommandKind = "throw_signal"
 	PendingStartSubInstance PendingCommandKind = "start_sub_instance"
 )
@@ -189,8 +208,17 @@ func (p PendingCommand) Command() (Command, error) {
 	}
 }
 
-// clone deep-copies the reference-typed fields so a cloned snapshot shares no
-// mutable state with its original.
+// clone independently allocates every reference-typed field ONE LEVEL DEEP: the
+// Input and Payload maps, the eligibility spec's two string slices, and the
+// task pointee.
+//
+// ⚠ One level, not "shares no mutable state" — an earlier version of this
+// comment said the latter and it was measured false. copyVars is maps.Clone, so
+// a map or slice stored INSIDE an Input value is still shared with the source.
+// That is the repo-wide convention for process variables (see copyVars), not a
+// gap here, and JSON serialisation breaks the alias on the durable path — but
+// the sentence has to say what is true, because the difference is exactly what a
+// reader would rely on before mutating a nested value.
 func (p PendingCommand) clone() PendingCommand {
 	c := p
 	c.Input = copyVars(p.Input)
@@ -203,7 +231,8 @@ func (p PendingCommand) clone() PendingCommand {
 	return c
 }
 
-// clonePendingCommands deep-copies a pending-command slice, preserving the
+// clonePendingCommands copies a pending-command slice, cloning each envelope to
+// the depth [PendingCommand.clone] documents — one level — and preserving the
 // nil-vs-empty distinction (nil in, nil out).
 func clonePendingCommands(in []PendingCommand) []PendingCommand {
 	if in == nil {

@@ -81,3 +81,10 @@ func (s *TimerStore) ListArmedPageSQLForTest(cursor string, fetch int) (string, 
 	}
 	return s.dialect.Rebind(sqlText), args, nil
 }
+
+// PendingCommandMarkKeysForTest exposes the two snapshot JSON keys
+// [Store.WritePendingCommands] edits by name, so a test can assert they still
+// match what encoding/json derives from engine.InstanceState's field names.
+func PendingCommandMarkKeysForTest() []string {
+	return []string{pendingCommandsKey, pendingCommandsAtKey}
+}

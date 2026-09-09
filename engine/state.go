@@ -477,20 +477,32 @@ type InstanceState struct {
 	// nothing that will ever move it (issue #110).
 	//
 	// The engine's own purity is unaffected: Step never inspects it, never
-	// branches on it, and never sets it. cloneState deep-copies it for the same
-	// reason it deep-copies Tasks — PendingCommand carries maps.
+	// branches on it, and never sets it. cloneState copies it for the same reason
+	// it copies Tasks — PendingCommand carries maps — and to the same ONE-LEVEL
+	// depth as every other map on this struct.
 	//
 	// Serialisation follows PendingCancel / PendingFinalStatus: an additive field
-	// on the persisted JSON snapshot, no migration, nil when nothing is pending
-	// so an unmarked snapshot is byte-identical to one written before this
-	// existed.
+	// on the persisted JSON snapshot, with no migration.
+	//
+	// ⚠ It is NOT invisible when unset, and an earlier version of this comment
+	// claimed an unmarked snapshot was "byte-identical to one written before this
+	// existed". Measured false: InstanceState declares no struct tags, so both
+	// fields serialise unconditionally and every snapshot this build writes gains
+	// `"PendingCommands":null,"PendingCommandsAt":"0001-01-01T00:00:00Z"`. The
+	// format is additive and an older reader ignores them, so nothing breaks —
+	// but that is the sentence a reader would trust to skip a rollback check, so
+	// it has to say what is true.
 	//
 	// ⚠ SIZE, since it is paid on a row the store rewrites in full on every
 	// commit: a marked step duplicates its commands' action Input and signal
-	// Payload into this field, so an instance parked on an action with a 100 KB
-	// input carries 100 KB more snapshot for as long as it stays parked. That is
-	// inherent to a command having no other durable form; the only cheaper shape
-	// is a side table, which is the redesign recorded on #22.
+	// Payload into this field, and it does so PER COMMAND. serviceActionInput
+	// gives every InvokeAction its own full copy of the instance variables, and
+	// nothing caps this slice the way marshalSnapshot caps History, so a fan-out
+	// multiplies the variables into one row. Measured over 64 KB of variables:
+	// ×2.0 at fan-out 1, ×10.9 at 10, ×99.5 at 100 — not the flat "+the input
+	// size" an earlier version of this comment claimed. That is inherent to a
+	// command having no other durable form; the only cheaper shape is a side
+	// table, which is the redesign recorded on #22.
 	PendingCommands []PendingCommand
 
 	// PendingCommandsAt is the instant PendingCommands was stamped, read as a
@@ -735,6 +747,10 @@ func (s *InstanceState) cancelOpenTasks() []Command {
 // Clone returns a deep copy of the InstanceState. All slice and map fields are
 // independently allocated so that mutations to the returned state do not affect
 // the receiver (and vice versa).
+//
+// "Independently allocated" is ONE LEVEL, which is the repo-wide convention for
+// process variables (see copyVars): a map or slice stored INSIDE a variable, an
+// action Input or a signal Payload is still shared with the receiver.
 func (s InstanceState) Clone() InstanceState {
 	return cloneState(s)
 }
