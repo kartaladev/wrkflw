@@ -89,10 +89,12 @@
 #     produce, and four near-misses that must NOT fire. Deterministic; no
 #     toolchain, no cache, no upstream behaviour.
 #   * WIRING (assert_main_wiring) -- runs THIS SCRIPT, end to end, against a
-#     stub `golangci-lint` whose output and exit status are chosen. It is what
-#     proves the pieces are connected: that the detector's verdict reaches the
-#     exit status, that golangci-lint's own status is passed through untouched,
-#     and that the derived cache actually reaches the child's environment.
+#     stub `golangci-lint` whose output and exit status are chosen. It proves
+#     the pieces named in KNOWN LIMITS' complement are connected: the detector's
+#     verdict reaches the exit status, golangci-lint's own status is passed
+#     through untouched, its findings are actually printed, and the derived cache
+#     reaches the child's environment. It does NOT cover everything in this file;
+#     what it misses is listed under KNOWN LIMITS rather than left implied.
 #     Before it existed, four separate mutations of the main block -- including
 #     `exit "${rc}"` -> `exit 0`, which makes this wrapper return success on
 #     real findings -- passed --self-test with a cheerful OK.
@@ -124,7 +126,7 @@
 # Usage:
 #   scripts/lint.sh ./...              # lint (self-test runs first, always)
 #   scripts/lint.sh ./engine/...       # any golangci-lint `run` arguments
-#   scripts/lint.sh --self-test        # prove the guard still works, lint nothing
+#   scripts/lint.sh --self-test        # run the checks below, lint nothing
 #
 # EXIT STATUS. golangci-lint's own is preserved exactly (0 clean, 1 issues
 # found; 3 and 7 observed for config/argument failure and no-Go-files, and
@@ -134,15 +136,35 @@
 # 2", which was false -- `--issues-exit-code 2` reaches 2 with no misattribution
 # whatsoever, and upstream reserves 2 for WarningInTest.
 #
-# KNOWN LIMITS, written here rather than left in a review thread:
+# KNOWN LIMITS. A documented limit has to be TRUE, so this list is derived from
+# a mutation sweep of this file, not from what feels uncovered. --self-test does
+# NOT detect any of these; each was mutated and survived:
+#
+#   * the EXIT trap in self_test (temp-directory cleanup on abnormal exit) --
+#     --self-test does not simulate a signal. Verified by direct SIGTERM instead.
+#   * prepare_cache_root's `mkdir -p` and its `chmod 700`, the SF3 mitigation for
+#     a predictable cache path under a world-writable /tmp.
+#   * the notice printed when a caller has already exported GOLANGCI_LINT_CACHE
+#     (the honouring itself IS asserted; only the message is not).
+#   * worktree_root's fallback: a mutant that always falls back to the script's
+#     own directory passes, because the wiring fixture is a real git repo either
+#     way.
+#   * finding_paths' `sort -u` (duplicate offender lines, cosmetic).
+#   * the fixtures' private GOCACHE.
+#
+# And two limits of the guard itself rather than of its tests:
+#
 #   * golangci-lint lints only files matching the default build tags, so a
 #     misattributed finding in a tag-gated file is invisible to both the
 #     detector and the self-test. Inherited from the tool, not introduced here.
-#   * A reported path containing a colon cannot be extracted unambiguously and
-#     is skipped by the line parser.
-#   * Everything here was measured on darwin/arm64, golangci-lint 2.12.2, bash
-#     3.2.57. The sha256sum and openssl branches of path_digest have never been
-#     exercised on this machine; only shasum has.
+#   * A reported path containing whitespace or a colon cannot be extracted
+#     unambiguously and is skipped by the line parser. That is the deliberate
+#     price of not matching golangci-lint's own source-context lines, which are
+#     printed at the source line's indentation and reach column 0.
+#
+# Everything here was measured on darwin/arm64, golangci-lint 2.12.2, bash
+# 3.2.57. The sha256sum and openssl branches of path_digest have never been
+# exercised on this machine; only shasum has.
 #
 # Requires bash, git, sed, and one of shasum/sha256sum/openssl, plus
 # golangci-lint and the Go toolchain. Kept bash-3.2-friendly (no mapfile, no
@@ -230,13 +252,33 @@ prepare_cache_root() {
 
 # --- detection ---------------------------------------------------------------
 
-# Extract the leading `path:line:` of each finding line. `[^:]*` stops at the
-# first colon, so a message that itself mentions `foo.go:1:1` cannot be mistaken
-# for the finding's own path, and the tab-indented source/caret context lines
-# are excluded by the leading non-space class. Requiring a digit straight after
-# the colon is what keeps summary lines (`3 issues:`, `* errcheck: 3`) out.
+# Extract the leading `path:line:` of each finding line.
+#
+# The accept/reject set is DERIVED FROM REAL golangci-lint OUTPUT, not from the
+# shapes that seem likely -- see the corpus in assert_detects. What that corpus
+# shows, and what an earlier revision of this function got wrong:
+#
+#   pkg/foo.go:10:11: Error return value ... (errcheck)   <- a finding
+#   var unusedThing = "docs/notes:12: see this"            <- a CONTEXT line, col 0
+#   	os.Remove("/tmp/z")                                   <- a context line, indented
+#       ^                                                  <- a caret line
+#   5 issues:                                              <- summary
+#   * errcheck: 3                                          <- summary
+#
+# The context line is printed at THE SOURCE LINE'S OWN INDENTATION, so for every
+# top-level declaration it starts at column 0. A previous version excluded
+# context lines by "they are indented", which is false, and matched only the
+# first character against whitespace while letting the rest of the path contain
+# spaces. That parsed `var unusedThing = "docs/notes` as a reported path and
+# made this script exit ESCAPE_EXIT against a GENUINE IN-TREE FINDING.
+#
+# The property that actually separates them: A REPORTED PATH CONTAINS NO
+# WHITESPACE. Every Go source line that could reach column 0 begins with a
+# keyword and a space (`var `, `func `, `type `, `const `), so it cannot satisfy
+# `<no-space-run>:<digits>:`. Requiring a digit straight after the colon is what
+# keeps the summary lines out.
 finding_paths() {
-  sed -n 's/^\([^:[:space:]][^:]*\):[0-9][0-9]*:.*$/\1/p' | sort -u
+  sed -n 's/^\([^:[:space:]][^:[:space:]]*\):[0-9][0-9]*:.*$/\1/p' | sort -u
 }
 
 # Is this reported path a file belonging to the checkout rooted at $2, when read
@@ -293,18 +335,36 @@ assert_detects() {
   mkdir -p "${root}/engine" "${root}/.claude/worktrees/B/pkg" "${tmp}/sibling-worktree/engine"
   root="$(physical_dir "${root}")"
 
-  # Two escapes -- one per direction this repo can actually produce -- and five
-  # near-misses that must NOT fire.
+  # Two escapes -- one per direction this repo can actually produce -- and a
+  # near-miss set TRANSCRIBED FROM REAL golangci-lint OUTPUT rather than invented.
+  #
+  # The transcription matters. Every earlier version of this fixture planted the
+  # shapes someone thought of, and each time the domain was set by imagination
+  # the guard was wrong about it: first only sibling `../` escapes were planted
+  # (so the nested shape was invisible), then only a TAB-INDENTED context line
+  # (so the column-0 shape was invisible, and the parser matched a genuine
+  # finding's source text as a path). The block below is a verbatim corpus from
+  # `golangci-lint run` over a fixture with errcheck and unused findings --
+  # findings, context lines at column 0 AND indented, caret lines, and both
+  # summary forms.
   cat > "${tmp}/planted" <<EOF
-engine/state.go:10:2: Error return value is not checked (errcheck)
-${root}/engine/state.go:12:2: Error return value is not checked (errcheck)
+engine/state.go:10:2: Error return value of \`os.Remove\` is not checked (errcheck)
+	os.Remove("/tmp/z")
+	         ^
+engine/state.go:12:2: var unusedThing is unused (unused)
+var unusedThing = "docs/notes:12: see this"
+    ^
+engine/state.go:14:2: var t is unused (unused)
+func (t T) M() { os.Remove("/tmp/w") }
+                          ^
+${root}/engine/state.go:16:2: an in-tree ABSOLUTE path is ours (errcheck)
 engine/state.go:11:2: could not import ../gone/pkg/foo.go:1:1 (typecheck)
 engine/../engine/state.go:13:2: a climb that lands back inside is ours (errcheck)
-	os.Remove("../not/a/finding.go:1:1: and neither is this")
 ../sibling-worktree/engine/state.go:10:2: Error return value is not checked (errcheck)
 .claude/worktrees/B/pkg/foo.go:6:11: Error return value is not checked (errcheck)
-2 issues:
-* errcheck: 2
+5 issues:
+* errcheck: 3
+* unused: 2
 EOF
 
   # NOTE the second escape: it has no "../" anywhere. It is the shape this
@@ -371,12 +431,14 @@ STUB
   # $1 stub stdout, $2 stub exit status; echoes the wrapper's exit status.
   wired() {
     local o="$1" r="$2" e=0
-    # env -u: these children must exercise the DERIVE-and-export path, so the
-    # caller's own GOLANGCI_LINT_CACHE must not leak in. Without this the
-    # self-test fails -- and therefore refuses to lint -- for every developer
-    # who has the variable set, which is a supported configuration.
+    # env -u: a child that inherits the caller's environment is not testing this
+    # script, it is testing the caller. Two variables, found one at a time and
+    # swept together here: GOLANGCI_LINT_CACHE, which made assertion 6 fail (and
+    # so refused to lint) for anyone who had it set; and GOWORK, which a go.work
+    # in the environment uses to break every fixture run permanently. Three
+    # child-invocation sites in this file, all three cleaned.
     ( cd "${work}" &&
-      env -u GOLANGCI_LINT_CACHE \
+      env -u GOLANGCI_LINT_CACHE -u GOWORK \
       WRKFLW_STUB_DIR="${stub}" WRKFLW_STUB_OUT="${o}" WRKFLW_STUB_RC="${r}" \
       _WRKFLW_LINT_SELF_TEST_DEPTH=1 PATH="${stub}:${PATH}" TMPDIR="${tmp}" \
       bash "${script_self}" ./... ) > "${tmp}/wired.out" 2> "${tmp}/wired.err" || e=$?
@@ -398,6 +460,17 @@ STUB
   #    wrapper silently turning a repo-wide quality gate green.
   rc="$(wired 'pkg/f.go:1:2: something (errcheck)' 1)"
   check "in-tree findings pass golangci-lint's exit 1 through" 1 "${rc}" || return 1
+  # ...and the findings must actually REACH the developer. Deleting the replay
+  # of the captured output leaves the exit status correct and prints nothing at
+  # all, which no status assertion can see.
+  if ! grep -q 'pkg/f.go:1:2: something' "${tmp}/wired.out"; then
+    {
+      echo "self-test: the wrapper returned the right status but did not print golangci-lint's"
+      echo "           findings. Its output is captured so the detector can read it, and the"
+      echo "           replay of that capture is what the developer actually sees."
+    } >&2
+    return 1
+  fi
 
   # 2. Clean run.
   rc="$(wired '' 0)"
@@ -454,13 +527,34 @@ STUB
     return 1
   fi
 
+  # 10. The escape status must stay OUTSIDE golangci-lint's own range, which is
+  #     the actual contract -- "exit 2, and only 2" was false precisely because
+  #     it was asserted as a number rather than as a property. Written against
+  #     ESCAPE_EXIT's value, this assertion would pass for any value at all.
+  case "${ESCAPE_EXIT}" in
+    0|1|2|3|4|5|6|7)
+      echo "self-test: ESCAPE_EXIT is ${ESCAPE_EXIT}, inside golangci-lint's own 0-7 range, so a caller cannot tell a misattributed path from the tool's own status" >&2
+      return 1 ;;
+  esac
+
   # 8. --path-prefix rewrites paths, so it must be refused rather than pinned.
   rc=0
-  ( cd "${work}" && env -u GOLANGCI_LINT_CACHE _WRKFLW_LINT_SELF_TEST_DEPTH=1 \
+  ( cd "${work}" && env -u GOLANGCI_LINT_CACHE -u GOWORK _WRKFLW_LINT_SELF_TEST_DEPTH=1 \
       PATH="${stub}:${PATH}" TMPDIR="${tmp}" \
       bash "${script_self}" --path-prefix vendored ./... ) >/dev/null 2>"${tmp}/wired.err" || rc=$?
   if [ "${rc}" != "1" ] || ! grep -q 'path-prefix' "${tmp}/wired.err"; then
     echo "self-test: --path-prefix was not refused (exit ${rc})" >&2
+    return 1
+  fi
+  # ...and in a NON-FIRST position, because the check is a loop over "$@" and an
+  # assertion that only ever passes it first cannot tell that loop from a test of
+  # $1. A mutant narrowing it to $1 survived this function until this case existed.
+  rc=0
+  ( cd "${work}" && env -u GOLANGCI_LINT_CACHE -u GOWORK _WRKFLW_LINT_SELF_TEST_DEPTH=1 \
+      PATH="${stub}:${PATH}" TMPDIR="${tmp}" \
+      bash "${script_self}" ./... --path-prefix=vendored ) >/dev/null 2>"${tmp}/wired.err" || rc=$?
+  if [ "${rc}" != "1" ] || ! grep -q 'path-prefix' "${tmp}/wired.err"; then
+    echo "self-test: --path-prefix was not refused when passed after the packages (exit ${rc})" >&2
     return 1
   fi
 }
@@ -496,28 +590,56 @@ func Foo() {
 EOF
 }
 
-# Set by run_fixture when the run itself failed, as opposed to running fine and
-# reporting nothing. Distinguishing those two is the whole point: an assertion
-# that cannot tell "my input did nothing" from "my tool died" names the wrong
-# cause every time, and this one did -- a golangci-lint that fell over under
-# cache contention was reported as a cache-isolation failure.
-fixture_error=""
-
+# $4 is a FILE the failure cause is written to, not a shell variable. Three of
+# this function's four call sites are command substitutions, so a global
+# assigned in here dies with the subshell and the caller reports an empty cause
+# -- measured at 1 run in 20. A file crosses the subshell boundary; the earlier
+# global did not, which is why "stop swallowing" was only a quarter applied.
+#
+# --allow-parallel-runners: golangci-lint takes a FILE LOCK in os.TempDir(), so
+# a concurrent run elsewhere on the machine makes the fixture exit 3 with
+# "parallel golangci-lint is running". That lock is not in GOLANGCI_LINT_CACHE,
+# so no amount of cache isolation avoids it. Measured, 20 runs 5-way parallel:
+# without the flag the control loses its proof 9 times, with it 0.
+#
+# GOWORK=off: a go.work in the caller's environment applies to these throwaway
+# modules and makes every fixture run fail, permanently rather than
+# intermittently. Same class as the GOLANGCI_LINT_CACHE leak below.
 run_fixture() {
-  local dir="$1" cache="$2" gocache="$3" rc=0
-  fixture_error=""
+  local dir="$1" cache="$2" gocache="$3" errfile="$4" rc=0
+  : > "${errfile}"
   ( cd "${dir}" &&
-    GOLANGCI_LINT_CACHE="${cache}" GOCACHE="${gocache}" \
-      golangci-lint run --config "${dir}/.golangci.yml" ./... ) \
+    env -u GOLANGCI_LINT_CACHE GOWORK=off \
+      GOLANGCI_LINT_CACHE="${cache}" GOCACHE="${gocache}" \
+      golangci-lint run --allow-parallel-runners --config "${dir}/.golangci.yml" ./... ) \
     > "${dir}/.run.out" 2> "${dir}/.run.err" || rc=$?
   # 0 = clean, 1 = findings. Anything else means the run did not complete, and
   # its stdout says nothing about caches.
   if [ "${rc}" != "0" ] && [ "${rc}" != "1" ]; then
-    fixture_error="golangci-lint exited ${rc} in ${dir}:
-$(head -5 "${dir}/.run.err" | sed 's/^/        /')"
+    {
+      printf 'golangci-lint exited %s in %s:\n' "${rc}" "${dir}"
+      sed 's/^/        /' "${dir}/.run.err" | head -5
+    } > "${errfile}"
     return 1
   fi
   finding_paths < "${dir}/.run.out"
+}
+
+# Reports a fixture run that did not complete, naming which half died and
+# carrying the captured cause. "<no findings>" must never be printable without
+# one of these: an assertion that cannot tell "my input did nothing" from "my
+# tool died" names the wrong cause every time.
+warn_fixture_died() {
+  local what="$1" errfile="$2"
+  {
+    echo "lint: NOTE -- ${what} could not run, so it proved nothing this invocation:"
+    if [ -s "${errfile}" ]; then
+      sed 's/^/lint:         /' "${errfile}"
+    else
+      echo "lint:         (no cause captured -- this is itself a defect in run_fixture)"
+    fi
+    echo "lint:         The detector half is unaffected and still fails closed. Continuing."
+  } >&2
 }
 
 # Asserts the DIFFERENCE isolation makes, with the real tool. Warns rather than
@@ -525,34 +647,28 @@ $(head -5 "${dir}/.run.err" | sed 's/^/        /')"
 # 0 for "proved" and for "inconclusive", 1 only for a positive demonstration
 # that isolation does not work.
 assert_isolation_matters() {
-  local tmp="$1" shared_b iso_a iso_b cache_a cache_b attempt gocache="$1/gocache"
+  local tmp="$1" shared_b iso_a iso_b cache_a cache_b
+  local gocache="$1/gocache" errfile="$1/fixture-error"
 
   plant_fixture_module "${tmp}/a"
   plant_fixture_module "${tmp}/b"
-  # A private GOCACHE as well as a private lint cache. These are two-file
-  # throwaway modules, so a cold build is trivial, and it makes this half
-  # hermetic -- contention on the shared build cache is what made it flaky.
   mkdir -p "${gocache}"
 
-  # Two attempts, each with a fresh shared cache. The control is a race by
-  # nature -- it needs a/'s entry to be visible to b/ -- and one retry converts
-  # most of the misses measured under parallel load into a real result. Measured
-  # 5-way parallel, 10 runs: without a retry the control reached a verdict 4
-  # times; the retry is what buys back the non-vacuity proof on a loaded
-  # machine. Bounded at two on purpose: this runs before every lint.
-  attempt=1
-  while [ "${attempt}" -le 2 ]; do
-    shared_b=""
-    rm -rf "${tmp}/shared-cache"
-    if ! run_fixture "${tmp}/a" "${tmp}/shared-cache" "${gocache}" >/dev/null ||
-       ! shared_b="$(run_fixture "${tmp}/b" "${tmp}/shared-cache" "${gocache}")"; then
-      echo "lint: NOTE -- the self-test's isolation control could not run: ${fixture_error}" >&2
-      echo "lint:         The detector half is unaffected and still fails closed. Continuing." >&2
-      return 0
-    fi
-    case "${shared_b}" in ../a/*) break ;; esac
-    attempt=$(( attempt + 1 ))
-  done
+  # THE CONTROL. One cache, a/ first, then b/. The shared cache is a dedicated
+  # temp directory, NOT the developer's real one: a self-test that ran
+  # `golangci-lint cache clean` every invocation would throw away the cache the
+  # very next real run needs.
+  #
+  # There is no retry here. Round 1 added one for the case where a/'s entry is
+  # not yet visible; measured, it fired exactly once and never engaged on the
+  # dominant failure, which was the parallel-runner lock. --allow-parallel-runners
+  # addresses that at the source, so the retry was a mechanism bought for nothing
+  # and is gone. Prefer the fix that deletes a dependency.
+  if ! run_fixture "${tmp}/a" "${tmp}/shared-cache" "${gocache}" "${errfile}" >/dev/null ||
+     ! shared_b="$(run_fixture "${tmp}/b" "${tmp}/shared-cache" "${gocache}" "${errfile}")"; then
+    warn_fixture_died "the shared-cache control" "${errfile}"
+    return 0
+  fi
 
   case "${shared_b}" in
     ../a/*) ;;   # reproduced: the control can fail, so the assertion below means something
@@ -560,12 +676,12 @@ assert_isolation_matters() {
       {
         echo "lint: NOTE -- the self-test could not reproduce #146 this run, so the isolation"
         echo "lint:         half proved nothing. Linting b/ through a cache already holding a/"
-        echo "lint:         should have reported a path under ../a/ and after 2 attempts reported: ${shared_b:-<no findings>}"
-        echo "lint:         This is EXPECTED occasionally under parallel load -- a/'s entry may"
-        echo "lint:         not be visible yet, in which case b/ correctly computes fresh. Do NOT"
-        echo "lint:         read one occurrence as upstream having fixed #146, and do not delete"
-        echo "lint:         assert_isolation_matters on the strength of it. If it never reproduces"
-        echo "lint:         across many runs on an idle machine, THEN re-evaluate."
+        echo "lint:         should have reported a path under ../a/ and reported: ${shared_b:-<no findings>}"
+        echo "lint:         The fixture runs themselves SUCCEEDED, so this is not a tooling"
+        echo "lint:         failure -- b/ genuinely computed fresh. Do NOT read one occurrence"
+        echo "lint:         as upstream having fixed #146, and do not delete"
+        echo "lint:         assert_isolation_matters on the strength of it. If it never"
+        echo "lint:         reproduces across many runs on an idle machine, THEN re-evaluate."
         echo "lint:         The detector half is unaffected and still fails closed. Continuing."
       } >&2
       return 0 ;;
@@ -578,10 +694,11 @@ assert_isolation_matters() {
     return 1
   fi
 
-  if ! iso_a="$(run_fixture "${tmp}/a" "${cache_a}" "${gocache}")" ||
-     ! iso_b="$(run_fixture "${tmp}/b" "${cache_b}" "${gocache}")"; then
-    echo "lint: NOTE -- the self-test's isolated runs could not complete: ${fixture_error}" >&2
-    echo "lint:         The detector half is unaffected and still fails closed. Continuing." >&2
+  if ! iso_a="$(run_fixture "${tmp}/a" "${cache_a}" "${gocache}" "${errfile}")" ||
+     ! iso_b="$(run_fixture "${tmp}/b" "${cache_b}" "${gocache}" "${errfile}")"; then
+    # Deliberately a DIFFERENT message from the control's. These are two states
+    # and one sentence for both named the wrong cause.
+    warn_fixture_died "the isolated runs" "${errfile}"
     return 0
   fi
 
@@ -654,6 +771,21 @@ for arg in "$@"; do
       fail "refusing --path-prefix: it rewrites reported paths, so neither this script nor you could see a finding attributed to another checkout (#146). Run without it." ;;
   esac
 done
+
+# --help and --version lint nothing, so there is no output to misattribute and
+# nothing for the guard to protect -- and the self-test costs a cold fixture
+# compile (~3s, occasionally more) that they would otherwise pay on every call.
+# Narrow on purpose: ONLY when such a flag is the sole argument, so it cannot be
+# used to smuggle a real run past the guard.
+case "${1:-}" in
+  --help|-h)
+    [ "$#" -eq 1 ] && exec golangci-lint run --help
+    ;;
+  --version)
+    # NOT `run --version`: --version is a top-level flag, not a run flag.
+    [ "$#" -eq 1 ] && exec golangci-lint --version
+    ;;
+esac
 
 # Skipped only for the child processes assert_main_wiring spawns, which would
 # otherwise recurse forever.
