@@ -68,29 +68,152 @@ func internalImportIdents(f *ast.File) map[string]string {
 	return idents
 }
 
+// receiverTypeName returns the receiver's type name for a method, normalised
+// through the shapes a receiver can take: *T, T[X] and T[X, Y] all yield "T".
+// The second result is false for a plain func, which has no receiver.
+//
+// It is shared by reachableExported and declKey on purpose. The two must agree
+// about what a receiver IS, or a method could be judged reachable under one
+// spelling and keyed under another.
+func receiverTypeName(fn *ast.FuncDecl) (string, bool) {
+	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return "", false
+	}
+	recv := fn.Recv.List[0].Type
+	if star, ok := recv.(*ast.StarExpr); ok {
+		recv = star.X
+	}
+	switch idx := recv.(type) {
+	case *ast.IndexExpr: // generic receiver with one type parameter, Foo[T]
+		recv = idx.X
+	case *ast.IndexListExpr: // ...and with several, Foo[T, U]
+		recv = idx.X
+	}
+	ident, ok := recv.(*ast.Ident)
+	if !ok {
+		return "", false
+	}
+	return ident.Name, true
+}
+
 // reachableExported reports whether fn is callable by an importer of the
 // package: an exported func, or an exported method on an exported receiver.
 func reachableExported(fn *ast.FuncDecl) bool {
 	if !fn.Name.IsExported() {
 		return false
 	}
-	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+	recv, isMethod := receiverTypeName(fn)
+	if !isMethod {
 		return true
 	}
-	recv := fn.Recv.List[0].Type
-	if star, ok := recv.(*ast.StarExpr); ok {
-		recv = star.X
+	return ast.IsExported(recv)
+}
+
+// declKey builds the allowlist key for a declaration.
+//
+// A plain func, a type, a var or a const keys as "<path>:<Name>"; a method keys
+// as "<path>:(<Recv>).<Name>". The plain-func spelling is deliberately
+// unchanged, so tightening this key moved no allowlist data.
+//
+// The receiver is in the key because without it a method INHERITS a func's
+// exemption: both used to key as "<path>:<Name>", so an allowlisted func Foo
+// silently exempted a method (T).Foo declared in the same file. That is a guard
+// failing open, and it is what #148 fixed.
+func declKey(rel, symbol string) string {
+	return filepath.ToSlash(rel) + ":" + symbol
+}
+
+// funcSymbol renders a FuncDecl's symbol as it appears in a key and in an
+// offender line: "Foo" for a func, "(T).Foo" for a method on T.
+func funcSymbol(fn *ast.FuncDecl) string {
+	if recv, isMethod := receiverTypeName(fn); isMethod {
+		return "(" + recv + ")." + fn.Name.Name
 	}
-	if idx, ok := recv.(*ast.IndexExpr); ok { // generic receiver, e.g. Foo[T]
-		recv = idx.X
+	return fn.Name.Name
+}
+
+// embeddedFieldName returns the field name an embedded type contributes, which
+// is the final identifier of its type: *internalpkg.T embeds as "T".
+func embeddedFieldName(expr ast.Expr) (string, bool) {
+	for {
+		switch e := expr.(type) {
+		case *ast.StarExpr:
+			expr = e.X
+		case *ast.IndexExpr:
+			expr = e.X
+		case *ast.IndexListExpr:
+			expr = e.X
+		case *ast.SelectorExpr:
+			return e.Sel.Name, true
+		case *ast.Ident:
+			return e.Name, true
+		default:
+			return "", false
+		}
 	}
-	ident, ok := recv.(*ast.Ident)
-	return ok && ident.IsExported()
+}
+
+// consumerReachableTypeExprs narrows a type definition to the parts a consumer
+// can actually reach, and it is where the property has to be stated precisely
+// rather than generously.
+//
+// "Names an internal type anywhere in its definition" is too large a domain if
+// read literally: a struct's UNEXPORTED fields are how a package holds internal
+// state, and reading them reports 12 correct designs in this module as
+// offenders — Authorizer.inner, OutboxStatsCollector.tel, CallNotifier.cl and
+// so on. A consumer cannot reach those, so they are not leaks. Too large a
+// domain is a measurement error exactly as too small a one is.
+//
+// So: for a struct, only exported fields; for an interface, only exported
+// methods and embedded interfaces; for anything else — a func type, a named
+// type, a map, a slice — the whole expression, because the underlying type IS
+// the reachable surface. That last case is the one that matters in practice:
+// casbinauthz.DBOption is `func(*internalcasbin.DBConfig)`, and a consumer
+// cannot write their own option without naming the internal config.
+func consumerReachableTypeExprs(t ast.Expr) []ast.Expr {
+	switch typ := t.(type) {
+	case *ast.StructType:
+		var out []ast.Expr
+		for _, field := range typ.Fields.List {
+			if len(field.Names) == 0 {
+				if name, ok := embeddedFieldName(field.Type); ok && ast.IsExported(name) {
+					out = append(out, field.Type)
+				}
+				continue
+			}
+			for _, name := range field.Names {
+				if name.IsExported() {
+					out = append(out, field.Type)
+					break
+				}
+			}
+		}
+		return out
+	case *ast.InterfaceType:
+		var out []ast.Expr
+		for _, method := range typ.Methods.List {
+			if len(method.Names) == 0 { // an embedded interface
+				out = append(out, method.Type)
+				continue
+			}
+			for _, name := range method.Names {
+				if name.IsExported() {
+					out = append(out, method.Type)
+					break
+				}
+			}
+		}
+		return out
+	default:
+		return []ast.Expr{t}
+	}
 }
 
 // knownOpenInternalLeaks are offenders this test reports but tolerates, each
 // tracked as its own backlog item and owned by another package's delivery.
-// Keyed by "<path>:<symbol>" so a line move does not silence the guard.
+// Keyed by declKey — "<path>:<Name>" for a func, type, var or const, and
+// "<path>:(<Recv>).<Name>" for a method — so a line move does not silence the
+// guard and a method does not inherit a same-named func's exemption.
 //
 // It is SELF-CLEANING: an entry that no longer matches any offender fails the
 // test, so a fixed leak cannot leave a stale exemption behind for the next one
@@ -99,6 +222,19 @@ var knownOpenInternalLeaks = map[string]string{
 	"persistence/scheduler_locker.go:NewSchedulerLocker": "takes an internal dialect.Locker parameter — " +
 		"found by this guard, outside runtime/, not fixed here; the doc comment even invites a consumer to " +
 		"\"bring your own dialect.Locker\", which no consumer can name",
+	// Surfaced by widening the walk to *ast.GenDecl (#148): the guard could not
+	// see a type declaration at all before that, so this shipped unseen.
+	//
+	// It is open debt, NOT a capability seal. FromDB and its four With* options
+	// are perfectly callable and the shipped options work; what a consumer
+	// cannot do is write their OWN DBOption, because that means naming
+	// github.com/kartaladev/wrkflw/internal/authz/casbin's DBConfig. The
+	// un-extensibility is a side effect of hiding the config struct, not the
+	// point of it — the same shape as NewSchedulerLocker above. The fix belongs
+	// to whoever owns casbinauthz: give DBOption a public config type.
+	"casbinauthz/casbinauthz.go:DBOption": "type DBOption func(*internalcasbin.DBConfig) names " +
+		"github.com/kartaladev/wrkflw/internal/authz/casbin — consumers can use the shipped With* " +
+		"options but cannot write their own",
 }
 
 // intentionalCapabilitySeals are exported signatures that name an internal type
@@ -110,41 +246,43 @@ var knownOpenInternalLeaks = map[string]string{
 // that the function is callable from inside its own subtree and nowhere else.
 // Being uncallable by a consumer is the objective, not the accident.
 //
-// Keyed "<path>:<symbol>", valued with the internal import path the signature is
-// expected to name. BOTH must match for the exemption to apply. Keying on the
-// symbol alone would fail open: a future, unrelated internal type added to the
-// same signature would inherit the exemption silently. It is also SELF-CLEANING
-// like the map above — an entry matching no offender fails the test.
+// Keyed by declKey — "<path>:<Name>", or "<path>:(<Recv>).<Name>" for a method —
+// and valued with the internal import path the signature is expected to name.
+// BOTH must match for the exemption to apply. Keying on the symbol alone would
+// fail open twice over: a future, unrelated internal type added to the same
+// signature would inherit the exemption silently, and so would a same-named
+// method on any receiver in the same file. It is also SELF-CLEANING like the map
+// above — an entry matching no offender fails the test.
 var intentionalCapabilitySeals = map[string]string{
 	// The kindreg.Token parameter is what makes model.RegisterKind uncallable by
 	// a consumer, which is the point of it: Node is a closed set (Refs #46).
 	"definition/model/registry.go:RegisterKind": "github.com/kartaladev/wrkflw/definition/internal/kindreg",
 }
 
-// TestNoExportedSignatureNamesAnInternalType walks every non-internal,
-// non-test Go file in the module and fails if a consumer-reachable exported
-// signature names a type from an internal/ package.
-//
-// What makes it fail today: runtime/monitor/stats_collector.go declares
-// NewOutboxStatsCollector and NewTimerStatsCollector with
-// `opts ...observability.Option`, where observability is
-// github.com/kartaladev/wrkflw/internal/observability. Real RED, no mutation.
-//
-// ⚠ These are NOT the only two such symbols in the module, and this guard is
-// what refuted the claim that they were: it was generalised from a grep whose
-// pattern only matched `observability.`. persistence.NewSchedulerLocker is a
-// third, of the same class.
-func TestNoExportedSignatureNamesAnInternalType(t *testing.T) {
-	t.Parallel()
+// internalLeakScan is one walk's result: the offenders found, plus which
+// allowlist entries were matched, which is what makes both maps self-cleaning.
+type internalLeakScan struct {
+	offenders []string
+	seenKnown map[string]bool
+	seenSeal  map[string]bool
+}
 
-	root := moduleRoot(t)
+// scanInternalLeaks walks every non-internal, non-test Go file under root and
+// reports every consumer-reachable exported declaration that names a type from
+// an internal/ package.
+//
+// It takes the two allowlists as parameters rather than reading the package
+// globals so that a test can drive it over a synthetic fixture with allowlists
+// of its own. That is the only reason it is a function and not the body of
+// TestNoExportedSignatureNamesAnInternalType, which is now a thin caller.
+func scanInternalLeaks(root string, known, seals map[string]string) (internalLeakScan, error) {
 	fset := token.NewFileSet()
+	scan := internalLeakScan{
+		seenKnown: make(map[string]bool, len(known)),
+		seenSeal:  make(map[string]bool, len(seals)),
+	}
 
-	var offenders []string
-	seenKnown := make(map[string]bool, len(knownOpenInternalLeaks))
-	seenSeal := make(map[string]bool, len(intentionalCapabilitySeals))
-
-	require.NoError(t, filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -167,6 +305,11 @@ func TestNoExportedSignatureNamesAnInternalType(t *testing.T) {
 		}
 		internals := internalImportIdents(f)
 		if len(internals) == 0 {
+			// An exported declaration can only name an internal type through a
+			// qualified selector, which requires an import. A file with no
+			// internal import cannot contain the defect, so skipping it costs
+			// no coverage. The one exception is the alias hole recorded in
+			// TestNoExportedSignatureNamesAnInternalType's doc comment.
 			return nil
 		}
 
@@ -174,12 +317,16 @@ func TestNoExportedSignatureNamesAnInternalType(t *testing.T) {
 		if relErr != nil {
 			rel = path
 		}
-		for _, decl := range f.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || !reachableExported(fn) {
-				continue
+
+		// inspect reports every internal type named anywhere inside expr, which
+		// is what makes this a test of the PROPERTY rather than of a list of
+		// shapes: parameter, result, method set, field and underlying type are
+		// all just positions within some declaration's type expression.
+		inspect := func(expr ast.Expr, symbol string, pos token.Pos, kind string) {
+			if expr == nil {
+				return
 			}
-			ast.Inspect(fn.Type, func(n ast.Node) bool {
+			ast.Inspect(expr, func(n ast.Node) bool {
 				sel, ok := n.(*ast.SelectorExpr)
 				if !ok {
 					return true
@@ -188,28 +335,127 @@ func TestNoExportedSignatureNamesAnInternalType(t *testing.T) {
 				if !ok {
 					return true
 				}
-				if importPath, isInternal := internals[pkgIdent.Name]; isInternal {
-					key := filepath.ToSlash(rel) + ":" + fn.Name.Name
-					if _, known := knownOpenInternalLeaks[key]; known {
-						seenKnown[key] = true
-						return true
-					}
-					// A deliberate capability seal is exempt only when it names
-					// the exact internal package it was sanctioned for; any other
-					// internal type at the same symbol is still an offender.
-					if want, sealed := intentionalCapabilitySeals[key]; sealed && want == importPath {
-						seenSeal[key] = true
-						return true
-					}
-					offenders = append(offenders, fmt.Sprintf("%s:%d %s names %s.%s (%s)",
-						rel, fset.Position(fn.Pos()).Line, fn.Name.Name,
-						pkgIdent.Name, sel.Sel.Name, importPath))
+				importPath, isInternal := internals[pkgIdent.Name]
+				if !isInternal {
+					return true
 				}
+				key := declKey(rel, symbol)
+				if _, isKnown := known[key]; isKnown {
+					scan.seenKnown[key] = true
+					return true
+				}
+				// A deliberate capability seal is exempt only when it names the
+				// exact internal package it was sanctioned for; any other
+				// internal type at the same symbol is still an offender.
+				if want, sealed := seals[key]; sealed && want == importPath {
+					scan.seenSeal[key] = true
+					return true
+				}
+				scan.offenders = append(scan.offenders, fmt.Sprintf("%s:%d [%s] %s names %s.%s (%s)",
+					filepath.ToSlash(rel), fset.Position(pos).Line, kind, symbol,
+					pkgIdent.Name, sel.Sel.Name, importPath))
 				return true
 			})
 		}
+
+		for _, decl := range f.Decls {
+			switch d := decl.(type) {
+			case *ast.FuncDecl:
+				if !reachableExported(d) {
+					continue
+				}
+				inspect(d.Type, funcSymbol(d), d.Pos(), "func")
+			case *ast.GenDecl:
+				// Type, var and const declarations were invisible to this guard
+				// until #148: it kept only *ast.FuncDecl and skipped every
+				// *ast.GenDecl, so an exported interface method set, struct
+				// field, type definition or typed var could name an internal
+				// type unseen. That was the guard failing open, and it was
+				// hiding a real offender — see casbinauthz.DBOption below.
+				for _, spec := range d.Specs {
+					switch sp := spec.(type) {
+					case *ast.TypeSpec:
+						if !sp.Name.IsExported() {
+							continue
+						}
+						for _, expr := range consumerReachableTypeExprs(sp.Type) {
+							inspect(expr, sp.Name.Name, sp.Pos(), "type")
+						}
+					case *ast.ValueSpec:
+						// DELIBERATELY sp.Type and never sp.Values. A value
+						// re-export — `var ErrX = internalpkg.ErrX` — is not a
+						// leak: the exported symbol is fully usable through
+						// errors.Is, and the consumer never needs to name the
+						// internal type. Inspecting the initialiser instead of
+						// the declared type reports three such sentinels in this
+						// module as offenders, and "fixing" them would break
+						// three correct re-exports.
+						if sp.Type == nil {
+							continue
+						}
+						for _, name := range sp.Names {
+							if !name.IsExported() {
+								continue
+							}
+							inspect(sp.Type, name.Name, name.Pos(), "value")
+						}
+					}
+				}
+			}
+		}
 		return nil
-	}))
+	})
+	if walkErr != nil {
+		return internalLeakScan{}, walkErr
+	}
+	return scan, nil
+}
+
+// TestNoExportedSignatureNamesAnInternalType walks every non-internal,
+// non-test Go file in the module and fails if a consumer-reachable exported
+// declaration names a type from an internal/ package.
+//
+// THE PROPERTY, which is what this guard means — the shapes below are only how
+// it is tested:
+//
+//	No exported declaration — func, method, interface, struct, or named type —
+//	may name an internal/ type anywhere a consumer can reach: parameter, result,
+//	exported method set, exported field, or underlying type.
+//
+// "Anywhere a consumer can reach" and not "anywhere in its definition": an
+// UNEXPORTED struct field or interface method is how a package holds internal
+// state, and reading those reports 12 correct designs in this module —
+// Authorizer.inner, OutboxStatsCollector.tel, CallNotifier.cl among them. Too
+// large a domain is a measurement error exactly as too small a one is, and this
+// guard has now been wrong in both directions. See consumerReachableTypeExprs.
+//
+// What makes it fail today: runtime/monitor/stats_collector.go declares
+// NewOutboxStatsCollector and NewTimerStatsCollector with
+// `opts ...observability.Option`, where observability is
+// github.com/kartaladev/wrkflw/internal/observability. Real RED, no mutation.
+//
+// ⚠ These are NOT the only two such symbols in the module, and this guard is
+// what refuted the claim that they were: it was generalised from a grep whose
+// pattern only matched `observability.`. persistence.NewSchedulerLocker is a
+// third, of the same class.
+//
+// WHAT THIS GUARD STILL CANNOT SEE. Both holes are recorded here rather than
+// left silent, because an unstated blind spot gets trusted wrongly:
+//
+//   - DOT-IMPORTS. internalImportIdents skips "." and "_", so a dot-imported
+//     internal package's types appear as a bare ast.Ident and no SelectorExpr
+//     arm can reach them.
+//   - TYPE ALIASES ACROSS FILES. `type X = internalpkg.Y` re-exported in one
+//     file and used unqualified in another defeats the import gate, since the
+//     second file imports no internal package. Measured at the time of writing:
+//     the module has 5 exported aliases and NONE resolves to an internal
+//     package, so the hole is real but currently unexploited.
+func TestNoExportedSignatureNamesAnInternalType(t *testing.T) {
+	t.Parallel()
+
+	scan, err := scanInternalLeaks(moduleRoot(t), knownOpenInternalLeaks, intentionalCapabilitySeals)
+	require.NoError(t, err)
+	offenders, seenKnown, seenSeal := scan.offenders, scan.seenKnown, scan.seenSeal
 
 	assert.Empty(t, offenders,
 		"an exported signature naming an internal/ type is uncallable by a consumer. "+
