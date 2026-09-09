@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"unicode"
 )
@@ -409,6 +410,37 @@ func validateStructure(d *ProcessDefinition, seen map[*ProcessDefinition]bool) e
 	seen[d] = true
 
 	var errs []error
+
+	// Node identity of type, checked FIRST and returned on immediately. Every
+	// loop below reaches a node's fields through toWire(n), and toWire dispatches
+	// to the leaf ToWire spec, which asserts the node's concrete type bare — so a
+	// node whose dynamic type is not the one its kind registered panics the
+	// moment any later loop touches it. Reporting it needs the check to run
+	// before all of them and to stop the pass, not merely to append an error.
+	//
+	// Descent into nested subprocess definitions is likewise unsafe until this
+	// level is clean: the recursion below reads toWire(n).Subprocess. Because the
+	// check is per level and returns early, each nested validateStructure call
+	// clears its own level before descending further, which is why this lives
+	// here rather than in a single recursive pre-pass inside Validate — such a
+	// pre-pass would have to call toWire to descend, and would panic.
+	//
+	// Only kinds that recorded a type are checked; see nodeTypes.
+	for _, n := range d.Nodes {
+		want, recorded := nodeTypeFor(n.Kind())
+		if !recorded {
+			continue
+		}
+		if got := reflect.TypeOf(n); got != want {
+			errs = append(errs, fmt.Errorf(
+				"%w: node %q declares kind %s (%s) but is %s",
+				ErrForeignNodeType, n.ID(), n.Kind(), want, got,
+			))
+		}
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
 
 	// Identity, checked before anything reads an ID: a node ID is this
 	// definition's lookup key (d.Node is a first-wins linear scan, and
