@@ -982,24 +982,24 @@ func TestTrigger_NextCalendarIntervalCannotOverflow(t *testing.T) {
 			assert: refused,
 		},
 		{
-			name:   "weekly MaxUint64/7 is refused",
+			name:   "weekly MaxUint/7 is refused",
 			trig:   scheduler.Weekly(math.MaxUint/7, []time.Weekday{time.Monday}),
 			assert: refused,
 		},
 		{
 			// THE defect row: unclamped this returns 2026-08-10 (ten days
 			// before `after`) with ok=true.
-			name:   "weekly MaxUint64 is refused, never a PAST next-run with ok=true",
+			name:   "weekly MaxUint is refused, never a PAST next-run with ok=true",
 			trig:   scheduler.Weekly(math.MaxUint, []time.Weekday{time.Monday}),
 			assert: refused,
 		},
 		{
-			name:   "daily MaxUint64 is refused (the scan bound overflows too)",
+			name:   "daily MaxUint is refused (the scan bound overflows too)",
 			trig:   scheduler.Daily(math.MaxUint),
 			assert: refused,
 		},
 		{
-			name:   "monthly MaxUint64 is refused",
+			name:   "monthly MaxUint is refused",
 			trig:   scheduler.Monthly(math.MaxUint, []int{1}),
 			assert: refused,
 		},
