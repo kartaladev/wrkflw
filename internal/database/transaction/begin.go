@@ -49,6 +49,30 @@ func JoinOrBegin(ctx context.Context, conn any) (Querier, error) {
 	return q, err
 }
 
+// Join returns a Querier over the ambient transaction stashed in ctx, reporting
+// false when ctx carries none. Unlike [JoinOrBegin] it NEVER begins a
+// transaction.
+//
+// That distinction is the reason this exists. A read path must see writes made
+// earlier in the caller's unit of work — otherwise a read-your-own-write inside
+// one transaction misses the row, or, on a single-connection backend such as
+// SQLite, blocks forever on the connection the ambient write is holding.
+// [JoinOrBegin] would fix that but at an unacceptable price on a hot read path:
+// it would open (and leave the caller to close) a transaction around every
+// pool-backed read that happens to run outside one. Join lets a caller say
+// "use the ambient transaction if there is one, otherwise the pool" without
+// creating transactions it does not need.
+//
+// The returned Querier is the same joined participant [JoinOrBegin] returns:
+// its Commit is a no-op and its Rollback marks the whole unit rollback-only, so
+// a read path should simply not call either.
+func Join(ctx context.Context) (Querier, bool) {
+	if h := fromCtx(ctx); h != nil {
+		return &joinedQuerier{h: h}, true
+	}
+	return nil, false
+}
+
 type joinedQuerier struct{ h *handle }
 
 func (j *joinedQuerier) Exec(ctx context.Context, q string, a ...any) (database.Result, error) {

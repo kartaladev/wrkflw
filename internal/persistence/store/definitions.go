@@ -98,13 +98,29 @@ func NewDefinitionStore(conn any, d dialect.Dialect, opts ...DefinitionOption) (
 	return ds, nil
 }
 
-// querier returns a pool-backed [database.Querier] over ds.conn. It is the
-// READ path only: [DefinitionStore.GetDefinition] and [DefinitionStore.Lookup]
-// issue SELECTs through it. The write path does not use it —
-// [DefinitionStore.PublishDefinition] goes through [transaction.JoinOrBegin] so
-// it can join a caller's ambient transaction.
+// querier returns the [database.Querier] the READ path should use:
+// [DefinitionStore.GetDefinition] and [DefinitionStore.Lookup] issue their
+// SELECTs through it.
+//
+// It joins the caller's ambient transaction when ctx carries one, and falls
+// back to the pool otherwise. Both halves matter:
+//
+//   - Joining is required for correctness. The write path joins the ambient
+//     transaction, so a read that went to the pool instead would be looking at
+//     a different connection than the one holding the caller's uncommitted
+//     writes. A publish-then-read inside a single unit would then miss the row
+//     it had just written — and on SQLite, whose write transaction holds the
+//     one connection, the read would block on it and hang. That is the same
+//     deadlock class moving the WRITE onto the transaction was meant to
+//     remove; leaving the read behind merely relocated it.
+//   - Falling back to the pool, rather than beginning a transaction, is why
+//     this uses [transaction.Join] and not [transaction.JoinOrBegin]. Lookup is
+//     a hot path; wrapping every uncontextualised read in its own transaction
+//     would be a real cost for no benefit.
 func (ds *DefinitionStore) querier(ctx context.Context) database.Querier {
-	_ = ctx
+	if q, ok := transaction.Join(ctx); ok {
+		return q
+	}
 	q, _ := database.From(ds.conn)
 	return q
 }
@@ -322,10 +338,10 @@ func (ds *DefinitionStore) assertPublishedIsIdentical(
 // sameDefinitionContent reports whether the stored JSON and the freshly
 // marshalled incoming JSON describe the same definition.
 //
-// The comparison is NORMALISED: stored is decoded into a
-// [model.ProcessDefinition] and re-encoded with the CURRENT marshaller before
-// the bytes are compared. Do not "simplify" this into a direct
-// bytes.Equal(stored, incoming) — the round-trip is load-bearing twice over:
+// BOTH sides go through the same decode -> re-encode transform before the bytes
+// are compared. The symmetry is the whole point and must not be removed; see
+// below. Nor may this be "simplified" into a direct bytes.Equal(stored,
+// incoming), for two further reasons:
 //
 //  1. The database rewrites the bytes. definition is JSONB on Postgres and JSON
 //     on MySQL, and both re-serialise on write (JSONB orders keys by length
@@ -338,24 +354,61 @@ func (ds *DefinitionStore) assertPublishedIsIdentical(
 //     omitted empty value — would otherwise read as a conflict on rows written
 //     before the change.
 //
+// # Why both sides, and not just the stored one
+//
+// [model.ProcessDefinition] has marshal-only state.
+// [model.ProcessDefinition.MarshalJSON] emits "scoped_actions" from
+// ScopedActionNames(), and UnmarshalJSON deliberately accepts and DROPS it,
+// because a scoped catalog holds live action implementations with no
+// serialisable form. So decode -> re-encode is not an identity for any
+// definition carrying scoped actions: it strips that key.
+//
+// Normalising only the stored side would therefore compare a stripped
+// definition against an unstripped one and find them different — including when
+// they are the very same object. Republishing an identical definition would be
+// refused with [kernel.ErrDefinitionExists], which is precisely the case this
+// method exists to make a no-op. Putting both sides through the same transform
+// makes it a true fixed point: the marshal-only key drops out on both sides and
+// equal definitions compare equal.
+//
+// The extra decode costs nothing on the happy path — this runs only when an
+// insert was declined.
+//
 // # Documented limit
 //
-// [model.ProcessDefinition]'s scoped action catalog (its unexported scoped and
-// scopedNames fields) is never serialised. Two definitions that differ ONLY in
-// their scoped catalog therefore compare equal here and the second publish is a
-// silent no-op. That is correct with respect to what is stored — the catalog is
-// not part of the persisted definition — and it fails closed, since nothing is
-// overwritten either way.
+// The consequence of the above is that two definitions differing ONLY in their
+// scoped action catalog compare equal here, so the second publish is a silent
+// no-op rather than a conflict. That is acceptable and deliberate: the catalog
+// itself is never stored, only the names are, and those are marshal-only, so
+// nothing a reader can observe through this API differs between the two. It
+// also fails closed — nothing is overwritten either way.
 func sameDefinitionContent(stored, incoming []byte) (bool, error) {
+	normStored, err := normaliseDefinition(stored)
+	if err != nil {
+		return false, fmt.Errorf("stored definition: %w", err)
+	}
+	normIncoming, err := normaliseDefinition(incoming)
+	if err != nil {
+		return false, fmt.Errorf("incoming definition: %w", err)
+	}
+	return bytes.Equal(normStored, normIncoming), nil
+}
+
+// normaliseDefinition decodes data into a [model.ProcessDefinition] and
+// re-encodes it with the current marshaller, yielding the canonical form used
+// for content comparison. Applying it to both sides of a comparison makes the
+// transform idempotent over the marshal-only fields described on
+// [sameDefinitionContent].
+func normaliseDefinition(data []byte) ([]byte, error) {
 	var def model.ProcessDefinition
-	if err := json.Unmarshal(stored, &def); err != nil {
-		return false, fmt.Errorf("unmarshal stored definition: %w", err)
+	if err := json.Unmarshal(data, &def); err != nil {
+		return nil, fmt.Errorf("unmarshal: %w", err)
 	}
 	normalised, err := json.Marshal(&def)
 	if err != nil {
-		return false, fmt.Errorf("re-marshal stored definition: %w", err)
+		return nil, fmt.Errorf("re-marshal: %w", err)
 	}
-	return bytes.Equal(normalised, incoming), nil
+	return normalised, nil
 }
 
 // GetDefinition fetches the definition identified by (defID, version).

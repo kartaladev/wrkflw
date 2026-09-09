@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -687,6 +688,119 @@ func TestDefinitionStorePublishUnderContention(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"holder-content"}, got.CancelActions,
 		"the holder's content must survive: a published version is immutable")
+}
+
+// scopedActionDefinition builds a definition through the ORDINARY documented
+// route — model.NewBuilder with RegisterActionFunc — so it carries a
+// definition-scoped action catalog.
+//
+// That shape matters and is not interchangeable with the other fixtures here.
+// richConformanceDefinition and minimalValidDef are raw struct literals whose
+// scoped fields are nil, which is the one shape that CANNOT exercise the
+// marshal-only scoped_actions key: ProcessDefinition.MarshalJSON emits it from
+// ScopedActionNames() and UnmarshalJSON deliberately drops it. Any normalisation
+// that is not symmetric therefore reports a definition as differing from itself,
+// and only a builder-built definition can catch that.
+func scopedActionDefinition(t *testing.T, id string, version int) *model.ProcessDefinition {
+	t.Helper()
+
+	noop := func(context.Context, map[string]any) (map[string]any, error) { return nil, nil }
+	def, err := model.NewBuilder(id, version).
+		RegisterActionFunc("alpha", noop).
+		RegisterActionFunc("beta", noop).
+		Add(event.NewStart("s")).
+		Add(activity.NewServiceTask("task", activity.WithTaskAction("alpha"))).
+		Add(event.NewEnd("e")).
+		Connect("s", "task").
+		Connect("task", "e").
+		Build()
+	require.NoError(t, err, "build scoped definition")
+	require.NotEmpty(t, def.ScopedActionNames(),
+		"this fixture is pointless unless it actually carries scoped actions")
+	return def
+}
+
+// TestDefinitionStoreScopedRepublishIsIdempotent pins the PR's headline promise
+// for the definition shape that can actually break it: republishing the very
+// same object must be a successful no-op, not a content conflict.
+//
+// ProcessDefinition.MarshalJSON emits scoped_actions and UnmarshalJSON drops it,
+// so decode->re-encode is not a fixed point for these definitions. Normalising
+// only the STORED side compares a definition against itself and finds them
+// different, which refuses an identical republish with ErrDefinitionExists —
+// exactly the case #112 exists to make a no-op.
+func TestDefinitionStoreScopedRepublishIsIdempotent(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, b backend) {
+		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
+		require.NoError(t, err)
+
+		def := scopedActionDefinition(t, "scoped-republish", 1)
+		require.NoError(t, ds.PublishDefinition(t.Context(), def),
+			"%s: first publish", b.name)
+
+		// The same object, republished. Nothing about it has changed.
+		require.NoError(t, ds.PublishDefinition(t.Context(), def),
+			"%s: republishing the IDENTICAL object must be a no-op", b.name)
+
+		// And a freshly built, equal definition must behave the same way — a
+		// retry after a lost response does not reuse the original pointer.
+		require.NoError(t, ds.PublishDefinition(t.Context(), scopedActionDefinition(t, "scoped-republish", 1)),
+			"%s: republishing an equal rebuild must also be a no-op", b.name)
+
+		assert.Equal(t, 1, countDefinitionRows(t, b, "scoped-republish"),
+			"%s: three identical publishes must leave exactly one row", b.name)
+
+		// A genuine content change under the same version is still refused:
+		// the fix must not turn the comparison into "always equal".
+		conflicting := scopedActionDefinition(t, "scoped-republish", 1)
+		conflicting.CancelActions = []string{"something-else"}
+		err = ds.PublishDefinition(t.Context(), conflicting)
+		require.ErrorIs(t, err, kernel.ErrDefinitionExists,
+			"%s: a real content difference must still be refused; got %v", b.name, err)
+	})
+}
+
+// TestDefinitionStoreReadsSeeAmbientTransaction pins that a publish and a read
+// inside ONE unit of work are on the same connection.
+//
+// Moving only the write onto the ambient transaction and leaving the reads on
+// the pool splits the unit: the row exists on the transaction and the reader
+// looks somewhere else. On SQLite that read blocks on the connection the write
+// holds and the whole thing hangs; on Postgres and MySQL it returns
+// ErrDefinitionNotFound for a row written moments earlier in the same unit.
+func TestDefinitionStoreReadsSeeAmbientTransaction(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, b backend) {
+		s, err := store.New(b.conn, b.dialect)
+		require.NoError(t, err)
+		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
+		require.NoError(t, err)
+
+		require.NoError(t, s.RunInTx(t.Context(), func(txCtx context.Context) error {
+			if err := ds.PublishDefinition(txCtx, minimalValidDef("read-own-write", 1)); err != nil {
+				return err
+			}
+
+			// GetDefinition must see the row this unit just wrote.
+			got, err := ds.GetDefinition(txCtx, "read-own-write", 1)
+			if err != nil {
+				return fmt.Errorf("%s: GetDefinition inside the unit: %w", b.name, err)
+			}
+			assert.Equal(t, "read-own-write", got.ID, "%s: read-your-own-write", b.name)
+
+			// Lookup goes through the same path and must too.
+			latest, err := ds.Lookup(txCtx, model.Latest("read-own-write"))
+			if err != nil {
+				return fmt.Errorf("%s: Lookup inside the unit: %w", b.name, err)
+			}
+			assert.Equal(t, 1, latest.Version, "%s: Lookup latest inside the unit", b.name)
+			return nil
+		}), "%s: the unit must commit", b.name)
+
+		// And the row is really there after the commit.
+		got, err := ds.GetDefinition(t.Context(), "read-own-write", 1)
+		require.NoError(t, err, "%s: after commit", b.name)
+		assert.Equal(t, 1, got.Version, "%s: stored version", b.name)
+	})
 }
 
 // errPublishBoom is the sentinel a RunInTx unit returns to force a rollback.

@@ -123,3 +123,45 @@ func TestJoinedQuerierQueryAndQueryRow(t *testing.T) {
 	assert.Equal(t, row{1, "one"}, got[0])
 	assert.Equal(t, row{2, "two"}, got[1])
 }
+
+// TestJoinReportsAmbientPresence pins Join's contract: it returns the ambient
+// transaction when one exists and reports absence otherwise, and — unlike
+// JoinOrBegin — it never begins one.
+//
+// The distinction is what read paths depend on. A read must see writes made
+// earlier in the same unit, but wrapping every uncontextualised read in a fresh
+// transaction to achieve that would be a real cost on a hot path.
+func TestJoinReportsAmbientPresence(t *testing.T) {
+	pool := dbtest.RunTestDatabase(t)
+	base, err := database.From(pool)
+	require.NoError(t, err)
+	_, err = base.Exec(t.Context(), `CREATE TABLE tjoin (id int)`)
+	require.NoError(t, err)
+
+	// No ambient transaction: Join reports absence and hands back nothing.
+	q, ok := transaction.Join(t.Context())
+	assert.False(t, ok, "Join must report absence when ctx carries no transaction")
+	assert.Nil(t, q, "Join must not fabricate a Querier when there is no transaction")
+
+	// With an ambient transaction: Join returns a participant that can read the
+	// unit's own uncommitted writes — the property read paths need.
+	outer, ctx, err := transaction.Begin(t.Context(), pool)
+	require.NoError(t, err)
+	_, err = outer.Exec(ctx, `INSERT INTO tjoin VALUES (7)`)
+	require.NoError(t, err)
+
+	joined, ok := transaction.Join(ctx)
+	require.True(t, ok, "Join must find the ambient transaction")
+	require.NotNil(t, joined)
+
+	var n int
+	require.NoError(t, joined.QueryRow(ctx, `SELECT count(*) FROM tjoin WHERE id = 7`).Scan(&n))
+	assert.Equal(t, 1, n, "a joined reader must see the unit's own uncommitted write")
+
+	// The pool, by contrast, must NOT see it — which is exactly why a read path
+	// that skipped Join would miss a row the same unit had just written.
+	require.NoError(t, base.QueryRow(t.Context(), `SELECT count(*) FROM tjoin WHERE id = 7`).Scan(&n))
+	assert.Equal(t, 0, n, "the pool must not see the uncommitted write")
+
+	require.NoError(t, outer.Rollback(ctx))
+}
