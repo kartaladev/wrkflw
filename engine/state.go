@@ -131,9 +131,9 @@ type Token struct {
 	// Zero value means the token is not currently retrying.
 	RetryStartedAt time.Time
 
-	// ArrivalFlowID is the ID of the model.SequenceFlow this token traversed to
-	// reach NodeID — its arrival provenance. It is rewritten on every hop, by
-	// every site that creates a token at a node or moves one to a new node.
+	// ArrivalFlow is the ENGINE-MINTED identity of the sequence flow this token
+	// traversed to reach NodeID — its arrival provenance. It is rewritten on every
+	// hop, by every site that creates a token at a node or moves one to a new node.
 	//
 	// It exists because a converging parallel gateway is satisfied per INCOMING
 	// SEQUENCE FLOW, not per arrival (BPMN 2.0 §13.3.2). Counting arrivals lets a
@@ -141,19 +141,35 @@ type Token struct {
 	// fire a join whose other edge was never traversed; see
 	// [InstanceState.tryParallelJoin]. Nothing else reads this field.
 	//
-	// EMPTY MEANS "arrived over no flow, or over a flow that was not recorded".
-	// Three populations carry it: a token placed at an instance start node or at a
-	// sub-process/event-sub-process start inside a fresh child scope (no flow was
-	// traversed); a compensation-walk resume, which is a relocation rather than a
-	// traversal; and a token decoded from a snapshot written before this field
-	// existed. At a parallel join an empty value satisfies at most ONE otherwise
-	// unsatisfied incoming flow — the reading that preserves the pre-field
-	// behaviour for legacy rows instead of deadlocking them.
+	// ⚠ It is NOT the authored flow.SequenceFlow.ID, and must not be compared with
+	// one. That ID is not a key: model.Validate accepts any number of blank flow
+	// IDs, so two distinct edges into one gateway can carry the same one. The value
+	// here is [flowRef.Identity] — the flow's index in its definition, which is
+	// unique by construction — with the authored ID appended for legibility.
+	//
+	// EMPTY MEANS "this token traversed no sequence flow". After #120 that is a
+	// narrow, enumerated population, not a catch-all:
+	//   - a token placed at an instance start node;
+	//   - a token placed at a sub-process or event-sub-process start inside a child
+	//     scope that did not exist a moment earlier;
+	//   - an OPERATOR-DIRECTED compensation relocation — CompensateRequested's
+	//     partial rollback and ReverseInstance's full reverse — which move a token
+	//     to a named node rather than along an edge. The compensation THROW resume
+	//     is not in this list: it is a real traversal of the throw's outgoing flow
+	//     and carries that edge (compensationCursor.ResumeFlow);
+	//   - a token decoded from a snapshot written before this field existed.
+	//
+	// At a parallel join an empty value satisfies at most ONE otherwise-unsatisfied
+	// incoming flow. That is a deliberate concession, not an oversight: it keeps an
+	// instance that was mid-join at upgrade time from deadlocking. It is fail-open
+	// for the operator-directed relocations above, and deliberately so — a silent
+	// unrecoverable stall is worse than an early fire. Making that residual VISIBLE
+	// rather than silent is #79's subject, not this field's.
 	//
 	// ⚠ It is added at the END of the struct deliberately. Three godoc comments in
 	// step_state.go cite this struct's await fields by absolute line number, and an
 	// insertion above them would silently invalidate all three.
-	ArrivalFlowID string
+	ArrivalFlow string
 }
 
 // clearAwait drops the await markers a token stops holding the moment it is

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kartaladev/wrkflw/definition/flow"
 	"github.com/kartaladev/wrkflw/definition/model"
 )
 
@@ -13,10 +12,10 @@ import (
 // outgoing flow target (definition order). Used for a diverging parallel gateway.
 // scopeID is the gateway token's scope; forked tokens inherit it.
 func (s *InstanceState) forkParallel(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time) {
-	outs := def.Outgoing(node.ID())
+	outs := outgoingFlows(def, node.ID())
 	s.consumeToken(tok, at)
 	for _, f := range outs {
-		s.placeTokenInScope(f.Target, scopeID, f.ID, at)
+		s.placeTokenInScope(f.Flow.Target, scopeID, f.Identity(), at)
 	}
 }
 
@@ -26,21 +25,21 @@ func (s *InstanceState) forkParallel(def *model.ProcessDefinition, tok *Token, n
 // default it returns ErrNoMatchingFlow.
 // scopeID is the gateway token's scope; forked tokens inherit it.
 func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time, eval ConditionEvaluator) error {
-	var taken []flow.SequenceFlow
-	var dflt *flow.SequenceFlow
-	for _, f := range def.Outgoing(node.ID()) {
-		if f.IsDefault {
+	var taken []flowRef
+	var dflt *flowRef
+	for _, f := range outgoingFlows(def, node.ID()) {
+		if f.Flow.IsDefault {
 			ff := f
 			dflt = &ff
 			continue
 		}
-		if f.Condition == "" {
+		if f.Flow.Condition == "" {
 			taken = append(taken, f)
 			continue
 		}
-		ok, err := eval.EvalBool(f.Condition, s.Variables)
+		ok, err := eval.EvalBool(f.Flow.Condition, s.Variables)
 		if err != nil {
-			return fmt.Errorf("workflow-engine: gateway %q flow %q: %w", node.ID(), f.ID, err)
+			return fmt.Errorf("workflow-engine: gateway %q flow %q: %w", node.ID(), f.Flow.ID, err)
 		}
 		if ok {
 			taken = append(taken, f)
@@ -54,7 +53,7 @@ func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, 
 	}
 	s.consumeToken(tok, at)
 	for _, f := range taken {
-		s.placeTokenInScope(f.Target, scopeID, f.ID, at)
+		s.placeTokenInScope(f.Flow.Target, scopeID, f.Identity(), at)
 	}
 	return nil
 }
@@ -64,7 +63,7 @@ func (s *InstanceState) forkInclusive(def *model.ProcessDefinition, tok *Token, 
 // share the same inner join node ID accounted and consumed independently.
 //
 // It answers "is this token at the join", never "which branch did it come from":
-// the parallel join needs both, and gets the second from [Token.ArrivalFlowID]
+// the parallel join needs both, and gets the second from [Token.ArrivalFlow]
 // via matchJoinTokensToFlows.
 func joinedAt(t *Token, nodeID, scopeID string) bool {
 	return t.NodeID == nodeID && t.State == TokenJoining && t.ScopeID == scopeID
@@ -91,8 +90,8 @@ func (s *InstanceState) fireJoin(def *model.ProcessDefinition, node model.Node, 
 		kept = append(kept, t)
 	}
 	s.Tokens = kept
-	for _, f := range def.Outgoing(node.ID()) {
-		s.placeTokenInScope(f.Target, scopeID, f.ID, at)
+	for _, f := range outgoingFlows(def, node.ID()) {
+		s.placeTokenInScope(f.Flow.Target, scopeID, f.Identity(), at)
 	}
 }
 
@@ -109,7 +108,7 @@ func (s *InstanceState) fireJoin(def *model.ProcessDefinition, node model.Node, 
 // tokens over ONE incoming edge, which satisfies an arrival count of two while
 // the gateway's other edge has never been traversed. The join then fires with a
 // branch still outstanding and the process continues past a synchronisation point
-// that never happened. Tokens carry [Token.ArrivalFlowID] so the two tests can be
+// that never happened. Tokens carry [Token.ArrivalFlow] so the two tests can be
 // told apart; matchJoinTokensToFlows is where they diverge.
 //
 // SCOPE-LOCAL INVARIANT: both the coverage match and the consume set filter
@@ -117,17 +116,19 @@ func (s *InstanceState) fireJoin(def *model.ProcessDefinition, node model.Node, 
 // sharing the same inner join node ID (e.g. two sub-process instances using the
 // same nested *ProcessDefinition) are independently satisfied and consumed.
 // Cross-scope token accounting would fire joins prematurely and merge executions.
-func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time) {
+// It reports whether the join fired.
+func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time) bool {
 	tok.State = TokenJoining
 
 	consume, ready := s.matchJoinTokensToFlows(def, node, scopeID)
 	if !ready {
-		return // at least one incoming flow has delivered nothing in this scope
+		return false // at least one incoming flow has delivered nothing in this scope
 	}
 
 	// Fire: remove exactly the matched tokens (closing their visits), leaving any
 	// surplus parked as TokenJoining, then create one Active token per outgoing flow.
 	s.fireJoin(def, node, scopeID, at, consume)
+	return true
 }
 
 // matchJoinTokensToFlows assigns at most one parked token to each of node's
@@ -135,21 +136,30 @@ func (s *InstanceState) tryParallelJoin(def *model.ProcessDefinition, tok *Token
 // IDs and whether EVERY incoming flow was assigned one.
 //
 // The match runs in two passes, and the order matters. The first pass gives each
-// flow a token whose [Token.ArrivalFlowID] names that exact flow. Only then does
+// flow a token whose [Token.ArrivalFlow] names that exact flow. Only then does
 // the second pass spend the tokens whose provenance is empty, each satisfying one
 // still-unassigned flow. Doing it the other way round — letting an empty-provenance
 // token be consumed by the first flow that asks — would let it displace a token
 // that could only ever have satisfied that one flow, and report a join unready
 // that is in fact ready.
 //
-// An empty ArrivalFlowID is not a defect: it is what an instance start, a
-// sub-process start inside a fresh scope, a compensation-walk relocation, and a
-// token decoded from a pre-provenance snapshot all carry. Spending each such token
-// on at most one otherwise-unsatisfied flow is what preserves the pre-provenance
-// behaviour for those rows rather than deadlocking an instance that upgraded
-// mid-flight.
+// An empty ArrivalFlow means the token traversed NO sequence flow, and after #120
+// that is a narrow, enumerated population rather than a catch-all — the list is on
+// [Token.ArrivalFlow]. Two members can actually reach a join: an operator-directed
+// compensation relocation (CompensateRequested's partial rollback,
+// ReverseInstance's full reverse), and a token decoded from a snapshot written
+// before the field existed. Every genuine traversal mints an identity, including
+// the compensation THROW resume, which carries compensationCursor.ResumeFlow.
+//
+// Spending each such token on at most ONE otherwise-unsatisfied flow is a
+// deliberate concession: it stops an instance that was mid-join at upgrade time
+// from deadlocking. It is fail-OPEN for the two populations above, and that is the
+// chosen trade — a silent unrecoverable stall is worse than an early fire, and
+// making the residual visible rather than silent is #79's subject. "At most one"
+// is the half that keeps it bounded: consuming an unknown token per flow would let
+// a single one satisfy an entire join.
 func (s *InstanceState) matchJoinTokensToFlows(def *model.ProcessDefinition, node model.Node, scopeID string) (map[string]bool, bool) {
-	incoming := def.Incoming(node.ID())
+	incoming := incomingFlows(def, node.ID())
 	assigned := make(map[string]bool, len(incoming))
 	satisfied := make([]bool, len(incoming))
 
@@ -163,9 +173,9 @@ func (s *InstanceState) matchJoinTokensToFlows(def *model.ProcessDefinition, nod
 				if !joinedAt(t, node.ID(), scopeID) || assigned[t.ID] {
 					continue
 				}
-				matches := t.ArrivalFlowID == f.ID
+				matches := t.ArrivalFlow == f.Identity()
 				if pass == 1 {
-					matches = t.ArrivalFlowID == ""
+					matches = t.ArrivalFlow == ""
 				}
 				if matches {
 					assigned[t.ID] = true
@@ -211,7 +221,9 @@ func (s *InstanceState) matchJoinTokensToFlows(def *model.ProcessDefinition, nod
 //     property the scope-local filter was protecting (no cross-scope waiting
 //     between unrelated executions) while admitting the one relationship that is
 //     not cross-scope at all: a branch of this very execution, one level down.
-func (s *InstanceState) tryInclusiveJoin(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time) {
+//
+// It reports whether the join fired.
+func (s *InstanceState) tryInclusiveJoin(def *model.ProcessDefinition, tok *Token, node model.Node, scopeID string, at time.Time) bool {
 	tok.State = TokenJoining
 
 	canReach := nodesThatCanReach(def, node.ID())
@@ -221,17 +233,79 @@ func (s *InstanceState) tryInclusiveJoin(def *model.ProcessDefinition, tok *Toke
 			continue // already arrived at the join in this scope
 		}
 		if t.ScopeID == scopeID && canReach[t.NodeID] {
-			return // some token in this scope can still reach the join; keep waiting
+			return false // some token in this scope can still reach the join; keep waiting
 		}
 	}
 	if s.subtreeCanReachJoin(scopeID, canReach) {
-		return // a branch of this scope is running inside a sub-process; keep waiting
+		return false // a branch of this scope is running inside a sub-process; keep waiting
 	}
 
 	// Fire: consume all tokens parked at this join IN THIS SCOPE, then fork to
 	// outgoing flows. A nil consume set is the OR-join's consume-all rule: nothing
 	// else can reach the join, so every token that did reach it belongs here.
 	s.fireJoin(def, node, scopeID, at, nil)
+	return true
+}
+
+// retryParkedJoins re-evaluates every token parked at a join and reports whether
+// any join fired. It is the answer to a hazard both join kinds share: readiness is
+// otherwise tested ONLY when a token walks into the join node, and not every event
+// that discharges a wait is a token entry.
+//
+// Two such events are reachable, and each was a defect before this existed:
+//   - a CHILD SCOPE CLOSING. An inclusive join waits while a sub-process branch
+//     that can reach it is running. If that branch then diverges — takes a flow
+//     away from the join and ends — its scope closes with nothing entering the
+//     join, and the wait is discharged by an event no token accompanies. Without
+//     re-evaluation the instance stalls forever, with no incident and nothing to
+//     distinguish the stuck token from a legitimate wait.
+//   - A SETTLED TOKEN SET that already covers every incoming flow. A parallel join
+//     leaves surplus tokens parked, and a decoded snapshot can carry tokens parked
+//     at a join that no later arrival will ever join. Such tokens are otherwise
+//     inert: they satisfy the join and still hold the instance short of completion,
+//     because exitRootScope counts them.
+//
+// It runs when drive() finds no active token — the point at which the token set
+// has settled and the instance would otherwise be declared to have nothing to do.
+//
+// The scan restarts on the first firing rather than continuing: fireJoin
+// RESLICES s.Tokens, so both the loop index and the *Token taken from it are
+// invalid the moment a join fires. Reporting true sends drive() back through its
+// own loop, which re-enters here only after the tokens the firing placed have
+// been driven. That is also what bounds it: a firing consumes at least one parked
+// token, so it cannot re-fire on an unchanged token set.
+func (s *InstanceState) retryParkedJoins(def *model.ProcessDefinition, at time.Time) bool {
+	for i := range s.Tokens {
+		tok := &s.Tokens[i]
+		if tok.State != TokenJoining {
+			continue
+		}
+		tdef, err := defForScope(def, s, tok.ScopeID)
+		if err != nil {
+			continue // an unresolvable scope is drive()'s problem, not this sweep's
+		}
+		node, ok := tdef.Node(tok.NodeID)
+		if !ok {
+			continue
+		}
+		// Mirror the strategies' own guard: a gateway with one incoming flow is a
+		// fork, and no token should be parked TokenJoining on one.
+		if len(tdef.Incoming(node.ID())) <= 1 {
+			continue
+		}
+		switch node.Kind() {
+		case model.KindParallelGateway:
+			if s.tryParallelJoin(tdef, tok, node, tok.ScopeID, at) {
+				return true
+			}
+		case model.KindInclusiveGateway:
+			if s.tryInclusiveJoin(tdef, tok, node, tok.ScopeID, at) {
+				return true
+			}
+		default:
+		}
+	}
+	return false
 }
 
 // nodesThatCanReach returns the set of node IDs (excluding target) from which
@@ -296,21 +370,21 @@ func (s *InstanceState) subtreeCanReachJoin(scopeID string, canReach map[string]
 // It returns the whole flow rather than only its Target because the token that
 // takes it must record which edge it traversed — an exclusive gateway can sit
 // directly upstream of a converging parallel gateway, and that join accounts per
-// incoming flow. See [Token.ArrivalFlowID].
-func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node model.Node, eval ConditionEvaluator) (flow.SequenceFlow, error) {
-	var defaultFlow *flow.SequenceFlow
-	for _, f := range def.Outgoing(node.ID()) {
-		if f.IsDefault {
+// incoming flow. See [Token.ArrivalFlow].
+func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node model.Node, eval ConditionEvaluator) (flowRef, error) {
+	var defaultFlow *flowRef
+	for _, f := range outgoingFlows(def, node.ID()) {
+		if f.Flow.IsDefault {
 			ff := f
 			defaultFlow = &ff
 			continue
 		}
-		if f.Condition == "" {
+		if f.Flow.Condition == "" {
 			return f, nil
 		}
-		ok, err := eval.EvalBool(f.Condition, s.Variables)
+		ok, err := eval.EvalBool(f.Flow.Condition, s.Variables)
 		if err != nil {
-			return flow.SequenceFlow{}, fmt.Errorf("workflow-engine: gateway %q flow %q: %w", node.ID(), f.ID, err)
+			return flowRef{}, fmt.Errorf("workflow-engine: gateway %q flow %q: %w", node.ID(), f.Flow.ID, err)
 		}
 		if ok {
 			return f, nil
@@ -319,7 +393,7 @@ func selectExclusiveTarget(def *model.ProcessDefinition, s *InstanceState, node 
 	if defaultFlow != nil {
 		return *defaultFlow, nil
 	}
-	return flow.SequenceFlow{}, fmt.Errorf("%w: gateway %q", ErrNoMatchingFlow, node.ID())
+	return flowRef{}, fmt.Errorf("%w: gateway %q", ErrNoMatchingFlow, node.ID())
 }
 
 // resolveGatewayWin routes an event-based gateway when one of its armed events
@@ -373,13 +447,13 @@ func resolveGatewayWin(ctx context.Context, def *model.ProcessDefinition, s *Ins
 	// Find the catch node's outgoing target so we can skip directly to the branch.
 	// The catch node has "fired" by the arriving event; we route the gateway token
 	// straight to the catch node's outgoing target (its downstream node).
-	catchOuts := tdef.Outgoing(ae.CatchNode)
+	catchOuts := outgoingFlows(tdef, ae.CatchNode)
 	var branchTarget, branchFlowID string
 	if len(catchOuts) > 0 {
-		branchTarget = catchOuts[0].Target
+		branchTarget = catchOuts[0].Flow.Target
 		// Captured here rather than re-indexed below: the routing branch guards on
 		// branchTarget, which only implies len(catchOuts) > 0 by inference.
-		branchFlowID = catchOuts[0].ID
+		branchFlowID = catchOuts[0].Identity()
 	}
 
 	// Activate the gateway token and route it to the branch target.
@@ -393,7 +467,7 @@ func resolveGatewayWin(ctx context.Context, def *model.ProcessDefinition, s *Ins
 		tok.EnteredAt = at
 		// The catch node fires implicitly, so the edge actually traversed into
 		// branchTarget is the catch node's own outgoing flow, not the gateway's.
-		tok.ArrivalFlowID = branchFlowID
+		tok.ArrivalFlow = branchFlowID
 		s.openVisit(tok.ID, branchTarget, at)
 	} else {
 		// Fallback: move along the gateway's outgoing flow to the catch node.

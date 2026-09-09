@@ -771,6 +771,12 @@ type finishPlan struct {
 	// resume uses a non-root scope (the throw token's scope); partial/reverse
 	// resume at root.
 	resumeScope string
+	// resumeFlow is the engine-minted identity of the edge the resume token
+	// traverses to reach resumeAt, stamped on its [Token.ArrivalFlow]. Set for the
+	// THROW resume, which is a real traversal of the throw's outgoing flow; empty
+	// for the partial-rollback and full-reverse resumes, which relocate a token to
+	// an operator-named node over no edge at all.
+	resumeFlow string
 	// clearScope is the scope whose compensation records are cleared when
 	// doClearRecords is set ("" = root/RootCompensations).
 	clearScope string
@@ -1019,6 +1025,7 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 	scopeID := cur.ScopeID
 	archiveKey := cur.ArchiveKey
 	resumeNode := cur.ResumeNode
+	resumeFlow := cur.ResumeFlow
 	resumeScope := cur.ResumeScope
 	startRecordCount := cur.StartRecordCount
 	// A pinned record source is what makes this walk's incremental consuming
@@ -1073,6 +1080,7 @@ func stepCompensationFinish(ctx context.Context, def *model.ProcessDefinition, s
 		plan = finishPlan{
 			resume:               true,
 			resumeAt:             resumeNode,
+			resumeFlow:           resumeFlow,
 			resumeScope:          resumeScope,
 			deleteArchive:        archiveKey,
 			archiveConsumed:      archiveConsumed,
@@ -1317,11 +1325,12 @@ func applyFinish(ctx context.Context, def *model.ProcessDefinition, s *InstanceS
 			"resume_scope", plan.resumeScope,
 		)
 	} else {
-		// No arrival flow: a compensation-walk resume is a RELOCATION to a recorded
-		// resume point, not a traversal of a sequence flow — and for the partial and
-		// full-reverse outcomes it is operator-directed, with no edge involved at
-		// all. See [Token.ArrivalFlowID] for what an empty value costs at a join.
-		s.placeTokenInScope(plan.resumeAt, plan.resumeScope, "", at)
+		// plan.resumeFlow is the edge this token traverses to reach resumeAt. It is
+		// set for the compensation-THROW resume, which really does continue down the
+		// throw event's outgoing flow, and empty for the partial-rollback and
+		// full-reverse resumes, which relocate a token to an operator-named node
+		// over no edge. See [Token.ArrivalFlow] for what empty costs at a join.
+		s.placeTokenInScope(plan.resumeAt, plan.resumeScope, plan.resumeFlow, at)
 	}
 	if plan.popDeferred {
 		popOneDeferredThrow(s)

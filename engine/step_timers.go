@@ -58,12 +58,10 @@ func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *I
 		return StepResult{}, fmt.Errorf("workflow-engine: deadline breach: node %q has no DeadlineFlow defined", rec.NodeID)
 	}
 	// Find the sequence flow with ID == deadlineFlow.
-	var deadlineTarget string
-	for _, f := range tdefDeadline.Flows {
-		if f.ID == deadlineFlow {
-			deadlineTarget = f.Target
-			break
-		}
+	var deadlineTarget, deadlineIdentity string
+	if ref, ok := flowRefByID(tdefDeadline, deadlineFlow); ok {
+		deadlineTarget = ref.Flow.Target
+		deadlineIdentity = ref.Identity()
 	}
 	if deadlineTarget == "" {
 		return StepResult{}, fmt.Errorf("workflow-engine: deadline breach: DeadlineFlow %q not found in definition flows for node %q", deadlineFlow, rec.NodeID)
@@ -82,7 +80,7 @@ func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *I
 	// sets it, but being explicit here makes the intent unambiguous).
 	tok.clearAwait()
 	tok.State = TokenActive
-	s.moveTokenToTargetAs(tok, deadlineTarget, deadlineFlow, at, CloseKindDeadlineExpired)
+	s.moveTokenToTargetAs(tok, deadlineTarget, deadlineIdentity, at, CloseKindDeadlineExpired)
 
 	// (c) Mark the task Cancelled and emit UpdateTask.
 	if task != nil {

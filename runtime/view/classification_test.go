@@ -57,11 +57,19 @@ var classification = map[string]map[string]disposition{
 		"ID": public, "NodeID": public, "ScopeID": public, "State": public,
 		"EnteredAt": public, "RetryAttempts": public, "RetryStartedAt": public,
 
-		// A sequence-flow ID is definition structure, exactly like NodeID and
-		// ScopeID: it names an edge the definition's author wrote, carries no
-		// business data, and is already disclosed to anyone who can read the
-		// definition. It discloses nothing NodeID does not.
-		"ArrivalFlowID": public,
+		// An edge identity is definition structure, the same class as NodeID and
+		// ScopeID: it names a sequence flow the definition's author wrote and
+		// carries no business data.
+		//
+		// It is NOT a strict subset of what NodeID already discloses, and the
+		// disposition does not rest on that. Flow IDs are unique but (Source,
+		// Target) pairs are not, so two flows may share both endpoints and differ
+		// only by ID and Condition; History records an identical hop either way,
+		// and this field is then the only public value revealing WHICH condition
+		// matched. The increment is real and narrow, and the distinguishing value
+		// is still an author-written structural identifier — same class as a node
+		// id, which is already public in Token.NodeID and in every NodeVisit.
+		"ArrivalFlow": public,
 
 		"Payload": gatedVariables,
 
@@ -104,7 +112,11 @@ var classification = map[string]map[string]disposition{
 		// Operator-facing execution position: what makes a wedged instance recoverable.
 		"ScopeID": gatedOperations, "ArchiveKey": gatedOperations,
 		"ResumeNode": gatedOperations, "ResumeScope": gatedOperations,
-		"ToNode": gatedOperations, "ReverseNode": gatedOperations,
+		// ResumeFlow sits with ResumeNode: it is the edge half of the same resume
+		// point, definition structure rather than business data, and useless to an
+		// operator without the node it accompanies.
+		"ResumeFlow": gatedOperations,
+		"ToNode":     gatedOperations, "ReverseNode": gatedOperations,
 		"ReverseResetVars": gatedOperations, "RestoreTargetVars": gatedOperations,
 		"StartRecordCount": gatedOperations, "TeardownArchiveKey": gatedOperations,
 		"TeardownArchiveOffset": gatedOperations, "TeardownArchiveCount": gatedOperations,

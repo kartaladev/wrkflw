@@ -214,13 +214,13 @@ func routeToBoundary(ctx context.Context, top *model.ProcessDefinition, s *Insta
 	cmds := emitFireOnceAction(s, boundary.Action)
 	cmds = consume(cmds)
 
-	outs := lookupDef.Outgoing(boundary.ID())
+	outs := outgoingFlows(lookupDef, boundary.ID())
 	if len(outs) == 0 {
 		return cmds, fmt.Errorf("workflow-engine: propagateError: %s %q has no outgoing flow", kind, boundary.ID())
 	}
-	flowTarget := outs[0].Target
+	flowTarget := outs[0].Flow.Target
 
-	s.placeTokenInScope(flowTarget, targetScopeID, outs[0].ID, at)
+	s.placeTokenInScope(flowTarget, targetScopeID, outs[0].Identity(), at)
 
 	driveCmds, err := drive(ctx, top, s, at, pol)
 	if err != nil {

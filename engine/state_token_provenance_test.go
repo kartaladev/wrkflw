@@ -13,7 +13,7 @@ import (
 )
 
 // goldenLegacyTokenJSON is the exact json.Marshal output of a fully-populated
-// engine.Token as the struct stood BEFORE ArrivalFlowID was added — i.e. what
+// engine.Token as the struct stood BEFORE ArrivalFlow was added — i.e. what
 // every snapshot row written by a pre-#120 binary looks like. InstanceState is
 // JSON-encoded whole by internal/persistence/store's marshalSnapshot with no
 // struct tags, so these are the durable key names, not an invention of this test.
@@ -22,14 +22,14 @@ const goldenLegacyTokenJSON = `{"ID":"t1","NodeID":"join","ScopeID":"s1","State"
 	`"AwaitTimer":"tm1","Payload":{"x":1},"EnteredAt":"2026-06-20T10:00:00Z",` +
 	`"RetryAttempts":2,"RetryStartedAt":"2026-06-20T09:00:00Z"}`
 
-// TestTokenArrivalFlowIDIsAdditiveOnTheWire pins that appending ArrivalFlowID did
+// TestTokenArrivalFlowIsAdditiveOnTheWire pins that appending ArrivalFlow did
 // not change how any previously-written token decodes.
 //
 // This is the half of the change no engine-level test reaches: an instance that
 // was mid-flight when the binary was upgraded is read back through plain
 // json.Unmarshal (internal/persistence/store/store_core.go), and there is no
 // DisallowUnknownFields anywhere on that path in either direction.
-func TestTokenArrivalFlowIDIsAdditiveOnTheWire(t *testing.T) {
+func TestTokenArrivalFlowIsAdditiveOnTheWire(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
@@ -46,7 +46,7 @@ func TestTokenArrivalFlowIDIsAdditiveOnTheWire(t *testing.T) {
 			},
 			assert: func(t *testing.T, got engine.Token, err error) {
 				require.NoError(t, err)
-				assert.Empty(t, got.ArrivalFlowID,
+				assert.Empty(t, got.ArrivalFlow,
 					"a legacy row carries no provenance; it must decode empty, not fail")
 				// Every pre-existing field must still land where it did, or the
 				// append moved something it should not have.
@@ -66,15 +66,16 @@ func TestTokenArrivalFlowIDIsAdditiveOnTheWire(t *testing.T) {
 					EnteredAt: time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC),
 					// A live snapshot may hold a provenance whose flow is not the
 					// join's — the field is rewritten on every hop, so it always
-					// names the LAST edge crossed.
-					ArrivalFlowID: "f5",
+					// names the LAST edge crossed. The value is an engine-minted
+					// identity, not the authored flow ID.
+					ArrivalFlow: "7:f5",
 				})
 				require.NoError(t, err)
 				return b
 			},
 			assert: func(t *testing.T, got engine.Token, err error) {
 				require.NoError(t, err)
-				assert.Equal(t, "f5", got.ArrivalFlowID)
+				assert.Equal(t, "7:f5", got.ArrivalFlow)
 			},
 		},
 	}
@@ -91,7 +92,7 @@ func TestTokenArrivalFlowIDIsAdditiveOnTheWire(t *testing.T) {
 }
 
 // TestParallelJoinAcceptsLegacyTokensWithoutProvenance pins the meaning of an
-// EMPTY ArrivalFlowID at a converging parallel gateway: it satisfies at most one
+// EMPTY ArrivalFlow at a converging parallel gateway: it satisfies at most one
 // otherwise-unsatisfied incoming flow.
 //
 // The rule exists for instances that were already running when the field was

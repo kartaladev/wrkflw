@@ -600,11 +600,11 @@ func recordSubProcessCompensation(c *stepCtx, parentDef *model.ProcessDefinition
 // sub-process treats it as an error, while a root-level event sub-process
 // treats it as a legitimate instance-completion signal.
 func resumeInParentScope(c *stepCtx, parentDef *model.ProcessDefinition, enclosingNodeID, parentScopeID string) bool {
-	outs := parentDef.Outgoing(enclosingNodeID)
+	outs := outgoingFlows(parentDef, enclosingNodeID)
 	if len(outs) == 0 {
 		return false
 	}
-	c.s.placeTokenInScope(outs[0].Target, parentScopeID, outs[0].ID, c.at)
+	c.s.placeTokenInScope(outs[0].Flow.Target, parentScopeID, outs[0].Identity(), c.at)
 	return true
 }
 
@@ -683,7 +683,7 @@ func (subProcessStrategy) enter(c *stepCtx, tok *Token, node model.Node) ([]Comm
 	// Place the inner manual-start token in the new scope.
 	// No arrival flow: the sub-process's manual start node begins a fresh child
 	// scope; the flow into the sub-process ACTIVITY was traversed by the parent
-	// token, which is consumed here. See [Token.ArrivalFlowID].
+	// token, which is consumed here. See [Token.ArrivalFlow].
 	c.s.placeTokenInScope(manualStart, scopeID, "", c.at)
 	// Consume the sub-process activity token (execution is now "inside").
 	c.s.consumeToken(tok, c.at)
@@ -996,7 +996,7 @@ func (exclusiveGatewayStrategy) enter(c *stepCtx, tok *Token, node model.Node) (
 		// are intentionally not delivered today.
 		return nil, false, err
 	}
-	c.s.moveTokenToTarget(tok, taken.Target, taken.ID, c.at)
+	c.s.moveTokenToTarget(tok, taken.Flow.Target, taken.Identity(), c.at)
 	// tok.State stays TokenActive (auto-advance): drive() derives stopped=false.
 	return nil, false, nil
 }
@@ -1242,12 +1242,13 @@ func deferCompensationThrow(s *InstanceState, tok *Token) {
 //
 // The mutation order is load-bearing: consumeToken must run before
 // nextCommandID, as both advance state on c.s.
-func startCompensationWalk(c *stepCtx, cmds []Command, tok *Token, records []CompensationRecord, cursor compensationCursor, resumeNode, resumeScope string) []Command {
+func startCompensationWalk(c *stepCtx, cmds []Command, tok *Token, records []CompensationRecord, cursor compensationCursor, resumeNode, resumeFlow, resumeScope string) []Command {
 	c.s.consumeToken(tok, c.at)
 	c.s.Status = StatusCompensating
 	cmdID := c.s.nextCommandID()
 	cursor.StartedAt = c.at
 	cursor.ResumeNode = resumeNode
+	cursor.ResumeFlow = resumeFlow
 	cursor.ResumeScope = resumeScope
 	cursor.Records = cloneCompensationRecords(records)
 	cursor.NextIndex = len(records) - 1
@@ -1281,9 +1282,14 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 	// ResumeNode == "" and take the terminal branch, wrongly terminating the
 	// instance. Validate forbids a dead-end throw (ErrDeadEnd); this guards Step
 	// defensively regardless.
-	resumeNode := ""
-	if out := c.tdef.Outgoing(node.ID()); len(out) > 0 {
-		resumeNode = out[0].Target
+	resumeNode, resumeFlow := "", ""
+	if out := outgoingFlows(c.tdef, node.ID()); len(out) > 0 {
+		resumeNode = out[0].Flow.Target
+		// The resume traverses this edge, so the resuming token must carry it: a
+		// throw's successor can be a converging parallel gateway, and an unstamped
+		// token placed straight onto one fires it early. See
+		// compensationCursor.ResumeFlow.
+		resumeFlow = out[0].Identity()
 	}
 	tokScope := tok.ScopeID
 
@@ -1307,7 +1313,7 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 		} else {
 			// Start the throw compensation walk (resumeNode is non-empty here).
 			cmds = startCompensationWalk(c, cmds, tok, records,
-				compensationCursor{ArchiveKey: ref}, resumeNode, tokScope)
+				compensationCursor{ArchiveKey: ref}, resumeNode, resumeFlow, tokScope)
 		}
 	} else {
 		// Scope-wide throw: compensate the throwing scope's completed
@@ -1368,7 +1374,7 @@ func (compensationThrowEventStrategy) enter(c *stepCtx, tok *Token, node model.N
 				// iterated stays intact on the cursor until the cursor is cleared.
 				cmds = startCompensationWalk(c, cmds, tok, records,
 					compensationCursor{ScopeID: tokScope, StartRecordCount: len(records)},
-					resumeNode, tokScope)
+					resumeNode, resumeFlow, tokScope)
 			}
 		}
 	}

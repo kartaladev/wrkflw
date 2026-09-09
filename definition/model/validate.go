@@ -379,11 +379,20 @@ var (
 	// and in the RecoveryFlow / DeadlineFlow references, so a reused ID makes
 	// those references ambiguous.
 	//
-	// A blank flow ID is legal — flow.SequenceFlow literals may omit it and
-	// nothing resolves a flow by ID on the execution path — so any number of
-	// blank-ID flows is accepted. Flow IDs live in their own namespace: a flow
-	// may share its ID with a node. Like ErrDuplicateNodeID, uniqueness is
-	// scoped to a single definition.
+	// A blank flow ID is legal — flow.SequenceFlow literals may omit it — so any
+	// number of blank-ID flows is accepted.
+	//
+	// The engine DOES resolve edges on the execution path: a converging parallel
+	// gateway is satisfied per incoming sequence flow, and a token records which
+	// one it traversed (see engine.Token.ArrivalFlow). It does not use this ID to
+	// do it. Because this rule permits repeats, the ID is not a key, so the engine
+	// mints its own per-definition edge identity from the flow's position instead.
+	// Blank IDs are tolerated there BY CONSTRUCTION, not because nothing reads
+	// them. What this rule still protects is the places that do resolve by ID —
+	// the RecoveryFlow and DeadlineFlow references, and diagnostics.
+	//
+	// Flow IDs live in their own namespace: a flow may share its ID with a node.
+	// Like ErrDuplicateNodeID, uniqueness is scoped to a single definition.
 	ErrDuplicateFlowID = errors.New("workflow-definition: duplicate flow id")
 	// ErrForeignNodeType is returned when a node's dynamic type is not the
 	// concrete type its kind registered. Node is a closed set: each NodeKind is

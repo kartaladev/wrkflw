@@ -231,7 +231,7 @@ func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefi
 		childScopeID := s.openScope(ea.EventSubprocessNode, ea.EnclosingScopeID)
 		// No arrival flow: the event sub-process's start node is entered by the
 		// event firing, inside a scope that did not exist a moment ago. Nothing was
-		// traversed. See [Token.ArrivalFlowID].
+		// traversed. See [Token.ArrivalFlow].
 		s.placeTokenInScope(innerStart.ID(), childScopeID, "", at)
 	} else {
 		// Non-interrupting: leave enclosing scope running, spawn alongside. The arm
@@ -250,7 +250,7 @@ func fireEventTriggeredSubprocessArm(ctx context.Context, def *model.ProcessDefi
 		childScopeID := s.openScope(ea.EventSubprocessNode, ea.EnclosingScopeID)
 		// No arrival flow: the event sub-process's start node is entered by the
 		// event firing, inside a scope that did not exist a moment ago. Nothing was
-		// traversed. See [Token.ArrivalFlowID].
+		// traversed. See [Token.ArrivalFlow].
 		s.placeTokenInScope(innerStart.ID(), childScopeID, "", at)
 	}
 
