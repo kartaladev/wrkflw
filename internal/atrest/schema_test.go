@@ -809,16 +809,16 @@ func TestNormalizedKeySetAgreesAcrossDialects(t *testing.T) {
 	assert.ElementsMatch(t, pg, sq, "postgres vs sqlite normalized key set")
 	assert.Len(t, pg, 79)
 
-	// Sorted-order pin: ColumnKeysWithPrefix's doc
-	// contract promises keys sorted by (Table, Column). No caller depends on
-	// that order — every consumer rebuilds into a map or compares with
-	// ElementsMatch — which is why the contract needs a pin of its own:
-	// deterministic, diffable output is the point, and nothing else in the
-	// repo would go red if the sort call were dropped.
-	// ElementsMatch above is order-independent
-	// and cannot pin this, so compare pg against an independently-sorted
-	// copy of itself with assert.Equal — a dropped sort call almost never
-	// coincides with the sorted order across 79 map-iterated entries.
+	// Sorted-order pin: ColumnKeysWithPrefix's doc contract promises keys
+	// sorted by (Table, Column). No caller depends on that order — every
+	// consumer rebuilds into a map or compares with ElementsMatch — which is
+	// why the contract needs a pin of its own: deterministic, diffable output
+	// is the point, and nothing else in the repo would go red if the sort call
+	// were dropped. The ElementsMatch assertions above cannot serve as that
+	// pin, being order-independent themselves, so compare pg against an
+	// independently-sorted copy of itself with assert.Equal — a dropped sort
+	// call almost never coincides with the sorted order across 79 map-iterated
+	// entries.
 	sortedPG := slices.Clone(pg)
 	slices.SortFunc(sortedPG, func(a, b atrest.ColumnKey) int {
 		if c := strings.Compare(a.Table, b.Table); c != 0 {
