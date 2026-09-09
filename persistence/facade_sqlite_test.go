@@ -332,7 +332,7 @@ func TestNewSQLiteCallNotifier_DeliversViaSQLiteStore(t *testing.T) {
 // ─── DefinitionStore ────────────────────────────────────────────────────────
 
 // TestNewSQLiteDefinitionStore_RoundTrip verifies that NewSQLiteDefinitionStore
-// returns a DefinitionStore that PutDefinition-then-Lookup round-trips a definition
+// returns a DefinitionStore that PublishDefinition-then-Lookup round-trips a definition
 // through SQLite.
 func TestNewSQLiteDefinitionStore_RoundTrip(t *testing.T) {
 	db := dbtest.RunTestSQLite(t)
@@ -341,12 +341,9 @@ func TestNewSQLiteDefinitionStore_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ds)
 
-	def := &model.ProcessDefinition{
-		ID:            "sqlite-facade-def-1",
-		Version:       1,
-		CancelActions: []string{"rollback"},
-	}
-	require.NoError(t, ds.PutDefinition(t.Context(), def))
+	def := minimalValidDef("sqlite-facade-def-1", 1)
+	def.CancelActions = []string{"rollback"}
+	require.NoError(t, ds.PublishDefinition(t.Context(), def))
 
 	// Pinned lookup Version(id, version).
 	got, err := ds.Lookup(t.Context(), model.Version("sqlite-facade-def-1", 1))

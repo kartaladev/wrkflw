@@ -201,8 +201,8 @@ func TestMySQLCapabilities(t *testing.T) {
 	}
 }
 
-// TestMySQLUpsertClauses verifies that UpsertTimer and UpsertDefinition return
-// the ON DUPLICATE KEY UPDATE clauses that match the real MySQL store files.
+// TestMySQLUpsertClauses verifies that UpsertTimer returns the
+// ON DUPLICATE KEY UPDATE clause that matches the real MySQL store files.
 func TestMySQLUpsertClauses(t *testing.T) {
 	t.Parallel()
 
@@ -222,14 +222,6 @@ func TestMySQLUpsertClauses(t *testing.T) {
 					"\n\t\t\t                        def_id=VALUES(def_id), def_version=VALUES(def_version)," +
 					"\n\t\t\t                        trigger_kind=VALUES(trigger_kind), trigger_payload=VALUES(trigger_payload)"
 				assert.Equal(t, want, d.UpsertTimer())
-			},
-		},
-		{
-			name: "UpsertDefinition matches real MySQL store",
-			assert: func(t *testing.T) {
-				t.Helper()
-				const want = "\n\t\t\t ON DUPLICATE KEY UPDATE definition = VALUES(definition)"
-				assert.Equal(t, want, d.UpsertDefinition())
 			},
 		},
 	}

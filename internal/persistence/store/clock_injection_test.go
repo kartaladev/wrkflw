@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/internal/database"
 	"github.com/kartaladev/wrkflw/internal/dbtest"
 	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
@@ -38,7 +37,7 @@ var clockPinnedInstant = time.Date(1999, 3, 4, 5, 6, 7, 890123456, time.UTC)
 //
 //   - Store.Create        → wrkflw_instances.updated_at
 //   - Store.Commit        → wrkflw_instances.updated_at
-//   - DefinitionStore.PutDefinition → wrkflw_definitions.created_at
+//   - DefinitionStore.PublishDefinition → wrkflw_definitions.created_at
 //   - Deduper.Seen        → wrkflw_processed_message.processed_at
 //   - ChainLinkStore.Record → wrkflw_chain_links.created_at
 //
@@ -103,13 +102,12 @@ func TestPersistedTimestampsUseInjectedClock(t *testing.T) {
 			},
 		},
 		{
-			name: "DefinitionStore.PutDefinition stamps created_at from the injected clock",
+			name: "DefinitionStore.PublishDefinition stamps created_at from the injected clock",
 			write: func(t *testing.T, db *sql.DB, clk *clockwork.FakeClock) {
 				ds, err := store.NewDefinitionStore(db, sqliteDialect, store.WithDefinitionClock(clk))
 				require.NoError(t, err)
-				require.NoError(t, ds.PutDefinition(t.Context(), &model.ProcessDefinition{
-					ID: "clk-def", Version: 1,
-				}), "PutDefinition")
+				require.NoError(t, ds.PublishDefinition(t.Context(), minimalValidDef("clk-def", 1)),
+					"PublishDefinition")
 			},
 			query: `SELECT created_at FROM wrkflw_definitions WHERE def_id = ?`,
 			key:   "clk-def",

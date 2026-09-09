@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/internal/dbtest"
 	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 	"github.com/kartaladev/wrkflw/internal/persistence/store"
@@ -360,18 +359,18 @@ func TestChainLinkStoreDroppedTable(t *testing.T) {
 // DefinitionStore error branches — dropped table / unsupported conn
 // --------------------------------------------------------------------------
 
-// TestDefinitionStoreDroppedTable exercises the exec-error branch in PutDefinition
+// TestDefinitionStoreDroppedTable exercises the exec-error branch in PublishDefinition
 // and the query-error branch in GetDefinition by dropping wrkflw_definitions.
 func TestDefinitionStoreDroppedTable(t *testing.T) {
-	t.Run("PutDefinition exec error after table dropped", func(t *testing.T) {
+	t.Run("PublishDefinition exec error after table dropped", func(t *testing.T) {
 		db := dbtest.RunTestSQLite(t)
 		_, err := db.ExecContext(t.Context(), "DROP TABLE wrkflw_definitions")
 		require.NoError(t, err)
 
 		ds, err := store.NewDefinitionStore(db, dialect.NewSQLite())
 		require.NoError(t, err)
-		err = ds.PutDefinition(t.Context(), &model.ProcessDefinition{ID: "d1", Version: 1})
-		require.Error(t, err, "PutDefinition must error after table dropped")
+		err = ds.PublishDefinition(t.Context(), minimalValidDef("d1", 1))
+		require.Error(t, err, "PublishDefinition must error after table dropped")
 	})
 
 	t.Run("GetDefinition query error after table dropped", func(t *testing.T) {

@@ -31,6 +31,49 @@ var ErrDefinitionExists = errors.New("workflow-runtime: definition already regis
 // errors.Is.
 var ErrInvalidDefinition = errors.New("workflow-runtime: invalid definition")
 
+// ── The shared authoring gate ─────────────────────────────────────────────
+
+// ValidateDefinition is the authoring gate every definition passes through
+// before it is admitted to a registry or published to the durable store. It
+// returns:
+//   - [ErrNilDefinition] if def is nil.
+//   - [ErrEmptyDefinitionID] if def.ID is empty.
+//   - [ErrInvalidDefinition], wrapped together with the qualifier and every
+//     rule def broke, if def fails [model.Validate]. Callers may match either
+//     this sentinel or a specific rule (e.g. [model.ErrNoStartEvent],
+//     [model.ErrInvalidVersion]) with errors.Is.
+//   - nil if def is admissible.
+//
+// [github.com/kartaladev/wrkflw/engine.Step] assumes the definition it is given
+// has passed [model.Validate]. The builder and the YAML loader both end in that
+// call, but a hand-constructed *model.ProcessDefinition literal has not — so
+// every door into the system runs this gate, and they all run the SAME one:
+// [MemDefinitionRegistry.Register] and the durable store's PublishDefinition
+// both delegate here, so an in-memory registration and a durable publish accept
+// and reject exactly the same definitions.
+//
+// A Version of 0 needs no separate check: it is the "latest" sentinel and
+// [model.Validate] already refuses it with [model.ErrInvalidVersion].
+//
+// It is exported so a consumer can run the same check itself — before a publish,
+// or in a test — instead of discovering the rejection at the write.
+//
+// [MapDefinitionRegistry] is the one registry that cannot enforce this — its
+// variadic constructor returns no error — so a caller assembling one owns
+// validation itself.
+func ValidateDefinition(def *model.ProcessDefinition) error {
+	if def == nil {
+		return ErrNilDefinition
+	}
+	if def.ID == "" {
+		return ErrEmptyDefinitionID
+	}
+	if err := model.Validate(def); err != nil {
+		return fmt.Errorf("%w: %q: %w", ErrInvalidDefinition, def.Qualifier(), err)
+	}
+	return nil
+}
+
 // ── MemDefinitionRegistry ─────────────────────────────────────────────────
 
 // MemDefinitionRegistry is a concurrency-safe, register-after-construction
@@ -40,8 +83,9 @@ var ErrInvalidDefinition = errors.New("workflow-runtime: invalid definition")
 //
 // Register indexes each definition under two keys:
 //   - def.Qualifier()     — exact versioned key; first-registration-wins.
-//   - model.Latest(def.ID) — latest key; overwritten to the most-recently-registered
-//     version so a Latest Qualifier always resolves the newest registered version.
+//   - model.Latest(def.ID) — latest key; held by the HIGHEST registered version,
+//     so a Latest Qualifier always resolves the newest version rather than
+//     whichever one happened to be registered last.
 //
 // # Concurrency
 //
@@ -61,41 +105,32 @@ func NewMemDefinitionRegistry() *MemDefinitionRegistry {
 
 // Register indexes def under both its pinned Qualifier and its latest Qualifier.
 // It returns:
-//   - [ErrNilDefinition] if def is nil.
-//   - [ErrEmptyDefinitionID] if def.ID is empty.
-//   - [ErrInvalidDefinition] (wrapped together with every rule def broke) if def
-//     fails [model.Validate].
+//   - whatever [ValidateDefinition] returns — [ErrNilDefinition],
+//     [ErrEmptyDefinitionID] or [ErrInvalidDefinition] — if def fails the
+//     shared authoring gate.
 //   - [ErrDefinitionExists] (wrapped with the pinned key) if the exact
 //     Qualifier was already registered (first-registration-wins on the
 //     versioned key).
 //
-// # The authoring gate
+// The gate runs before the lock and before any indexing, so a rejected
+// definition claims neither key. It is the same [ValidateDefinition] the
+// durable store's PublishDefinition runs, so both doors admit exactly the same
+// definitions.
 //
-// [github.com/kartaladev/wrkflw/engine.Step] assumes the definition it is given
-// has passed [model.Validate]. The builder and the YAML loader both end in that
-// call, but a hand-constructed *model.ProcessDefinition literal has not — so
-// Register runs it here, and this registry is the gate for every definition that
-// enters through it. Validation runs before the lock and before any indexing: a
-// rejected definition claims neither key.
+// On success the latest key is moved to def only when def.Version is greater
+// than or equal to the version currently holding that key, so a Lookup with a
+// Latest Qualifier resolves the highest registered version. Registering an
+// older version after a newer one therefore does not demote "latest".
 //
-// [MapDefinitionRegistry] is the one registry that cannot enforce this — its
-// variadic constructor returns no error — so a caller assembling one owns
-// validation itself.
-//
-// On success the latest key is overwritten to point at def, so subsequent
-// Lookup calls with a Latest Qualifier resolve the most-recently-registered version.
+// This matches [MapDefinitionRegistry] and the durable
+// DefinitionStore.Lookup, both of which already resolve Latest by highest
+// version: "latest" means the same thing on every registry.
 func (r *MemDefinitionRegistry) Register(def *model.ProcessDefinition) error {
-	if def == nil {
-		return ErrNilDefinition
-	}
-	if def.ID == "" {
-		return ErrEmptyDefinitionID
-	}
 	// The authoring gate: engine.Step's contract assumes model.Validate has run,
 	// and a struct literal is the one route that would otherwise skip it.
-	// Checked outside the lock — Validate reads def only.
-	if err := model.Validate(def); err != nil {
-		return fmt.Errorf("%w: %q: %w", ErrInvalidDefinition, def.Qualifier(), err)
+	// Checked outside the lock — the gate reads def only.
+	if err := ValidateDefinition(def); err != nil {
+		return err
 	}
 
 	pinned := def.Qualifier()
@@ -109,9 +144,12 @@ func (r *MemDefinitionRegistry) Register(def *model.ProcessDefinition) error {
 	}
 
 	r.m[pinned] = def
-	// Last-registered-wins for the latest key (NOT highest-version);
-	// MapDefinitionRegistry keeps the highest version instead.
-	r.m[latest] = def
+	// Highest-version-wins for the latest key, mirroring MapDefinitionRegistry.
+	// ">=" rather than ">" so re-registering the current latest version under a
+	// fresh pointer still refreshes the key.
+	if cur, ok := r.m[latest]; !ok || def.Version >= cur.Version {
+		r.m[latest] = def
+	}
 
 	return nil
 }
@@ -129,7 +167,7 @@ func (r *MemDefinitionRegistry) MustRegister(def *model.ProcessDefinition) {
 // matches. ctx is ignored — the lookup is entirely in-memory.
 //
 // q may be either:
-//   - model.Latest(id)        — resolves the most-recently-registered version.
+//   - model.Latest(id)        — resolves the highest registered version.
 //   - model.Version(id, v)    — resolves the exact versioned registration.
 func (r *MemDefinitionRegistry) Lookup(_ context.Context, q model.Qualifier) (*model.ProcessDefinition, error) {
 	r.mu.RLock()

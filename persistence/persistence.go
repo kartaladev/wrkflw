@@ -53,8 +53,16 @@ type InstanceStore interface {
 // process-definition store. It is satisfied by the internal DefinitionStore
 // implementation; consumers interact with it only through this interface.
 type DefinitionStore interface {
-	// PutDefinition upserts a process definition (idempotent on (ID, Version)).
-	PutDefinition(ctx context.Context, def *model.ProcessDefinition) error
+	// PublishDefinition publishes a process definition as the immutable
+	// content of (ID, Version). Republishing identical content is a
+	// successful no-op; republishing DIFFERENT content under an already
+	// published version is refused with kernel.ErrDefinitionExists. The
+	// definition is validated with model.Validate first and refused with
+	// kernel.ErrInvalidDefinition, which also covers Version == 0.
+	//
+	// It joins the caller's ambient transaction when there is one, so a
+	// publish can be made atomic with the caller's own writes.
+	PublishDefinition(ctx context.Context, def *model.ProcessDefinition) error
 	// Lookup resolves a Qualifier to a definition.
 	// model.Latest(id) returns the highest-version definition for id;
 	// model.Version(id, v) returns the exact (id, version) match.
@@ -211,7 +219,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 //
 // Use this together with NewCachingDefinitionRegistry to cache hot definitions.
 //
-// Pass [WithDefinitionClock] to control the created_at stamp PutDefinition
+// Pass [WithDefinitionClock] to control the created_at stamp PublishDefinition
 // writes. Zero-option call sites compile unchanged.
 func NewDefinitionStore(pool *pgxpool.Pool, opts ...DefinitionOption) (DefinitionStore, error) {
 	return store.NewDefinitionStore(pool, dialect.NewPostgres(), buildDefinitionOptions(opts)...)

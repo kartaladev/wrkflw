@@ -249,7 +249,7 @@ func NewMySQLCallNotifier(db *sql.DB, deliver calllink.CallDeliverFunc, reg kern
 //	ds := persistence.NewMySQLDefinitionStore(db)
 //	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute)
 //
-// Pass [WithDefinitionClock] to control the created_at stamp PutDefinition
+// Pass [WithDefinitionClock] to control the created_at stamp PublishDefinition
 // writes. Zero-option call sites compile unchanged.
 func NewMySQLDefinitionStore(db *sql.DB, opts ...DefinitionOption) (DefinitionStore, error) {
 	return store.NewDefinitionStore(db, dialect.NewMySQL(), buildDefinitionOptions(opts)...)

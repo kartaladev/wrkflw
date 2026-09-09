@@ -32,12 +32,6 @@ func (mysql) UpsertTimer() string {
 		"\n\t\t\t                        trigger_kind=VALUES(trigger_kind), trigger_payload=VALUES(trigger_payload)"
 }
 
-// UpsertDefinition returns the ON DUPLICATE KEY UPDATE clause for the
-// process-definition upsert site.
-func (mysql) UpsertDefinition() string {
-	return "\n\t\t\t ON DUPLICATE KEY UPDATE definition = VALUES(definition)"
-}
-
 // UpsertTask returns the ON DUPLICATE KEY UPDATE clause for the human-task
 // upsert site.
 func (mysql) UpsertTask() string {
@@ -52,9 +46,15 @@ func (mysql) UpsertTask() string {
 		" vars=VALUES(vars), created_at=VALUES(created_at), due_at=VALUES(due_at)"
 }
 
-// InsertIgnorePrefix returns the INSERT keyword prefix for the dedup
-// idempotency check. MySQL uses INSERT IGNORE as a prefix; the suffix
-// ([InsertIgnoreDedup]) is empty.
+// InsertIgnorePrefix returns the INSERT keyword prefix for an insert-if-absent
+// write (the dedup check and the definition publish). MySQL uses INSERT IGNORE
+// as a prefix; the suffix ([InsertIgnoreDedup]) is empty.
+//
+// Caution for callers: INSERT IGNORE downgrades EVERY error to a warning, not
+// just duplicate-key — truncation, a bad value, an over-long key. A genuinely
+// broken write therefore also reports RowsAffected()==0 here and is
+// indistinguishable from a duplicate at the driver level, so a caller must not
+// treat "0 rows" as proof that a conflicting row exists. Read it back.
 func (mysql) InsertIgnorePrefix() string { return "INSERT IGNORE" }
 
 // InsertIgnoreDedup returns an empty string. MySQL uses the INSERT IGNORE

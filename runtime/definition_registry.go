@@ -60,7 +60,8 @@ func DefaultDefinitionRegistry() *kernel.MemDefinitionRegistry {
 //
 // The definition is indexed under both "<ID>" and "<ID>:<Version>" so a
 // [engine.StartSubInstance] DefRef in either form resolves correctly. The bare
-// "<ID>" key always points to the most-recently-registered version.
+// "<ID>" key always points to the HIGHEST registered version, so registering an
+// older version after a newer one does not demote it.
 //
 // Registration is the authoring gate: def is passed through [model.Validate]
 // before it is indexed, so a hand-constructed *model.ProcessDefinition literal

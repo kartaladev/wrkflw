@@ -194,8 +194,8 @@ func TestPostgresCapabilities(t *testing.T) {
 	}
 }
 
-// TestPostgresUpsertClauses verifies that UpsertTimer and UpsertDefinition
-// return the conflict-target clauses that match the real Postgres store.
+// TestPostgresUpsertClauses verifies that UpsertTimer returns the
+// conflict-target clause that matches the real Postgres store.
 func TestPostgresUpsertClauses(t *testing.T) {
 	t.Parallel()
 
@@ -218,17 +218,11 @@ func TestPostgresUpsertClauses(t *testing.T) {
 				assert.Equal(t, want, got)
 			},
 		},
-		{
-			name: "UpsertDefinition conflict target matches real store",
-			assert: func(t *testing.T, got string) {
-				t.Helper()
-				const want = " ON CONFLICT (def_id, version) DO UPDATE SET definition = EXCLUDED.definition"
-				assert.Equal(t, want, got)
-			},
-		},
 	}
 
-	results := []string{d.UpsertTimer(), d.UpsertDefinition()}
+	// results is indexed by case position: it must gain or lose an element
+	// whenever cases does, or the survivors silently mis-pair.
+	results := []string{d.UpsertTimer()}
 	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

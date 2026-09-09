@@ -438,7 +438,7 @@ func TestNewMySQLAdvisoryLockOwnership_ClosedDBReturnsError(t *testing.T) {
 
 // TestNewMySQLDefinitionStore_RoundTrip verifies that NewMySQLDefinitionStore
 // returns a DefinitionStore (same interface as NewDefinitionStore/Postgres) that
-// PutDefinition-then-Lookup round-trips a definition through MySQL.
+// PublishDefinition-then-Lookup round-trips a definition through MySQL.
 func TestNewMySQLDefinitionStore_RoundTrip(t *testing.T) {
 	t.Parallel()
 	db := dbtest.RunTestMySQL(t)
@@ -447,12 +447,9 @@ func TestNewMySQLDefinitionStore_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ds)
 
-	def := &model.ProcessDefinition{
-		ID:            "facade-def-1",
-		Version:       1,
-		CancelActions: []string{"rollback"},
-	}
-	require.NoError(t, ds.PutDefinition(t.Context(), def))
+	def := minimalValidDef("facade-def-1", 1)
+	def.CancelActions = []string{"rollback"}
+	require.NoError(t, ds.PublishDefinition(t.Context(), def))
 
 	// Pinned lookup Version(id, version).
 	got, err := ds.Lookup(t.Context(), model.Version("facade-def-1", 1))

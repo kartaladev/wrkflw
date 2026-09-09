@@ -41,31 +41,35 @@ type Dialect interface {
 	// INSERT for the timer upsert site.
 	UpsertTimer() string
 
-	// UpsertDefinition returns the conflict clause appended to the shared
-	// base INSERT for the process-definition upsert site.
-	UpsertDefinition() string
-
 	// UpsertTask returns the dialect-specific conflict clause appended to an
 	// INSERT INTO wrkflw_human_task ... VALUES(...) so the write is an
 	// idempotent insert-or-replace keyed on (task_id).
 	UpsertTask() string
 
-	// InsertIgnorePrefix returns the INSERT keyword prefix used for the
-	// dedup idempotency check. The full statement is assembled as:
+	// InsertIgnorePrefix returns the INSERT keyword prefix for an
+	// insert-if-absent write. The full statement is assembled as:
 	//
-	//	<prefix> INTO wrkflw_processed_message (...) VALUES (...) <suffix>
+	//	<prefix> INTO <table> (...) VALUES (...) <suffix>
 	//
 	// Postgres and SQLite use a plain "INSERT" prefix with an
 	// "ON CONFLICT DO NOTHING" suffix ([InsertIgnoreDedup]). MySQL uses an
 	// "INSERT IGNORE" prefix with an empty suffix.
+	//
+	// Two sites use this pair: the dedup idempotency check
+	// (wrkflw_processed_message) and the immutable definition publish
+	// (wrkflw_definitions). Both read RowsAffected to tell an insert that
+	// happened from one the primary key silently declined.
 	InsertIgnorePrefix() string
 
-	// InsertIgnoreDedup returns the conflict clause (suffix) appended to
-	// the dedup INSERT. Use together with [InsertIgnorePrefix]:
+	// InsertIgnoreDedup returns the conflict clause (suffix) appended to an
+	// insert-if-absent write. Use together with [InsertIgnorePrefix]:
 	//
 	//	<InsertIgnorePrefix()> INTO ... VALUES ... <InsertIgnoreDedup()>
 	//
 	// Postgres/SQLite: " ON CONFLICT DO NOTHING". MySQL: "".
+	//
+	// The name is historical — the dedup site was the first caller. The
+	// clause is table-agnostic and the definition publish uses it too.
 	InsertIgnoreDedup() string
 
 	// JournalTriggerColumn returns the journal payload column name:

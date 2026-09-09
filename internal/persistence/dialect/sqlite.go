@@ -35,13 +35,6 @@ func (sqliteDialect) UpsertTimer() string {
 		" trigger_kind = excluded.trigger_kind, trigger_payload = excluded.trigger_payload"
 }
 
-// UpsertDefinition returns the ON CONFLICT clause for the process-definition
-// upsert site. Mirrors the Postgres dialect (same conflict target and updated
-// column) with lowercase "excluded.".
-func (sqliteDialect) UpsertDefinition() string {
-	return " ON CONFLICT (def_id, version) DO UPDATE SET definition = excluded.definition"
-}
-
 // UpsertTask returns the ON CONFLICT clause for the human-task upsert site.
 // Mirrors the Postgres dialect with lowercase "excluded." per SQLite convention.
 func (sqliteDialect) UpsertTask() string {
@@ -56,12 +49,13 @@ func (sqliteDialect) UpsertTask() string {
 		" vars = excluded.vars, created_at = excluded.created_at, due_at = excluded.due_at"
 }
 
-// InsertIgnorePrefix returns the INSERT keyword prefix for the dedup
-// idempotency check. SQLite uses a plain "INSERT" prefix paired with an
-// "ON CONFLICT DO NOTHING" suffix ([InsertIgnoreDedup]), identical to Postgres.
+// InsertIgnorePrefix returns the INSERT keyword prefix for an insert-if-absent
+// write (the dedup check and the definition publish). SQLite uses a plain
+// "INSERT" prefix paired with an "ON CONFLICT DO NOTHING" suffix
+// ([InsertIgnoreDedup]), identical to Postgres.
 func (sqliteDialect) InsertIgnorePrefix() string { return "INSERT" }
 
-// InsertIgnoreDedup returns the conflict suffix for the dedup INSERT.
+// InsertIgnoreDedup returns the conflict suffix for an insert-if-absent write.
 // SQLite uses the same "ON CONFLICT DO NOTHING" clause as Postgres.
 func (sqliteDialect) InsertIgnoreDedup() string { return " ON CONFLICT DO NOTHING" }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,7 +22,7 @@ import (
 )
 
 // Compile-time assertion: *store.DefinitionStore must satisfy the public facade
-// interface persistence.DefinitionStore (PutDefinition + Lookup). This guard
+// interface persistence.DefinitionStore (PublishDefinition + Lookup). This guard
 // lives in the external test package so the assertion can import both
 // internal/persistence/store and persistence without creating an import cycle.
 var _ persistence.DefinitionStore = (*store.DefinitionStore)(nil)
@@ -31,14 +32,40 @@ var _ persistence.DefinitionStore = (*store.DefinitionStore)(nil)
 // All fields of model.ProcessDefinition and its nested types must survive the
 // round-trip; the equality assertion in the rich-round-trip test case validates
 // this exhaustively.
+//
+// The definition is also VALID: PublishDefinition runs model.Validate before it
+// writes, so an exhaustive fixture now has to be a well-formed process as well
+// as a field-coverage vehicle. Four structural properties are load-bearing and
+// must survive any future edit — each one stands for a rule this fixture used
+// to break:
+//
+//   - Two starts, each with exactly ONE trigger. A single start carrying both a
+//     signal and a message correlator is an ambiguous trigger; multiple
+//     EVENT-triggered starts are legal (only multiple MANUAL starts are not),
+//     so the signal and the message start are split apart to keep coverage of
+//     both options.
+//   - Every non-end node has an outgoing flow. That includes the two boundary
+//     events, the sub-process and the call activity.
+//   - The sub-process and the call activity are reachable from a start
+//     (fulfill -> sub -> call -> end), not floating.
+//   - The user task carries a completion action alongside its compensate
+//     action: for a user/receive task the completion action IS the forward
+//     action, and compensating a node that never ran forward is dead config.
 func richConformanceDefinition() *model.ProcessDefinition {
 	return &model.ProcessDefinition{
 		ID:      "order-process",
 		Version: 2,
 		Nodes: []model.Node{
+			// Signal-triggered start.
 			event.NewStart("start",
 				event.WithName("Order Received"),
 				event.WithSignalName("sig-order"),
+			),
+			// Message-triggered start. Split from the signal start above: one
+			// start carrying both triggers is ambiguous, two event starts are
+			// not, and splitting keeps both options covered.
+			event.NewStart("start-msg",
+				event.WithName("Order Message Received"),
 				event.WithMessageCorrelator("msg-order", "vars.orderID"),
 			),
 			activity.NewUserTask("review", activity.WithEligibleRoles("reviewer", "manager"),
@@ -46,6 +73,8 @@ func richConformanceDefinition() *model.ProcessDefinition {
 				activity.WithEligibleExpr("vars.amount > 100"),
 				activity.WithWaitDeadline(schedule.AfterExpr("PT24H"), "sla-breach"), activity.WithDeadlineAction("notify-manager"),
 				activity.WithWaitAction(schedule.EveryExpr("PT6H"), "send-reminder"),
+				// The forward action the compensate action undoes.
+				activity.WithCompletionAction("record-review"),
 				activity.WithCompensateAction("cancel-review"),
 			),
 			gateway.NewExclusive("approve", gateway.WithName("Approved?")),
@@ -79,26 +108,35 @@ func richConformanceDefinition() *model.ProcessDefinition {
 		},
 		Flows: []flow.SequenceFlow{
 			{ID: "f1", Source: "start", Target: "review"},
+			{ID: "f1m", Source: "start-msg", Target: "review"},
 			{ID: "f2", Source: "review", Target: "approve"},
 			{ID: "f3", Source: "approve", Target: "fulfill", Condition: "vars.approved == true", IsDefault: false},
 			{ID: "f4", Source: "approve", Target: "end", Condition: "vars.approved != true", IsDefault: true},
-			{ID: "f5", Source: "fulfill", Target: "end"},
+			// fulfill -> sub -> call -> end is what makes the sub-process and
+			// the call activity both reachable and non-dead-ended.
+			{ID: "f5", Source: "fulfill", Target: "sub"},
+			{ID: "f6", Source: "sub", Target: "call"},
+			{ID: "f7", Source: "call", Target: "end"},
+			// Every boundary event needs somewhere to go.
+			{ID: "f8", Source: "boundary-err", Target: "err-end"},
+			{ID: "f9", Source: "boundary-sig", Target: "end"},
 			{ID: "sla-breach", Source: "review", Target: "err-end"},
 		},
+		CancelActions: []string{"cancel-order"},
 	}
 }
 
-// TestDefinitionStorePutGetRoundTrip verifies the basic Put → GetDefinition
+// TestDefinitionStorePublishGetRoundTrip verifies the basic PublishDefinition → GetDefinition
 // round-trip on all 3 dialects.
-func TestDefinitionStorePutGetRoundTrip(t *testing.T) {
+func TestDefinitionStorePublishGetRoundTrip(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, b backend) {
 		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
 		require.NoError(t, err)
 		// compile-time interface checks
 		var _ kernel.DefinitionRegistry = ds
 
-		def := &model.ProcessDefinition{ID: "d-rr", Version: 1}
-		require.NoError(t, ds.PutDefinition(t.Context(), def), "%s: PutDefinition", b.name)
+		def := minimalValidDef("d-rr", 1)
+		require.NoError(t, ds.PublishDefinition(t.Context(), def), "%s: PublishDefinition", b.name)
 
 		got, err := ds.GetDefinition(t.Context(), "d-rr", 1)
 		require.NoError(t, err, "%s: GetDefinition", b.name)
@@ -114,10 +152,10 @@ func TestDefinitionStoreLookupByQualifier(t *testing.T) {
 		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
 		require.NoError(t, err)
 
-		v1 := &model.ProcessDefinition{ID: "d-lq", Version: 1}
-		v2 := &model.ProcessDefinition{ID: "d-lq", Version: 2}
-		require.NoError(t, ds.PutDefinition(t.Context(), v1), "%s: PutDefinition v1", b.name)
-		require.NoError(t, ds.PutDefinition(t.Context(), v2), "%s: PutDefinition v2", b.name)
+		v1 := minimalValidDef("d-lq", 1)
+		v2 := minimalValidDef("d-lq", 2)
+		require.NoError(t, ds.PublishDefinition(t.Context(), v1), "%s: PublishDefinition v1", b.name)
+		require.NoError(t, ds.PublishDefinition(t.Context(), v2), "%s: PublishDefinition v2", b.name)
 
 		// Pinned: Version(id, 1) must return v1.
 		got1, err := ds.Lookup(t.Context(), model.Version("d-lq", 1))
@@ -146,27 +184,6 @@ func TestDefinitionStoreLookupByQualifier(t *testing.T) {
 	})
 }
 
-// TestDefinitionStoreUpsertOverwrite verifies idempotent upsert semantics:
-// putting the same (def_id, version) twice with different content must store
-// the second value (no duplicate rows, second content wins).
-func TestDefinitionStoreUpsertOverwrite(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, b backend) {
-		ds, err := store.NewDefinitionStore(b.conn, b.dialect)
-		require.NoError(t, err)
-
-		first := &model.ProcessDefinition{ID: "d-up", Version: 1, CancelActions: []string{"action-first"}}
-		second := &model.ProcessDefinition{ID: "d-up", Version: 1, CancelActions: []string{"action-second"}}
-
-		require.NoError(t, ds.PutDefinition(t.Context(), first), "%s: first put", b.name)
-		require.NoError(t, ds.PutDefinition(t.Context(), second), "%s: second put (upsert)", b.name)
-
-		got, err := ds.GetDefinition(t.Context(), "d-up", 1)
-		require.NoError(t, err, "%s: GetDefinition after upsert", b.name)
-		assert.Equal(t, []string{"action-second"}, got.CancelActions,
-			"%s: upsert must overwrite with second value", b.name)
-	})
-}
-
 // TestDefinitionStoreGetNotFound verifies that GetDefinition wraps
 // kernel.ErrDefinitionNotFound when no row matches (defID, version).
 func TestDefinitionStoreGetNotFound(t *testing.T) {
@@ -190,7 +207,7 @@ func TestDefinitionStoreLookupCancelledContext(t *testing.T) {
 
 		// Seed a real definition so the query would otherwise succeed.
 		require.NoError(t,
-			ds.PutDefinition(t.Context(), &model.ProcessDefinition{ID: "cancel-ctx-" + b.name, Version: 1}),
+			ds.PublishDefinition(t.Context(), minimalValidDef("cancel-ctx-"+b.name, 1)),
 			"%s: seed definition", b.name,
 		)
 
@@ -211,7 +228,7 @@ func TestDefinitionStoreRichRoundTrip(t *testing.T) {
 		require.NoError(t, err)
 
 		orig := richConformanceDefinition()
-		require.NoError(t, ds.PutDefinition(t.Context(), orig), "%s: PutDefinition rich", b.name)
+		require.NoError(t, ds.PublishDefinition(t.Context(), orig), "%s: PublishDefinition rich", b.name)
 
 		got, err := ds.GetDefinition(t.Context(), orig.ID, orig.Version)
 		require.NoError(t, err, "%s: GetDefinition rich", b.name)
@@ -279,12 +296,20 @@ func countDefinitionRows(t *testing.T, b backend, defID string) int {
 	return n
 }
 
-// reorderedEncoding re-encodes def's canonical JSON through a
-// map[string]json.RawMessage, which emits the top-level keys in alphabetical
-// rather than struct-declaration order. The bytes differ; the meaning does not.
-// This is the "a library upgrade changed serialisation" case that normalised
-// comparison has to absorb without reporting a content conflict.
-func reorderedEncoding(t *testing.T, def *model.ProcessDefinition) []byte {
+// divergentEncoding re-encodes def into JSON that decodes to exactly the same
+// definition but is byte-different from what json.Marshal currently emits, in
+// the two ways a serialisation change realistically shows up:
+//
+//   - key order: re-marshalling through a map emits the top-level keys
+//     alphabetically rather than in struct-declaration order;
+//   - an omitted-empty field written out explicitly: "cancel_actions": null,
+//     which the current marshaller omits entirely and the unmarshaller reads
+//     back as the same nil slice.
+//
+// This stands in for a library upgrade that changes how an UNCHANGED definition
+// serialises. Normalised comparison has to absorb it without reporting a
+// content conflict; a naive bytes.Equal against the stored column would not.
+func divergentEncoding(t *testing.T, def *model.ProcessDefinition) []byte {
 	t.Helper()
 
 	canonical, err := json.Marshal(def)
@@ -292,15 +317,42 @@ func reorderedEncoding(t *testing.T, def *model.ProcessDefinition) []byte {
 
 	var fields map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(canonical, &fields))
+	require.NotContains(t, fields, "cancel_actions",
+		"this helper assumes the canonical marshal omits the empty cancel_actions field")
+	fields["cancel_actions"] = json.RawMessage("null")
 
-	reordered, err := json.Marshal(fields)
+	divergent, err := json.Marshal(fields)
 	require.NoError(t, err)
 
-	// Guard against the test degenerating into a tautology: if the two
-	// encodings were byte-equal, the case would prove nothing.
-	require.NotEqual(t, canonical, reordered,
-		"reordered encoding must differ from the canonical one for this case to mean anything")
-	return reordered
+	// Guard against the case degenerating into a tautology: if the two
+	// encodings were byte-equal, it would prove nothing.
+	require.NotEqual(t, string(canonical), string(divergent),
+		"divergent encoding must differ from the canonical one for this case to mean anything")
+	return divergent
+}
+
+// seedDefinitionRow inserts a definitions row directly through SQL, bypassing
+// the store's write path entirely, so a test can plant an exact stored encoding
+// that PublishDefinition would never itself produce.
+func seedDefinitionRow(t *testing.T, b backend, defID string, version int, definition []byte) {
+	t.Helper()
+
+	s, err := store.New(b.conn, b.dialect)
+	require.NoError(t, err)
+
+	// created_at mirrors what the store's own timeArg would bind: a TEXT
+	// RFC3339 string on SQLite, a time.Time on Postgres and MySQL.
+	var createdAt any = time.Now().UTC()
+	if b.dialect.TimestampsAsText() {
+		createdAt = time.Now().UTC().Format("2006-01-02T15:04:05.000000000Z07:00")
+	}
+
+	_, err = s.QuerierForTest(t.Context()).Exec(t.Context(), b.dialect.Rebind(
+		`INSERT INTO wrkflw_definitions (def_id, version, definition, created_at)
+		 VALUES (?,?,?,?)`),
+		defID, version, definition, createdAt,
+	)
+	require.NoError(t, err, "%s: seed definitions row %s:%d", b.name, defID, version)
 }
 
 // TestDefinitionStorePublishImmutable pins the publish contract on all three
@@ -326,7 +378,7 @@ func TestDefinitionStorePublishImmutable(t *testing.T) {
 		{
 			name: "identical content twice is an idempotent no-op leaving one row",
 			seed: func(t *testing.T, b backend, ds *store.DefinitionStore) {
-				require.NoError(t, ds.PutDefinition(t.Context(), minimalValidDef("pub-same", 1)),
+				require.NoError(t, ds.PublishDefinition(t.Context(), minimalValidDef("pub-same", 1)),
 					"%s: first publish", b.name)
 			},
 			def: minimalValidDef("pub-same", 1),
@@ -346,7 +398,7 @@ func TestDefinitionStorePublishImmutable(t *testing.T) {
 			seed: func(t *testing.T, b backend, ds *store.DefinitionStore) {
 				first := minimalValidDef("pub-conflict", 1)
 				first.CancelActions = []string{"action-first"}
-				require.NoError(t, ds.PutDefinition(t.Context(), first), "%s: first publish", b.name)
+				require.NoError(t, ds.PublishDefinition(t.Context(), first), "%s: first publish", b.name)
 			},
 			def: func() *model.ProcessDefinition {
 				second := minimalValidDef("pub-conflict", 1)
@@ -369,29 +421,26 @@ func TestDefinitionStorePublishImmutable(t *testing.T) {
 			},
 		},
 		{
-			name: "stored bytes differing only in serialisation compare equal",
-			seed: func(t *testing.T, b backend, ds *store.DefinitionStore) {
-				def := minimalValidDef("pub-normalise", 1)
-				require.NoError(t, ds.PutDefinition(t.Context(), def), "%s: first publish", b.name)
-
-				// Rewrite the stored column with a byte-different but
-				// semantically identical encoding, standing in for a
-				// serialisation change introduced by a library upgrade.
-				s, err := store.New(b.conn, b.dialect)
-				require.NoError(t, err)
-				_, err = s.QuerierForTest(t.Context()).Exec(t.Context(), b.dialect.Rebind(
-					`UPDATE wrkflw_definitions SET definition = ? WHERE def_id = ? AND version = ?`),
-					reorderedEncoding(t, def), "pub-normalise", 1,
-				)
-				require.NoError(t, err, "%s: seed reordered encoding", b.name)
+			// Where this case has teeth: SQLite, whose definition column is
+			// TEXT and therefore hands the seeded bytes back verbatim, so the
+			// divergent encoding really does reach the comparison. On Postgres
+			// (JSONB) and MySQL (JSON) the column re-serialises the seed before
+			// anything reads it, so those two exercise the path but do not
+			// prove that a divergent stored encoding is tolerated. A reader who
+			// sees this pass on Postgres should not conclude Postgres proved
+			// it.
+			name: "a stored encoding differing only in serialisation is not a conflict",
+			seed: func(t *testing.T, b backend, _ *store.DefinitionStore) {
+				// Seeded through raw SQL, not through the store, so the stored
+				// bytes are exactly the divergent encoding and not anything the
+				// write path would have normalised on the way in.
+				seedDefinitionRow(t, b, "pub-normalise", 1,
+					divergentEncoding(t, minimalValidDef("pub-normalise", 1)))
 			},
 			def: minimalValidDef("pub-normalise", 1),
 			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
 				// Precondition: the stored encoding must really differ from
-				// Go's canonical marshal, or this case proves nothing. It does
-				// on every dialect — on SQLite because the seed wrote the
-				// reordered form verbatim, on Postgres and MySQL because JSONB
-				// and JSON re-serialise the column on write.
+				// Go's canonical marshal, or the case proves nothing.
 				canonical, mErr := json.Marshal(minimalValidDef("pub-normalise", 1))
 				require.NoError(t, mErr)
 				require.NotEqual(t, string(canonical), string(rawDefinition(t, b, "pub-normalise", 1)),
@@ -399,6 +448,8 @@ func TestDefinitionStorePublishImmutable(t *testing.T) {
 
 				require.NoError(t, err,
 					"%s: a stored encoding that normalises to the incoming one is not a conflict", b.name)
+				assert.Equal(t, 1, countDefinitionRows(t, b, "pub-normalise"),
+					"%s: the no-op must leave exactly one row", b.name)
 
 				got, err := ds.GetDefinition(t.Context(), "pub-normalise", 1)
 				require.NoError(t, err)
@@ -445,7 +496,7 @@ func TestDefinitionStorePublishImmutable(t *testing.T) {
 				if tc.seed != nil {
 					tc.seed(t, b, ds)
 				}
-				tc.assert(t, b, ds, ds.PutDefinition(t.Context(), tc.def))
+				tc.assert(t, b, ds, ds.PublishDefinition(t.Context(), tc.def))
 			})
 		}
 	})
@@ -475,7 +526,7 @@ func TestDefinitionStorePublishJoinsAmbientTransaction(t *testing.T) {
 			name:  "a rolled-back unit leaves no row",
 			defID: "tx-rollback",
 			unit: func(txCtx context.Context, ds *store.DefinitionStore, def *model.ProcessDefinition) error {
-				if err := ds.PutDefinition(txCtx, def); err != nil {
+				if err := ds.PublishDefinition(txCtx, def); err != nil {
 					return err
 				}
 				return errPublishBoom
@@ -492,7 +543,7 @@ func TestDefinitionStorePublishJoinsAmbientTransaction(t *testing.T) {
 			name:  "a committed unit leaves the row",
 			defID: "tx-commit",
 			unit: func(txCtx context.Context, ds *store.DefinitionStore, def *model.ProcessDefinition) error {
-				return ds.PutDefinition(txCtx, def)
+				return ds.PublishDefinition(txCtx, def)
 			},
 			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
 				require.NoError(t, err, "%s: the committing unit must succeed", b.name)

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -14,13 +15,14 @@ import (
 	_ "github.com/kartaladev/wrkflw/definition/kinds"
 	"github.com/kartaladev/wrkflw/definition/model"
 	"github.com/kartaladev/wrkflw/internal/database"
+	"github.com/kartaladev/wrkflw/internal/database/transaction"
 	"github.com/kartaladev/wrkflw/internal/persistence/dialect"
 	"github.com/kartaladev/wrkflw/runtime/kernel"
 )
 
 // DefinitionStore is the vendor-neutral, dialect-parametrised durable
 // process-definition store. It satisfies [kernel.DefinitionRegistry] via
-// [DefinitionStore.Lookup] and also exposes [DefinitionStore.PutDefinition]
+// [DefinitionStore.Lookup] and also exposes [DefinitionStore.PublishDefinition]
 // and [DefinitionStore.GetDefinition] for admin / write paths.
 //
 // Definitions are serialised as JSON into wrkflw_definitions and deserialised
@@ -30,15 +32,17 @@ import (
 //
 // SQL is written once with ? placeholders and run through
 // [dialect.Dialect.Rebind] for the backend's native placeholder style. The
-// definition UPSERT conflict clause comes from [dialect.Dialect.UpsertDefinition],
-// keyed on (def_id, version). No inline dialect-name comparisons are used.
+// publish is an insert-if-absent built from
+// [dialect.Dialect.InsertIgnorePrefix] and [dialect.Dialect.InsertIgnoreDedup],
+// declined by the (def_id, version) primary key. No inline dialect-name
+// comparisons are used.
 //
 // DefinitionStore is safe for concurrent use: it carries no mutable state.
 type DefinitionStore struct {
 	conn    any // *pgxpool.Pool or *sql.DB
 	dialect dialect.Dialect
 	// clk is the time source for the created_at stamp written by
-	// [DefinitionStore.PutDefinition].
+	// [DefinitionStore.PublishDefinition].
 	clk clockwork.Clock
 }
 
@@ -47,7 +51,7 @@ type DefinitionStore struct {
 type DefinitionOption func(*DefinitionStore)
 
 // WithDefinitionClock overrides the clock used for the created_at stamp written
-// by [DefinitionStore.PutDefinition]. The default is
+// by [DefinitionStore.PublishDefinition]. The default is
 // [clockwork.NewRealClock]. A nil clock is ignored (the default is kept).
 //
 // Reachable off-module only through its facade forwarder,
@@ -94,46 +98,193 @@ func NewDefinitionStore(conn any, d dialect.Dialect, opts ...DefinitionOption) (
 	return ds, nil
 }
 
-// querier returns a pool-backed [database.Querier] over ds.conn. DefinitionStore
-// uses only read-only SELECT queries through this path; PutDefinition issues a
-// single idempotent INSERT that does not need an explicit transaction because the
-// conflict clause makes it atomic.
+// querier returns a pool-backed [database.Querier] over ds.conn. It is the
+// READ path only: [DefinitionStore.GetDefinition] and [DefinitionStore.Lookup]
+// issue SELECTs through it. The write path does not use it —
+// [DefinitionStore.PublishDefinition] goes through [transaction.JoinOrBegin] so
+// it can join a caller's ambient transaction.
 func (ds *DefinitionStore) querier(ctx context.Context) database.Querier {
 	_ = ctx
 	q, _ := database.From(ds.conn)
 	return q
 }
 
-// PutDefinition upserts a process definition into wrkflw_definitions, keyed by
-// (def_id, version). The operation is idempotent: re-inserting the same
-// (defID, version) pair overwrites the stored JSON with the new value via the
-// dialect-specific conflict clause ([dialect.Dialect.UpsertDefinition]).
+// ErrConcurrentPublish is returned when the insert was declined but no stored
+// row can be read back inside the same unit of work. That means another
+// transaction holds an uncommitted insert for the same (def_id, version):
+// "ON CONFLICT DO NOTHING" reports zero rows immediately rather than blocking
+// on the in-flight write, so under READ COMMITTED the read-back sees nothing.
 //
-// def.ID and def.Version must be non-empty / non-zero; the database schema
-// enforces uniqueness on (def_id, version).
+// It is deliberately neither success nor a content conflict. Reporting success
+// would claim a publish that never happened; reporting
+// [kernel.ErrDefinitionExists] would assert a content difference that was never
+// observed. The caller should retry — by then the other transaction has either
+// committed (making this an idempotent no-op or a genuine conflict) or rolled
+// back (making the insert succeed).
+var ErrConcurrentPublish = errors.New("workflow-store: definition publish raced a concurrent publish")
+
+// PublishDefinition publishes def as the content of (def.ID, def.Version).
 //
-// created_at is read from the store's [clockwork.Clock] (override it
-// with [WithDefinitionClock]). The column is set on first insert only — the
-// conflict-update clause touches only the definition column — so re-inserts
-// preserve the original creation timestamp.
-func (ds *DefinitionStore) PutDefinition(ctx context.Context, def *model.ProcessDefinition) error {
+// A published version is IMMUTABLE. The write is an insert-if-absent, never an
+// upsert, so an existing version is never overwritten:
+//
+//   - the row did not exist  → it is inserted. Returns nil.
+//   - the row exists and its content is identical → nothing is written.
+//     Returns nil, so republishing is idempotent and safe to retry.
+//   - the row exists and its content differs → returns
+//     [kernel.ErrDefinitionExists], wrapped with "id:version". Publish a new
+//     version instead of editing a published one.
+//   - the row is being inserted right now by someone else → returns
+//     [ErrConcurrentPublish]. See that sentinel.
+//
+// def is checked by [kernel.ValidateDefinition] — the same gate
+// [kernel.MemDefinitionRegistry.Register] uses — before any I/O, so an
+// in-memory registration and a durable publish accept exactly the same
+// definitions. A Version of 0 is rejected there as [model.ErrInvalidVersion];
+// versions are never auto-assigned.
+//
+// # Transaction
+//
+// PublishDefinition joins the caller's ambient transaction when ctx carries one
+// (see [transaction.JoinOrBegin]), so a consumer can publish a version and
+// write its own rows as one atomic unit — and a rollback takes the publish with
+// it. With no ambient transaction it commits its own leaf. The read-back
+// happens on the same querier as the insert, which is what makes the rollback
+// total.
+//
+// created_at is read from the store's [clockwork.Clock] (override it with
+// [WithDefinitionClock]) and is set by the inserting publish only; an
+// idempotent republish writes nothing and so preserves the original stamp.
+func (ds *DefinitionStore) PublishDefinition(ctx context.Context, def *model.ProcessDefinition) error {
+	// The shared authoring gate, before any I/O. It also covers def == nil, so
+	// the dereferences below are safe.
+	if err := kernel.ValidateDefinition(def); err != nil {
+		return err
+	}
+
 	data, err := json.Marshal(def)
 	if err != nil {
-		return fmt.Errorf("workflow-store: put definition %s:%d: marshal: %w", def.ID, def.Version, err)
+		return fmt.Errorf("workflow-store: publish definition %s:%d: marshal: %w", def.ID, def.Version, err)
 	}
 
-	createdAt := timeArg(ds.dialect, ds.clk.Now().UTC())
+	q, err := transaction.JoinOrBegin(ctx, ds.conn)
+	if err != nil {
+		return fmt.Errorf("workflow-store: publish definition %s:%d: begin: %w", def.ID, def.Version, err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = q.Rollback(ctx)
+		}
+	}()
 
-	q := ds.querier(ctx)
-	_, err = q.Exec(ctx, ds.dialect.Rebind(
-		`INSERT INTO wrkflw_definitions (def_id, version, definition, created_at)
-		 VALUES (?,?,?,?)`+ds.dialect.UpsertDefinition()),
-		def.ID, def.Version, data, createdAt,
+	// Insert-if-absent, assembled from the dialect's prefix and suffix so no
+	// inline dialect checks are needed: "INSERT ... ON CONFLICT DO NOTHING" on
+	// Postgres and SQLite, "INSERT IGNORE ..." on MySQL.
+	res, err := q.Exec(ctx, ds.dialect.Rebind(
+		ds.dialect.InsertIgnorePrefix()+
+			` INTO wrkflw_definitions (def_id, version, definition, created_at)
+			 VALUES (?,?,?,?)`+
+			ds.dialect.InsertIgnoreDedup()),
+		def.ID, def.Version, data, timeArg(ds.dialect, ds.clk.Now().UTC()),
 	)
 	if err != nil {
-		return fmt.Errorf("workflow-store: put definition %s:%d: %w", def.ID, def.Version, err)
+		return fmt.Errorf("workflow-store: publish definition %s:%d: exec: %w", def.ID, def.Version, err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("workflow-store: publish definition %s:%d: rows affected: %w", def.ID, def.Version, err)
+	}
+
+	// RowsAffected == 0 means the insert was declined. It does NOT on its own
+	// mean a conflicting row exists: MySQL's INSERT IGNORE downgrades every
+	// error to a warning — truncation, a bad value, an over-long def_id — and
+	// all of them also land here. The stored row has to be read back before
+	// anything can be concluded.
+	if n == 0 {
+		if err := ds.assertPublishedIsIdentical(ctx, q, def, data); err != nil {
+			return err
+		}
+	}
+
+	if err := q.Commit(ctx); err != nil {
+		return fmt.Errorf("workflow-store: publish definition %s:%d: commit: %w", def.ID, def.Version, err)
+	}
+	committed = true
+	return nil
+}
+
+// assertPublishedIsIdentical reads the stored definition back through q — the
+// same querier the declined insert ran on, so it sees that unit's own writes
+// and rolls back with it — and reports whether the already-published content
+// matches incoming.
+func (ds *DefinitionStore) assertPublishedIsIdentical(
+	ctx context.Context,
+	q database.Querier,
+	def *model.ProcessDefinition,
+	incoming []byte,
+) error {
+	var stored []byte
+	err := q.QueryRow(ctx, ds.dialect.Rebind(
+		`SELECT definition FROM wrkflw_definitions WHERE def_id = ? AND version = ?`),
+		def.ID, def.Version,
+	).Scan(&stored)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: %s:%d", ErrConcurrentPublish, def.ID, def.Version)
+	}
+	if err != nil {
+		return fmt.Errorf("workflow-store: publish definition %s:%d: read back: %w", def.ID, def.Version, err)
+	}
+
+	same, err := sameDefinitionContent(stored, incoming)
+	if err != nil {
+		return fmt.Errorf("workflow-store: publish definition %s:%d: %w", def.ID, def.Version, err)
+	}
+	if !same {
+		return fmt.Errorf("%w: %s:%d: content differs from the published version",
+			kernel.ErrDefinitionExists, def.ID, def.Version)
 	}
 	return nil
+}
+
+// sameDefinitionContent reports whether the stored JSON and the freshly
+// marshalled incoming JSON describe the same definition.
+//
+// The comparison is NORMALISED: stored is decoded into a
+// [model.ProcessDefinition] and re-encoded with the CURRENT marshaller before
+// the bytes are compared. Do not "simplify" this into a direct
+// bytes.Equal(stored, incoming) — the round-trip is load-bearing twice over:
+//
+//  1. The database rewrites the bytes. definition is JSONB on Postgres and JSON
+//     on MySQL, and both re-serialise on write (JSONB orders keys by length
+//     then bytes). What is read back is therefore almost never byte-equal to
+//     what was written, so a direct comparison would report a content conflict
+//     on EVERY republish on those two dialects and idempotency would be lost
+//     on the primary backend.
+//  2. It absorbs serialisation drift. A library or struct-tag change that
+//     alters how an UNCHANGED definition encodes — a reordered field, a newly
+//     omitted empty value — would otherwise read as a conflict on rows written
+//     before the change.
+//
+// # Documented limit
+//
+// [model.ProcessDefinition]'s scoped action catalog (its unexported scoped and
+// scopedNames fields) is never serialised. Two definitions that differ ONLY in
+// their scoped catalog therefore compare equal here and the second publish is a
+// silent no-op. That is correct with respect to what is stored — the catalog is
+// not part of the persisted definition — and it fails closed, since nothing is
+// overwritten either way.
+func sameDefinitionContent(stored, incoming []byte) (bool, error) {
+	var def model.ProcessDefinition
+	if err := json.Unmarshal(stored, &def); err != nil {
+		return false, fmt.Errorf("unmarshal stored definition: %w", err)
+	}
+	normalised, err := json.Marshal(&def)
+	if err != nil {
+		return false, fmt.Errorf("re-marshal stored definition: %w", err)
+	}
+	return bytes.Equal(normalised, incoming), nil
 }
 
 // GetDefinition fetches the definition identified by (defID, version).

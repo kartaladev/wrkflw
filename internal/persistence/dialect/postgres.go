@@ -43,12 +43,6 @@ func (postgres) UpsertTimer() string {
 		" trigger_kind = EXCLUDED.trigger_kind, trigger_payload = EXCLUDED.trigger_payload"
 }
 
-// UpsertDefinition returns the ON CONFLICT clause for the process-definition
-// upsert site.
-func (postgres) UpsertDefinition() string {
-	return " ON CONFLICT (def_id, version) DO UPDATE SET definition = EXCLUDED.definition"
-}
-
 // UpsertTask returns the ON CONFLICT clause for the human-task upsert site.
 func (postgres) UpsertTask() string {
 	return " ON CONFLICT (task_id) DO UPDATE SET" +
@@ -62,12 +56,13 @@ func (postgres) UpsertTask() string {
 		" vars = EXCLUDED.vars, created_at = EXCLUDED.created_at, due_at = EXCLUDED.due_at"
 }
 
-// InsertIgnorePrefix returns the INSERT keyword prefix for the dedup idempotency
-// check. Postgres uses a plain "INSERT" prefix paired with an
-// "ON CONFLICT DO NOTHING" suffix ([InsertIgnoreDedup]).
+// InsertIgnorePrefix returns the INSERT keyword prefix for an insert-if-absent
+// write (the dedup check and the definition publish). Postgres uses a plain
+// "INSERT" prefix paired with an "ON CONFLICT DO NOTHING" suffix
+// ([InsertIgnoreDedup]).
 func (postgres) InsertIgnorePrefix() string { return "INSERT" }
 
-// InsertIgnoreDedup returns the conflict suffix for the dedup INSERT.
+// InsertIgnoreDedup returns the conflict suffix for an insert-if-absent write.
 func (postgres) InsertIgnoreDedup() string { return " ON CONFLICT DO NOTHING" }
 
 // JournalTriggerColumn returns the journal payload column name used by Postgres.

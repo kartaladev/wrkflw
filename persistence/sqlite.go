@@ -314,7 +314,7 @@ func NewSQLiteCallNotifier(db *sql.DB, deliver calllink.CallDeliverFunc, reg ker
 //	ds := persistence.NewSQLiteDefinitionStore(db)
 //	cached := persistence.NewCachingDefinitionRegistry(ds, 5*time.Minute)
 //
-// Pass [WithDefinitionClock] to control the created_at stamp PutDefinition
+// Pass [WithDefinitionClock] to control the created_at stamp PublishDefinition
 // writes. Zero-option call sites compile unchanged.
 func NewSQLiteDefinitionStore(db *sql.DB, opts ...DefinitionOption) (DefinitionStore, error) {
 	return store.NewDefinitionStore(db, dialect.NewSQLite(), buildDefinitionOptions(opts)...)

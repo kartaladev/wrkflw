@@ -75,10 +75,13 @@ func TestMemDefinitionRegistry_BareIDResolvesLatest(t *testing.T) {
 	require.NoError(t, reg.Register(defV1))
 	require.NoError(t, reg.Register(defV2))
 
-	// Latest Qualifier should resolve to the most-recently-registered version (v2).
+	// Latest Qualifier should resolve to the highest version (v2). Here v2 is
+	// both the highest and the last registered, so this case does not on its
+	// own separate the two rules — TestMemDefinitionRegistryLatestIsHighestVersion
+	// is the one that does, by registering them in the opposite order.
 	got, err := reg.Lookup(t.Context(), model.Latest("sub"))
 	require.NoError(t, err)
-	assert.Equal(t, defV2, got, "Latest Qualifier should return the most-recently-registered version")
+	assert.Equal(t, defV2, got, "Latest Qualifier should return the highest registered version")
 
 	// Pinned Version(sub,1) must still resolve to v1.
 	got1, err := reg.Lookup(t.Context(), model.Version("sub", 1))

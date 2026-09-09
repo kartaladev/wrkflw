@@ -131,9 +131,9 @@ func TestSQLiteCapabilities(t *testing.T) {
 	}
 }
 
-// TestSQLiteUpsertClauses verifies that UpsertTimer and UpsertDefinition return
-// the conflict clauses that are semantically equivalent to the Postgres store's
-// clauses (same conflict targets and updated columns, lowercase excluded.*).
+// TestSQLiteUpsertClauses verifies that UpsertTimer returns a conflict clause
+// semantically equivalent to the Postgres store's (same conflict target and
+// updated columns, lowercase excluded.*).
 func TestSQLiteUpsertClauses(t *testing.T) {
 	t.Parallel()
 
@@ -154,14 +154,6 @@ func TestSQLiteUpsertClauses(t *testing.T) {
 					" def_id = excluded.def_id, def_version = excluded.def_version," +
 					" trigger_kind = excluded.trigger_kind, trigger_payload = excluded.trigger_payload"
 				assert.Equal(t, want, d.UpsertTimer())
-			},
-		},
-		{
-			name: "UpsertDefinition mirrors Postgres conflict target with lowercase excluded",
-			assert: func(t *testing.T) {
-				t.Helper()
-				const want = " ON CONFLICT (def_id, version) DO UPDATE SET definition = excluded.definition"
-				assert.Equal(t, want, d.UpsertDefinition())
 			},
 		},
 	}
