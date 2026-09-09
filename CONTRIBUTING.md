@@ -24,7 +24,7 @@ when a change trades library ergonomics for server convenience, library ergonomi
 go build ./...                                   # build everything
 go test -race ./...                              # full suite (needs Docker)
 go test ./<package>/...                          # one package, e.g. ./engine/...
-golangci-lint run ./...                          # lint — must be clean before a PR
+scripts/lint.sh ./...                            # lint — must be clean before a PR
 go test -race -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1
 ```
 
@@ -39,13 +39,28 @@ scripts/check-doc-refs.sh                        # no citations of deleted docum
 The first needs the Go toolchain (`go list -deps`, which may hit the network on a cold module
 cache). The other two are pure bash + git + grep.
 
+`scripts/lint.sh` is a local wrapper, not a fourth CI check. It runs `golangci-lint` under a
+`GOLANGCI_LINT_CACHE` derived from this worktree's root, and fails if a finding is attributed to a
+path outside the directory it was run from. golangci-lint's cache is keyed by content and shared by
+every checkout on the machine, so without it a second worktree holding a byte-identical file is
+handed the first worktree's cache entry and prints the first worktree's path — a phantom finding in
+one direction, and, more expensively, a real finding here waved off as another branch's noise in the
+other. CI is unaffected and stays on `golangci-lint-action`: each job is a fresh runner with a single
+checkout, so it has no sibling worktrees to inherit from. Pass any `golangci-lint run` arguments
+straight through. `scripts/lint.sh --self-test` runs on every invocation anyway; it checks that the
+detector reports exactly the paths that do not belong to this checkout, and — by running the script
+end to end against a stub `golangci-lint` — that golangci-lint's exit status is passed through, that a
+misattributed path exits 9, and that the per-worktree cache reaches the tool. The shared-cache
+reproduction it also attempts is best-effort: it warns and lets the lint proceed when it cannot reach
+a verdict, because a self-test that refuses to lint is worse than the defect it guards.
+
 ## Expectations for a change
 
 - **Test-driven.** Production code is written test-first (red → green → refactor). New exported
   symbols and behavioural changes must be preceded by a failing test. See `CLAUDE.md` for the full
   TDD discipline this repo follows.
 - **Coverage.** Touched packages should stay at **≥ 85%** line coverage.
-- **Lint clean.** `golangci-lint run ./...` must report zero issues.
+- **Lint clean.** `scripts/lint.sh ./...` must report zero issues.
 - **Design decisions.** Record the rationale in the commit message and the PR body, and state the
   constraint it produced as a comment on the code it constrains — naming an identifier a reader can
   jump to (`ErrScopeLocalWithCompensateRef`), never a document. This repo keeps no ADR directory;
