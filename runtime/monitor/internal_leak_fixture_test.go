@@ -2,11 +2,19 @@ package monitor_test
 
 // The hermetic half of the internal-leak guard.
 //
+// THIS FILE IS THE GUARD'S NON-VACUITY PROOF. Do not delete it as a duplicate
+// of the module-wide test; it is the one of the two that can fail.
+//
 // TestNoExportedSignatureNamesAnInternalType runs scanInternalLeaks over the
 // real module, which proves the module is clean but says almost nothing about
 // what the scanner would CATCH — every assertion there is "found nothing", and
-// a scanner that found nothing ever would pass it identically. The two defects
-// #148 fixed were both invisible to it for exactly that reason.
+// a scanner that found nothing ever would pass it identically. Measured, with
+// the mutant proved to compile first: replacing the `scan.offenders = append(…)`
+// with a no-op leaves the module-wide test GREEN. Its two self-cleaning loops do
+// not catch it either, because seenKnown and seenSeal are marked BEFORE the
+// append, so they still see their entries matched. Only the assertions below
+// kill that mutant. The two defects #148 fixed were invisible to the module-wide
+// test for the same reason.
 //
 // So this file drives the same scanner over a synthetic module in t.TempDir()
 // and asserts, declaration by declaration, both directions: the shapes that
@@ -86,6 +94,40 @@ var Declared secret.T
 // errors.Is and the consumer never names the internal type.
 var ReExported = secret.Sentinel
 
+// Reported: a type parameter constraint. TypeParams is a separate go/ast field
+// from Type, so this was invisible while the func form was caught.
+type Generic[T secret.Constraint] struct{ X int }
+
+// Reported: a generic receiver's method, keyed "(G).M" after normalising G[T].
+type G[T any] struct{}
+
+func (g *G[T]) M(s secret.T) {}
+
+// Reported: an exported field whose type embeds an exported internal type.
+type Embeds struct {
+	Pub struct{ secret.T }
+}
+
+// Reported: an exported field of an inline struct with an EXPORTED inner field.
+// The accept half for the recursion below.
+type NestedExported struct {
+	Pub struct{ Tel secret.T }
+}
+
+// NOT reported: an exported field of an inline struct whose only
+// internal-naming field is UNEXPORTED. Taking the nested composite whole read
+// that field and contradicted the exported-fields-only rule.
+type NestedHidden struct {
+	Pub struct{ tel secret.T }
+}
+
+// NOT reported: the same shape behind a pointer, slice and map.
+type NestedHiddenPtr struct {
+	Pub   *struct{ tel secret.T }
+	Many  []struct{ tel secret.T }
+	Keyed map[string]struct{ tel secret.T }
+}
+
 // NOT reported: an exported struct whose ONLY internal-naming field is
 // unexported. This is the accept half for narrowing the domain to
 // consumer-reachable parts -- without it, widening the walk reports 12 correct
@@ -115,11 +157,21 @@ func writeFixture(t *testing.T) string {
 	path := filepath.Join(root, filepath.FromSlash(fixtureRel))
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o750))
 	require.NoError(t, os.WriteFile(path, []byte(fixtureSource), 0o600))
+
+	// Two skipped locations, planted so the skips are asserted rather than
+	// assumed. Both carry a declaration that WOULD be reported anywhere else.
+	skipped := "package api\n\nimport \"" + fixtureInternal + "\"\n\ntype SkippedHere func(secret.T)\n"
+	td := filepath.Join(root, "testdata")
+	require.NoError(t, os.MkdirAll(td, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(td, "api.go"), []byte(skipped), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(path), "api_test.go"), []byte(skipped), 0o600))
 	return root
 }
 
-func fixtureAllowlists() (known, seals map[string]string) {
-	return map[string]string{fixtureKnownKey: "the plain func, tolerated"},
+func fixtureAllowlists() (known map[string]openLeak, seals map[string]string) {
+	return map[string]openLeak{
+			fixtureKnownKey: {importPath: fixtureInternal, why: "the plain func, tolerated"},
+		},
 		map[string]string{fixtureSealKey: fixtureSealedPath}
 }
 
@@ -227,9 +279,9 @@ func TestScanInternalLeaksReportsEveryConsumerReachableShape(t *testing.T) {
 			assert: func(t *testing.T, reported bool, offenders []string) {
 				assert.False(t, reported,
 					"an unexported field is how a package holds internal state and is not "+
-						"reachable by a consumer. Reading every field reports 12 correct designs "+
-						"in this module as offenders -- too large a domain is a measurement error "+
-						"exactly as too small a one is. offenders=%v", offenders)
+						"reachable by a consumer. Reading every field reports 13 offender lines across "+
+						"8 correct declarations in this module -- too large a domain is a measurement "+
+						"error exactly as too small a one is. offenders=%v", offenders)
 			},
 		},
 		{
@@ -237,6 +289,64 @@ func TestScanInternalLeaksReportsEveryConsumerReachableShape(t *testing.T) {
 			symbol: "IfaceHiddenOnly",
 			assert: func(t *testing.T, reported bool, offenders []string) {
 				assert.False(t, reported, "offenders=%v", offenders)
+			},
+		},
+		{
+			name:   "a type parameter constraint is reported",
+			symbol: "Generic",
+			assert: func(t *testing.T, reported bool, offenders []string) {
+				assert.True(t, reported,
+					"TypeParams is a separate go/ast field from Type; the func form of the same "+
+						"constraint was already caught, and the asymmetry was introduced by the "+
+						"fix for a blind spot. offenders=%v", offenders)
+			},
+		},
+		{
+			name:   "a generic receiver's method is reported under its normalised receiver",
+			symbol: "(G).M",
+			assert: func(t *testing.T, reported bool, offenders []string) {
+				assert.True(t, reported, "offenders=%v", offenders)
+			},
+		},
+		{
+			name:   "an exported field embedding an exported internal type is reported",
+			symbol: "Embeds",
+			assert: func(t *testing.T, reported bool, offenders []string) {
+				assert.True(t, reported, "offenders=%v", offenders)
+			},
+		},
+		{
+			name:   "a nested inline struct with an EXPORTED inner field is reported",
+			symbol: "NestedExported",
+			assert: func(t *testing.T, reported bool, offenders []string) {
+				assert.True(t, reported,
+					"the accept half for the recursion: without it, a domain that refuses every "+
+						"nested composite passes the NestedHidden row just as well. offenders=%v", offenders)
+			},
+		},
+		{
+			name:   "a nested inline struct whose inner field is unexported is NOT reported",
+			symbol: "NestedHidden",
+			assert: func(t *testing.T, reported bool, offenders []string) {
+				assert.False(t, reported,
+					"taking a nested composite whole read its unexported field, contradicting the "+
+						"exported-fields-only rule this very function states. offenders=%v", offenders)
+			},
+		},
+		{
+			name:   "the same shape behind pointer, slice and map is NOT reported",
+			symbol: "NestedHiddenPtr",
+			assert: func(t *testing.T, reported bool, offenders []string) {
+				assert.False(t, reported, "offenders=%v", offenders)
+			},
+		},
+		{
+			name:   "a declaration under testdata/ or in a _test.go file is NOT reported",
+			symbol: "SkippedHere",
+			assert: func(t *testing.T, reported bool, offenders []string) {
+				assert.False(t, reported,
+					"the walk skips testdata/ and _test.go by design; planted here so the skip is "+
+						"asserted rather than assumed. offenders=%v", offenders)
 			},
 		},
 		{
@@ -289,11 +399,31 @@ func TestScanInternalLeaksMarksBothAllowlistsSeen(t *testing.T) {
 		"the intentionalCapabilitySeals entry matched no offender")
 
 	// An entry for a symbol that does not exist must stay unseen.
-	absent := map[string]string{"pkg/api.go:NoSuchSymbol": "stale"}
+	absent := map[string]openLeak{"pkg/api.go:NoSuchSymbol": {importPath: fixtureInternal, why: "stale"}}
 	staleScan, err := scanInternalLeaks(writeFixture(t), absent, seals)
 	require.NoError(t, err)
 	assert.False(t, staleScan.seenKnown["pkg/api.go:NoSuchSymbol"],
 		"a stale allowlist entry must read as unmatched, or it would shelter the next leak")
+}
+
+// TestScanInternalLeaksToleranceRequiresTheSanctionedImportPath pins the value
+// check on knownOpenInternalLeaks. Tolerance was granted for a SPECIFIC known
+// leak, not for the symbol in perpetuity: without this, a future unrelated
+// internal type added to the same signature inherits the exemption silently.
+func TestScanInternalLeaksToleranceRequiresTheSanctionedImportPath(t *testing.T) {
+	t.Parallel()
+
+	_, seals := fixtureAllowlists()
+	wrongPath := map[string]openLeak{
+		fixtureKnownKey: {importPath: "example.com/fixture/internal/somethingelse", why: "wrong package"},
+	}
+
+	scan, err := scanInternalLeaks(writeFixture(t), wrongPath, seals)
+	require.NoError(t, err)
+
+	assert.True(t, reportedSymbols(t, scan.offenders)["Foo"],
+		"a tolerance recorded for a different internal package must not exempt this one. "+
+			"offenders=%v", scan.offenders)
 }
 
 // TestScanInternalLeaksSealRequiresTheSanctionedImportPath pins the value check:

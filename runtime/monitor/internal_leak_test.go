@@ -159,10 +159,11 @@ func embeddedFieldName(expr ast.Expr) (string, bool) {
 //
 // "Names an internal type anywhere in its definition" is too large a domain if
 // read literally: a struct's UNEXPORTED fields are how a package holds internal
-// state, and reading them reports 12 correct designs in this module as
-// offenders — Authorizer.inner, OutboxStatsCollector.tel, CallNotifier.cl and
-// so on. A consumer cannot reach those, so they are not leaks. Too large a
-// domain is a measurement error exactly as too small a one is.
+// state, and reading them reports 13 offender lines across 8 correct
+// declarations in this module — Authorizer.inner, OutboxStatsCollector.tel and
+// CallNotifier.logOpt among them. A consumer cannot reach those, so they are
+// not leaks. Too large a domain is a measurement error exactly as too small a
+// one is.
 //
 // So: for a struct, only exported fields; for an interface, only exported
 // methods and embedded interfaces; for anything else — a func type, a named
@@ -177,13 +178,13 @@ func consumerReachableTypeExprs(t ast.Expr) []ast.Expr {
 		for _, field := range typ.Fields.List {
 			if len(field.Names) == 0 {
 				if name, ok := embeddedFieldName(field.Type); ok && ast.IsExported(name) {
-					out = append(out, field.Type)
+					out = append(out, consumerReachableTypeExprs(field.Type)...)
 				}
 				continue
 			}
 			for _, name := range field.Names {
 				if name.IsExported() {
-					out = append(out, field.Type)
+					out = append(out, consumerReachableTypeExprs(field.Type)...)
 					break
 				}
 			}
@@ -193,18 +194,39 @@ func consumerReachableTypeExprs(t ast.Expr) []ast.Expr {
 		var out []ast.Expr
 		for _, method := range typ.Methods.List {
 			if len(method.Names) == 0 { // an embedded interface
-				out = append(out, method.Type)
+				out = append(out, consumerReachableTypeExprs(method.Type)...)
 				continue
 			}
 			for _, name := range method.Names {
 				if name.IsExported() {
-					out = append(out, method.Type)
+					out = append(out, consumerReachableTypeExprs(method.Type)...)
 					break
 				}
 			}
 		}
 		return out
+	// The composite arms below RECURSE rather than returning the wrapper whole.
+	// Taking it whole made the boundary inconsistent with this function's own
+	// rationale: an inline anonymous nested struct behind an exported field —
+	// `struct{ Pub struct{ tel secret.T } }` — had its UNEXPORTED inner field
+	// read, which is exactly the over-reporting the exported-fields-only rule
+	// exists to stop. A pointer, slice, map or channel to such a struct had the
+	// same shape.
+	case *ast.StarExpr:
+		return consumerReachableTypeExprs(typ.X)
+	case *ast.ParenExpr:
+		return consumerReachableTypeExprs(typ.X)
+	case *ast.ArrayType:
+		return consumerReachableTypeExprs(typ.Elt)
+	case *ast.Ellipsis:
+		return consumerReachableTypeExprs(typ.Elt)
+	case *ast.ChanType:
+		return consumerReachableTypeExprs(typ.Value)
+	case *ast.MapType:
+		return append(consumerReachableTypeExprs(typ.Key), consumerReachableTypeExprs(typ.Value)...)
 	default:
+		// A func type, a named type, a selector: here the whole expression IS
+		// the reachable surface, which is the case casbinauthz.DBOption proves.
 		return []ast.Expr{t}
 	}
 }
@@ -218,10 +240,25 @@ func consumerReachableTypeExprs(t ast.Expr) []ast.Expr {
 // It is SELF-CLEANING: an entry that no longer matches any offender fails the
 // test, so a fixed leak cannot leave a stale exemption behind for the next one
 // to hide under.
-var knownOpenInternalLeaks = map[string]string{
-	"persistence/scheduler_locker.go:NewSchedulerLocker": "takes an internal dialect.Locker parameter — " +
-		"found by this guard, outside runtime/, not fixed here; the doc comment even invites a consumer to " +
-		"\"bring your own dialect.Locker\", which no consumer can name",
+// openLeak is a tolerated offender. BOTH fields matter: the import path is
+// checked, exactly as intentionalCapabilitySeals checks its own, because
+// tolerance was granted for a SPECIFIC known leak and not for the symbol in
+// perpetuity. Keying on the symbol alone fails open in the way the seals
+// comment below already describes — a future, unrelated internal type added to
+// the same signature would inherit the exemption silently — and that argument
+// applies verbatim here.
+type openLeak struct {
+	importPath string // the internal package this signature is expected to name
+	why        string // carried into the failure message; genuinely useful there
+}
+
+var knownOpenInternalLeaks = map[string]openLeak{
+	"persistence/scheduler_locker.go:NewSchedulerLocker": {
+		importPath: "github.com/kartaladev/wrkflw/internal/persistence/dialect",
+		why: "takes an internal dialect.Locker parameter — " +
+			"found by this guard, outside runtime/, not fixed here; the doc comment even invites a consumer to " +
+			"\"bring your own dialect.Locker\", which no consumer can name",
+	},
 	// Surfaced by widening the walk to *ast.GenDecl (#148): the guard could not
 	// see a type declaration at all before that, so this shipped unseen.
 	//
@@ -232,9 +269,11 @@ var knownOpenInternalLeaks = map[string]string{
 	// un-extensibility is a side effect of hiding the config struct, not the
 	// point of it — the same shape as NewSchedulerLocker above. The fix belongs
 	// to whoever owns casbinauthz: give DBOption a public config type.
-	"casbinauthz/casbinauthz.go:DBOption": "type DBOption func(*internalcasbin.DBConfig) names " +
-		"github.com/kartaladev/wrkflw/internal/authz/casbin — consumers can use the shipped With* " +
-		"options but cannot write their own",
+	"casbinauthz/casbinauthz.go:DBOption": {
+		importPath: "github.com/kartaladev/wrkflw/internal/authz/casbin",
+		why: "type DBOption func(*internalcasbin.DBConfig) — consumers can use the shipped With* " +
+			"options but cannot write their own",
+	},
 }
 
 // intentionalCapabilitySeals are exported signatures that name an internal type
@@ -275,7 +314,7 @@ type internalLeakScan struct {
 // globals so that a test can drive it over a synthetic fixture with allowlists
 // of its own. That is the only reason it is a function and not the body of
 // TestNoExportedSignatureNamesAnInternalType, which is now a thin caller.
-func scanInternalLeaks(root string, known, seals map[string]string) (internalLeakScan, error) {
+func scanInternalLeaks(root string, known map[string]openLeak, seals map[string]string) (internalLeakScan, error) {
 	fset := token.NewFileSet()
 	scan := internalLeakScan{
 		seenKnown: make(map[string]bool, len(known)),
@@ -340,7 +379,10 @@ func scanInternalLeaks(root string, known, seals map[string]string) (internalLea
 					return true
 				}
 				key := declKey(rel, symbol)
-				if _, isKnown := known[key]; isKnown {
+				// Exempt only for the internal package the tolerance was granted
+				// for; any other internal type at the same symbol is still an
+				// offender. Same rule as the seals below, for the same reason.
+				if leak, isKnown := known[key]; isKnown && leak.importPath == importPath {
 					scan.seenKnown[key] = true
 					return true
 				}
@@ -377,6 +419,18 @@ func scanInternalLeaks(root string, known, seals map[string]string) (internalLea
 					case *ast.TypeSpec:
 						if !sp.Name.IsExported() {
 							continue
+						}
+						// TypeParams is a SEPARATE go/ast field and is not
+						// reachable from sp.Type, so a constraint naming an
+						// internal type was invisible: `type G[T secret.C] …`
+						// slipped through while `func F[T secret.C]()` was
+						// caught, because FuncDecl.Type is an *ast.FuncType
+						// whose TypeParams does get walked. An asymmetry
+						// introduced by the fix for a blind spot is still one.
+						if sp.TypeParams != nil {
+							for _, tp := range sp.TypeParams.List {
+								inspect(tp.Type, sp.Name.Name, sp.Pos(), "type")
+							}
 						}
 						for _, expr := range consumerReachableTypeExprs(sp.Type) {
 							inspect(expr, sp.Name.Name, sp.Pos(), "type")
@@ -424,32 +478,57 @@ func scanInternalLeaks(root string, known, seals map[string]string) (internalLea
 //
 // "Anywhere a consumer can reach" and not "anywhere in its definition": an
 // UNEXPORTED struct field or interface method is how a package holds internal
-// state, and reading those reports 12 correct designs in this module —
-// Authorizer.inner, OutboxStatsCollector.tel, CallNotifier.cl among them. Too
-// large a domain is a measurement error exactly as too small a one is, and this
-// guard has now been wrong in both directions. See consumerReachableTypeExprs.
+// state. Reading those reports 13 offender lines across 8 correct declarations
+// in this module — Authorizer.inner, OutboxStatsCollector.tel and
+// CallNotifier.logOpt among them. CallNotifier.cl is NOT an example: it is
+// kernel.CallLinkStore, and runtime/kernel is public, so it can never be
+// reported. Too large a domain is a measurement error exactly as too small a
+// one is, and this guard has now been wrong in both directions. See
+// consumerReachableTypeExprs.
 //
-// What makes it fail today: runtime/monitor/stats_collector.go declares
-// NewOutboxStatsCollector and NewTimerStatsCollector with
-// `opts ...observability.Option`, where observability is
-// github.com/kartaladev/wrkflw/internal/observability. Real RED, no mutation.
+// WHAT MAKES THIS TEST FAIL — and it is no longer anything in the module. It
+// was written against runtime/monitor/stats_collector.go, whose two
+// constructors took `opts ...observability.Option` from
+// github.com/kartaladev/wrkflw/internal/observability. That leak has since been
+// FIXED: both now take the local monitor.Option, and every offender the walk
+// still finds is allowlisted. So nothing in this module makes this assertion
+// fail today, and a scanner that reported nothing at all would pass it.
 //
-// ⚠ These are NOT the only two such symbols in the module, and this guard is
-// what refuted the claim that they were: it was generalised from a grep whose
-// pattern only matched `observability.`. persistence.NewSchedulerLocker is a
-// third, of the same class.
+// ⚠ THE NON-VACUITY PROOF IS internal_leak_fixture_test.go, NOT THIS TEST.
+// A "report nothing" mutant — one that drops the append — leaves this test
+// GREEN, because seenKnown and seenSeal are marked BEFORE the append, so both
+// self-cleaning loops still pass. Measured, with the mutant proved to compile
+// first. Only the fixture's assertions kill it, so the two files are not
+// near-duplicates and the fixture is not the redundant one.
+//
+// ⚠ The offenders are NOT limited to the symbols anyone predicted: this guard
+// was generalised from a grep whose pattern only matched `observability.`, and
+// it then found persistence.NewSchedulerLocker and casbinauthz.DBOption,
+// neither of which anyone had named.
 //
 // WHAT THIS GUARD STILL CANNOT SEE. Both holes are recorded here rather than
 // left silent, because an unstated blind spot gets trusted wrongly:
 //
 //   - DOT-IMPORTS. internalImportIdents skips "." and "_", so a dot-imported
 //     internal package's types appear as a bare ast.Ident and no SelectorExpr
-//     arm can reach them.
+//     arm can reach them. Measured: the module has ZERO dot-imports of an
+//     internal package, so the hole is real but currently empty.
 //   - TYPE ALIASES ACROSS FILES. `type X = internalpkg.Y` re-exported in one
 //     file and used unqualified in another defeats the import gate, since the
 //     second file imports no internal package. Measured at the time of writing:
 //     the module has 5 exported aliases and NONE resolves to an internal
 //     package, so the hole is real but currently unexploited.
+//   - METHODS PROMOTED THROUGH AN EMBEDDED UNEXPORTED TYPE, and NAMED
+//     UNEXPORTED TYPES BEHIND AN EXPORTED FIELD. Both need the declaration of a
+//     type this walk never resolves: an exported struct embedding an unexported
+//     type promotes that type's exported methods, and an exported field of a
+//     named unexported struct type exposes that struct's exported fields. This
+//     walk reads the field, not the declaration it points at. Closing either
+//     needs go/types rather than go/ast — a DIFFERENT guard, not a bigger one,
+//     which is why they are recorded rather than fixed here. Measured: one
+//     latent candidate for the first, (neutralLockerBridge).Lock in
+//     scheduler/scheduler.go, which is neither embedded in nor returned from
+//     any exported type; and no instance of the second found in this module.
 func TestNoExportedSignatureNamesAnInternalType(t *testing.T) {
 	t.Parallel()
 
@@ -472,9 +551,11 @@ func TestNoExportedSignatureNamesAnInternalType(t *testing.T) {
 				"or correct its path, or the next leak at that symbol ships unnoticed", key, want)
 	}
 
-	for key := range knownOpenInternalLeaks {
+	for key, leak := range knownOpenInternalLeaks {
 		assert.True(t, seenKnown[key],
-			"knownOpenInternalLeaks entry %q no longer matches any offender — delete it, "+
-				"or the next leak at that symbol ships unnoticed", key)
+			"knownOpenInternalLeaks entry %q (expecting %s) no longer matches any offender — "+
+				"the leak was fixed or now names a different internal package; delete the entry "+
+				"or correct its path, or the next leak at that symbol ships unnoticed",
+			key, leak.importPath)
 	}
 }
