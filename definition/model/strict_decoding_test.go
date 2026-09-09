@@ -307,13 +307,22 @@ func TestDefinitionStorePathIsStrict(t *testing.T) {
 	}
 }
 
-func TestStrictDecodingDoesNotRejectKindInappropriateFields(t *testing.T) {
+// TestStrictDecodingRejectsKindInappropriateFields REVERSES a decision this test
+// previously pinned. It used to assert the opposite, on the rationale that
+// "kind-appropriateness is model.Validate's concern, not the decoder's".
+//
+// That rationale does not survive: Validate structurally CANNOT see it. Validate
+// receives []Node, and by the time it runs fromWire has already dropped the
+// misplaced key — the decoder is the only place the original NodeWire and the
+// reconstructed node coexist. The stated owner could not do the job, which is
+// why it had never been done. See #183 and node_wire_keys.go.
+//
+// timer_duration is still a KNOWN field on the flat union, so strict decoding
+// (KnownFields(true)) never saw it; what refuses it now is the kind-key gate,
+// which measures per kind whether FromWire reads the field at all.
+func TestStrictDecodingRejectsKindInappropriateFields(t *testing.T) {
 	t.Parallel()
 
-	// timer_duration belongs to timer nodes, but NodeWire/nodeYAML are flat
-	// unions over all node kinds, so it is a KNOWN field and survives strict
-	// decoding on a userTask. The limitation is deliberate:
-	// kind-appropriateness is model.Validate's concern, not the decoder's.
 	yamlSrc := strings.Replace(validYAML,
 		`    eligible_roles: ["manager"]`,
 		"    eligible_roles: [\"manager\"]\n    timer_duration: \"PT5M\"", 1)
@@ -322,7 +331,17 @@ func TestStrictDecodingDoesNotRejectKindInappropriateFields(t *testing.T) {
 	// plain validYAML and pass for the wrong reason.
 	require.Contains(t, yamlSrc, "timer_duration", "fixture did not gain the kind-inappropriate field")
 
-	ld, err := model.ParseYAML(strings.NewReader(yamlSrc))
+	_, err := model.ParseYAML(strings.NewReader(yamlSrc))
+	require.ErrorIs(t, err, model.ErrKeyNotOnKind)
+	assert.Contains(t, err.Error(), "timer_duration")
+
+	// The at-limit control: the UNMUTATED fixture still parses and builds.
+	// Without one, a gate that refused every definition would satisfy the
+	// assertion above just as well. TestParseYAMLRejectsUnknownFields's "valid
+	// definition still parses" case asserts the same thing for the same fixture;
+	// this one is kept beside the refusal because a discrimination proof read at
+	// a distance is one a reader has to go looking for.
+	ld, err := model.ParseYAML(strings.NewReader(validYAML))
 	require.NoError(t, err)
 	def, err := ld.Build()
 	require.NoError(t, err)
@@ -346,6 +365,13 @@ nodes:
     message_name: order-received
     correlation_key: orderId
     message_start_singleton: true
+    # validation lives on a kind that HAS a validation slot. It used to sit on
+    # the "charge" serviceTask, which has none, so the descriptor was silently
+    # discarded and this fixture exercised the tag without ever exercising the
+    # feature. ErrKeyNotOnKind refuses that now (#183).
+    validation:
+      kind: expr
+      schema: "true"
   - id: charge
     kind: serviceTask
     name: Charge card
@@ -358,13 +384,8 @@ nodes:
       max_elapsed: 1m
       non_retryable_errors: ["invalid-card"]
     compensate_action: refund-card
-    compensate_ref: refund-ref
-    compensate_scope_local: true
     cancel_action: void-authorisation
     recovery_flow: f_recover
-    validation:
-      kind: expr
-      schema: "true"
   - id: approve
     kind: userTask
     eligible_roles: ["manager"]
@@ -389,6 +410,19 @@ nodes:
     eligible_privileges: ["approve-invoice"]
     manual: true
     manual_immediate: true
+  # compensate_ref and compensate_scope_local both belong to a
+  # compensationThrowEvent, not to the "charge" serviceTask they used to sit on
+  # (#183). They are split across TWO throws because model.Validate refuses a
+  # single node declaring both (ErrScopeLocalWithCompensateRef): ScopeLocal
+  # narrows only the scope-WIDE throw, so the engine would ignore it beside a
+  # targeted CompensateRef. Same remedy, and same reason, as the
+  # eligible_roles/eligible_privileges split above.
+  - id: compensate_targeted
+    kind: compensationThrowEvent
+    compensate_ref: charge
+  - id: compensate_scoped
+    kind: compensationThrowEvent
+    compensate_scope_local: true
   - id: route
     kind: exclusiveGateway
   - id: wait
@@ -448,6 +482,12 @@ flows:
     target: finish
   - id: f4
     source: sign
+    target: compensate_targeted
+  - id: f4a
+    source: compensate_targeted
+    target: compensate_scoped
+  - id: f4b
+    source: compensate_scoped
     target: route
   - id: f5
     source: route
