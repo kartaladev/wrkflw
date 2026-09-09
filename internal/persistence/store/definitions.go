@@ -31,10 +31,11 @@ import (
 //
 // SQL is written once with ? placeholders and run through
 // [dialect.Dialect.Rebind] for the backend's native placeholder style. The
-// publish is an insert-if-absent built from
-// [dialect.Dialect.InsertIgnorePrefix] and [dialect.Dialect.InsertIgnoreDedup],
-// declined by the (def_id, version) primary key. No inline dialect-name
-// comparisons are used.
+// publish is an insert-if-absent whose conflict clause comes from
+// [dialect.Dialect.InsertIgnoreDefinition] — deliberately NOT the
+// InsertIgnorePrefix/InsertIgnoreDedup pair the dedup site uses — declined by
+// the (def_id, version) primary key. No inline dialect-name comparisons are
+// used.
 //
 // DefinitionStore is safe for concurrent use: it carries no mutable state.
 type DefinitionStore struct {
@@ -163,8 +164,12 @@ var ErrConcurrentPublish = errors.New("workflow-store: definition publish raced 
 //   - the row exists and its content differs → returns
 //     [kernel.ErrDefinitionExists], wrapped with "id:version". Publish a new
 //     version instead of editing a published one.
-//   - the row is being inserted right now by someone else → returns
-//     [ErrConcurrentPublish]. See that sentinel.
+//   - no row is readable afterwards at all → returns [ErrConcurrentPublish].
+//     See that sentinel.
+//
+// The outcome is decided by reading the row back and comparing content, not by
+// the driver's affected-rows count, so it does not depend on connection flags
+// such as MySQL's clientFoundRows.
 //
 // def is checked by [kernel.ValidateDefinition] — the same gate
 // [kernel.MemDefinitionRegistry.Register] uses — before any I/O, so an
@@ -204,25 +209,33 @@ func (ds *DefinitionStore) PublishDefinition(ctx context.Context, def *model.Pro
 	// Insert-if-absent. The conflict clause comes from the dialect so no inline
 	// dialect checks are needed here; see [dialect.Dialect.InsertIgnoreDefinition]
 	// for why the definitions site does NOT use MySQL's INSERT IGNORE.
-	res, err := q.Exec(ctx, ds.dialect.Rebind(
+	if _, err := q.Exec(ctx, ds.dialect.Rebind(
 		`INSERT INTO wrkflw_definitions (def_id, version, definition, created_at)
 		 VALUES (?,?,?,?)`+ds.dialect.InsertIgnoreDefinition()),
 		def.ID, def.Version, data, timeArg(ds.dialect, ds.clk.Now().UTC()),
-	)
-	if err != nil {
+	); err != nil {
 		return fmt.Errorf("workflow-store: publish definition %s:%d: exec: %w", def.ID, def.Version, err)
 	}
 
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("workflow-store: publish definition %s:%d: rows affected: %w", def.ID, def.Version, err)
-	}
-	if n != 0 {
-		return nil
-	}
-
-	// Zero rows means the primary key already holds this version. Read it back
-	// and compare; the row is immutable, so what is read is final.
+	// The outcome is determined by observed STATE, not by RowsAffected.
+	//
+	// RowsAffected is a driver-dependent signal, not a fact about the database.
+	// MySQL's affected-rows count is switched by the connection's
+	// clientFoundRows flag, which lives in the CONSUMER's DSN: with it set,
+	// ON DUPLICATE KEY UPDATE reports 1 for a duplicate rather than 0, and a
+	// refused publish would have been reported as success. (INSERT IGNORE
+	// reported 0 either way, so this became load-bearing only when the
+	// statement changed — it is a regression introduced by that change and
+	// removed here.)
+	//
+	// Reading the row back and comparing answers the question directly, and
+	// gives the same answer whatever the driver reports: if the stored content
+	// matches, the version is published as requested, whether this statement
+	// inserted it or found it already there. Those two are indistinguishable to
+	// a caller and both mean success.
+	//
+	// This costs one extra read on an administrative write path. It adds
+	// nothing to Lookup or GetDefinition, which are the hot read paths.
 	stored, err := ds.readPublished(ctx, q, def)
 	if err != nil {
 		return err

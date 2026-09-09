@@ -2,6 +2,7 @@ package kernel_test
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -184,15 +185,19 @@ func TestMemDefinitionRegistryLatestIsHighestVersion(t *testing.T) {
 // every supported backend stores faithfully.
 //
 // Each rejected property is one where the three backends were MEASURED to
-// disagree, and where MySQL's INSERT IGNORE turns the disagreement into a
-// silent success — a write that reports nil while storing something the caller
-// did not ask for:
+// disagree about what they will store, through the CURRENT definitions
+// statement:
 //
 //	property              SQLite        Postgres          MySQL
-//	>255 runes            stores        stores            TRUNCATES
-//	invalid UTF-8         stores raw    rejects (22021)   TRUNCATES
+//	>255 runes            stores        stores            rejects (1406)
+//	invalid UTF-8         stores raw    rejects (22021)   rejects (1366)
 //	NUL byte              stores        rejects (22021)   stores
-//	Version > MaxInt32    stores        rejects (int4)    CLAMPS
+//	Version > MaxInt32    stores        rejects (int4)    rejects (1264)
+//
+// SQLite accepts three of the four the others refuse, which is why a
+// store-side error alone would not give parity. Under the earlier INSERT
+// IGNORE statement MySQL silently truncated or clamped instead of rejecting,
+// and reported success — the history these bounds were introduced for.
 //
 // Every rejection is paired with the accepting case just inside it. A bound
 // that rejected everything would satisfy the refusals on their own, so the
@@ -285,9 +290,15 @@ func TestValidateDefinitionEnforcesTheStorableDomain(t *testing.T) {
 			assert: accepted,
 		},
 		{
-			name:   "a version one over the backend maximum is refused",
-			def:    minimalValidDef("ver-big", kernel.MaxDefinitionVersion+1),
-			assert: refusedAs(kernel.ErrDefinitionVersionTooLarge),
+			name: "a version one over the backend maximum is refused",
+			def:  minimalValidDef("ver-big", int(overMaxDefinitionVersion)),
+			assert: func(t *testing.T, err error) {
+				t.Helper()
+				if !intCanExceedMaxDefinitionVersion {
+					t.Skip("int is 32-bit here, so a version above MaxDefinitionVersion is unrepresentable")
+				}
+				refusedAs(kernel.ErrDefinitionVersionTooLarge)(t, err)
+			},
 		},
 	}
 
@@ -298,6 +309,21 @@ func TestValidateDefinitionEnforcesTheStorableDomain(t *testing.T) {
 		})
 	}
 }
+
+// overMaxDefinitionVersion is one past the largest publishable version.
+//
+// It is a VARIABLE of type int64 on purpose. Written as the constant expression
+// kernel.MaxDefinitionVersion+1 it does not compile where int is 32 bits — the
+// untyped constant 2147483648 overflows int — so the file would fail to build
+// under GOARCH=386 rather than fail a test. Go through int64 and convert at run
+// time instead.
+var overMaxDefinitionVersion int64 = int64(kernel.MaxDefinitionVersion) + 1
+
+// intCanExceedMaxDefinitionVersion reports whether this platform's int can even
+// represent a version above the bound. Where it cannot — a 32-bit int, whose
+// maximum IS kernel.MaxDefinitionVersion — an over-limit version is
+// unrepresentable, so there is nothing to test and the cases below skip.
+const intCanExceedMaxDefinitionVersion = math.MaxInt > math.MaxInt32
 
 // ── Authoring gate ───────────────────────────────────────────────────────
 

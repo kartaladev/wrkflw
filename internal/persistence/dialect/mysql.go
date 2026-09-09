@@ -13,8 +13,10 @@ type mysql struct{}
 // [Dialect] and is stateless and safe for concurrent use.
 //
 // MySQL uses ? as its native placeholder style (no rebind required), does not
-// support UPDATE … RETURNING, uses INSERT IGNORE for idempotent inserts, and
-// names the journal payload column trigger_ (reserved word in MySQL).
+// support UPDATE … RETURNING, uses INSERT IGNORE for the dedup and chain-link
+// idempotent inserts (but NOT for the definition publish — see
+// [mysql.InsertIgnoreDefinition]), and names the journal payload column
+// trigger_ (reserved word in MySQL).
 func NewMySQL() Dialect { return mysql{} }
 
 // Name returns the stable lowercase identifier for this dialect.
@@ -47,14 +49,20 @@ func (mysql) UpsertTask() string {
 }
 
 // InsertIgnorePrefix returns the INSERT keyword prefix for an insert-if-absent
-// write (the dedup check and the definition publish). MySQL uses INSERT IGNORE
+// write (the dedup and chain-link sites; NOT the definition publish, which
+// uses [InsertIgnoreDefinition]). MySQL uses INSERT IGNORE
 // as a prefix; the suffix ([InsertIgnoreDedup]) is empty.
 //
 // Caution for callers: INSERT IGNORE downgrades EVERY error to a warning, not
 // just duplicate-key — truncation, a bad value, an over-long key. A genuinely
-// broken write therefore also reports RowsAffected()==0 here and is
-// indistinguishable from a duplicate at the driver level, so a caller must not
-// treat "0 rows" as proof that a conflicting row exists. Read it back.
+// broken write is therefore accepted silently and reported as if it had
+// succeeded, so a caller must not treat this statement's outcome as proof of
+// what was stored. Read it back.
+//
+// That hazard is why the definitions site does not use this prefix; see
+// [mysql.InsertIgnoreDefinition]. The remaining callers write a subscriber and
+// a message id, or a chain link, with no numeric range or length hazard of this
+// kind.
 func (mysql) InsertIgnorePrefix() string { return "INSERT IGNORE" }
 
 // InsertIgnoreDefinition returns MySQL's insert-if-absent clause for the

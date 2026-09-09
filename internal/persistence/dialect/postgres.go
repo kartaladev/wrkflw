@@ -57,7 +57,8 @@ func (postgres) UpsertTask() string {
 }
 
 // InsertIgnorePrefix returns the INSERT keyword prefix for an insert-if-absent
-// write (the dedup check and the definition publish). Postgres uses a plain
+// write (the dedup and chain-link sites; NOT the definition publish, which
+// uses [InsertIgnoreDefinition]). Postgres uses a plain
 // "INSERT" prefix paired with an "ON CONFLICT DO NOTHING" suffix
 // ([InsertIgnoreDedup]).
 func (postgres) InsertIgnorePrefix() string { return "INSERT" }

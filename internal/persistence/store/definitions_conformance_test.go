@@ -2,7 +2,10 @@ package store_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -238,6 +241,21 @@ func TestDefinitionStoreRichRoundTrip(t *testing.T) {
 		assert.Equal(t, orig, got, "%s: all fields must survive the JSON round-trip", b.name)
 	})
 }
+
+// overMaxDefinitionVersion is one past the largest publishable version.
+//
+// It is a VARIABLE of type int64 on purpose. Written as the constant expression
+// kernel.MaxDefinitionVersion+1 it does not compile where int is 32 bits — the
+// untyped constant 2147483648 overflows int — so the file would fail to build
+// under GOARCH=386 rather than fail a test. Go through int64 and convert at run
+// time instead.
+var overMaxDefinitionVersion int64 = int64(kernel.MaxDefinitionVersion) + 1
+
+// intCanExceedMaxDefinitionVersion reports whether this platform's int can even
+// represent a version above the bound. Where it cannot — a 32-bit int, whose
+// maximum IS kernel.MaxDefinitionVersion — an over-limit version is
+// unrepresentable, so there is nothing to test and the cases below skip.
+const intCanExceedMaxDefinitionVersion = math.MaxInt > math.MaxInt32
 
 // ── Publish semantics: immutable, idempotent-if-identical ────────────────────
 
@@ -569,10 +587,12 @@ func TestDefinitionStorePublishImmutable(t *testing.T) {
 		{
 			// Encoding, not length. utf8.RuneCountInString counts each bad byte
 			// as one RuneError, so an invalid-UTF-8 ID sails through the length
-			// bound. Measured: Postgres refuses it (SQLSTATE 22021), MySQL's
-			// INSERT IGNORE truncates at the first bad byte, SQLite stores the
-			// raw bytes. On MySQL that made two distinct IDs one row, so a
-			// lookup for one identity returned another's definition.
+			// bound. Measured: Postgres refuses it (SQLSTATE 22021), MySQL
+			// refuses it (Error 1366) through the current statement, and SQLite
+			// stores the raw bytes — so SQLite alone is why the gate is needed.
+			// Under the earlier INSERT IGNORE statement MySQL instead truncated
+			// at the first bad byte, which made two distinct IDs one row and
+			// let a lookup for one identity return another's definition.
 			name: "a definition ID that is not valid UTF-8 is refused and writes no row",
 			def:  minimalValidDef("utf8-bad-\xff\xfe-tail", 1),
 			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
@@ -640,12 +660,17 @@ func TestDefinitionStorePublishImmutable(t *testing.T) {
 		},
 		{
 			// One over. Measured: SQLite stores it, Postgres refuses to encode
-			// it for int4, and MySQL CLAMPS it to 2147483647 while INSERT
-			// IGNORE reports success — so the publish returned nil and the row
-			// landed at a version the caller never asked for.
+			// it for int4, and MySQL refuses it (Error 1264) through the
+			// current statement — so SQLite alone is why the gate is needed.
+			// Under the earlier INSERT IGNORE statement MySQL instead CLAMPED
+			// it to 2147483647 and reported success, so the publish returned
+			// nil and the row landed at a version the caller never asked for.
 			name: "a version one over the backend maximum is refused and writes no row",
-			def:  minimalValidDef("ver-over-max", kernel.MaxDefinitionVersion+1),
+			def:  minimalValidDef("ver-over-max", int(overMaxDefinitionVersion)),
 			assert: func(t *testing.T, b backend, ds *store.DefinitionStore, err error) {
+				if !intCanExceedMaxDefinitionVersion {
+					t.Skip("int is 32-bit here, so a version above MaxDefinitionVersion is unrepresentable")
+				}
 				require.Error(t, err, "%s: an out-of-range version must be refused", b.name)
 				require.ErrorIs(t, err, kernel.ErrInvalidDefinition,
 					"%s: must wrap ErrInvalidDefinition; got %v", b.name, err)
@@ -685,6 +710,91 @@ func TestDefinitionStorePublishImmutable(t *testing.T) {
 			})
 		}
 	})
+}
+
+// TestDefinitionStorePublishIgnoresClientFoundRows pins that the publish
+// outcome does not depend on MySQL's clientFoundRows connection flag.
+//
+// The flag lives in the CONSUMER's DSN, not in this package. It switches what
+// MySQL reports as affected rows: with it set, ON DUPLICATE KEY UPDATE reports
+// 1 for a duplicate instead of 0. A publish path that inferred its outcome from
+// that count would report a REFUSED publish as success for any consumer whose
+// DSN happened to carry the flag.
+//
+// This was introduced by this PR's own statement change and is fixed here:
+// INSERT IGNORE reported 0 regardless of the flag, ON DUPLICATE KEY UPDATE does
+// not. The outcome is now read back from stored state instead, which is
+// flag-independent.
+//
+// Both arms are exercised against the same database. Without the
+// clientFoundRows arm the test could not fail for the stated reason, because
+// the default DSN passes today either way.
+func TestDefinitionStorePublishIgnoresClientFoundRows(t *testing.T) {
+	dsn := dbtest.RunTestMySQLDSN(t)
+
+	withFlag := dsn
+	if strings.Contains(withFlag, "?") {
+		withFlag += "&clientFoundRows=true"
+	} else {
+		withFlag += "?clientFoundRows=true"
+	}
+
+	type arm struct {
+		name string
+		dsn  string
+	}
+	arms := []arm{
+		{name: "default DSN", dsn: dsn},
+		{name: "clientFoundRows=true", dsn: withFlag},
+	}
+
+	// Migrate once through the plain DSN; both arms address the same schema.
+	base, err := sql.Open("mysql", dsn)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = base.Close() })
+	require.NoError(t, persistence.MigrateMySQL(t.Context(), base), "migrate mysql")
+
+	for i, a := range arms {
+		t.Run(a.name, func(t *testing.T) {
+			db, err := sql.Open("mysql", a.dsn)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = db.Close() })
+			require.NoError(t, db.PingContext(t.Context()))
+
+			ds, err := store.NewDefinitionStore(db, dialect.NewMySQL())
+			require.NoError(t, err)
+
+			// Distinct id per arm so the two cannot interfere.
+			id := fmt.Sprintf("cfr-%d", i)
+
+			first := minimalValidDef(id, 1)
+			first.CancelActions = []string{"first"}
+			require.NoError(t, ds.PublishDefinition(t.Context(), first),
+				"%s: a fresh insert must succeed", a.name)
+
+			// The happy path must not become a spurious conflict now that the
+			// insert is verified by reading back.
+			require.NoError(t, ds.PublishDefinition(t.Context(), minimalValidDef(id, 2)),
+				"%s: another fresh version must still publish cleanly", a.name)
+
+			// Identical republish: still an idempotent no-op.
+			require.NoError(t, ds.PublishDefinition(t.Context(), first),
+				"%s: republishing identical content must be a no-op", a.name)
+
+			// The case the flag used to break: a DIFFERING republish must be
+			// refused on BOTH arms.
+			second := minimalValidDef(id, 1)
+			second.CancelActions = []string{"second"}
+			err = ds.PublishDefinition(t.Context(), second)
+			require.ErrorIs(t, err, kernel.ErrDefinitionExists,
+				"%s: a differing republish must be refused whatever the driver reports; got %v", a.name, err)
+
+			got, err := ds.GetDefinition(t.Context(), id, 1)
+			require.NoError(t, err)
+			assert.Equal(t, []string{"first"}, got.CancelActions,
+				"%s: the first published content must survive", a.name)
+		})
+	}
 }
 
 // TestDefinitionStorePublishUnderContention pins the outcome when two

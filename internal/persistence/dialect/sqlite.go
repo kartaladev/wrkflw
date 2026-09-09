@@ -50,7 +50,8 @@ func (sqliteDialect) UpsertTask() string {
 }
 
 // InsertIgnorePrefix returns the INSERT keyword prefix for an insert-if-absent
-// write (the dedup check and the definition publish). SQLite uses a plain
+// write (the dedup and chain-link sites; NOT the definition publish, which
+// uses [InsertIgnoreDefinition]). SQLite uses a plain
 // "INSERT" prefix paired with an "ON CONFLICT DO NOTHING" suffix
 // ([InsertIgnoreDedup]), identical to Postgres.
 func (sqliteDialect) InsertIgnorePrefix() string { return "INSERT" }

@@ -152,26 +152,43 @@ var ErrDefinitionVersionTooLarge = errors.New("workflow-runtime: definition vers
 // publishing hostile values against real Postgres, MySQL and SQLite rather than
 // by reading their documentation:
 //
+// Measured through the CURRENT statement — the definitions site no longer uses
+// INSERT IGNORE, so MySQL rejects rather than silently altering:
+//
 //	property              SQLite        Postgres            MySQL
 //	----------------------------------------------------------------------
-//	>255 runes            stores        stores              TRUNCATES silently
-//	invalid UTF-8         stores raw    rejects (22021)     TRUNCATES silently
+//	>255 runes            stores        stores              rejects (1406)
+//	invalid UTF-8         stores raw    rejects (22021)     rejects (1366)
 //	NUL byte              stores        rejects (22021)     stores
-//	Version > MaxInt32    stores        rejects (int4)      CLAMPS silently
+//	Version > MaxInt32    stores        rejects (int4)      rejects (1264)
 //
-// The MySQL column is the narrowest in every row. Each of those disagreements
-// is independently defended in the durable store, whose definitions statement
-// suppresses only the duplicate key and so lets MySQL reject a bad value loudly
-// (see dialect.Dialect.InsertIgnoreDefinition); before that change INSERT
-// IGNORE downgraded every one of them to a warning and the write reported
-// success while storing something the caller did not ask for.
+// Every row still shows at least two backends disagreeing, which is the point:
+// SQLite accepts three of the four that the others refuse. Under the previous
+// INSERT IGNORE statement the MySQL column read TRUNCATES / TRUNCATES / stores
+// / CLAMPS — silently, and reported as success — which is the history that
+// motivated these bounds.
+//
+// The MySQL column is the narrowest schema in every row. Each of those
+// disagreements is independently defended in the durable store, whose
+// definitions statement suppresses only the duplicate key and so lets MySQL
+// reject a bad value loudly (see dialect.Dialect.InsertIgnoreDefinition);
+// before that change INSERT IGNORE downgraded every one of them to a warning
+// and the write reported success while storing something the caller did not
+// ask for.
 //
 // This gate is the other half, and it is the half that gives PARITY: rejecting
 // the input here, before any I/O, is what makes the two promises it carries
 // true — that an in-memory registration and a durable publish accept exactly
-// the same definitions, and that a definition publishable on one backend is
-// publishable on all of them. A store-side error alone would satisfy neither,
-// because SQLite would still accept what MySQL refused.
+// the same definitions, and that an ID and version publishable on one backend
+// are publishable on all of them. A store-side error alone would satisfy
+// neither, because SQLite would still accept what MySQL refused.
+//
+// Scope: these bounds cover the two KEY columns, not the whole definition. The
+// body is stored as JSON and has its own, narrower domain that is not gated
+// here — a NUL byte inside a node name stores on MySQL and SQLite and is
+// refused by Postgres with SQLSTATE 22P05. That fails closed (the publish
+// errors; nothing altered is stored), so it is documented rather than
+// enforced.
 //
 // A known divergence this gate CANNOT close: MySQL's def_id collation is
 // utf8mb4_0900_ai_ci, which is case- and accent-INSENSITIVE, so "a" and "A"

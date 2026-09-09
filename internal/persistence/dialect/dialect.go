@@ -55,10 +55,12 @@ type Dialect interface {
 	// "ON CONFLICT DO NOTHING" suffix ([InsertIgnoreDedup]). MySQL uses an
 	// "INSERT IGNORE" prefix with an empty suffix.
 	//
-	// Two sites use this pair: the dedup idempotency check
-	// (wrkflw_processed_message) and the immutable definition publish
-	// (wrkflw_definitions). Both read RowsAffected to tell an insert that
-	// happened from one the primary key silently declined.
+	// Its callers are the dedup idempotency check
+	// (wrkflw_processed_message) and the chain-link insert. The definition
+	// publish does NOT use this pair — it has its own clause,
+	// [InsertIgnoreDefinition], for the reasons given there. Do not unify the
+	// two: MySQL's INSERT IGNORE suppresses far more than the duplicate key,
+	// which is exactly what makes it unusable for definitions.
 	InsertIgnorePrefix() string
 
 	// InsertIgnoreDefinition returns the conflict clause appended to the
@@ -88,8 +90,9 @@ type Dialect interface {
 	//
 	// Postgres/SQLite: " ON CONFLICT DO NOTHING". MySQL: "".
 	//
-	// The name is historical — the dedup site was the first caller. The
-	// clause is table-agnostic and the definition publish uses it too.
+	// The name is historical — the dedup site was the first caller — and the
+	// clause is table-agnostic. The definition publish does NOT use it; see
+	// [InsertIgnoreDefinition].
 	InsertIgnoreDedup() string
 
 	// JournalTriggerColumn returns the journal payload column name:

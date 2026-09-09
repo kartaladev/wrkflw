@@ -54,7 +54,9 @@ type InstanceStore interface {
 // implementation; consumers interact with it only through this interface.
 type DefinitionStore interface {
 	// PublishDefinition publishes a process definition as the immutable
-	// content of (ID, Version). There are exactly four outcomes:
+	// content of (ID, Version).
+	//
+	// The outcomes a caller will normally match on:
 	//
 	//   - nil — the version was inserted, OR it was already published with
 	//     IDENTICAL content. Republishing is an idempotent no-op, so a retry
@@ -70,12 +72,26 @@ type DefinitionStore interface {
 	//     in flight and uncommitted, so the outcome is not yet decidable.
 	//     Retry, with a bounded budget; a budget that expires is a bug report.
 	//
-	// Definition IDs and versions are bounded by kernel.ValidateDefinition to
-	// what every supported backend stores faithfully: at most
-	// kernel.MaxDefinitionIDRunes runes, valid UTF-8, no NUL byte, and a
-	// version no greater than kernel.MaxDefinitionVersion. Each bound is the
-	// narrowest of the three backend schemas, so a definition ACCEPTED by the
-	// gate is stored faithfully on all of them.
+	// Three further errors are possible and are NOT matchable through a
+	// sentinel re-exported here, because they indicate a programming error or
+	// an operational fault rather than a decision the caller can act on:
+	// kernel.ErrNilDefinition (nil def) and kernel.ErrEmptyDefinitionID (empty
+	// def.ID), both returned bare rather than wrapped in ErrInvalidDefinition,
+	// and a sentinel-free error when a stored row cannot be decoded at all.
+	//
+	// The two KEY columns are bounded by kernel.ValidateDefinition to what
+	// every supported backend stores faithfully: def.ID at most
+	// kernel.MaxDefinitionIDRunes runes, valid UTF-8 and free of NUL bytes, and
+	// def.Version no greater than kernel.MaxDefinitionVersion. Each bound is
+	// the narrowest of the three backend schemas, so an ID and version accepted
+	// by the gate are stored faithfully on all of them.
+	//
+	// That guarantee covers the key columns only, not the whole definition. The
+	// definition BODY is stored as JSON and has its own narrower domain that is
+	// not gated: a NUL byte inside a node name, for example, stores on MySQL
+	// and SQLite and is refused by Postgres with SQLSTATE 22P05. That fails
+	// closed — the publish errors rather than storing something altered — so it
+	// is stated here rather than enforced.
 	//
 	// One divergence the gate cannot close, stated because it is a real
 	// difference in behaviour between backends. On MySQL the def_id column
