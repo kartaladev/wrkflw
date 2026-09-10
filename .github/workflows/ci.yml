@@ -236,19 +236,19 @@ jobs:
       # and the cross-module form re-run AFTER the two clean ones still failed,
       # proving the cache was still poisoned rather than repaired by them.
       #
-      # The step list below is hand-written, so the check above is what keeps it
-      # honest: add a module and this job goes red until it gets its own step.
+      # The step list below is hand-written, so this check keeps it honest by
+      # READING THE STEPS. It parses this file's `lint` job, collects the
+      # working-directory of every golangci-lint-action step, and compares that
+      # to scripts/modules.sh.
+      #
+      # It reads the steps because the first version did not, and that version
+      # was vacuous: it diffed modules.sh against a hand-written literal inside
+      # the step itself — a third copy of the module list — so DELETING the
+      # entire `working-directory: examples` step and leaving the literal alone
+      # still exited 0. Measured, not argued. The check failed open in exactly
+      # the case its own error message named.
       - name: Assert every workspace module has a lint step
-        run: |
-          set -euo pipefail
-          # The working directories of the golangci-lint steps that follow.
-          linted="$(printf '%s\n' '.' 'examples')"
-          expected="$(scripts/modules.sh | awk '{ sub(/\/\.\.\.$/,""); sub(/^\.\//,""); print ($0=="" ? "." : $0) }')"
-          if ! diff <(printf '%s\n' "${expected}" | sort) <(printf '%s\n' "${linted}" | sort); then
-            echo "::error::a workspace module has no golangci-lint step in .github/workflows/ci.yml; it would be silently unlinted, and govet and gofmt with it" >&2
-            exit 1
-          fi
-          echo "modules linted: ${linted}"
+        run: bash scripts/check-lint-modules.sh
 
       - uses: golangci/golangci-lint-action@v9
         with:
@@ -258,6 +258,27 @@ jobs:
         with:
           version: v2.13.2
           working-directory: examples
+
+  module-drift:
+    name: module version drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # A Go workspace resolves the build by MVS over the UNION of its modules,
+      # so a version raised in examples/go.mod ALONE is the version the library
+      # is compiled and tested against. Nothing else catches it: a drifted
+      # go.mod is perfectly tidy, so the tidy step passes; scripts/modules.sh
+      # checks the module set and never versions; the build is green. Its own
+      # job so the failure is reported under a name that describes it, rather
+      # than reddening "golangci-lint". No Docker needed.
+      - name: Check for cross-module version drift
+        run: bash scripts/check-module-drift.sh
 
   govulncheck:
     name: govulncheck

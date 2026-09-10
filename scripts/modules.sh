@@ -28,6 +28,19 @@
 #   2. go.work's `use` set and the go.mod files on disk disagree in either
 #      direction, so adding a module without `go work use` is a red CI run
 #      rather than a package set that quietly shrinks;
+#
+#      GATE 2 ALSO PROTECTS A CALLER THAT NEVER RUNS THIS SCRIPT. CodeQL's Go
+#      autobuilder is workspace-aware and reads go.work itself — measured, base
+#      vs head of the commit that added it: the base log says "Found no go.work
+#      files ... Found 1 go.mod file(s)" and extracts with [./...]; the head log
+#      says "Found go.work file(s) in: go.work ... Found 2 go.mod file(s)" and
+#      extracts with [... ./... ./examples/...]; both extract the same 112
+#      wrkflw packages, 43 of them under examples/, and both report "CodeQL
+#      scanned 359 out of 974 Go files". So examples/ stays in CodeQL's view
+#      BECAUSE go.work lists it. A module on disk but absent from go.work would
+#      go unscanned with `analyze (go)` still green, and nothing in codeql.yml
+#      can notice — gate 2 is the only thing that does. Do not weaken it into a
+#      one-directional check;
 #   3. fewer than MIN_MODULES modules resolve;
 #   4. the root module is missing from the result.
 #

@@ -24,8 +24,21 @@ This repository is a Go **workspace**: `go.work` uses the root module and `./exa
 does not widen `./...` — run from the repo root it still means the root module alone (69 packages
 here, against 112 across both modules), so a bare `./...` builds and tests a subset **and exits 0**.
 `scripts/modules.sh` prints one package pattern per module and refuses to print an empty or short
-list; capture it into a variable rather than inlining `$(...)`, because a failed command
-substitution inside a simple command does not trip `set -e`.
+list.
+
+Two rules apply to using it, and they pull against each other, so the form below satisfies both.
+**Capture it into a variable** rather than inlining `$(...)` in the command itself: a command
+substitution that fails inside a simple command does not trip `set -e`, and `go build` with no
+arguments exits 0. But **`${mods}` alone does not word-split under zsh**, which is macOS's default
+shell — `go build ${mods}` there passes one argument containing a newline and prints
+`go: warning: "./...\n./examples/..." matched no packages` **with exit 0**, the very failure this
+tooling exists to prevent. So capture first, then re-split through a command substitution, which
+splits under both shells:
+
+```bash
+mods="$(scripts/modules.sh)"                     # fails loudly if it cannot vouch for the list
+for pat in $(printf '%s\n' "${mods}"); do ... done
+```
 
 Lint is the one command that must be run **per module, from inside the module**, rather than with a
 cross-module pattern list. golangci-lint keys its cache by content and an entry carries the file
@@ -37,24 +50,30 @@ finding is reported. Running from inside the module is clean against the very sa
 the same, one `golangci-lint-action` step per module.
 
 ```bash
-mods="$(scripts/modules.sh)"                     # ./... ./examples/...
-go build ${mods}                                 # build every module
-go test -race ${mods}                            # full suite (needs Docker)
+mods="$(scripts/modules.sh)"; r="$PWD"           # ./... ./examples/...
+for pat in $(printf '%s\n' "${mods}"); do go build "${pat}"; done          # build every module
+for pat in $(printf '%s\n' "${mods}"); do go test -race "${pat}"; done     # full suite (Docker)
 go test ./<package>/...                          # one package, e.g. ./engine/...
-r="$PWD"; for d in $(scripts/modules.sh); do (cd "${d%/...}" && "$r"/scripts/lint.sh ./...); done
+for pat in $(printf '%s\n' "${mods}"); do (cd "${pat%/...}" && "$r"/scripts/lint.sh ./...); done
 scripts/coverage.sh                              # race suite + coverage total, all modules
+scripts/check-module-drift.sh                    # no module raises a version the root does not
 ```
 
-CI also runs three repo-specific checks. None needs Docker, so run them locally before pushing:
+CI runs the same commands; it uses the plain `${mods}` split because GitHub Actions' default shell
+is `bash -e {0}`.
+
+CI also runs five repo-specific checks. None needs Docker, so run them locally before pushing:
 
 ```bash
 scripts/check-extraction.sh                      # internal/database stays extractable
 scripts/check-test-timeout.sh                    # test wait budgets fit go test -timeout
 scripts/check-doc-refs.sh                        # no citations of deleted documents in *.go
+scripts/check-module-drift.sh                    # no nested module raises a version for the library
+scripts/check-lint-modules.sh                    # every workspace module has a golangci-lint step
 ```
 
-The first needs the Go toolchain (`go list -deps`, which may hit the network on a cold module
-cache). The other two are pure bash + git + grep.
+The first, fourth and fifth need the Go toolchain (`go list`, which may hit the network on a cold
+module cache). `check-test-timeout.sh` and `check-doc-refs.sh` are pure bash + git + grep.
 
 `scripts/lint.sh` is a local wrapper, not a fourth CI check. It runs `golangci-lint` under a
 `GOLANGCI_LINT_CACHE` derived from this worktree's root, and fails if a finding is attributed to a

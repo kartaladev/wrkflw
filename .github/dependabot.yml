@@ -1,5 +1,23 @@
 version: 2
 updates:
+  # ONE gomod entry covers the whole workspace, and it must stay that way.
+  #
+  # This repository is a Go workspace (go.work uses `.` and `./examples`).
+  # dependabot-core's gomod file fetcher accepts go.work as a manifest, fetches
+  # every `use` directory's go.mod and go.sum with it, and its updater runs
+  # `go work sync` before tidying each member — so a single "/" entry raises a
+  # version across every module in ONE pull request, which is the only way it
+  # is safe to raise it at all.
+  #
+  # DO NOT add a second entry for a nested module. There is no go.work beneath
+  # examples/, so a `directory: "/examples"` entry takes the single-module path
+  # and raises a version in examples/go.mod ALONE. Under go.work that is a
+  # version the LIBRARY is compiled and tested against (MVS runs over the union
+  # of the workspace), while root go.mod still declares the old one — the drift
+  # scripts/check-module-drift.sh exists to catch. Such an entry was added in
+  # the commit that created examples/go.mod, to close a fail-open, and was the
+  # only configured mechanism that manufactured one; it was removed before
+  # merge.
   - package-ecosystem: gomod
     directory: "/"
     schedule:
@@ -21,29 +39,6 @@ updates:
       # fails to compile. scheduler/internal/gocron/bump_regression_test.go
       # locks the current semantics; take a bump only by hand, with that test
       # green.
-      - dependency-name: "github.com/go-co-op/gocron/v2"
-
-  # examples/ is its own module (go.work `use ./examples`). Dependabot's gomod
-  # ecosystem is per-DIRECTORY and stops at a nested go.mod, so the "/" entry
-  # above cannot see examples/go.mod: without this second entry that module's
-  # dependencies would never be updated and never be flagged — silently, since
-  # the absence of a PR looks exactly like nothing to update.
-  #
-  # examples/go.mod deliberately pins the SAME versions as the root module
-  # (measured: zero drift across the 129 shared requirements at the commit that
-  # split it out), because go.work resolves the workspace build by MVS over the
-  # union — a version raised here is a version the library is built against
-  # locally and in CI. Keep the two in step when taking these PRs.
-  - package-ecosystem: gomod
-    directory: "/examples"
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: "chore(deps)"
-    ignore:
       - dependency-name: "github.com/go-co-op/gocron/v2"
 
   - package-ecosystem: github-actions
