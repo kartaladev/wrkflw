@@ -6,7 +6,7 @@ replace github.com/kartaladev/wrkflw => ../
 
 require (
 	github.com/gin-gonic/gin v1.12.0
-	github.com/go-sql-driver/mysql v1.10.0
+	github.com/go-sql-driver/mysql v1.10.1
 	github.com/gofiber/fiber/v3 v3.4.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jonboulle/clockwork v0.5.0
