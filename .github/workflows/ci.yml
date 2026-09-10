@@ -24,8 +24,24 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build
-        run: go build ./...
+      # `./...` is the ROOT MODULE ONLY. This repository is a Go workspace
+      # (go.work: `.` and `./examples`) and a workspace does NOT widen `./...`
+      # — measured on this tree, `go list ./...` returns 69 packages and none
+      # of them is under examples/, while `go list ./... ./examples/...`
+      # returns 112. So a bare `./...` here would not FAIL after the module
+      # split; it would succeed having compiled 43 fewer packages.
+      #
+      # scripts/modules.sh turns the workspace into one package pattern per
+      # module and refuses to emit an empty or short list. Capture it into a
+      # variable rather than inlining `$(...)`: a command substitution that
+      # fails inside a simple command does not trip `set -e`, and `go build`
+      # with no arguments exits 0.
+      - name: Build (every workspace module)
+        run: |
+          set -euo pipefail
+          mods="$(scripts/modules.sh)"
+          echo "package patterns: ${mods}"
+          go build ${mods}
 
       # Blocker 7: internal/dbtest boots its containers from a package-level
       # sync.Once and Go builds one test binary per package, so `go test ./...`
@@ -59,8 +75,23 @@ jobs:
       # x the densest package's site count must stay under it.
       # scripts/check-test-timeout.sh now does, reading this literal and the
       # identical one in scripts/coverage.sh. Change both together.
+      #
+      # The pattern list spans every workspace module, so `examples/migrate` —
+      # the only test outside the root module — actually runs. A single
+      # invocation over several modules writes ONE merged coverprofile
+      # (verified: rows from both modules under one `mode:` header), so the
+      # coverage step below is unchanged and the measured domain stays what a
+      # pre-split `./...` covered.
+      #
+      # -timeout=600s stays an INLINE LITERAL: scripts/check-test-timeout.sh
+      # greps this file for it and hard-fails if it is absent or disagrees with
+      # scripts/coverage.sh. Do not hoist it into a variable, and do not
+      # replace this step with a call to scripts/coverage.sh.
       - name: Test (race + coverage)
-        run: go test -race -timeout=600s -coverprofile=cover.out ./...
+        run: |
+          set -euo pipefail
+          mods="$(scripts/modules.sh)"
+          go test -race -timeout=600s -coverprofile=cover.out ${mods}
 
       - name: Coverage summary (excludes generated files)
         run: scripts/coverage.sh cover.out
@@ -146,10 +177,24 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Verify go.mod is tidy
+      # Per MODULE, not per repository: `go mod tidy` only ever touches the
+      # module rooted at the working directory, so a single call at the root
+      # left examples/go.mod unchecked — and an untidy nested go.mod is exactly
+      # the drift that makes a workspace stop reproducing outside it. The diff
+      # pathspec is a glob over every go.mod/go.sum in the tree plus go.work,
+      # so a module added later is covered the day it appears rather than the
+      # day someone remembers to extend a list. (`:(glob)**/go.mod` matches the
+      # root go.mod as well as nested ones — verified with `git ls-files`.)
+      - name: Verify every module's go.mod is tidy
         run: |
-          go mod tidy
-          git diff --exit-code -- go.mod go.sum
+          set -euo pipefail
+          mods="$(scripts/modules.sh)"
+          for pat in ${mods}; do
+            dir="${pat%/...}"
+            echo "go mod tidy in ${dir}"
+            ( cd "${dir}" && go mod tidy )
+          done
+          git diff --exit-code -- go.work ':(glob)**/go.mod' ':(glob)**/go.sum'
 
       # Pinned deliberately, on both axes.
       #
@@ -165,9 +210,25 @@ jobs:
       # `version: latest` is what let that drift in silently: the resolved
       # binary changed under us with no diff. An exact version means a lint
       # result only changes when this line does.
+      # golangci-lint has no workspace-wide mode; the fix is extra package
+      # patterns, which is one process and one cache rather than a loop of N.
+      #
+      # This step is also what makes `go vet` and `gofmt` cover both modules:
+      # neither runs as its own CI step anywhere, they reach CI only through
+      # .golangci.yml's `default: standard` and its `formatters` block. So a
+      # lint job scoped to the root module silently unscoped vet and gofmt too.
+      - name: Enumerate workspace modules
+        id: mods
+        run: |
+          set -euo pipefail
+          patterns="$(scripts/modules.sh | tr '\n' ' ')"
+          [ -n "${patterns}" ] || { echo "modules.sh produced no patterns" >&2; exit 1; }
+          echo "patterns=${patterns}" >> "$GITHUB_OUTPUT"
+
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.13.2
+          args: ${{ steps.mods.outputs.patterns }}
 
   govulncheck:
     name: govulncheck
@@ -187,10 +248,20 @@ jobs:
       # finding is reported against the toolchain that built the code, so the
       # `go` directive in go.mod is the real input here; setup-go above reads it
       # via go-version-file.
+      #
+      # `govulncheck ./...` scans the ROOT MODULE ONLY under a workspace, and
+      # prints "No vulnerabilities found" while doing it — a clean bill of
+      # health for code it never looked at is the worst result this workflow
+      # can produce. The patterns come from scripts/modules.sh, which cannot
+      # emit an empty list. (`go install pkg@version` is workspace-independent,
+      # so the install line is unaffected by go.work.)
       - name: Run govulncheck
         run: |
+          set -euo pipefail
           go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
-          govulncheck ./...
+          mods="$(scripts/modules.sh)"
+          echo "package patterns: ${mods}"
+          govulncheck ${mods}
 
   dependency-review:
     name: dependency review

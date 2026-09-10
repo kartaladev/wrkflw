@@ -9,8 +9,8 @@ coverage.*
 # coverage.sh is source, not a coverage artifact (would otherwise match coverage.*)
 !/scripts/coverage.sh
 
-# Go workspace
-go.work
+# Go workspace: go.work is TRACKED — it is what makes the multi-module build
+# (root + examples) resolve locally and in CI. Only the generated sum is ignored.
 go.work.sum
 
 # Editor / OS

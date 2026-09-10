@@ -20,12 +20,20 @@ when a change trades library ergonomics for server convenience, library ergonomi
 
 ## Local workflow
 
+This repository is a Go **workspace**: `go.work` uses the root module and `./examples`. A workspace
+does not widen `./...` — run from the repo root it still means the root module alone (69 packages
+here, against 112 across both modules), so a bare `./...` builds and tests a subset **and exits 0**.
+`scripts/modules.sh` prints one package pattern per module and refuses to print an empty or short
+list; capture it into a variable rather than inlining `$(...)`, because a failed command
+substitution inside a simple command does not trip `set -e`.
+
 ```bash
-go build ./...                                   # build everything
-go test -race ./...                              # full suite (needs Docker)
+mods="$(scripts/modules.sh)"                     # ./... ./examples/...
+go build ${mods}                                 # build every module
+go test -race ${mods}                            # full suite (needs Docker)
 go test ./<package>/...                          # one package, e.g. ./engine/...
-scripts/lint.sh ./...                            # lint — must be clean before a PR
-go test -race -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1
+scripts/lint.sh ${mods}                          # lint — must be clean before a PR
+scripts/coverage.sh                              # race suite + coverage total, all modules
 ```
 
 CI also runs three repo-specific checks. None needs Docker, so run them locally before pushing:
@@ -60,7 +68,8 @@ a verdict, because a self-test that refuses to lint is worse than the defect it 
   symbols and behavioural changes must be preceded by a failing test. See `CLAUDE.md` for the full
   TDD discipline this repo follows.
 - **Coverage.** Touched packages should stay at **≥ 85%** line coverage.
-- **Lint clean.** `scripts/lint.sh ./...` must report zero issues.
+- **Lint clean.** `scripts/lint.sh $(scripts/modules.sh)` must report zero issues. `./...` alone
+  covers the root module only; see the workspace note under *Local workflow*.
 - **Design decisions.** Record the rationale in the commit message and the PR body, and state the
   constraint it produced as a comment on the code it constrains — naming an identifier a reader can
   jump to (`ErrScopeLocalWithCompensateRef`), never a document. This repo keeps no ADR directory;

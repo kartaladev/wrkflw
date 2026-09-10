@@ -13,6 +13,16 @@
 #   scripts/coverage.sh              # run the race suite, then print the filtered total
 #   scripts/coverage.sh cover.out    # reuse an existing coverprofile, print the filtered total
 #
+# MULTI-MODULE NOTE. Coverprofile rows carry full IMPORT paths
+# (github.com/kartaladev/wrkflw/examples/migrate/main.go:...), while the
+# generated-file list below holds repo-RELATIVE paths (examples/migrate/...).
+# The filter is `grep -vF`, a fixed SUBSTRING match, and every module path here
+# is the repo path plus the module's directory, so the relative path is always
+# a suffix of the import path and the filter keeps working across modules
+# unchanged. It would break only if a module's path stopped following that
+# rule. The `grep -r . ` that builds the list walks the whole worktree, so it
+# already sees generated files in every module (today: none under examples/).
+#
 # Kept POSIX-bash-friendly (no mapfile/associative arrays) so it runs under the
 # bash 3.2 that ships on macOS as well as CI's bash 5.
 set -euo pipefail
@@ -28,7 +38,20 @@ GO_TEST_TIMEOUT="${GO_TEST_TIMEOUT:-600s}"
 profile="${1:-}"
 if [[ -z "${profile}" ]]; then
   profile="cover.out"
-  go test -race -timeout="${GO_TEST_TIMEOUT}" -coverprofile="${profile}" ./...
+  # `./...` alone would measure the ROOT MODULE ONLY. This repository is a Go
+  # workspace (go.work: `.` and `./examples`), and a workspace does not widen
+  # `./...` — measured, 69 packages here against 112 across both patterns. A
+  # coverage total computed over a subset reads exactly like one computed over
+  # the whole tree, so the pattern list comes from scripts/modules.sh, which
+  # refuses to emit an empty or short one.
+  #
+  # ONE invocation, so ONE profile: `go test -coverprofile` spanning patterns
+  # from several modules writes a single merged coverprofile (verified — rows
+  # from both modules, one `mode:` header). No per-module profiles and no merge
+  # step, which also keeps the measured DOMAIN identical to what a pre-split
+  # `./...` covered, so the reported number stays comparable across the split.
+  patterns="$("$(dirname "${BASH_SOURCE[0]}")/modules.sh")"
+  go test -race -timeout="${GO_TEST_TIMEOUT}" -coverprofile="${profile}" ${patterns}
 fi
 
 if [[ ! -f "${profile}" ]]; then

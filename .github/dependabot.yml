@@ -23,6 +23,29 @@ updates:
       # green.
       - dependency-name: "github.com/go-co-op/gocron/v2"
 
+  # examples/ is its own module (go.work `use ./examples`). Dependabot's gomod
+  # ecosystem is per-DIRECTORY and stops at a nested go.mod, so the "/" entry
+  # above cannot see examples/go.mod: without this second entry that module's
+  # dependencies would never be updated and never be flagged — silently, since
+  # the absence of a PR looks exactly like nothing to update.
+  #
+  # examples/go.mod deliberately pins the SAME versions as the root module
+  # (measured: zero drift across the 129 shared requirements at the commit that
+  # split it out), because go.work resolves the workspace build by MVS over the
+  # union — a version raised here is a version the library is built against
+  # locally and in CI. Keep the two in step when taking these PRs.
+  - package-ecosystem: gomod
+    directory: "/examples"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    ignore:
+      - dependency-name: "github.com/go-co-op/gocron/v2"
+
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
