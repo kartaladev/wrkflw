@@ -9,9 +9,17 @@
 # go.mod still declares the old one. A reviewer reads the diff as "just the
 # demos" and it is not.
 #
+# The same is true of a `replace` in a non-root module, and for the same
+# reason: in workspace mode every `use`d module is a main module, so its
+# `replace` directives apply to the whole workspace build.
+#
 # NOTHING ELSE CATCHES IT, and that was measured rather than assumed. With a
 # COMMITTED examples-only raise of github.com/jackc/pgx/v5 from v5.10.0 to
-# v5.11.0, root go.mod untouched:
+# v5.11.0 — examples/go.mod AND the go.sum that `go mod tidy` rewrites for it,
+# committed together, which is the shape Dependabot produces — root go.mod
+# untouched. (Commit examples/go.mod ALONE and this recipe does not reproduce:
+# tidy rewrites examples/go.sum, so the tidy step's `git diff --exit-code`
+# returns 1 and that step goes red for the wrong reason.)
 #
 #   go list -m github.com/jackc/pgx/v5                     -> v5.11.0
 #   go list -deps ./internal/database/ | grep pgx          -> v5.11.0  (library code)
@@ -32,6 +40,9 @@
 #
 #   workspace : go list -m all              (MVS over every workspace module)
 #   root-only : GOWORK=off go list -m all   (MVS over the root module alone)
+#
+# keyed on path + selected version + replacement, so a `replace` that silently
+# redirects the library's build is a difference rather than a match.
 #
 # Restricted to modules the ROOT's own graph contains — a module only the
 # examples need is legitimately extra and cannot affect the library. Any
@@ -80,8 +91,22 @@ rm -f "${st_ro}" "${st_ws}"
   Refusing to report a clean tree from an instrument that cannot detect a dirty one."
 
 # --- the real measurement --------------------------------------------------
-go list -m -f '{{.Path}} {{.Version}}' all > "${ws}"
-GOWORK=off go list -m -f '{{.Path}} {{.Version}}' all > "${ro}"
+# The key is path + selected version + ANY REPLACEMENT. The replacement half is
+# not decoration: `{{.Version}}` prints the SELECTED version, which a `replace`
+# does not change, so a format without it compared v5.10.0 against v5.10.0 and
+# printed "every one selects the same version" over a tree where the library
+# was compiling v5.11.0. In workspace mode every `use`d module is a main
+# module, so a `replace` in examples/go.mod redirects the ROOT library's build.
+# That is worse than having no guard for the case: a green check-run becomes
+# affirmative evidence for a property that does not hold.
+#
+# The local `replace github.com/kartaladev/wrkflw => ../` in examples/go.mod
+# does not false-positive on this, and that direction was tested too: the
+# examples module is not in the root module's own graph, and the comparison
+# below is an inner join over that graph.
+FMT='{{.Path}} {{.Version}}{{with .Replace}}=>{{.Path}}@{{.Version}}{{end}}'
+go list -m -f "${FMT}" all > "${ws}"
+GOWORK=off go list -m -f "${FMT}" all > "${ro}"
 
 ws_n="$(grep -c . "${ws}" || true)"
 ro_n="$(grep -c . "${ro}" || true)"
@@ -94,7 +119,8 @@ shared="$(join -j 1 -o 0 <(sort -k1,1 "${ro}") <(sort -k1,1 "${ws}") | grep -c .
   That is a measurement failure, not a clean result — the comparison had nothing to compare."
 
 if [ -s "${drift}" ]; then
-  echo "ERROR: a non-root workspace module raises a version the root module does not select." >&2
+  echo "ERROR: a non-root workspace module makes the build resolve differently from the root module." >&2
+  echo "(a raised version, or a 'replace' redirecting one — the right-hand column shows which)" >&2
   echo >&2
   printf '  %-48s %-24s %s\n' 'MODULE' 'ROOT-ALONE SELECTS' 'WORKSPACE SELECTS' >&2
   while read -r m rv wv; do
@@ -110,10 +136,10 @@ if [ -s "${drift}" ]; then
   echo "build is green. The checksum of the version actually used is recorded only in" >&2
   echo "go.work.sum, which is gitignored." >&2
   echo >&2
-  echo "Fix by moving BOTH modules together — raise the root go.mod to the same version" >&2
-  echo "(deliberately, with the library's tests run against it), or lower the other" >&2
-  echo "module back. Never leave the two apart." >&2
+  echo "Fix by moving BOTH modules together — raise the root go.mod to the same version," >&2
+  echo "or give it the same replace (deliberately, with the library's tests run against" >&2
+  echo "it) — or revert the other module. Never leave the two apart." >&2
   exit 1
 fi
 
-echo "OK: ${shared} modules shared between the root module's graph and the workspace's; every one selects the same version. Root-alone graph ${ro_n} modules, workspace graph ${ws_n}."
+echo "OK: ${shared} modules shared between the root module's graph and the workspace's; every one resolves to the same version and the same replacement. Root-alone graph ${ro_n} modules, workspace graph ${ws_n}."
