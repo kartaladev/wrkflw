@@ -9,8 +9,23 @@ coverage.*
 # coverage.sh is source, not a coverage artifact (would otherwise match coverage.*)
 !/scripts/coverage.sh
 
-# Go workspace
-go.work
+# Go workspace: go.work is TRACKED — it is what makes the multi-module build
+# (root + examples) resolve locally and in CI. Only the generated sum is ignored.
+#
+# With drift at zero the workspace needs no go.work.sum at all — verified: delete
+# it and `go build` over both modules still exits 0, and it is not recreated.
+# scripts/check-module-drift.sh is what keeps drift at zero.
+#
+# What ignoring it does NOT cost, stated precisely because the first version of
+# this comment overstated it: on the path Dependabot actually takes — raise a
+# requirement, then `go mod tidy` — the module-ZIP hash of the version compiled
+# into the library lands in TRACKED examples/go.sum, so it is in the diff and in
+# the tidy step's pathspec. Measured with an examples-only pgx v5.10.0 -> v5.11.0
+# plus tidy: the `v5.11.0 h1:` zip hash appears in examples/go.sum and not in the
+# root go.sum, and the go.work.sum such a run generates held only `/go.mod`
+# hashes — module-graph metadata, no compilable code. A bare `go mod edit` with
+# no tidy is the case where the pin would be untracked, and it is not a shape any
+# tool here produces.
 go.work.sum
 
 # Editor / OS

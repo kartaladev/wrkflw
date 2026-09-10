@@ -19,8 +19,6 @@ import (
 	"github.com/kartaladev/wrkflw/action"
 	"github.com/kartaladev/wrkflw/authz"
 	"github.com/kartaladev/wrkflw/humantask"
-	"github.com/kartaladev/wrkflw/persistence"
-	"github.com/kartaladev/wrkflw/persistence/cache/hotcache"
 	"github.com/kartaladev/wrkflw/runtime"
 	"github.com/kartaladev/wrkflw/runtime/calllink"
 	"github.com/kartaladev/wrkflw/runtime/chain"
@@ -67,16 +65,6 @@ func MustTaskService(t *testing.T, store humantask.TaskStore, az authz.Authorize
 	svc, err := task.NewTaskService(store, az, opts...)
 	require.NoError(t, err)
 	return svc
-}
-
-// MustCachingStore builds a persistence.CachingInstanceStore or fails the test.
-func MustCachingStore(t *testing.T, backing kernel.InstanceStore, owner kernel.InstanceOwnership, opts ...persistence.CachingInstanceStoreOption) *persistence.CachingInstanceStore {
-	t.Helper()
-	s, err := persistence.NewCachingInstanceStore(backing, owner, hotcache.New(), opts...)
-	if err != nil {
-		t.Fatalf("new caching store: %v", err)
-	}
-	return s
 }
 
 // MustCachingDefinitionRegistry builds a CachingDefinitionRegistry or fails the test.
