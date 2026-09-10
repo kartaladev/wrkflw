@@ -104,7 +104,7 @@ require (
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/samber/go-singleflightx v0.3.2 // indirect
-	github.com/samber/hot v0.13.0 // indirect
+	github.com/samber/hot v0.13.1 // indirect
 	github.com/sethvargo/go-retry v0.4.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.6 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
