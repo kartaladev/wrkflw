@@ -210,25 +210,54 @@ jobs:
       # `version: latest` is what let that drift in silently: the resolved
       # binary changed under us with no diff. An exact version means a lint
       # result only changes when this line does.
-      # golangci-lint has no workspace-wide mode; the fix is extra package
-      # patterns, which is one process and one cache rather than a loop of N.
+      # golangci-lint has no workspace-wide mode, and this job is the ONLY path
+      # by which govet and gofmt reach CI at all — neither runs as its own step
+      # anywhere, they arrive through .golangci.yml's `default: standard` and
+      # its `formatters` block. So a lint job scoped to the root module
+      # silently unscopes vet and gofmt too, and every module needs a step.
       #
-      # This step is also what makes `go vet` and `gofmt` cover both modules:
-      # neither runs as its own CI step anywhere, they reach CI only through
-      # .golangci.yml's `default: standard` and its `formatters` block. So a
-      # lint job scoped to the root module silently unscoped vet and gofmt too.
-      - name: Enumerate workspace modules
-        id: mods
+      # ONE STEP PER MODULE, run from inside the module — NOT one step with a
+      # cross-module pattern list. That is measured, not a style preference.
+      # golangci-lint keys its cache by CONTENT and an entry carries the file
+      # path as first seen; that is the #146 defect scripts/lint.sh exists for.
+      # An entry warmed on a PRE-SPLIT tree, where examples/migrate/main.go sat
+      # in the ROOT module, is re-read after the split as belonging to the
+      # `examples` module and has the module directory prefixed AGAIN:
+      # `examples/examples/migrate/main.go`. Nothing exists at that path, so
+      # the nolint processor cannot read the file, the `//nolint:errorlint` on
+      # examples/migrate/main.go:78 is silently dropped, and a PHANTOM finding
+      # is reported. Reproduced deterministically with v2.13.2, one cache warmed
+      # from a pre-split `golangci-lint run ./...`:
+      #
+      #   run ./... ./examples/...    -> 1 phantom issue, path doubled, exit 1
+      #   run ./...     (from root)   -> 0 issues
+      #   run ./...     (from examples/) -> 0 issues
+      #
+      # and the cross-module form re-run AFTER the two clean ones still failed,
+      # proving the cache was still poisoned rather than repaired by them.
+      #
+      # The step list below is hand-written, so the check above is what keeps it
+      # honest: add a module and this job goes red until it gets its own step.
+      - name: Assert every workspace module has a lint step
         run: |
           set -euo pipefail
-          patterns="$(scripts/modules.sh | tr '\n' ' ')"
-          [ -n "${patterns}" ] || { echo "modules.sh produced no patterns" >&2; exit 1; }
-          echo "patterns=${patterns}" >> "$GITHUB_OUTPUT"
+          # The working directories of the golangci-lint steps that follow.
+          linted="$(printf '%s\n' '.' 'examples')"
+          expected="$(scripts/modules.sh | awk '{ sub(/\/\.\.\.$/,""); sub(/^\.\//,""); print ($0=="" ? "." : $0) }')"
+          if ! diff <(printf '%s\n' "${expected}" | sort) <(printf '%s\n' "${linted}" | sort); then
+            echo "::error::a workspace module has no golangci-lint step in .github/workflows/ci.yml; it would be silently unlinted, and govet and gofmt with it" >&2
+            exit 1
+          fi
+          echo "modules linted: ${linted}"
 
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.13.2
-          args: ${{ steps.mods.outputs.patterns }}
+
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.2
+          working-directory: examples
 
   govulncheck:
     name: govulncheck

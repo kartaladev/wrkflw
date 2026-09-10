@@ -27,12 +27,21 @@ here, against 112 across both modules), so a bare `./...` builds and tests a sub
 list; capture it into a variable rather than inlining `$(...)`, because a failed command
 substitution inside a simple command does not trip `set -e`.
 
+Lint is the one command that must be run **per module, from inside the module**, rather than with a
+cross-module pattern list. golangci-lint keys its cache by content and an entry carries the file
+path as first seen (the defect `scripts/lint.sh` exists for): an entry warmed while
+`examples/migrate/main.go` was still in the root module is re-read afterwards as belonging to the
+`examples` module and has the module directory prefixed again — `examples/examples/migrate/main.go`.
+Nothing exists at that path, so the file's `//nolint` directives are silently dropped and a phantom
+finding is reported. Running from inside the module is clean against the very same cache. CI does
+the same, one `golangci-lint-action` step per module.
+
 ```bash
 mods="$(scripts/modules.sh)"                     # ./... ./examples/...
 go build ${mods}                                 # build every module
 go test -race ${mods}                            # full suite (needs Docker)
 go test ./<package>/...                          # one package, e.g. ./engine/...
-scripts/lint.sh ${mods}                          # lint — must be clean before a PR
+r="$PWD"; for d in $(scripts/modules.sh); do (cd "${d%/...}" && "$r"/scripts/lint.sh ./...); done
 scripts/coverage.sh                              # race suite + coverage total, all modules
 ```
 
@@ -68,8 +77,8 @@ a verdict, because a self-test that refuses to lint is worse than the defect it 
   symbols and behavioural changes must be preceded by a failing test. See `CLAUDE.md` for the full
   TDD discipline this repo follows.
 - **Coverage.** Touched packages should stay at **≥ 85%** line coverage.
-- **Lint clean.** `scripts/lint.sh $(scripts/modules.sh)` must report zero issues. `./...` alone
-  covers the root module only; see the workspace note under *Local workflow*.
+- **Lint clean.** Every module must report zero issues; see the per-module loop under
+  *Local workflow*. `./...` alone covers the root module only.
 - **Design decisions.** Record the rationale in the commit message and the PR body, and state the
   constraint it produced as a comment on the code it constrains — naming an identifier a reader can
   jump to (`ErrScopeLocalWithCompensateRef`), never a document. This repo keeps no ADR directory;
