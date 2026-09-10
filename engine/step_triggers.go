@@ -503,6 +503,17 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 		}
 		// Terminal exhaustion: precedence is (1) catch-flow → (2) error
 		// boundary → (3) incident.
+		//
+		// ⚠ The rf != "" test is LOAD-BEARING for the flowRefByID lookup further
+		// down this block, not merely a "was one configured?" test. An authored
+		// flow ID is not a key — definition/model exempts blank IDs from
+		// ErrDuplicateFlowID and refuses a blank one nowhere — so a blank rf
+		// reaching that lookup would match the first blank-ID flow in the
+		// definition and route the token to an unrelated node, which is what
+		// #212 was at the boundary site. Because rf is declared by this if's
+		// init statement, the lookup is lexically inside the non-blank branch
+		// and cannot be reached with a blank value; widening this condition, or
+		// hoisting rf out of it, removes that protection.
 		if rf := recoveryFlowOf(node); rf != "" {
 			// (1) Catch-flow: inject error context onto instance variables and
 			// route the failing token down RecoveryFlow.
@@ -555,6 +566,12 @@ func handleActionFailed(ctx context.Context, def *model.ProcessDefinition, s *In
 			// _error variable injection is skipped (no ErrorCode field on activities).
 			// Resolve the RecoveryFlow target (mirror the DeadlineFlow routing in
 			// handleDeadlineFired: scan the scope def's flows for the flow ID).
+			// rf is non-blank here by the enclosing if's init statement — see the
+			// note on it. model.Validate licenses this reference on TWO keys
+			// (f.ID == rf && f.Source == n.ID()); this lookup uses the ID alone,
+			// which agrees for a validated definition because a non-blank ID is
+			// unique, and is weaker than its licence for one that never passed
+			// the gate.
 			var target, recoveryIdentity string
 			if ref, ok := flowRefByID(tdef, rf); ok {
 				target = ref.Flow.Target
