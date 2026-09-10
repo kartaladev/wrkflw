@@ -23,8 +23,9 @@
 //  1. Opens a database and applies schema migrations idempotently.
 //  2. Defines a predecessor process (proc-a) and a successor (proc-a-succ).
 //  3. Wires: ProcessDriver + Chainer + ChainerRunner + in-process pub/sub + Relay.
-//  4. Starts the ChainerRunner goroutine, which must subscribe before the relay
-//     publishes — an ordering this example relies on but cannot enforce.
+//  4. Starts the chaining subscriptions with Chainer.Start, which returns only
+//     once all three terminal topics are live — so the relay publish below
+//     cannot outrun them.
 //  5. Runs the predecessor instance "demo-pred" to completion.
 //  6. Drains the relay once to publish the terminal outbox event.
 //  7. Polls (≤10 s) until the successor "demo-pred-next-completed" appears.
@@ -278,9 +279,8 @@ func run(logger *slog.Logger) error {
 	// ── Wire the in-process pub/sub first — relay and ChainerRunner both need it ─
 	//
 	// The bus is non-persistent: envelopes published to a topic nobody has
-	// subscribed yet are dropped. The ChainerRunner goroutine started below is
-	// expected to subscribe before DrainOnce runs, but nothing enforces that —
-	// see the note there.
+	// subscribed yet are dropped. Chainer.Start below closes that window by
+	// returning only once every terminal topic is live — see the note there.
 	bus := eventing.NewInProcess(eventing.WithLogger(logger))
 	defer func() { _ = bus.Close() }()
 
@@ -331,18 +331,20 @@ func run(logger *slog.Logger) error {
 	}
 	cr := eventing.NewChainerRunner(core)
 
-	// ── Start the ChainerRunner goroutine BEFORE any relay publish ────────────
+	// ── Bring the chaining subscriptions up BEFORE any relay publish ──────────
 	//
-	// The bus is non-persistent, so an envelope published before Run's
-	// subscriptions exist is dropped. Starting the goroutine here does NOT
-	// enforce that ordering — it only makes it overwhelmingly likely, since the
-	// predecessor instance runs against a real database before the drain below.
-	// Chainer.Run has no readiness signal to wait on (unlike InProcess.Start,
-	// which returns once its subscription is live), so an example cannot close
-	// the window; the poll further down has a deadline and reports it as a clear
-	// timeout if it ever loses the race.
-	done := make(chan error, 1)
-	go func() { done <- cr.Run(ctx, bus) }()
+	// The bus is non-persistent, so an envelope published before the chaining
+	// subscriptions exist is dropped. Chainer.Start ENFORCES the ordering rather
+	// than making it likely: it returns only once all three terminal topics are
+	// live, so nothing below can outrun it. That is the guarantee Chainer.Run
+	// cannot give — Run takes a bare Subscriber, whose Subscribe blocks and
+	// registers internally, leaving no edge to sequence against — and it matters
+	// here because DrainOnce publishes each outbox row exactly once.
+	stopChaining, err := cr.Start(ctx, bus)
+	if err != nil {
+		return fmt.Errorf("start chaining subscriptions: %w", err)
+	}
+	defer stopChaining()
 
 	// ── Run the predecessor instance to completion ────────────────────────────
 	predID := "demo-pred"
@@ -398,7 +400,7 @@ func run(logger *slog.Logger) error {
 	fmt.Printf("chain link recorded: predecessor=%s → successor=%s (outcome=%s)\n",
 		link.PredecessorID, link.SuccessorID, link.Outcome)
 
-	cancel() // stop the ChainerRunner goroutine
-	<-done   // wait for it to drain
+	// stopChaining (deferred above) ends all three subscriptions and joins their
+	// delivery loops, so nothing is left running when this returns.
 	return nil
 }

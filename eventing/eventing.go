@@ -44,10 +44,13 @@
 //
 // The subscriber side of process-instance chaining lives here so runtime keeps
 // no messaging concerns: [NewChainHandler] adapts a runtime.Chainer to a
-// [Handler] you mount on your own subscription, and [NewChainerRunner] /
-// [Chainer.Run] is a turnkey wrapper that subscribes the three status-accurate
-// terminal topics ([TopicInstanceCompleted], [TopicInstanceFailed],
-// [TopicInstanceTerminated]) and drives the chaining core.
+// [Handler] you mount on your own subscription, and [NewChainerRunner] is a
+// turnkey wrapper that subscribes the three status-accurate terminal topics
+// ([TopicInstanceCompleted], [TopicInstanceFailed], [TopicInstanceTerminated])
+// and drives the chaining core. Drive it with [Chainer.Start] where the
+// subscriber is also a [Starter] — [NewInProcess] is — because Start returns
+// only once all three topics are live and so gives a publisher an edge to
+// sequence against; [Chainer.Run] remains for a bare [Subscriber].
 package eventing
 
 import (

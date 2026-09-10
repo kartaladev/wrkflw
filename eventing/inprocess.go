@@ -45,8 +45,8 @@ const defaultRedeliveryBackoff = 10 * time.Millisecond
 // standing up Kafka.
 //
 // It is all three ports at once: a [kernel.OutboxPublisher] for
-// persistence.NewRelay, a [Subscriber] for [Chainer.Run] or your own handlers,
-// and an [io.Closer].
+// persistence.NewRelay, a [Subscriber] and a [Starter] for [Chainer.Start],
+// [Chainer.Run] or your own handlers, and an [io.Closer].
 //
 // # Non-persistent, at BOTH ends
 //
@@ -68,8 +68,11 @@ const defaultRedeliveryBackoff = 10 * time.Millisecond
 //
 //   - STARTUP: a Publish that races a Subscribe delivers to no one. Sequence it
 //     with [InProcess.Start], which returns only once the subscription is live,
-//     or by republishing until the effect appears (what a [Chainer.Run] test must
-//     do, because Run starts its own subscriptions).
+//     or with [Chainer.Start] for the turnkey chaining path, which returns only
+//     once all three terminal topics are. Republishing until the effect appears
+//     is the fallback for a [Subscriber] that offers no readiness edge at all —
+//     which is what [Chainer.Run] is, and why it should not be preferred where a
+//     [Starter] is available.
 //
 //   - SHUTDOWN: a Publish that races a stop function, or that lands after the
 //     last subscription on the topic has ended, still delivers to no one — but
@@ -153,6 +156,7 @@ type InProcess struct {
 var (
 	_ kernel.OutboxPublisher = (*InProcess)(nil)
 	_ Subscriber             = (*InProcess)(nil)
+	_ Starter                = (*InProcess)(nil)
 	_ io.Closer              = (*InProcess)(nil)
 )
 
@@ -197,8 +201,8 @@ func (s *subscription) pop() (Envelope, bool) {
 }
 
 // NewInProcess builds an in-memory pub/sub bus. Hand it to persistence.NewRelay
-// as the publisher and to [Chainer.Run] (or your own handlers) as the
-// subscriber, and Close it on shutdown.
+// as the publisher and to [Chainer.Start] (or [Chainer.Run], or your own
+// handlers) as the subscriber, and Close it on shutdown.
 func NewInProcess(opts ...Option) *InProcess {
 	o := newOptions(opts...)
 	b := &InProcess{

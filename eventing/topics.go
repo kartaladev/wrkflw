@@ -35,7 +35,10 @@ var chainTopics = map[string]kernel.ChainOutcome{
 
 // chainTopicOrder fixes the subscription order of chainTopics. Ranging a map
 // would subscribe in a different order on every run, which makes a partial
-// failure in Chainer.Run non-reproducible.
+// failure non-reproducible in both Chainer.Run and Chainer.Start — and for
+// Start the order is load-bearing rather than merely convenient, because it
+// decides which subscriptions are already live when one fails and therefore
+// which its teardown must stop.
 var chainTopicOrder = []string{
 	TopicInstanceCompleted,
 	TopicInstanceFailed,
