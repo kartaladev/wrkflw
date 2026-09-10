@@ -49,7 +49,11 @@ func TestDiscoverMigrationDirs_FindsAllFourAndAllAreDeclared(t *testing.T) {
 // migrations/postgres/v2/*.sql) matches neither rule and, before this fix,
 // was silently discovered as nothing. Fail closed instead: error rather
 // than let those migrations drop out of the Schema LoadSchemas returns, and
-// out of every consumer built on it, with nothing else to signal the gap.
+// out of every consumer built on it. reconcileMigrationSets would still
+// catch a DECLARED set that went missing; what nothing catches is a set
+// neither discovered nor declared, which appears in neither list. This test
+// calls DiscoverMigrationDirs directly, with no reconcile behind it, so
+// that is precisely the case it stands for.
 func TestDiscoverMigrationDirs_FailsClosedOnDeeperNesting(t *testing.T) {
 	t.Parallel()
 

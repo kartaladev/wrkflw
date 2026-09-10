@@ -51,8 +51,14 @@ func ModuleRoot() (string, error) {
 // under a "migrations" ancestor than the two rules above reach — e.g.
 // migrations/postgres/v2/*.sql. Silently discovering nothing there would
 // leave those migrations out of the Schema LoadSchemas returns, and out of
-// every consumer built on it, with nothing to signal that anything is
-// missing.
+// every consumer built on it. Not wholly unsignalled, though:
+// reconcileMigrationSets reports a MigrationSets entry matching no
+// discovered directory, so a DECLARED set that drops out of reach is still
+// caught. The gap is the set that is neither discovered nor declared — it
+// appears in neither list, so nothing reports it, and this error is all
+// that stands in its place. Note also that reconcile runs in LoadSchemas,
+// not here: a direct caller of DiscoverMigrationDirs has this error and
+// nothing behind it.
 func DiscoverMigrationDirs(root string) ([]string, error) {
 	var dirs []string
 
