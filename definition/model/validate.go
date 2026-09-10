@@ -498,7 +498,14 @@ var (
 	// combination. A key that is legal on the kind but inert in the combination
 	// authored (error_code without end_behavior:"error"), and an unrecognised
 	// value inside a closed vocabulary (end_behavior:"probeval"), are separate
-	// intra-kind checks that Validate CAN see, and are tracked separately.
+	// checks and are tracked separately; one of the second family,
+	// termination_outcome, is refused at this same seam by
+	// [ErrInvalidTerminationOutcome].
+	//
+	// This paragraph used to add that those two families are checks "that
+	// Validate CAN see". Measured: it cannot. Every one of them collapses to a
+	// well-formed node — a normal end, or a terminate end that completes — and
+	// Validate accepts it.
 	//
 	// node_wire_keys.go holds the gate, how each kind's read set is derived from
 	// its own registered spec rather than from a hand-written table, and the one
@@ -507,6 +514,38 @@ var (
 	// absent key and stays accepted, while an empty COMPOSITE ("outcomes":[],
 	// "retry_policy":{}) is not a Go zero value and is refused.
 	ErrKeyNotOnKind = errors.New("workflow-definition: node kind does not carry key")
+	// ErrInvalidTerminationOutcome is returned by BOTH decoders when a node
+	// carries a termination_outcome outside the vocabulary doc.go publishes for
+	// it: "complete", "abort", or nothing at all.
+	//
+	// termination_outcome is a CLOSED vocabulary read by a switch with no default
+	// arm, and the type it parses into (event.TerminationOutcome) has
+	// OutcomeComplete as its ZERO value. So an unrecognised value neither fails
+	// nor stays unset — it becomes "complete", the OPPOSITE of the "abort" a
+	// near-miss such as "Abort" or "abrot" was reaching for. The instance then
+	// ends at StatusCompleted and reports success, and re-marshalling writes
+	// "complete" back, so the stored definition no longer holds what was
+	// authored.
+	//
+	// It is raised in fromWire, not in Validate, for the same structural reason
+	// as [ErrKeyNotOnKind] and one degree stronger: the authored string is
+	// DESTROYED at decode rather than dropped. By the time Validate receives
+	// []Node the near-miss has already become a perfectly legal OutcomeComplete,
+	// so there is nothing left for it to see. Measured: decode, Validate and a
+	// full step all accept termination_outcome:"Abort" today, and the instance
+	// ends at StatusCompleted.
+	//
+	// The shape is not new. engine/errors.go's ErrInvalidOutcome already refuses
+	// a user-task completion outcome outside the set its node declares; this is
+	// that refusal at the decode boundary. Its companion ErrOutcomeRequired has
+	// no counterpart here, deliberately: an unauthored outcome is LEGAL on a
+	// terminate end, because doc.go publishes "complete" as what it means, and
+	// the wire could not tell an empty value from an absent one in any case.
+	//
+	// The refusal is VALUE-level and covers termination_outcome only. Other
+	// closed vocabularies on the same wire (end_behavior, a trigger's kind) still
+	// collapse onto their zero values and are tracked as one class.
+	ErrInvalidTerminationOutcome = errors.New("workflow-definition: termination_outcome is outside its vocabulary")
 )
 
 // Validate checks structural well-formedness of a process definition. It

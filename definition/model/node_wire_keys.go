@@ -73,12 +73,24 @@ import (
 // the shape that survives review — a later reader reasoning FORWARD from the
 // premise reaches a wrong answer about something else.
 //
-// OUT OF SCOPE, deliberately, and tracked separately: a key that is legal on the
-// kind but dropped in the wrong COMBINATION (`error_code` without
-// `end_behavior:"error"`), and an invalid VALUE inside a closed vocabulary
-// (`end_behavior:"probeval"`). Both are intra-kind consistency checks that
-// Validate can see, because the reconstructed node carries the inconsistency.
-// This gate is kind-level only.
+// OUT OF SCOPE HERE, and tracked separately: a key that is legal on the kind but
+// dropped in the wrong COMBINATION (`error_code` without
+// `end_behavior:"error"`), and an unrecognised VALUE inside a closed vocabulary
+// (`end_behavior:"probeval"`). This gate is kind-level only. One member of the
+// second family, `termination_outcome`, is now refused by the sibling value gate
+// in node_wire_vocabulary.go.
+//
+// An earlier version of this paragraph called both families "intra-kind
+// consistency checks that Validate can see, because the reconstructed node
+// carries the inconsistency". That is measurably wrong, and the correction is
+// worth more than a quiet deletion because it names the owner these two were
+// waiting on. Measured: `end_behavior:"probeval"`, `end_behavior:"terminat"`,
+// `termination_outcome:"Abort"` and a lone `error_code` are ALL accepted by
+// Validate today. Each collapse leaves a node that is entirely well-formed — a
+// normal end, or a terminate end that completes — so the reconstructed node does
+// not carry an inconsistency at all; it carries a legal value in place of the
+// authored one. Nothing downstream of this seam can tell the difference, which
+// is why both families stay at this seam.
 
 // keyProbe overrides the generic probe for a field whose meaning is not carried
 // by an arbitrary non-zero value.

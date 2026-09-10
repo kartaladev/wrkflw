@@ -182,14 +182,21 @@ func (w *NodeWire) PutWait(a WaitFields) {
 // in either decoder, and emphatically not inside a spec's own FromWire:
 // RegisterKind calls FromWire(Base{}, NodeWire{}) at init to record the kind's
 // concrete type, so a FromWire that refused anything would abort package
-// initialisation for every binary importing the leaf. See node_wire_keys.go for
-// what the gate refuses and the limit it documents.
+// initialisation for every binary importing the leaf.
+//
+// There are two gates here now, and their order is deliberate: the kind gate
+// first, the value gate second. See node_wire_keys.go for which keys a kind may
+// not carry and the limit that refusal documents, and node_wire_vocabulary.go
+// for which values a key may not carry and why it runs second.
 func fromWire(w NodeWire) (Node, error) {
 	s, ok := specFor(w.Kind)
 	if !ok || s.FromWire == nil {
 		return nil, fmt.Errorf("%w: %q", ErrKindNotRegistered, w.Kind)
 	}
 	if err := checkNodeKeys(w, s); err != nil {
+		return nil, err
+	}
+	if err := checkTerminationOutcome(w); err != nil {
 		return nil, err
 	}
 	return s.FromWire(Base{id: w.ID, name: w.Name}, w), nil
