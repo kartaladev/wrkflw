@@ -57,13 +57,16 @@
 //	                  terminal status — "complete" ends the instance at
 //	                  StatusCompleted, "abort" at StatusTerminated. A BPMN terminate
 //	                  end event always completes the process. Those two names are
-//	                  the whole vocabulary, and any other value is refused when the
-//	                  definition is decoded (ErrInvalidTerminationOutcome): the
-//	                  outcome parses into a type whose zero value is "complete", so
-//	                  a near-miss such as "Abort" would otherwise select the
-//	                  opposite status and report the instance as a success.
-//	                  Authoring no outcome at all stays legal and still means
-//	                  "complete".
+//	                  the whole vocabulary, and any other value is refused wherever
+//	                  the key appears, when the definition is decoded
+//	                  (ErrInvalidTerminationOutcome): the outcome parses into a type
+//	                  whose zero value is "complete", so a near-miss such as "Abort"
+//	                  would otherwise select the opposite status and report the
+//	                  instance as a success. Authoring no outcome at all stays legal
+//	                  and still means "complete". The key takes effect only
+//	                  alongside end_behavior "terminate" — on a normal or error end
+//	                  it is accepted and ignored, which the refusal message names so
+//	                  that fixing the value does not leave the node inert.
 //	deadline          A waiting node whose deadline is breached reroutes its token to
 //	                  DeadlineFlow. There is no BPMN escalation event, and no
 //	                  escalation boundary to catch one.

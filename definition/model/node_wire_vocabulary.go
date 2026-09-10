@@ -28,9 +28,19 @@ import (
 // it. definition/event declares the outcome type and its names, and event
 // imports this package, so this package cannot import event: the dependency
 // only runs one way. What removes the drift risk that would otherwise create is
-// not a comment but a test — TestTerminationOutcomeVocabularyMatchesTheType, in
-// the external test package that CAN import both — which fails if a name in
-// event.TerminationOutcome.String() ever leaves this set.
+// not a comment but three tests — and it takes three because no single package
+// can see both ends at once:
+//
+//   - TestTerminationOutcomeVocabularyMatchesTheType asserts SET EQUALITY
+//     between this variable and the image of event.TerminationOutcome.String().
+//     It runs in the external test package, which can import event, and reaches
+//     this unexported set through export_test.go.
+//   - TestEveryTerminationOutcomeNameStaysDecodable carries the same names all
+//     the way through the decoder to the reconstructed node, which set equality
+//     alone does not.
+//   - TestEveryAcceptedTerminationOutcomeIsOneTheSpecReads runs INTERNALLY,
+//     where this set is visible but event is not, and pins each name against the
+//     leaf spec that consumes it.
 //
 // SCOPE, deliberately narrow. This gate covers termination_outcome and nothing
 // else. The other closed vocabularies reachable from a NodeWire — end_behavior
@@ -50,21 +60,45 @@ var terminationOutcomes = []string{"complete", "abort"}
 // checkTerminationOutcome refuses w if it carries a termination_outcome outside
 // terminationOutcomes.
 //
-// It runs AFTER checkNodeKeys, and the order is load-bearing rather than
-// incidental: on a kind that never reads the key at all — a serviceTask, say —
-// the key gate's "this kind does not carry key" is the accurate diagnostic, and
-// reporting a vocabulary violation there would point the author at the value
-// when the problem is the key.
+// It runs AFTER checkNodeKeys. The order decides which diagnostic an author
+// gets when BOTH gates have grounds — a serviceTask carrying
+// termination_outcome:"Abort" is refused by either — and the key gate's "this
+// kind does not carry key" is the accurate one there, because the problem is the
+// key, not the value.
+//
+// That order is pinned by TestTheKindGateRunsBeforeTheValueGate and by nothing
+// else: measured, swapping these two calls leaves every other test in the tree
+// green. It is stated here as a property a test holds, not as one a reader is
+// asked to take on trust.
 //
 // An empty value is accepted, and it has to be: NodeWire.TerminationOutcome is
 // a plain string, so an authored "" and an absent key decode to the same wire.
 // That costs nothing here, unlike the general case, because absent is legal.
 // This is the one half of engine/errors.go's two-part precedent that does not
 // transfer — see ErrInvalidTerminationOutcome.
+//
+// The refusal is NOT conditional on end_behavior, deliberately. Refusing only
+// inside the terminate branch would be the combination check, which is a
+// different gate over a different property and is not built here.
+//
+// THE MESSAGE NAMES THE PRECONDITION, and that clause is the point of it rather
+// than decoration. Without it the only instruction an author gets is the
+// vocabulary, and obeying the vocabulary alone is not enough: measured, a node
+// carrying termination_outcome:"abort" with no end_behavior:"terminate" is
+// ACCEPTED and re-marshals as {"kind":"endEvent"} with the key gone. A message
+// that says only "use abort" therefore walks the author out of a loud refusal
+// and into a silent drop with a green publish — turning this gate into a
+// signpost to the very failure it exists to close. Naming the combination costs
+// one clause and closes that loop without building the gate that would refuse
+// it. TestTheDiagnosticsStatedPreconditionIsTrue pins both halves: that the
+// message says it, and that the code behaves as the message says.
 func checkTerminationOutcome(w NodeWire) error {
 	if w.TerminationOutcome == "" || slices.Contains(terminationOutcomes, w.TerminationOutcome) {
 		return nil
 	}
-	return fmt.Errorf("%w: node %q declares termination_outcome %q, want one of %q or none",
+	return fmt.Errorf(
+		"%w: node %q declares termination_outcome %q, want one of %q or none; "+
+			`note that termination_outcome is read only alongside end_behavior "terminate", `+
+			"and on any other end it is accepted and dropped",
 		ErrInvalidTerminationOutcome, w.ID, w.TerminationOutcome, terminationOutcomes)
 }
