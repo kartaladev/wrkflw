@@ -42,18 +42,17 @@ func armBoundaries(def *model.ProcessDefinition, s *InstanceState, hostTokenID, 
 		if !ok || n.AttachedTo != hostNode {
 			continue
 		}
-		// Find the boundary's single outgoing flow.
-		outs := def.Outgoing(n.ID())
-		if len(outs) == 0 {
+		// A boundary with no outgoing flow is never armed. The arm records no
+		// reference to the flow itself: fireBoundaryArm re-derives it from
+		// BoundaryNode, which is the same key this lookup uses.
+		if len(def.Outgoing(n.ID())) == 0 {
 			continue // unreachable if model.Validate passes
 		}
-		flowID := outs[0].ID
 
 		arm := boundaryArm{
 			HostToken:       hostTokenID,
 			HostNode:        hostNode,
 			BoundaryNode:    n.ID(),
-			Flow:            flowID,
 			NonInterrupting: n.NonInterrupting,
 			Action:          n.Action,
 		}
@@ -125,16 +124,20 @@ func fireBoundaryArm(ctx context.Context, def *model.ProcessDefinition, s *Insta
 		return nil, err
 	}
 
-	// Resolve the boundary's outgoing flow target.
-	var flowTarget, flowIdentity string
-	if ref, ok := flowRefByID(tdef, ba.Flow); ok {
-		flowTarget = ref.Flow.Target
-		flowIdentity = ref.Identity()
+	// Resolve the boundary's outgoing flow by its SOURCE — the boundary node —
+	// which is the key armBoundaries selected it by and the key routeToBoundary
+	// uses for error boundaries. Resolving by the authored flow ID instead would
+	// re-resolve on a non-key: model.Validate exempts blank flow IDs from
+	// ErrDuplicateFlowID, so a blank one matches the first blank-ID flow in the
+	// whole scope definition and routes the token to an unrelated node (#212).
+	outs := outgoingFlows(tdef, ba.BoundaryNode)
+	if len(outs) == 0 {
+		// Unreachable if model.Validate passes (a boundary must have an
+		// outgoing flow) and unreachable for an arm this engine recorded
+		// (armBoundaries does not arm a boundary without one).
+		return nil, fmt.Errorf("workflow-engine: boundary %q: has no outgoing flow", ba.BoundaryNode)
 	}
-	if flowTarget == "" {
-		// No target: unreachable if model.Validate passes (boundary must have outgoing flow).
-		return nil, fmt.Errorf("workflow-engine: boundary %q: outgoing flow %q not found", ba.BoundaryNode, ba.Flow)
-	}
+	flowTarget, flowIdentity := outs[0].Flow.Target, outs[0].Identity()
 
 	hostScopeID := hostTok.ScopeID
 	var cmds []Command

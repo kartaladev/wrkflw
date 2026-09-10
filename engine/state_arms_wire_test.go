@@ -17,6 +17,13 @@ package engine
 // directly on the struct). This test must pass both BEFORE and AFTER the
 // embed — that is the parity proof.
 //
+// ⚠ goldenBoundaryArmJSON was subsequently rewritten, deliberately, when #212
+// removed boundaryArm.Flow. That is a real change to the persisted shape, not
+// a re-capture of the same one, so the pre-#212 field set is kept verbatim as
+// legacyBoundaryArmJSON and pinned in the DECODE direction by
+// TestBoundaryArmWireDecodesPre212Snapshots. Nothing else about the parity
+// proof moves: every other key, and both other arm types, are untouched.
+//
 // White-box (package engine, not engine_test): the three arm types are
 // unexported, mirroring the existing convention in state_esp_test.go and
 // state_waiters_test.go.
@@ -34,8 +41,15 @@ import (
 const goldenArmedEventJSON = `{"GatewayToken":"gw-tok-1","CatchNode":"catch-1","Flow":"flow-1","TimerID":"timer-1","Signal":"sig-1","Message":"msg-1","MessageKey":"key-1"}`
 
 // goldenBoundaryArmJSON is the exact json.Marshal output of a fully-populated
-// boundaryArm under the pre-embed (non-embedded) struct shape.
-const goldenBoundaryArmJSON = `{"HostToken":"host-tok-1","HostNode":"host-node-1","BoundaryNode":"bnd-node-1","Flow":"flow-2","NonInterrupting":true,"TimerID":"timer-2","Signal":"sig-2","Message":"msg-2","MessageKey":"key-2","Action":"action-1"}`
+// boundaryArm under the pre-embed (non-embedded) struct shape, less the "Flow"
+// key that #212 removed.
+const goldenBoundaryArmJSON = `{"HostToken":"host-tok-1","HostNode":"host-node-1","BoundaryNode":"bnd-node-1","NonInterrupting":true,"TimerID":"timer-2","Signal":"sig-2","Message":"msg-2","MessageKey":"key-2","Action":"action-1"}`
+
+// legacyBoundaryArmJSON is goldenBoundaryArmJSON as it stood before #212, i.e.
+// the shape a boundary arm persisted by an older build actually has on disk.
+// It differs in exactly one key: "Flow", the authored outgoing-flow ID that the
+// fire path used to re-resolve.
+const legacyBoundaryArmJSON = `{"HostToken":"host-tok-1","HostNode":"host-node-1","BoundaryNode":"bnd-node-1","Flow":"flow-2","NonInterrupting":true,"TimerID":"timer-2","Signal":"sig-2","Message":"msg-2","MessageKey":"key-2","Action":"action-1"}`
 
 // goldenEventTriggeredSubprocessArmJSON is the exact json.Marshal output of a
 // fully-populated eventTriggeredSubprocessArm under the pre-embed (non-embedded)
@@ -67,7 +81,6 @@ func fullyPopulatedBoundaryArm() boundaryArm {
 		HostToken:       "host-tok-1",
 		HostNode:        "host-node-1",
 		BoundaryNode:    "bnd-node-1",
-		Flow:            "flow-2",
 		NonInterrupting: true,
 		triggerMatch: triggerMatch{
 			TimerID:    "timer-2",
@@ -153,4 +166,57 @@ func TestArmWireParity_EventTriggeredSubprocessArm(t *testing.T) {
 	b, err := json.Marshal(want)
 	require.NoError(t, err)
 	assertJSONFieldSetEqual(t, goldenEventTriggeredSubprocessArmJSON, string(b))
+}
+
+// TestBoundaryArmWireDecodesPre212Snapshots pins the rolling-upgrade direction
+// of #212's field removal: a boundary arm persisted by a build that still wrote
+// "Flow" decodes into the current struct, and decodes to exactly the same value
+// as a snapshot written after the removal.
+//
+// It holds because Store.Load unmarshals the snapshot with a plain
+// json.Unmarshal and never sets DisallowUnknownFields
+// (internal/persistence/store/store_core.go), so a key with no corresponding
+// field is discarded rather than rejected. The arm that comes back routes
+// correctly with no backfill: fireBoundaryArm re-derives the outgoing flow from
+// BoundaryNode, which every pre-#212 snapshot already carries.
+func TestBoundaryArmWireDecodesPre212Snapshots(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		snap   string
+		assert func(t *testing.T, arm boundaryArm, err error)
+	}
+
+	cases := []testCase{
+		{
+			name: "a snapshot written before the Flow field was removed",
+			snap: legacyBoundaryArmJSON,
+			assert: func(t *testing.T, arm boundaryArm, err error) {
+				require.NoError(t, err, "an unknown key must be discarded, not rejected")
+				assert.Equal(t, fullyPopulatedBoundaryArm(), arm,
+					"the surplus Flow key must not change any field the engine still reads")
+				assert.Equal(t, "bnd-node-1", arm.BoundaryNode,
+					"the key the fire path resolves by must survive the upgrade")
+			},
+		},
+		{
+			name: "a snapshot written after the Flow field was removed",
+			snap: goldenBoundaryArmJSON,
+			assert: func(t *testing.T, arm boundaryArm, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, fullyPopulatedBoundaryArm(), arm)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var arm boundaryArm
+			err := json.Unmarshal([]byte(tc.snap), &arm)
+			tc.assert(t, arm, err)
+		})
+	}
 }

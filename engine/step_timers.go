@@ -54,6 +54,14 @@ func handleDeadlineFired(ctx context.Context, def *model.ProcessDefinition, s *I
 		return StepResult{}, fmt.Errorf("workflow-engine: deadline breach: node %q not found in definition", rec.NodeID)
 	}
 	_, deadlineFlow, deadlineAction := model.DeadlineOf(node)
+	// ⚠ LOAD-BEARING for the flowRefByID call below, not merely a nil check.
+	// An authored flow ID is not a key — definition/model exempts blank IDs from
+	// ErrDuplicateFlowID and refuses a blank one nowhere — so a blank
+	// deadlineFlow reaching flowRefByID would match the first blank-ID flow in
+	// the definition and route the token to an unrelated node, which is what
+	// #212 was at the boundary site. This refusal is what keeps the lookup on a
+	// key; do not remove it without giving the lookup a unique one. DeadlineFlow
+	// has no validator rule at all, so nothing upstream substitutes for it.
 	if deadlineFlow == "" {
 		return StepResult{}, fmt.Errorf("workflow-engine: deadline breach: node %q has no DeadlineFlow defined", rec.NodeID)
 	}

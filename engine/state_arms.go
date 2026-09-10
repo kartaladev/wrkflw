@@ -67,16 +67,24 @@ type armedEvent struct {
 //
 // Flat value struct (no pointers): cloneState can copy the slice shallowly.
 // Appended in definition-scan order so the slice is deterministic.
+//
+// The arm records no outgoing-flow reference. It used to carry the authored ID
+// of the boundary's outgoing flow, and fireBoundaryArm re-resolved that ID
+// against the scope definition — but an authored flow ID is not a key
+// (model.Validate exempts blank IDs from ErrDuplicateFlowID), so a blank one
+// resolved to the first blank-ID flow anywhere in the scope and the token was
+// routed to an unrelated node. BoundaryNode is a key — ErrDuplicateNodeID
+// deduplicates node IDs, blanks included — and it is the key armBoundaries
+// itself selected the flow by, so the fire path re-derives the flow from it
+// exactly as routeToBoundary already does for error boundaries (#212).
 type boundaryArm struct {
 	// HostToken is the ID of the parked host activity token.
 	HostToken string
 	// HostNode is the BPMN node id of the host activity.
 	HostNode string
-	// BoundaryNode is the BPMN node id of the boundary event.
+	// BoundaryNode is the BPMN node id of the boundary event. It is also the
+	// key the outgoing flow is resolved by when the arm fires.
 	BoundaryNode string
-	// Flow is the ID of the boundary event's outgoing sequence flow (the path
-	// to take when the boundary fires).
-	Flow string
 	// NonInterrupting mirrors model.Node.NonInterrupting; false = interrupting
 	// (the default), true = non-interrupting.
 	NonInterrupting bool
