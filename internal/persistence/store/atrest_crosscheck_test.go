@@ -216,9 +216,14 @@ type tableCoverage struct {
 //     widening the exemption inverts the intent — and it is the very shape
 //     this type exists to remove, one layer further in.
 //
-// Setting neither is malformed for the same reason it is dangerous: an empty
-// prefix would make strings.HasPrefix true for every table and exempt the
-// whole schema.
+// Setting neither is malformed because such an entry names no tables at all.
+// An exemption that matches nothing can only be a mistake, and one that
+// matches nothing SILENTLY is the shape this type exists to remove.
+//
+// It is not rejected in order to stop strings.HasPrefix matching on an empty
+// prefix: the c.prefix != "" branch below already makes that unreachable, and
+// did so before this check existed. This is the second lock on that door, not
+// the first.
 func (c tableCoverage) exempts(tbl string) bool {
 	if len(c.by) == 0 {
 		return false
@@ -459,8 +464,8 @@ func TestUncrossCheckedTables(t *testing.T) {
 			covered: []tableCoverage{{by: []func(*testing.T){noopLeg}}},
 			assert: func(t *testing.T, got []string) {
 				assert.Equal(t, []string{"anything_at_all"}, got,
-					"an empty prefix would make strings.HasPrefix true for every table; "+
-						"the entry must be rejected instead")
+					"an entry naming neither a table nor a prefix matches nothing, so it "+
+						"can only be a mistake and must not exempt anything")
 			},
 		},
 	}
