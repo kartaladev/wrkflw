@@ -87,10 +87,12 @@ func incomingFlows(def *model.ProcessDefinition, nodeID string) []flowRef {
 //
 // ⚠ AN AUTHORED FLOW ID IS NOT A KEY, and this lookup's safety is supplied by
 // its callers rather than by the definition. definition/model skips f.ID == ""
-// before the duplicate check and has no other rule that examines a flow ID at
-// all — there is no blank-ID refusal anywhere in the package — so a blank id
-// passed here matches the FIRST blank-ID flow in the whole definition, which
-// may belong to an entirely unrelated pair of nodes.
+// before the duplicate check and REFUSES A BLANK FLOW ID NOWHERE — the one
+// `ID == ""` test in the package is that skip. (Flow IDs are examined
+// elsewhere; the RecoveryFlow rule below is one such site. What does not exist
+// is a rule that rejects a blank one.) So a blank id passed here matches the
+// FIRST blank-ID flow in the whole definition, which may belong to an entirely
+// unrelated pair of nodes.
 //
 // Both remaining callers refuse a blank before reaching the lookup, and the
 // refusals are load-bearing rather than incidental — each is annotated at its
@@ -109,8 +111,11 @@ func incomingFlows(def *model.ProcessDefinition, nodeID string) []flowRef {
 // instead — the boundary arm used to record its outgoing flow's authored ID and
 // re-resolve it here, and a blank one routed the token to an unrelated node and
 // invoked that node's action with model.Validate returning nil (#212).
-// fireBoundaryArm now resolves the flow by its SOURCE, the boundary node, which
-// is a key: ErrDuplicateNodeID deduplicates node IDs, blank ones included.
+// fireBoundaryArm now resolves the flow by its SOURCE, the boundary node. That
+// key rests on TWO validation rules, not one — ErrDuplicateNodeID (node IDs
+// deduplicated with no blank exemption) AND ErrDanglingFlow (every f.Source
+// must name an existing node); relaxing either re-opens #212. boundaryArm's
+// godoc carries the full statement.
 //
 // ⚠ One further asymmetry, recorded because nothing fails while it holds: the
 // RecoveryFlow reference is licensed by a validation that matches on TWO keys
@@ -118,7 +123,9 @@ func incomingFlows(def *model.ProcessDefinition, nodeID string) []flowRef {
 // this lookup matches on f.ID alone. The two agree for a validated definition —
 // rf is non-blank there, and non-blank IDs are unique — so the lookup is weaker
 // than the rule that licenses it rather than wrong. DeadlineFlow has no
-// validator rule at all: definition/model/validate.go never mentions it.
+// validator RULE at all — validate.go names it only in comments (five, all
+// prose; there is no DeadlineFlow predicate in the file), so nothing upstream
+// checks that a DeadlineFlow reference resolves, or that it is non-blank.
 func flowRefByID(def *model.ProcessDefinition, id string) (flowRef, bool) {
 	for i, f := range def.Flows {
 		if f.ID == id {

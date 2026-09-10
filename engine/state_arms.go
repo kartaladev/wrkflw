@@ -73,10 +73,27 @@ type armedEvent struct {
 // against the scope definition — but an authored flow ID is not a key
 // (model.Validate exempts blank IDs from ErrDuplicateFlowID), so a blank one
 // resolved to the first blank-ID flow anywhere in the scope and the token was
-// routed to an unrelated node. BoundaryNode is a key — ErrDuplicateNodeID
-// deduplicates node IDs, blanks included — and it is the key armBoundaries
-// itself selected the flow by, so the fire path re-derives the flow from it
-// exactly as routeToBoundary already does for error boundaries (#212).
+// routed to an unrelated node. BoundaryNode is the key armBoundaries itself
+// selected the flow by, so the fire path re-derives the flow from it, exactly
+// as routeToBoundary already does for error boundaries (#212).
+//
+// ⚠ THAT KEY RESTS ON TWO VALIDATION RULES, NOT ONE, and both are load-bearing.
+// The fire path resolves `Source == BoundaryNode`, so what has to be unique is
+// the SET OF FLOWS keyed on that node, which needs:
+//
+//  1. ErrDuplicateNodeID (definition/model/validate.go, the nodeIDs loop) —
+//     node IDs are deduplicated with NO blank exemption, unlike the flow-ID
+//     loop directly below it. At most one node in a definition carries a blank
+//     ID.
+//  2. ErrDanglingFlow (validate.go, the d.Flows loop that resolves f.Source and
+//     f.Target) — every flow's Source must NAME AN EXISTING NODE. Without this,
+//     several flows could carry a dangling blank Source, outgoingFlows(def, "")
+//     would return all of them, and the fire path would be back to
+//     first-blank-wins — #212 exactly, one key over.
+//
+// Rule 1 alone bounds nodes, not the flows keyed on them. **Relaxing EITHER
+// rule re-opens #212**, so neither may be weakened without giving this lookup a
+// key that does not depend on it.
 type boundaryArm struct {
 	// HostToken is the ID of the parked host activity token.
 	HostToken string

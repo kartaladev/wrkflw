@@ -138,6 +138,22 @@ func fireBoundaryArm(ctx context.Context, def *model.ProcessDefinition, s *Insta
 		return nil, fmt.Errorf("workflow-engine: boundary %q: has no outgoing flow", ba.BoundaryNode)
 	}
 	flowTarget, flowIdentity := outs[0].Flow.Target, outs[0].Identity()
+	// The target has to RESOLVE, and that is not the same question as whether
+	// its string is non-empty. A node ID may legitimately be blank — node IDs
+	// are deduplicated but a blank one is not refused — so the pre-#212 guard
+	// `flowTarget == ""` refused a valid blank-ID target and let a dangling
+	// NAMED target through. Asking the definition is right in both directions.
+	//
+	// This fails closed and audibly, before anything is mutated: no fire-once
+	// action is emitted, the host token is not consumed, and no token is parked
+	// on a node that does not exist. ErrDanglingFlow makes it unreachable for a
+	// validated definition, but "model.Validate prevents this" is not a reason
+	// to route into the dark — validation is the authoring gate, not the only
+	// door (see raiseDefinitionDefect's policy and warnUnarmedBoundaries).
+	if _, ok := tdef.Node(flowTarget); !ok {
+		return nil, fmt.Errorf("workflow-engine: boundary %q: outgoing flow %q targets unknown node %q",
+			ba.BoundaryNode, outs[0].Flow.ID, flowTarget)
+	}
 
 	hostScopeID := hostTok.ScopeID
 	var cmds []Command
