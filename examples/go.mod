@@ -17,7 +17,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/mysql v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 	go.opentelemetry.io/otel/sdk/metric v1.46.0
-	modernc.org/sqlite v1.58.0
+	modernc.org/sqlite v1.59.0
 )
 
 require (
