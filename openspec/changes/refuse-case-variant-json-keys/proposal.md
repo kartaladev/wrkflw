@@ -22,7 +22,7 @@ The baseline found this (archived change `establish-baseline-specs`, design D7 g
 
 **Out of scope**
 - An exact duplicate key (`{"id":"a","id":"b"}`). JSON accepts it, last value wins, while YAML refuses it. This was measured during planning and is reported as a finding; no change or issue owns it yet.
-- Recursive exact-key checking for typed action input under `WithStrictInput`. kartaladev/wrkflw#142 owns it (pending migration).
+- Recursive exact-key checking for typed action input under `WithStrictInput`. The change `harden-typed-action-input` owns it (kartaladev/wrkflw#142).
 - Diagnostic quality of decode refusals: the nesting path, error order across formats, and reporting one key at a time. kartaladev/wrkflw#217 owns it (pending migration). This change does not add a nesting path.
 - Exporting a sentinel for YAML's unknown-key refusal, or for JSON's plain unknown-key refusal.
 - Moving to `encoding/json/v2`, which is rejected in design D2.
