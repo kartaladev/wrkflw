@@ -23,7 +23,7 @@ See proposal.md, *Why*. The current state that shapes the approach:
 - Changing YAML decoding.
 - Exact-duplicate key detection.
 - A nesting path in the error (kartaladev/wrkflw#217).
-- Typed action input (kartaladev/wrkflw#142).
+- Typed action input: `harden-typed-action-input` (kartaladev/wrkflw#142).
 
 ## Decisions
 
