@@ -22,11 +22,15 @@
 # instead — ErrScopeLocalWithCompensateRef, findDirectBoundary and
 # ErrTriggerNeverDue are things a reader can jump to; ADR-0120 is not.
 #
+# The same failure has a second source since the project moved to OpenSpec:
+# a citation of openspec/changes/<name>/ resolves until that change is archived
+# and then dangles. See the openspec-change row in the rules table.
+#
 # SCOPE — Go source only (`*.go`, tracked plus untracked-not-ignored).
 # This IS the escape hatch. Commit messages, CONTRIBUTING.md, docs/agents/ and
 # the scripts/ directory are deliberately untouched: a commit message quoting
-# history is legitimate, and three of those files still carry live references
-# whose fate is the maintainer's call, not this check's. Confining the rule to
+# history is legitimate, and prose outside Go source is the maintainer's call,
+# not this check's. Confining the rule to
 # Go source is what makes the strong tree-wide form available at all — the tree
 # is at zero for *.go and is NOT at zero overall.
 #
@@ -81,6 +85,23 @@ fail() { echo "check-doc-refs: $*" >&2; exit 1; }
 # If docs/adr/ is reinstated, the first two rows stop applying as written — a
 # citation is only dangling when its target is gone. Narrow them then (per-ADR
 # existence, say); do not delete the file.
+#
+# openspec-change is the one row whose target is PRESENT, and it is dangling
+# anyway: every OpenSpec change ends in `openspec archive`, which moves
+# openspec/changes/<name>/ to openspec/changes/archive/<date>-<name>/. A citation
+# that resolves today resolves only until the change it names is finished. So
+# the row never retires (the `-` guard below; NEVER_RETIRE pins that in the
+# self-test). A per-citation existence check would be the wrong fix: it passes
+# the citation when it is written and fails CI later, on the archiving PR — the
+# PR that did nothing wrong — instead of on the PR that wrote it.
+#
+# The regex also refuses openspec/changes/archive/... paths, which do NOT move
+# again once archived. That is deliberate, and it is not a dangling argument:
+# it is this script's standing rule, strip the provenance and keep the
+# constraint. An archived change is a record of how a decision was reached; the
+# constraint it produced belongs on the identifier it governs, and the behaviour
+# in the capability spec. Capability specs under openspec/specs/ are the durable
+# surface and stay citable; the self-test's clean fixture pins that.
 rules() {
   cat <<'EOF'
 adr-number|ADR-[0-9]|docs/adr|ADR-0120|name the identifier the decision constrains
@@ -88,13 +109,22 @@ adr-path|docs/adr|docs/adr|docs/adr/0171-cursor.md|name the identifier, not the 
 specs-path|docs/specs|docs/specs|docs/specs/retry.md|state the constraint inline
 security-md|SECURITY\.md|SECURITY.md|SECURITY.md|state the constraint inline
 stability-md|STABILITY\.md|STABILITY.md|STABILITY.md|state the constraint inline
+openspec-change|openspec/changes/|-|openspec/changes/add-x/design.md|cite the capability spec under openspec/specs/, or name the identifier
 EOF
 }
 
 # A rule is active while its target is absent from the tree. `git ls-files`
 # rather than `test -e`, so an untracked local file cannot silently disable a
-# check that CI is relying on.
+# check that CI is relying on. A target of `-` means the rule never retires:
+# it is spelled out rather than left to "no file called - is tracked", so that
+# the answer does not depend on the tree at all.
+# Rows that must never retire, by id. Pinned by name rather than derived from
+# the table, because the failure this guards against is the table itself being
+# edited — a `-` guard swapped for a real path reads as an ordinary row.
+NEVER_RETIRE="openspec-change"
+
 rule_active() {
+  [ "$1" = "-" ] && return 0
   [ -z "$(git ls-files -- "$1" | head -1)" ]
 }
 
@@ -158,7 +188,8 @@ self_test() {
 package clean
 
 // ErrScopeLocalWithCompensateRef and findDirectBoundary are things a reader can
-// jump to. Working documents such as docs/agents/domain.md are not dangling.
+// jump to. Working documents such as docs/agents/eventually-waits.md are not dangling,
+// and neither is a capability spec: openspec/specs/definition-wire-format/spec.md.
 const note = "ADRIFT is not a citation, and neither is adrenaline"
 EOF
 
@@ -225,6 +256,39 @@ EOF
     status=1
   fi
 
+  # The `-` guard, against a tree where it would otherwise matter: a scratch
+  # repository with a file literally named `-` in its index. In the real tree no
+  # such file exists, so a probe there passes whether or not the guard works.
+  local scratch id rid guard found
+  scratch="$(mktemp -d)"
+  if ! ( cd "${scratch}" && git init -q . && : > ./- && git add -- ./- && rule_active - ); then
+    echo "self-test: rule_active treats the '-' guard as a path, so a tracked file named '-' retires every never-retire rule" >&2
+    status=1
+  fi
+  rm -rf "${scratch}"
+
+  # Each pinned row exists, is guarded by `-`, and reads as active.
+  for id in ${NEVER_RETIRE}; do
+    found=0
+    while IFS='|' read -r rid _ guard _; do
+      [ "${rid}" = "${id}" ] || continue
+      found=1
+      if [ "${guard}" != "-" ]; then
+        echo "self-test: rule '${id}' must never retire, but its guard is '${guard}', not '-'" >&2
+        status=1
+      elif ! rule_active "${guard}"; then
+        echo "self-test: rule '${id}' must never retire, but rule_active reports it retired" >&2
+        status=1
+      fi
+    done <<EOF
+$(rules)
+EOF
+    if [ "${found}" != "1" ]; then
+      echo "self-test: rule '${id}' must never retire, but the rules table no longer has it" >&2
+      status=1
+    fi
+  done
+
   if [ "${status}" != "0" ]; then
     echo "check-doc-refs: SELF-TEST FAILED — the scanner can no longer be shown to detect what it claims to." >&2
     exit 1
@@ -285,8 +349,9 @@ EOF
 if [ "${status}" != "0" ]; then
   {
     echo
-    echo "check-doc-refs: FAIL — Go source cites documents that do not exist in this repository."
-    echo "Deleted in 12630621; the ~2,240 surviving references were stripped by #50."
+    echo "check-doc-refs: FAIL — Go source cites documents that do not exist, or will not once archived."
+    echo "docs/adr, docs/specs, SECURITY.md and STABILITY.md were deleted in 12630621; an"
+    echo "openspec/changes/<name>/ path moves when that change is archived."
     cat "${findings}"
     cat <<'EOF'
 
