@@ -10,6 +10,20 @@ when a change trades library ergonomics for server convenience, library ergonomi
 - A running **Docker daemon** — integration tests use [testcontainers-go](https://golang.testcontainers.org/)
   to provision real PostgreSQL / MySQL / MinIO / mailpit. They are not mocked.
 - [`golangci-lint`](https://golangci-lint.run/) v2 (the config uses the v2 schema).
+- The **OpenSpec CLI 1.14.1** (`npm install -g @fission-ai/openspec@1.14.1`), which CI pins too.
+  Work is tracked as OpenSpec changes; see *Work tracking* in `CLAUDE.md`. The generated
+  `.claude/skills/openspec-*` and `.claude/commands/opsx/` files are committed, and
+  `openspec update` regenerates them from your **global** profile, so select the full workflow set
+  once before ever running it:
+
+  ```bash
+  openspec config set profile custom
+  openspec config set workflows '["propose","explore","new","continue","apply","update","ff","sync","archive","verify","onboard"]'
+  ```
+
+  On the default `core` profile, `openspec update` deletes five of the committed commands and skills.
+  `scripts/check-openspec.sh` checks that OpenSpec reads `openspec/config.yaml` without warnings and
+  that every change validates strictly.
 - **A 64-bit target.** wrkflw is built, tested and linted on 64-bit platforms only. 32-bit builds
   (`GOOS=linux GOARCH=386`, `GOOS=linux GOARCH=arm` — the `GOOS` is required, or a macOS host reports
   a PIE/cgo linker error instead of the real result) are not run in CI and are not a supported
@@ -98,11 +112,13 @@ a verdict, because a self-test that refuses to lint is worse than the defect it 
 - **Coverage.** Touched packages should stay at **≥ 85%** line coverage.
 - **Lint clean.** Every module must report zero issues; see the per-module loop under
   *Local workflow*. `./...` alone covers the root module only.
-- **Design decisions.** Record the rationale in the commit message and the PR body, and state the
-  constraint it produced as a comment on the code it constrains — naming an identifier a reader can
-  jump to (`ErrScopeLocalWithCompensateRef`), never a document. This repo keeps no ADR directory;
-  `scripts/check-doc-refs.sh` fails the build on any `*.go` citation of the deleted one. Commit
-  messages are deliberately outside its scope, so quoting history there is fine.
+- **Design decisions.** Work is tracked as OpenSpec changes; see *Domain and decisions* in
+  `CLAUDE.md`. Record the rationale and rejected options in the change's `design.md`, the behavior
+  in the capability spec under `openspec/specs/`, and state the constraint as a comment on the code
+  it constrains, naming an identifier a reader can jump to (`ErrScopeLocalWithCompensateRef`). A Go
+  comment may cite `openspec/specs/...` but never `openspec/changes/...` or the deleted ADR
+  directory; `scripts/check-doc-refs.sh` fails the build on either. Commit messages are deliberately
+  outside its scope, so quoting history there is fine.
 - **Engine purity.** The engine core (`engine/`, `model/`) must not import transport, storage-vendor,
   or event-bus packages — depend on the in-repo interfaces. Never import casbin, gocron, or clockwork
   directly from workflow/engine code. There is no event-bus vendor left to name: a broker is reached

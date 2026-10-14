@@ -166,6 +166,27 @@ jobs:
       - name: Check for dangling document references
         run: bash scripts/check-doc-refs.sh
 
+  openspec:
+    name: openspec config and changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # OpenSpec reports a broken openspec/config.yaml only as a warning on
+      # stderr of `openspec instructions`, and ignores an unknown top-level key
+      # without one; `openspec validate` never reads the config. The script
+      # turns both into failures, then runs `validate --all --strict` and
+      # `validate --archived`. It self-tests on every run. The CLI version is
+      # pinned to the one CONTRIBUTING.md names, so a CLI upgrade is a reviewed
+      # change rather than a surprise.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Install the OpenSpec CLI
+        run: npm install -g @fission-ai/openspec@1.14.1
+      - name: Check OpenSpec config and changes
+        run: bash scripts/check-openspec.sh
+
   lint:
     name: golangci-lint
     runs-on: ubuntu-latest

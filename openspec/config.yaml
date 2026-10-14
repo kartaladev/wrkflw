@@ -1,0 +1,70 @@
+schema: spec-driven
+
+# Constraints an agent cannot infer by reading the code. Discoverable facts
+# (package layout, glossary entries, script names) stay in the repo, not here.
+context: |
+  OpenSpec is the single source of truth for this project's work and promises.
+  GitHub issues on kartaladev/wrkflw are input only, with no labels or triage
+  states: an issue's content goes into an OpenSpec change that cites it, and the
+  issue is then commented with the change name and closed.
+
+  wrkflw is an importable Go library a consumer embeds, not a daemon. When library
+  ergonomics and server convenience conflict, library ergonomics win.
+
+  It is inspired by BPMN 2.0 and explicitly does not aim to comply. Divergence from
+  BPMN is a legitimate design choice; unsignalled divergence is a defect.
+
+  The release line is v0.x, so ordinary API breakage is cheap. Three things are
+  expensive to reverse and must always be called out: persisted data formats
+  (snapshots, journal, outbox, columns, migrations), the security posture a consumer
+  deploys by default, and anything that changes a consumer's go.mod.
+
+  Parity is a contract, not a nicety: the Postgres, MySQL and SQLite stores behave
+  identically, and so do the stdlib, gin and fiber HTTP adapters. A behavior stated
+  for one backend or adapter is stated for all of them unless a spec, or a comment
+  on the code that diverges, names the divergence.
+
+  Silence is never correct. An unknown, unrecognized or out-of-vocabulary value is
+  refused with a named error; it never decays to a zero value, a default, or a
+  silently parked token.
+
+  Use the vocabulary of CONTEXT.md (Definition, Version, Node kind, Flow, Instance,
+  Token, ...) and avoid the synonyms it lists.
+
+  Evidence is measured, not inherited. Any figure, file:line, count or premise taken
+  from an issue, comment or earlier artifact is re-verified against main before it
+  is relied on; a premise that cannot be reproduced is reported as a hypothesis.
+
+  Builds, tests and lint target 64-bit platforms only. Go version is whatever go.mod
+  declares.
+
+rules:
+  proposal:
+    - Cite every GitHub issue the change absorbs as kartaladev/wrkflw#N, and say which are superseded, folded in, or found stale on re-measurement.
+    - Mark BREAKING changes, and separately flag any impact on persisted formats, default security posture, or a consumer's go.mod.
+    - State what is out of scope, naming the issue or change that owns it when one exists.
+    - List decisions the change cannot be specified without; resolve them before specs are written rather than deferring them to design.
+    - Work that changes no externally observable library behavior (CI guards, test hygiene, contributor or agent docs, tooling) sets skip_specs. Never invent a requirement to satisfy validation.
+    - 'End What Changes with a **Coordination** block of exactly four lines: Size (S, M, L or XL), Depends on (change names, or nothing), Blocks (change names, or nothing), Readiness (agent or human). It is the only dependency graph between changes, so keep it true; see the Work tracking section of CLAUDE.md.'
+  specs:
+    - 'Keep the header form OpenSpec parses, "#### Scenario: <name>", and write each scenario body as a fenced ```gherkin block using Given / When / Then (And / But as needed). This replaces the WHEN / THEN bullets of the built-in template. A Scenario Outline and its Examples table go inside that same fenced block, under the same header.'
+    - Requirement text is one observable behavior containing SHALL or MUST, kept under 500 characters; strict validation refuses either violation. Detail belongs in scenarios, not in the requirement sentence.
+    - Whenever inputs or expected outcomes vary, write a Scenario Outline with an Examples table rather than near-duplicate scenarios. Include boundary rows (empty, zero, limit - 1, limit, limit + 1, maximum) and case, whitespace and Unicode variants where strings are compared.
+    - Map edge cases deliberately, in scenarios. For each requirement, cover every dimension that applies; skip one only when it cannot apply, never because it is inconvenient. Logic (happy path, invalid, unknown, missing, conflicting and boundary inputs), Concurrency (races, duplicate delivery, lost update, double perform), Durability (crash between commit and side effect, restart, replay of old journal or snapshot rows), Parity (each SQL dialect, each HTTP adapter, YAML vs JSON round trip), Performance and resource (size, depth and count ceilings, unbounded growth, hot-path allocation), Security (disclosure, spoofing, privilege escalation, injection, resource exhaustion, fail-open defaults).
+    - Every guard or refusal gets a negative control, a scenario proving the legal neighbor is still accepted, so the guard cannot pass vacuously.
+    - Name outcomes precisely. A refusal states the named error (sentinel) or HTTP status it produces; never write just "fails" or "is rejected".
+    - State observable behavior only. No internal type, function or file names in requirements; public API identifiers a consumer calls are fine.
+    - When writing baseline (current-state) specs, record promises only, meaning decided and documented contracts. Do not specify behavior an open change exists to correct; that change ADDs or MODIFIES the corrected requirement. Do not convert undecided or merely observed behavior; it gets a spec when a change touches it.
+  design:
+    - For each decision, record the options rejected and the measurement or evidence that settled it. A plausible mechanism read off a call graph is not evidence.
+    - Name the cross-change coupling (shared migration files, shared public types, landing order) and which change owns it.
+  tasks:
+    - For a defect, the first task is a failing test that reproduces it; watch it go red before the fix task.
+    - Each task touching a requirement names the scenario(s) it makes pass.
+
+operations:
+  apply:
+    guidance:
+      - Start every Go task with the cc-skills-golang:golang-how-to skill, then write code test-first (red, green, refactor).
+      - Waits and deadlines in tests follow docs/agents/eventually-waits.md and docs/agents/test-deadlines.md.
+      - Run commands per module as CONTRIBUTING.md describes; a bare ./... covers only the root module and exits 0.

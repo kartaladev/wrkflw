@@ -1,8 +1,21 @@
 {
   "enabledPlugins": {
-    "mattpocock-skills@mattpocock": true,
     "gopls-lsp@claude-plugins-official": true,
     "glab-glql@gitlab-skills": true,
     "cc-skills-golang@samber": true
+  },
+  "extraKnownMarketplaces": {
+    "gitlab-skills": {
+      "source": {
+        "source": "git",
+        "url": "https://gitlab.com/gitlab-org/ai/skills.git"
+      }
+    },
+    "samber": {
+      "source": {
+        "source": "github",
+        "repo": "samber/cc"
+      }
+    }
   }
 }
