@@ -48,7 +48,7 @@ The specs cover only behavior that is independent of these four.
 **Coordination**
 - Size: M
 - Depends on: establish-baseline-specs
-- Blocks: nothing
+- Blocks: `improve-wire-gate-diagnostics`
 - Readiness: human
 
 ## Capabilities
