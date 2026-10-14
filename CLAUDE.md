@@ -17,6 +17,8 @@ Prefer the change that unblocks the most others, counted from the `Depends on` l
 
 **Finishing work.** The PR body names the change it implements. Its last commit runs `openspec archive <change> --yes` (without `--yes` the command waits for a confirmation an agent cannot give whenever the change has spec deltas), so the spec sync is reviewed with the code and "merged" means "archived". Intake issues were already closed at conversion; archiving does not touch GitHub. Automated dependency-bump PRs (Dependabot) are exempt: they name no change unless a bump alters library behavior, in which case a change is opened for it.
 
+**Planning work.** A PR that only adds or revises change artifacts (proposals, specs, designs, tasks) is a planning PR. Its body lists the changes it adds, it changes no code, and it archives nothing, because it implements nothing. After it merges, each GitHub issue its changes cite is commented with the change name and closed. A PR that changes code still implements exactly one change and archives it as its last commit.
+
 **Review findings.** A finding outside the change's scope becomes a new change (a proposal with a Coordination block), not an addition to the open PR.
 
 ## Agent docs
