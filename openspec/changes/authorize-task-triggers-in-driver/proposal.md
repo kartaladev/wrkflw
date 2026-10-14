@@ -50,7 +50,7 @@ Decisions the specs cannot be final without (design, Open Questions):
 **Coordination**
 - Size: M
 - Depends on: nothing
-- Blocks: replace-casbin-with-composed-deciders, add-user-task-updates, define-access-and-disclosure
+- Blocks: replace-casbin-with-composed-deciders, add-user-task-updates, define-access-and-disclosure, `cut-v0-release`
 - Readiness: human
 
 ## Capabilities

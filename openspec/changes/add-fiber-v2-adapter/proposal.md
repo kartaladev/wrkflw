@@ -34,7 +34,7 @@ Premises re-measured on `eebe55ba` with go1.26.9:
 **Coordination**
 - Size: M
 - Depends on: unify-http-routes-as-data, split-persistence-modules
-- Blocks: nothing
+- Blocks: `cut-v0-release`
 - Readiness: agent
 
 ## Capabilities

@@ -59,7 +59,7 @@ Decisions this change cannot be fully specified without (design, Open Questions)
 **Coordination**
 - Size: L
 - Depends on: harden-definition-store-parity
-- Blocks: cut-v0-release, persist-pending-commands
+- Blocks: cut-v0-release, persist-pending-commands, `add-user-task-updates`
 - Readiness: human
 
 ## Capabilities

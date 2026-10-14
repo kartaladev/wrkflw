@@ -43,7 +43,7 @@ The requirements that depend on Q1 to Q3 are marked *pending* in design. Gate ta
 **Coordination**
 - Size: L.
 - Depends on: `establish-baseline-specs`.
-- Blocks: nothing.
+- Blocks: `back-business-rule-task-with-rlng`.
 - Readiness: human.
 
 ## Capabilities

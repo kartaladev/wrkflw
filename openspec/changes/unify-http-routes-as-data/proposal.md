@@ -52,7 +52,7 @@ Every premise below was re-measured on `eebe55ba` with go1.26.9. The probes ran 
 **Coordination**
 - Size: L
 - Depends on: nothing
-- Blocks: split-persistence-modules, add-fiber-v2-adapter
+- Blocks: split-persistence-modules, add-fiber-v2-adapter, `add-user-task-updates-http`, `cut-v0-release`
 - Readiness: human
 
 ## Capabilities
