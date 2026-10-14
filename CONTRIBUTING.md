@@ -6,7 +6,7 @@ when a change trades library ergonomics for server convenience, library ergonomi
 
 ## Prerequisites
 
-- **Go 1.26.8** (the version `go.mod` declares; CI installs it with `go-version-file: go.mod`).
+- **Go 1.26.9** (the version `go.mod` declares; CI installs it with `go-version-file: go.mod`).
 - A running **Docker daemon** — integration tests use [testcontainers-go](https://golang.testcontainers.org/)
   to provision real PostgreSQL / MySQL / MinIO / mailpit. They are not mocked.
 - [`golangci-lint`](https://golangci-lint.run/) v2 (the config uses the v2 schema).
