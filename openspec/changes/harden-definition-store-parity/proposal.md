@@ -44,7 +44,7 @@ Decisions this change cannot be fully specified without:
 **Coordination**
 - Size: M
 - Depends on: establish-baseline-specs
-- Blocks: cut-v0-release
+- Blocks: cut-v0-release, `encode-persisted-enums-by-name`
 - Readiness: human
 
 ## Capabilities
