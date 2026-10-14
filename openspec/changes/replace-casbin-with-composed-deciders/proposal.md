@@ -47,7 +47,7 @@ The actor model and claimant-only tasks stay in one change, because both rewrite
 **Coordination**
 - Size: L
 - Depends on: remove-casbin, authorize-task-triggers-in-driver
-- Blocks: add-user-task-entry-action, cut-v0-release
+- Blocks: add-user-task-entry-action, cut-v0-release, `add-user-task-updates`
 - Readiness: human
 
 ## Capabilities

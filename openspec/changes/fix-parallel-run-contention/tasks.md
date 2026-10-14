@@ -1,0 +1,24 @@
+## 1. Reproduce each mechanism deterministically (red first)
+
+This change has no specs (`skip_specs: true`), so no task names a scenario. Each defect starts with a test that fails on one machine without ambient load (design D1). Docker is required for 1.1 and 1.3.
+
+- [ ] 1.1 Mechanism A. In `internal/dbtest`, extract the MySQL boot into a function that takes extra container customizers, keeping `initMySQLContainer` its only production caller. Add a test that boots through it with the container's CPU quota throttled (`HostConfig.NanoCPUs`; 0.05 CPU measured 182 s to ready on the planning host, 0.1 CPU only 47 s) and asserts the boot succeeds. Watch it go red. Record the boot duration of `mysql:8.0` unthrottled and at each quota tried, with the Docker version and host CPU count, in the PR body. That record is the evidence `size-io-test-deadlines` asks for. Verify: `GOTOOLCHAIN=go1.26.9 go test -race -count=1 -run <name> ./internal/dbtest/` fails with an error containing `"port: 3306  MySQL Community Server" matched 0 times` and `context deadline exceeded`. With the throttle removed, the same test passes.
+- [ ] 1.2 Mechanism B. In `transport/http/fiber`, add a test that wraps the `transporttest.NewHarness` service in a decorator adding a fixed delay above 1 s, drives `POST /instances` through `appDo`, and asserts status 201. Add the equivalent in `transport/http/parity` through its `app.Test` helper. Watch both go red. Verify: `GOTOOLCHAIN=go1.26.9 go test -race -count=1 -run <name> ./transport/http/fiber/ ./transport/http/parity/` fails with fiber's `app.Test` timeout error rather than a status mismatch, and passes with the delay set below 1 s.
+- [ ] 1.3 Capture the natural failure text (design D2). Run N concurrent `GOTOOLCHAIN=go1.26.9 go test -race -count=1 -json ./...` in the root module with no `WRKFLW_TEST_*_DSN` exported, N chosen to induce failures on the host (N = 4 reproduced mechanism A in 4 of 4 runs at planning time, and mechanism B in none). Keep the logs outside the repo. Verify: for every failing test, the PR body records its package, name and failure text, classified as mechanism A, mechanism B or neither. A mechanism with no natural failure carrying its text is reported as unconfirmed, and its group 2 task is dropped. A failure classified as neither becomes a new change, not an addition to this one.
+
+## 2. Fix (blocked on design Q1 and Q2)
+
+- [ ] 2.1 Apply the remedy decided for Q1 to the MySQL helper. Under the recommended option (a), the startup timeout becomes one named constant whose value is derived from the 1.1 measurement, with a comment on it naming the evidence and citing `docs/agents/test-deadlines.md`. Verify: the 1.1 test passes at the throttle that previously failed, and `GOTOOLCHAIN=go1.26.9 go test -race -count=1 ./internal/dbtest/ ./internal/persistence/store/ ./persistence/` passes.
+- [ ] 2.2 If Q1 includes option (c), document `eval "$(scripts/testdb.sh up)"` as the way to run the whole tree from parallel worktrees, in `CONTRIBUTING.md` and the `internal/dbtest` package comment. Verify: following the documented commands in two concurrent worktrees, both runs pass, and `docker ps` shows one MySQL server rather than one per package.
+- [ ] 2.3 If 1.3 confirmed mechanism B, apply the remedy decided for Q2. Under the recommended option (a), all four `app.Test` call sites (`transport/http/fiber/fiber_test.go` and three in `transport/http/parity/parity_test.go`, re-measured at implementation time) go through one helper per package that passes an explicit `TestConfig` with a named timeout. Verify: the 1.2 tests pass, and `grep -rn 'app.Test(' --include='*_test.go' .` shows no call without a config.
+- [ ] 2.4 Once `size-io-test-deadlines` has landed, or by rebasing onto it, record fiber's `app.Test` deadline in `docs/agents/test-deadlines.md` as a deadline the raw-`time.After` ceiling cannot see. Verify: `scripts/check-doc-refs.sh` passes and the doc names the helper from 2.3.
+
+## 3. Verify the discriminator
+
+- [ ] 3.1 Repeat the 1.3 induced-load run with the same N on the same host. Verify: no failure carries a mechanism A or mechanism B signature. Any remaining failures form a set that repeats across two runs (issue's discriminator: a stable set means a code cause; a moving set means contention still exists). Record both runs in the PR body.
+- [ ] 3.2 Run the repo guards. Verify: `scripts/check-test-timeout.sh`, `scripts/check-doc-refs.sh` and `scripts/check-openspec.sh` pass, `scripts/lint.sh ./...` is clean in the root module, and `git diff --stat` shows no non-test file outside `internal/dbtest`, `CONTRIBUTING.md` and `docs/agents/`.
+
+## Workflow follow-up
+
+- The PR body names `fix-parallel-run-contention`. Its last commit runs `openspec archive fix-parallel-run-contention --yes`.
+- kartaladev/wrkflw#169 is closed at conversion, after the planning PR merges; archiving does not touch GitHub.

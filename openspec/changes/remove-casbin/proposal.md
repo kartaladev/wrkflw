@@ -39,7 +39,7 @@ Out of scope:
 **Coordination**
 - Size: M
 - Depends on: nothing
-- Blocks: replace-casbin-with-composed-deciders, cut-v0-release, `split-persistence-modules`
+- Blocks: replace-casbin-with-composed-deciders, cut-v0-release, `split-persistence-modules`, `decide-module-denylist-policy`
 - Readiness: agent
 
 ## Capabilities

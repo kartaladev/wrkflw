@@ -62,7 +62,7 @@ Every premise below was re-measured on `main` (`eebe55ba`).
 **Coordination**
 - Size: XL
 - Depends on: add-lent-transaction-seam, remove-casbin, unify-http-routes-as-data
-- Blocks: add-gorm-adapter, add-fiber-v2-adapter, cut-v0-release
+- Blocks: add-gorm-adapter, add-fiber-v2-adapter, cut-v0-release, `add-user-task-updates`, `document-stability-policy`
 - Readiness: human
 
 ## Capabilities
