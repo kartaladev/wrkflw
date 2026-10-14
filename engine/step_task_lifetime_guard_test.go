@@ -185,7 +185,7 @@ func TestHumanTaskTriggersOnClosedTaskError(t *testing.T) {
 		setup func(t *testing.T) (*model.ProcessDefinition, engine.InstanceState)
 		// trigger builds the trigger under test from the state produced by setup.
 		trigger func(st engine.InstanceState) engine.Trigger
-		assert  func(t *testing.T, before engine.InstanceState, res engine.StepResult, err error)
+		assert  func(t *testing.T, before, snapshot engine.InstanceState, res engine.StepResult, err error)
 	}
 
 	cases := []testCase{
@@ -197,7 +197,7 @@ func TestHumanTaskTriggersOnClosedTaskError(t *testing.T) {
 			trigger: func(st engine.InstanceState) engine.Trigger {
 				return engine.NewHumanClaimed(taskLifetimeT0.Add(2*time.Minute), st.Tasks[0].TaskID, taskLifetimeActor)
 			},
-			assert: func(t *testing.T, before engine.InstanceState, res engine.StepResult, err error) {
+			assert: func(t *testing.T, before, snapshot engine.InstanceState, res engine.StepResult, err error) {
 				// LOAD-BEARING: before the guard this call returned a nil error, so
 				// the sentinel assertion on its own captures the whole pre-change
 				// behaviour — the success, the flip to Claimed, and the UpdateTask
@@ -216,14 +216,12 @@ func TestHumanTaskTriggersOnClosedTaskError(t *testing.T) {
 				// CONTROL: Step returns the zero StepResult on any error, so
 				// res.Commands is nil for free and this CANNOT fail here.
 				assert.Empty(t, res.Commands)
-				// CONTROL, deliberately: cloneState deep-copies Tasks, so `before` is
-				// immutable whether or not the guard exists — the pre-guard handler
-				// mutated its own clone and these two hold identically either way.
-				// Asserting on res.State instead would be no better: it is the zero
-				// value on the error path. Kept as a purity tripwire on Step only.
-				assert.Equal(t, humantask.Cancelled, before.Tasks[0].State,
-					"control: Step must not mutate the caller's state")
-				assert.Nil(t, before.Tasks[0].Claim, "control: same")
+				// LOAD-BEARING: the caller's WHOLE state equals the clone taken
+				// before Step. Unlike the two-field check this replaced, it can
+				// fail: with Step's cloneState and this guard both removed, the
+				// handler writes the claim through the caller's shared Tasks array.
+				assert.Equal(t, snapshot, before.Clone(),
+					"Step must not mutate the caller's instance state")
 			},
 		},
 		{
@@ -235,7 +233,7 @@ func TestHumanTaskTriggersOnClosedTaskError(t *testing.T) {
 				return engine.NewHumanReassigned(taskLifetimeT0.Add(2*time.Minute), st.Tasks[0].TaskID,
 					"alice", "bob", taskLifetimeActor)
 			},
-			assert: func(t *testing.T, before engine.InstanceState, res engine.StepResult, err error) {
+			assert: func(t *testing.T, before, snapshot engine.InstanceState, res engine.StepResult, err error) {
 				// LOAD-BEARING: identical accounting to HumanClaimed above — this
 				// returned a nil error before the guard, so the sentinel assertion
 				// captures the entire pre-change behaviour on its own, which is why
@@ -248,11 +246,10 @@ func TestHumanTaskTriggersOnClosedTaskError(t *testing.T) {
 				assert.ErrorIs(t, err, engine.ErrInvalidTransition)
 				// CONTROL: zero StepResult on error — cannot fail.
 				assert.Empty(t, res.Commands)
-				// CONTROL: `before` is a deep copy, immutable with or without the
-				// guard. Purity tripwire on Step, nothing more.
-				assert.Equal(t, humantask.Cancelled, before.Tasks[0].State,
-					"control: Step must not mutate the caller's state")
-				assert.Nil(t, before.Tasks[0].Claim, "control: same")
+				// LOAD-BEARING: the caller's whole state is unchanged (see the
+				// HumanClaimed row for why this comparison can fail).
+				assert.Equal(t, snapshot, before.Clone(),
+					"Step must not mutate the caller's instance state")
 			},
 		},
 		{
@@ -264,7 +261,7 @@ func TestHumanTaskTriggersOnClosedTaskError(t *testing.T) {
 				return engine.NewHumanCompleted(taskLifetimeT0.Add(2*time.Minute), st.Tasks[0].TaskID,
 					engine.CompletionInput{}, taskLifetimeActor)
 			},
-			assert: func(t *testing.T, before engine.InstanceState, res engine.StepResult, err error) {
+			assert: func(t *testing.T, before, snapshot engine.InstanceState, res engine.StepResult, err error) {
 				// LOAD-BEARING: this path ALREADY errored before the guard — with
 				// ErrTokenNotFound, because the interrupting boundary consumed the
 				// host token and tokenAwaiting ran first. Asserting "an error came
@@ -280,10 +277,10 @@ func TestHumanTaskTriggersOnClosedTaskError(t *testing.T) {
 					"the instance is RUNNING: this must be the task-lifetime key, not dispatch's status guard")
 				// CONTROL: zero StepResult on error — cannot fail.
 				assert.Empty(t, res.Commands)
-				// CONTROL: `before` is a deep copy; Step never mutates it, guard or
-				// no guard. Purity tripwire only.
-				assert.Equal(t, humantask.Cancelled, before.Tasks[0].State,
-					"control: Step must not mutate the caller's state")
+				// LOAD-BEARING: the caller's whole state is unchanged (see the
+				// HumanClaimed row for why this comparison can fail).
+				assert.Equal(t, snapshot, before.Clone(),
+					"Step must not mutate the caller's instance state")
 			},
 		},
 		{
@@ -307,7 +304,7 @@ func TestHumanTaskTriggersOnClosedTaskError(t *testing.T) {
 				return engine.NewHumanCompleted(taskLifetimeT0.Add(4*time.Hour), st.Tasks[0].TaskID,
 					engine.CompletionInput{}, taskLifetimeActor)
 			},
-			assert: func(t *testing.T, _ engine.InstanceState, _ engine.StepResult, err error) {
+			assert: func(t *testing.T, _, _ engine.InstanceState, _ engine.StepResult, err error) {
 				// LOAD-BEARING: this is the deliberate error UPGRADE the reorder
 				// buys. The deadline breach clears the token's AwaitCommand but
 				// leaves the token alive on the alternative path, so before the
@@ -328,7 +325,7 @@ func TestHumanTaskTriggersOnClosedTaskError(t *testing.T) {
 			trigger: func(st engine.InstanceState) engine.Trigger {
 				return engine.NewHumanClaimed(taskLifetimeT0.Add(time.Minute), st.Tasks[0].TaskID, taskLifetimeActor)
 			},
-			assert: func(t *testing.T, _ engine.InstanceState, res engine.StepResult, err error) {
+			assert: func(t *testing.T, _, _ engine.InstanceState, res engine.StepResult, err error) {
 				// LOAD-BEARING, all of them: this is the non-interference witness.
 				// The guard must key on IsOpen rather than reject every human
 				// trigger, so an inverted or over-broad condition fails here. The
@@ -361,7 +358,7 @@ func TestHumanTaskTriggersOnClosedTaskError(t *testing.T) {
 			trigger: func(st engine.InstanceState) engine.Trigger {
 				return engine.NewHumanClaimed(taskLifetimeT0.Add(2*time.Minute), st.Tasks[0].TaskID, taskLifetimeActor)
 			},
-			assert: func(t *testing.T, _ engine.InstanceState, _ engine.StepResult, err error) {
+			assert: func(t *testing.T, _, _ engine.InstanceState, _ engine.StepResult, err error) {
 				// LOAD-BEARING: in THIS setup both keys are live at once — the
 				// setup block above asserts StatusTerminated and a Cancelled task,
 				// because CancelRequested routes through endInstance, whose
@@ -389,8 +386,11 @@ func TestHumanTaskTriggersOnClosedTaskError(t *testing.T) {
 			t.Parallel()
 
 			def, st := tc.setup(t)
+			// snapshot is an independent deep copy taken BEFORE Step, so a
+			// write through st's shared slices or maps shows up as a difference.
+			snapshot := st.Clone()
 			res, err := engine.Step(t.Context(), def, st, tc.trigger(st), engine.StepOptions{})
-			tc.assert(t, st, res, err)
+			tc.assert(t, st, snapshot, res, err)
 		})
 	}
 }

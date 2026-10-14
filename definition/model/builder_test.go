@@ -2,6 +2,7 @@ package model_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/kartaladev/wrkflw/action"
@@ -29,9 +30,12 @@ func TestDefinitionBuilderBuildsAndValidates(t *testing.T) {
 }
 
 func TestDefinitionBuilderRejectsInvalid(t *testing.T) {
-	_, err := model.NewBuilder("p", 1).Add(activity.NewServiceTask("t", activity.WithTaskAction("do"))).Build()
-	if err == nil {
-		t.Fatal("expected validation error (no start event)")
+	def, err := model.NewBuilder("p", 1).Add(activity.NewServiceTask("t", activity.WithTaskAction("do"))).Build()
+	if !errors.Is(err, model.ErrNoStartEvent) {
+		t.Fatalf("Build: err = %v, want ErrNoStartEvent", err)
+	}
+	if def != nil {
+		t.Fatalf("Build returned a definition alongside the error: %+v", def)
 	}
 }
 

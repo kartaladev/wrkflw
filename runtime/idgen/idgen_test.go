@@ -2,6 +2,7 @@ package idgen_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -18,14 +19,20 @@ func TestXID(t *testing.T) {
 	if id1 == "" {
 		t.Fatal("xid NewID returned empty string")
 	}
-	id2, _ := g.NewID()
+	id2, err := g.NewID()
+	if err != nil {
+		t.Fatalf("xid second NewID error: %v", err)
+	}
+	if id2 == "" {
+		t.Fatal("xid second NewID returned empty string")
+	}
 	if id1 == id2 {
 		t.Fatalf("xid NewID not unique: %q == %q", id1, id2)
 	}
 	// xid string form has no hyphens (matters for the child-suffix parsing).
-	for _, c := range id1 {
-		if c == '-' {
-			t.Fatalf("xid contains a hyphen: %q", id1)
+	for _, id := range []string{id1, id2} {
+		if strings.Contains(id, "-") {
+			t.Fatalf("xid contains a hyphen: %q", id)
 		}
 	}
 }
@@ -56,9 +63,12 @@ func TestFunc(t *testing.T) {
 	t.Run("propagates wrapped error", func(t *testing.T) {
 		sentinel := errors.New("boom")
 		g := idgen.Func(func() (string, error) { return "", sentinel })
-		_, err := g.NewID()
+		id, err := g.NewID()
 		if !errors.Is(err, sentinel) {
 			t.Fatalf("Func did not propagate error: %v", err)
+		}
+		if id != "" {
+			t.Fatalf("Func NewID on error = %q, want empty", id)
 		}
 	})
 }

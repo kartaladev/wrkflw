@@ -134,6 +134,7 @@ func TestChainerHandle(t *testing.T) {
 			assert: func(t *testing.T, gotErr error, starter *recordingStarter, links *kernel.MemChainLinkStore) {
 				require.Error(t, gotErr)
 				assert.ErrorIs(t, gotErr, errTransient, "transient error must remain inspectable so the broker re-delivers")
+				assert.Len(t, starter.calls, 1, "the starter is attempted exactly once per Handle")
 			},
 		},
 		"no link store still starts (deterministic id only)": {

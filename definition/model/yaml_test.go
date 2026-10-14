@@ -2,6 +2,7 @@ package model_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -94,8 +95,8 @@ flows: []
 		t.Fatalf("ParseYAML: unexpected parse error: %v", err)
 	}
 	_, err = ld.Build()
-	if err == nil {
-		t.Fatal("expected validation error (no start event)")
+	if !errors.Is(err, model.ErrNoStartEvent) {
+		t.Fatalf("Build: err = %v, want ErrNoStartEvent", err)
 	}
 }
 
